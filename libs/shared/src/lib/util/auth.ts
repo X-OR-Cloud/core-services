@@ -125,11 +125,5 @@ export function createRoleBasedPermissions(context: RequestContext): PermissionC
       break;
     }
   }
-  console.log('Role-Based Permissions:', {
-    role,
-    scope,
-    roleName,
-    permissions,
-  });
   return permissions;
 }
