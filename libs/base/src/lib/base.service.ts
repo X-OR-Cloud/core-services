@@ -135,7 +135,12 @@ export class BaseService<Entity> {
     delete filter['sortBy']; // Ensure sortBy is not set by user filter
     delete filter['page']; // Ensure page is not set by user filter
     delete filter['limit']; // Ensure limit is not set by user filter
-
+    // Loop each filter, delete if "" or null
+    for (const key in filter) {
+      if (filter[key] === '' || filter[key] === null) {
+        delete filter[key];
+      }
+    }
     // Merge scope-based filter with user filter (user filter takes precedence)
     const finalFilter = { ...permissions.filter, ...filter, isDeleted: false };
     this.logger.debug('Origin filter', filter);
