@@ -137,6 +137,7 @@ export class BaseService<Entity> {
     delete filter['limit']; // Ensure limit is not set by user filter
     // Loop each filter, delete if "" or null
     for (const key in filter) {
+      console.log('Filter key check', key, filter[key]);
       if (filter[key] === '' || filter[key] === null) {
         delete filter[key];
       }

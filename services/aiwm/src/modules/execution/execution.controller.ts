@@ -154,4 +154,75 @@ export class ExecutionController {
   }> {
     return await this.executionService.getStatistics();
   }
+
+  // ============================================================================
+  // WORKFLOW EXECUTION ENDPOINTS (Phase 3)
+  // ============================================================================
+
+  /**
+   * Trigger workflow execution
+   * Creates execution record and queues it for processing
+   */
+  @Post('workflows/:workflowId/trigger')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Trigger workflow execution' })
+  @ApiCreateErrors()
+  @UseGuards(JwtAuthGuard)
+  async triggerWorkflow(
+    @Param('workflowId') workflowId: string,
+    @Body() dto: { input: any },
+    @CurrentUser() context: RequestContext
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+  }> {
+    const execution = await this.executionService.triggerWorkflow(
+      workflowId,
+      dto.input,
+      context
+    );
+
+    return {
+      executionId: execution.executionId,
+      status: 'queued',
+      message: 'Workflow execution queued successfully',
+    };
+  }
+
+  /**
+   * Get workflow execution status
+   * Returns detailed status including step progress
+   */
+  @Get(':executionId/status')
+  @ApiOperation({ summary: 'Get workflow execution status' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async getWorkflowStatus(
+    @Param('executionId') executionId: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return await this.executionService.getExecutionStatus(executionId, context);
+  }
+
+  /**
+   * Get queue status (admin endpoint)
+   * Returns BullMQ queue metrics
+   */
+  @Get('_admin/queue/status')
+  @ApiOperation({ summary: 'Get queue status (admin)' })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getQueueStatus() {
+    // TODO: Phase 4 - Inject WorkflowExecutionQueue and return status
+    // return await this.workflowQueue.getQueueStatus();
+
+    return {
+      message: 'TODO: Phase 4 - Implement queue status endpoint',
+      waiting: 0,
+      active: 0,
+      completed: 0,
+      failed: 0,
+    };
+  }
 }

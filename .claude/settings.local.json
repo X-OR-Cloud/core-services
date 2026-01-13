@@ -82,7 +82,8 @@
       "Bash(pm2 restart:*)",
       "Bash(pm2 start:*)",
       "Bash(pm2 logs:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(*:*)"
     ],
     "deny": [],
     "ask": []

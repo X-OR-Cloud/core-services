@@ -6,6 +6,26 @@ export type ExecutionDocument = Execution & Document;
 export type ExecutionStepDocument = ExecutionStep & Document;
 
 /**
+ * ExecutionType - Discriminator for execution types
+ */
+export enum ExecutionType {
+  DEPLOYMENT = 'deployment',
+  WORKFLOW = 'workflow',
+}
+
+/**
+ * ExecutionErrorType - Classification of execution errors
+ */
+export enum ExecutionErrorType {
+  VALIDATION_ERROR = 'validation_error',
+  EXECUTION_ERROR = 'execution_error',
+  TIMEOUT_ERROR = 'timeout_error',
+  DEPENDENCY_ERROR = 'dependency_error',
+  CONFIGURATION_ERROR = 'configuration_error',
+  SYSTEM_ERROR = 'system_error',
+}
+
+/**
  * ExecutionStep - Embedded subdocument
  * Represents a single step in an execution workflow
  */
@@ -30,7 +50,11 @@ export class ExecutionStep {
   @Prop({ default: 0, min: 0, max: 100 })
   progress!: number;
 
-  // WebSocket command to execute
+  // Step type: 'command' for deployment, 'llm' for workflow
+  @Prop({ required: true, enum: ['command', 'llm'] })
+  type!: string;
+
+  // WebSocket command to execute (for deployment type)
   @Prop({ type: Object })
   command?: {
     type: string; // e.g., 'model.download', 'deployment.create'
@@ -40,6 +64,26 @@ export class ExecutionStep {
     };
     data: Record<string, any>;
   };
+
+  // LLM configuration (for workflow type)
+  @Prop({ type: Object })
+  llmConfig?: {
+    deploymentId: string;
+    systemPrompt: string;
+    userPromptTemplate?: string;
+    parameters?: {
+      temperature?: number;
+      max_tokens?: number;
+      top_p?: number;
+    };
+  };
+
+  // Input/output for workflow steps
+  @Prop({ type: Object })
+  input?: any;
+
+  @Prop({ type: Object })
+  output?: any;
 
   // Node assignment
   @Prop()
@@ -75,10 +119,21 @@ export class ExecutionStep {
 
   // Dependencies
   @Prop({ type: [Number], default: [] })
-  dependsOn!: number[]; // Indexes of steps that must complete first
+  dependsOn!: number[]; // Indexes of steps that must complete first (deployment)
+
+  @Prop({ type: [Number], default: [] })
+  dependencies!: number[]; // Indexes of steps that must complete first (workflow)
 
   @Prop({ default: false })
   optional!: boolean; // Can be skipped if failed
+
+  // Error handling configuration (for workflow steps)
+  @Prop({ type: Object })
+  errorHandling?: {
+    maxRetries?: number;
+    retryDelayMs?: number;
+    continueOnError?: boolean;
+  };
 }
 
 export const ExecutionStepSchema = SchemaFactory.createForClass(ExecutionStep);
@@ -98,15 +153,21 @@ export class Execution extends BaseSchema {
   @Prop()
   description?: string;
 
-  // Execution type and category
+  // Execution type discriminator
   @Prop({
     required: true,
+    enum: Object.values(ExecutionType),
+  })
+  executionType!: string; // 'deployment' or 'workflow'
+
+  // Execution type and category (for deployment)
+  @Prop({
     enum: ['deployment', 'model', 'agent', 'maintenance', 'batch'],
   })
-  category!: string;
+  category?: string;
 
-  @Prop({ required: true })
-  type!: string; // e.g., 'deploy-model', 'download-model', 'setup-agent'
+  @Prop()
+  type?: string; // e.g., 'deploy-model', 'download-model', 'setup-agent'
 
   // Status tracking
   @Prop({
@@ -130,12 +191,39 @@ export class Execution extends BaseSchema {
   @Prop({ type: [ExecutionStepSchema], default: [] })
   steps!: ExecutionStep[];
 
-  // Related resources
+  // Related resources (for deployment)
   @Prop()
   resourceType?: string; // 'deployment', 'model', 'node', 'agent'
 
   @Prop()
   resourceId?: string; // Foreign key to related resource
+
+  // Workflow-specific fields
+  @Prop({ type: Types.ObjectId, ref: 'Workflow' })
+  workflowId?: Types.ObjectId;
+
+  @Prop()
+  workflowVersion?: string;
+
+  @Prop({ type: Object })
+  workflowSnapshot?: {
+    name: string;
+    description?: string;
+    version: string;
+    steps: Array<{
+      index: number;
+      name: string;
+      orderIndex: number;
+      type: string;
+      llmConfig: any;
+      inputSchema?: any;
+      outputSchema?: any;
+      dependencies: number[];
+    }>;
+  };
+
+  @Prop({ type: Object })
+  input?: any; // Initial input data for workflow
 
   // Node assignment
   @Prop({ type: String, ref: 'Node' })
@@ -159,15 +247,40 @@ export class Execution extends BaseSchema {
 
   // Result and error tracking
   @Prop({ type: Object })
-  result?: Record<string, any>; // Execution result data
+  result?: {
+    success: boolean;
+    summary?: {
+      stepsCompleted: number;
+      stepsFailed: number;
+      stepsSkipped: number;
+      totalTokensUsed?: number;
+      totalCost?: number;
+      totalDurationMs: number;
+    };
+    finalOutput?: any; // For workflow executions
+    data?: Record<string, any>; // For deployment executions
+  };
 
   @Prop({ type: Object })
   error?: {
-    code: string;
+    type?: ExecutionErrorType;
+    code?: string;
     message: string;
-    details?: any;
+    details?: {
+      stepName?: string;
+      inputValidationErrors?: any[];
+      outputValidationErrors?: any[];
+      llmError?: {
+        statusCode?: number;
+        responseBody?: string;
+      };
+      [key: string]: any;
+    };
     nodeId?: string; // Which node caused the error
     stepIndex?: number; // Which step failed
+    failedStepIndex?: number; // Alias for stepIndex (workflow)
+    stack?: string;
+    timestamp?: Date;
   };
 
   // WebSocket message tracking
@@ -195,6 +308,8 @@ export const ExecutionSchema = SchemaFactory.createForClass(Execution);
 // Indexes for performance
 ExecutionSchema.index({ executionId: 1 }, { unique: true });
 ExecutionSchema.index({ status: 1, createdAt: -1 });
+ExecutionSchema.index({ executionType: 1, status: 1 }); // NEW: For filtering by execution type
+ExecutionSchema.index({ workflowId: 1, status: 1 }); // NEW: For workflow executions
 ExecutionSchema.index({ parentExecutionId: 1 });
 ExecutionSchema.index({ resourceType: 1, resourceId: 1 });
 ExecutionSchema.index({ nodeId: 1, status: 1 });

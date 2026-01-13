@@ -14,8 +14,15 @@ import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class ExecutionService extends BaseService<Execution> {
+  protected readonly logger = new Logger(ExecutionService.name);
+
   constructor(
-    @InjectModel(Execution.name) executionModel: Model<Execution>
+    @InjectModel(Execution.name) executionModel: Model<Execution>,
+    // TODO: Phase 4 - Inject dependencies for workflow execution
+    // private readonly workflowService: WorkflowService,
+    // private readonly workflowStepService: WorkflowStepService,
+    // private readonly workflowQueue: WorkflowExecutionQueue,
+    // private readonly eventEmitter: EventEmitter2,
   ) {
     super(executionModel as any);
   }
@@ -449,6 +456,150 @@ export class ExecutionService extends BaseService<Execution> {
         acc[item._id] = item.count;
         return acc;
       }, {}),
+    };
+  }
+
+  // ============================================================================
+  // WORKFLOW EXECUTION METHODS (Phase 3)
+  // ============================================================================
+
+  /**
+   * Trigger a workflow execution
+   * Creates execution record and pushes to BullMQ queue
+   * @param workflowId - Workflow ID to execute
+   * @param input - Initial input data
+   * @param context - Request context
+   * @returns Created execution
+   */
+  async triggerWorkflow(
+    workflowId: string,
+    input: any,
+    context: RequestContext
+  ): Promise<Execution> {
+    // TODO: Phase 4 - Implement full workflow trigger logic
+    // 1. Get workflow and validate status
+    // const workflow = await this.workflowService.findById(workflowId, context);
+    // if (workflow.status !== 'active') {
+    //   throw new BadRequestException('Workflow is not active');
+    // }
+
+    // 2. Get workflow steps
+    // const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
+    // if (steps.length === 0) {
+    //   throw new BadRequestException('Workflow has no steps');
+    // }
+
+    // 3. Create workflow snapshot
+    // const workflowSnapshot = {
+    //   name: workflow.name,
+    //   description: workflow.description,
+    //   version: workflow.version,
+    //   steps: steps.map((step, index) => ({
+    //     index,
+    //     name: step.name,
+    //     orderIndex: step.orderIndex,
+    //     type: step.type,
+    //     llmConfig: step.llmConfig,
+    //     inputSchema: step.inputSchema,
+    //     outputSchema: step.outputSchema,
+    //     dependencies: step.dependencies,
+    //   })),
+    // };
+
+    // 4. Create execution steps
+    // const executionSteps: ExecutionStep[] = steps.map((step, index) => ({
+    //   index,
+    //   name: step.name,
+    //   status: 'pending',
+    //   progress: 0,
+    //   type: 'llm',
+    //   llmConfig: step.llmConfig,
+    //   dependencies: step.dependencies,
+    //   errorHandling: step.errorHandling,
+    //   input: null,
+    //   output: null,
+    // }));
+
+    // 5. Create execution
+    const executionId = uuidv4();
+    const execution = await this.model.create({
+      executionId,
+      name: `Workflow Execution - ${workflowId}`,
+      executionType: 'workflow',
+      workflowId: new Types.ObjectId(workflowId),
+      // workflowVersion: workflow.version,
+      // workflowSnapshot,
+      input,
+      // steps: executionSteps,
+      steps: [], // TODO: Add actual steps in Phase 4
+      status: 'pending',
+      progress: 0,
+      timeoutSeconds: 3600, // Default 1 hour
+      owner: context,
+      createdBy: context.userId,
+      updatedBy: context.userId,
+    });
+
+    // 6. Emit workflow:triggered event
+    // this.eventEmitter.emit(WORKFLOW_EVENTS.TRIGGERED, {
+    //   workflowId,
+    //   executionId: execution.executionId,
+    //   triggeredBy: context.userId,
+    // });
+
+    // 7. Push to BullMQ queue
+    // await this.workflowQueue.addExecutionJob(execution.executionId);
+
+    // 8. Emit workflow-execution:queued event
+    // this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.QUEUED, {
+    //   executionId: execution.executionId,
+    //   workflowId,
+    // });
+
+    this.logger.log(`Workflow execution triggered: ${execution.executionId}`);
+    this.logger.warn(`TODO: Phase 4 - Complete triggerWorkflow() implementation`);
+
+    return execution as Execution;
+  }
+
+  /**
+   * Get workflow execution status with detailed step information
+   * @param executionId - Execution ID
+   * @param context - Request context
+   * @returns Execution status details
+   */
+  async getExecutionStatus(executionId: string, context: RequestContext): Promise<any> {
+    const execution = await this.findByExecutionId(executionId);
+
+    if (!execution) {
+      throw new NotFoundException(`Execution ${executionId} not found`);
+    }
+
+    // Verify ownership
+    if (execution.owner.orgId !== context.orgId) {
+      throw new NotFoundException(`Execution ${executionId} not found`);
+    }
+
+    return {
+      executionId: execution.executionId,
+      workflowId: execution.workflowId?.toString(),
+      name: execution.name,
+      status: execution.status,
+      progress: execution.progress,
+      steps: execution.steps.map((step) => ({
+        index: step.index,
+        name: step.name,
+        status: step.status,
+        progress: step.progress,
+        startedAt: step.startedAt,
+        completedAt: step.completedAt,
+        error: step.error,
+      })),
+      result: execution.result,
+      error: execution.error,
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      createdAt: execution.createdAt,
     };
   }
 }

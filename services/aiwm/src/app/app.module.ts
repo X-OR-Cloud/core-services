@@ -2,6 +2,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import {
   HealthModule,
   JwtStrategy,
@@ -26,6 +27,8 @@ import { UtilModule } from '../modules/util/util.module';
 import { ConversationModule } from '../modules/conversation/conversation.module';
 import { MessageModule } from '../modules/message/message.module';
 import { ChatModule } from '../modules/chat/chat.module';
+import { WorkflowModule } from '../modules/workflow/workflow.module';
+import { WorkflowStepModule } from '../modules/workflow-step/workflow-step.module';
 import { QueueModule } from '../queues/queue.module';
 import { ProcessorsModule } from '../queues/processors.module';
 import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
@@ -37,6 +40,7 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
     }),
     MongooseModule.forRoot(`${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`),
     PassportModule,
+    EventEmitterModule.forRoot(), // NEW: Enable event emitter for workflow events
     HealthModule,
     QueueModule,
     NodeModule,
@@ -49,6 +53,8 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
     ResourceModule,
     ConfigurationModule,
     AgentModule,
+    WorkflowModule, // NEW: Workflow template management
+    WorkflowStepModule, // NEW: Workflow step management
     ExecutionModule,
     ReportsModule,
     McpModule,
