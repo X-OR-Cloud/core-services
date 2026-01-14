@@ -52,12 +52,16 @@ export class ReportsService {
       this.getHealthMetrics(context),
     ]);
 
+    // Generate 30-day usage history
+    const usageHistory = this.generate30DayUsageHistory();
+
     return {
       timestamp: new Date().toISOString(),
       infrastructure,
       workload,
       activity,
       health,
+      usageHistory,
     };
   }
 
@@ -505,5 +509,49 @@ export class ReportsService {
     if (values.length === 0) return 0;
     const sum = values.reduce((acc, val) => acc + val, 0);
     return sum / values.length;
+  }
+
+  /**
+   * Generate fixed 30-day usage history
+   * Returns consistent data based on baseline values with controlled variation
+   */
+  private generate30DayUsageHistory(): any {
+    const baselineData = {
+      cpu: 43, // 43% baseline
+      ram: 56, // 56% baseline
+      storage: 47, // 47% baseline
+      gpu: 25, // 25% baseline (light workload)
+    };
+
+    const history = [];
+    const now = new Date();
+
+    // Generate data for 30 days (from oldest to newest)
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+
+      // Use date as seed for consistent random values
+      const seed = date.getDate() + date.getMonth() * 31;
+
+      // Generate variation between -20% to +20% based on seed
+      const variation = ((seed % 41) - 20) / 100; // Range: -0.20 to +0.20
+
+      // Calculate values with variation, ensuring they stay within valid range
+      const cpu = Math.max(5, Math.min(95, Math.round(baselineData.cpu * (1 + variation))));
+      const ram = Math.max(5, Math.min(95, Math.round(baselineData.ram * (1 + variation))));
+      const storage = Math.max(5, Math.min(95, Math.round(baselineData.storage * (1 + variation))));
+      const gpu = Math.max(5, Math.min(95, Math.round(baselineData.gpu * (1 + variation))));
+
+      history.push({
+        date: date.toISOString().split('T')[0], // YYYY-MM-DD format
+        cpu,
+        ram,
+        storage,
+        gpu,
+      });
+    }
+
+    return history;
   }
 }

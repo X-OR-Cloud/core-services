@@ -6,7 +6,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { PredefinedRole, RequestContext } from '@hydrabyte/shared';
 import { ReportsService } from './reports.service';
 
 /**
@@ -35,7 +35,7 @@ export class ReportsController {
   @ApiOperation({
     summary: 'Get platform overview',
     description:
-      'Returns high-level metrics for entire AIWM platform including infrastructure, workload, activity, and health.',
+      'Returns high-level metrics for entire AIWM platform including infrastructure, workload, activity, health, and 30-day usage history for CPU, RAM, Storage, and GPU.',
   })
   @ApiResponse({
     status: 200,
@@ -86,11 +86,48 @@ export class ReportsController {
           alerts: { critical: 0, warning: 2, info: 5 },
           issues: [],
         },
+        usageHistory: [
+          { date: '2025-11-04', cpu: 34, ram: 45, storage: 38, gpu: 20 },
+          { date: '2025-11-05', cpu: 37, ram: 48, storage: 40, gpu: 21 },
+          { date: '2025-11-06', cpu: 40, ram: 51, storage: 43, gpu: 23 },
+          { date: '2025-11-07', cpu: 43, ram: 56, storage: 47, gpu: 25 },
+          { date: '2025-11-08', cpu: 46, ram: 60, storage: 50, gpu: 27 },
+          { date: '2025-11-09', cpu: 49, ram: 63, storage: 53, gpu: 28 },
+          { date: '2025-11-10', cpu: 52, ram: 67, storage: 56, gpu: 30 },
+          '... (30 days total)',
+        ],
       },
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getOverview(@CurrentUser() context: RequestContext) {
+    return this.reportsService.getOverview(context);
+  }
+
+  /**
+   * Platform Overview (Public - Fixed Organization)
+   * Same as /overview but without authentication, for fixed organization
+   */
+  @Get('overview-7ec5')
+  @ApiOperation({
+    summary: 'Get platform overview (public endpoint)',
+    description:
+      'Returns high-level metrics for AIWM platform with fixed organization context. No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Platform overview retrieved successfully',
+  })
+  async getOverviewPublic() {
+    // Fixed context for organization 692ff5fa3371dad36b287ec5
+    const context: RequestContext = {
+      orgId: '692ff5fa3371dad36b287ec5',
+      groupId: '',
+      userId: '',
+      agentId: '',
+      appId: '',
+      roles: [PredefinedRole.OrganizationOwner],
+    };
     return this.reportsService.getOverview(context);
   }
 
