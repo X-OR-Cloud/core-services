@@ -514,6 +514,7 @@ export class ReportsService {
   /**
    * Generate fixed 30-day usage history
    * Returns consistent data based on baseline values with controlled variation
+   * Each metric uses different seed and oscillation pattern for realistic variation
    */
   private generate30DayUsageHistory(): any {
     const baselineData = {
@@ -531,17 +532,30 @@ export class ReportsService {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
 
-      // Use date as seed for consistent random values
-      const seed = date.getDate() + date.getMonth() * 31;
+      // Use different seeds for each metric to create independent variations
+      const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
 
-      // Generate variation between -20% to +20% based on seed
-      const variation = ((seed % 41) - 20) / 100; // Range: -0.20 to +0.20
+      // CPU: Fast oscillation (daily pattern)
+      const cpuSeed = (dayOfYear * 7 + date.getDate() * 3) % 100;
+      const cpuVariation = Math.sin(cpuSeed * 0.314) * 0.20; // -20% to +20%
 
-      // Calculate values with variation, ensuring they stay within valid range
-      const cpu = Math.max(5, Math.min(95, Math.round(baselineData.cpu * (1 + variation))));
-      const ram = Math.max(5, Math.min(95, Math.round(baselineData.ram * (1 + variation))));
-      const storage = Math.max(5, Math.min(95, Math.round(baselineData.storage * (1 + variation))));
-      const gpu = Math.max(5, Math.min(95, Math.round(baselineData.gpu * (1 + variation))));
+      // RAM: Slow oscillation (weekly pattern)
+      const ramSeed = (dayOfYear * 3 + date.getMonth() * 5) % 100;
+      const ramVariation = Math.cos(ramSeed * 0.157) * 0.18; // -18% to +18%
+
+      // Storage: Very slow growth (monthly trend)
+      const storageSeed = (dayOfYear * 2) % 100;
+      const storageVariation = (Math.sin(storageSeed * 0.063) * 0.12) + (i * 0.001); // -12% to +12% + slight growth
+
+      // GPU: Random spikes (irregular pattern)
+      const gpuSeed = (dayOfYear * 11 + date.getDate() * 7) % 100;
+      const gpuVariation = Math.sin(gpuSeed * 0.628) * Math.cos(gpuSeed * 0.157) * 0.25; // -25% to +25% irregular
+
+      // Calculate values with independent variations
+      const cpu = Math.max(5, Math.min(95, Math.round(baselineData.cpu * (1 + cpuVariation))));
+      const ram = Math.max(5, Math.min(95, Math.round(baselineData.ram * (1 + ramVariation))));
+      const storage = Math.max(5, Math.min(95, Math.round(baselineData.storage * (1 + storageVariation))));
+      const gpu = Math.max(5, Math.min(95, Math.round(baselineData.gpu * (1 + gpuVariation))));
 
       history.push({
         date: date.toISOString().split('T')[0], // YYYY-MM-DD format
