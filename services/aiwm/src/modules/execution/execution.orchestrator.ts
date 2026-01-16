@@ -34,42 +34,43 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Transitions from 'pending' to 'running'
    * - Begins processing ready steps
    */
-  async startExecution(executionId: string, force: boolean = false): Promise<Execution> {
-    const execution = await this.executionService.findByExecutionId(executionId);
+  async startExecution(id: string, force: boolean = false): Promise<Execution> {
+    const { Types } = await import('mongoose');
+    const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     // Check if already running
     if (execution.status === 'running' && !force) {
       throw new BadRequestException(
-        `Execution ${executionId} is already running. Use force=true to restart.`
+        `Execution ${id} is already running. Use force=true to restart.`
       );
     }
 
     // Check if already completed
     if (['completed', 'failed', 'cancelled'].includes(execution.status) && !force) {
       throw new BadRequestException(
-        `Execution ${executionId} is already ${execution.status}. Use retry endpoint instead.`
+        `Execution ${id} is already ${execution.status}. Use retry endpoint instead.`
       );
     }
 
     // Update status to running
     const updated = await this.executionService.updateExecutionStatus(
-      executionId,
+      id,
       'running',
       0
     );
 
     if (!updated) {
-      throw new NotFoundException(`Failed to update execution ${executionId}`);
+      throw new NotFoundException(`Failed to update execution ${id}`);
     }
 
-    this.logger.log(`Execution ${executionId} started`);
+    this.logger.log(`Execution ${id} started`);
 
     // Process ready steps asynchronously
-    setImmediate(() => this.processReadySteps(executionId));
+    setImmediate(() => this.processReadySteps(id));
 
     return updated;
   }
@@ -79,17 +80,18 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Finds steps with satisfied dependencies
    * - Executes them in parallel (if possible)
    */
-  async processReadySteps(executionId: string): Promise<void> {
-    const execution = await this.executionService.findByExecutionId(executionId);
+  async processReadySteps(id: string): Promise<void> {
+    const { Types } = await import('mongoose');
+    const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
     if (!execution) {
-      this.logger.warn(`Execution ${executionId} not found, skipping step processing`);
+      this.logger.warn(`Execution ${id} not found, skipping step processing`);
       return;
     }
 
     // Skip if not running
     if (execution.status !== 'running') {
-      this.logger.debug(`Execution ${executionId} is ${execution.status}, skipping step processing`);
+      this.logger.debug(`Execution ${id} is ${execution.status}, skipping step processing`);
       return;
     }
 
@@ -97,15 +99,15 @@ export class ExecutionOrchestrator implements OnModuleInit {
     const readySteps = this.executionService.getReadySteps(execution);
 
     if (readySteps.length === 0) {
-      this.logger.debug(`No ready steps for execution ${executionId}`);
+      this.logger.debug(`No ready steps for execution ${id}`);
 
       // Check if execution is complete
-      await this.checkAndFinalizeExecution(executionId);
+      await this.checkAndFinalizeExecution(id);
       return;
     }
 
     this.logger.log(
-      `Processing ${readySteps.length} ready steps for execution ${executionId}: ` +
+      `Processing ${readySteps.length} ready steps for execution ${id}: ` +
       `[${readySteps.map((s) => s.index).join(', ')}]`
     );
 
@@ -122,16 +124,17 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Handles errors
    */
   private async executeStep(execution: Execution, step: ExecutionStep): Promise<void> {
+    const executionId = (execution as any)._id.toString();
     try {
       // Update step status to running
       await this.executionService.updateExecutionStep(
-        execution.executionId,
+        executionId,
         step.index,
         { status: 'running', progress: 0 }
       );
 
       this.logger.log(
-        `Executing step ${step.index} (${step.name}) for execution ${execution.executionId}`
+        `Executing step ${step.index} (${step.name}) for execution ${executionId}`
       );
 
       // Determine target node
@@ -149,7 +152,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
           step.command.resource,
           step.command.data,
           {
-            executionId: execution.executionId,
+            executionId: executionId,
             stepIndex: step.index,
             timeout: step.timeoutSeconds,
           }
@@ -157,7 +160,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
 
         // Track sent message
         await this.executionService.updateExecutionStep(
-          execution.executionId,
+          executionId,
           step.index,
           { sentMessageId: messageId }
         );
@@ -169,7 +172,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
       } else {
         // No command to execute, mark as completed immediately
         await this.executionService.updateExecutionStep(
-          execution.executionId,
+          executionId,
           step.index,
           {
             status: 'completed',
@@ -179,17 +182,17 @@ export class ExecutionOrchestrator implements OnModuleInit {
         );
 
         // Process next ready steps
-        setImmediate(() => this.processReadySteps(execution.executionId));
+        setImmediate(() => this.processReadySteps(executionId));
       }
     } catch (error: any) {
       this.logger.error(
-        `Failed to execute step ${step.index} for execution ${execution.executionId}: ${error.message}`,
+        `Failed to execute step ${step.index} for execution ${executionId}: ${error.message}`,
         error.stack
       );
 
       // Mark step as failed
       await this.executionService.updateExecutionStep(
-        execution.executionId,
+        executionId,
         step.index,
         {
           status: 'failed',
@@ -202,7 +205,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
       );
 
       // Check if execution should fail
-      await this.checkAndFinalizeExecution(execution.executionId);
+      await this.checkAndFinalizeExecution(executionId);
     }
   }
 
@@ -211,15 +214,15 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Updates step with received message ID
    */
   async handleCommandAck(
-    executionId: string,
+    id: string,
     stepIndex: number,
     messageId: string
   ): Promise<void> {
     this.logger.debug(
-      `Command acknowledged for execution ${executionId}, step ${stepIndex}: ${messageId}`
+      `Command acknowledged for execution ${id}, step ${stepIndex}: ${messageId}`
     );
 
-    await this.executionService.updateExecutionStep(executionId, stepIndex, {
+    await this.executionService.updateExecutionStep(id, stepIndex, {
       receivedMessageId: messageId,
     });
   }
@@ -230,7 +233,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Processes next ready steps
    */
   async handleCommandResult(
-    executionId: string,
+    id: string,
     stepIndex: number,
     result: {
       success: boolean;
@@ -240,24 +243,24 @@ export class ExecutionOrchestrator implements OnModuleInit {
     }
   ): Promise<void> {
     this.logger.log(
-      `Command result received for execution ${executionId}, step ${stepIndex}: ` +
+      `Command result received for execution ${id}, step ${stepIndex}: ` +
       `success=${result.success}`
     );
 
     // Update step based on result
     if (result.success) {
-      await this.executionService.updateExecutionStep(executionId, stepIndex, {
+      await this.executionService.updateExecutionStep(id, stepIndex, {
         status: 'completed',
         progress: 100,
         result: result.data,
       });
 
-      this.logger.log(`Step ${stepIndex} completed for execution ${executionId}`);
+      this.logger.log(`Step ${stepIndex} completed for execution ${id}`);
 
       // Process next ready steps
-      setImmediate(() => this.processReadySteps(executionId));
+      setImmediate(() => this.processReadySteps(id));
     } else {
-      await this.executionService.updateExecutionStep(executionId, stepIndex, {
+      await this.executionService.updateExecutionStep(id, stepIndex, {
         status: 'failed',
         error: result.error || {
           code: 'UNKNOWN_ERROR',
@@ -266,11 +269,11 @@ export class ExecutionOrchestrator implements OnModuleInit {
       });
 
       this.logger.error(
-        `Step ${stepIndex} failed for execution ${executionId}: ${result.error?.message}`
+        `Step ${stepIndex} failed for execution ${id}: ${result.error?.message}`
       );
 
       // Check if execution should fail
-      await this.checkAndFinalizeExecution(executionId);
+      await this.checkAndFinalizeExecution(id);
     }
   }
 
@@ -279,15 +282,15 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Updates step progress
    */
   async handleProgressUpdate(
-    executionId: string,
+    id: string,
     stepIndex: number,
     progress: number
   ): Promise<void> {
     this.logger.debug(
-      `Progress update for execution ${executionId}, step ${stepIndex}: ${progress}%`
+      `Progress update for execution ${id}, step ${stepIndex}: ${progress}%`
     );
 
-    await this.executionService.updateExecutionStep(executionId, stepIndex, {
+    await this.executionService.updateExecutionStep(id, stepIndex, {
       progress,
     });
   }
@@ -297,11 +300,12 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Determines if all steps are done
    * - Sets final execution status (completed/failed)
    */
-  async checkAndFinalizeExecution(executionId: string): Promise<void> {
-    const execution = await this.executionService.findByExecutionId(executionId);
+  async checkAndFinalizeExecution(id: string): Promise<void> {
+    const { Types } = await import('mongoose');
+    const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
     if (!execution) {
-      this.logger.warn(`Execution ${executionId} not found, skipping finalization`);
+      this.logger.warn(`Execution ${id} not found, skipping finalization`);
       return;
     }
 
@@ -318,7 +322,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
       if (hasFailed) {
         // Mark as failed
         await this.executionService.updateExecutionStatus(
-          executionId,
+          id,
           'failed',
           execution.progress,
           undefined,
@@ -328,11 +332,11 @@ export class ExecutionOrchestrator implements OnModuleInit {
           }
         );
 
-        this.logger.warn(`Execution ${executionId} failed`);
+        this.logger.warn(`Execution ${id} failed`);
       } else {
         // Mark as completed
         await this.executionService.updateExecutionStatus(
-          executionId,
+          id,
           'completed',
           100,
           {
@@ -342,7 +346,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
           }
         );
 
-        this.logger.log(`Execution ${executionId} completed successfully`);
+        this.logger.log(`Execution ${id} completed successfully`);
       }
     }
   }
@@ -352,11 +356,12 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * - Called by ExecutionTimeoutMonitor
    * - Marks execution and running steps as timeout
    */
-  async handleExecutionTimeout(executionId: string): Promise<void> {
-    const execution = await this.executionService.findByExecutionId(executionId);
+  async handleExecutionTimeout(id: string): Promise<void> {
+    const { Types } = await import('mongoose');
+    const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
     if (!execution) {
-      this.logger.warn(`Execution ${executionId} not found, skipping timeout handling`);
+      this.logger.warn(`Execution ${id} not found, skipping timeout handling`);
       return;
     }
 
@@ -365,13 +370,13 @@ export class ExecutionOrchestrator implements OnModuleInit {
       return;
     }
 
-    this.logger.warn(`Execution ${executionId} timed out`);
+    this.logger.warn(`Execution ${id} timed out`);
 
     // Mark all running/pending steps as skipped
     for (const step of execution.steps) {
       if (['pending', 'running'].includes(step.status)) {
         await this.executionService.updateExecutionStep(
-          executionId,
+          id,
           step.index,
           {
             status: 'skipped',
@@ -386,7 +391,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
 
     // Mark execution as timeout
     await this.executionService.updateExecutionStatus(
-      executionId,
+      id,
       'timeout',
       execution.progress,
       undefined,
@@ -401,28 +406,29 @@ export class ExecutionOrchestrator implements OnModuleInit {
    * Resume execution after retry
    * - Similar to startExecution but for retried executions
    */
-  async resumeExecution(executionId: string): Promise<Execution> {
-    const execution = await this.executionService.findByExecutionId(executionId);
+  async resumeExecution(id: string): Promise<Execution> {
+    const { Types } = await import('mongoose');
+    const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     // Update status to running
     const updated = await this.executionService.updateExecutionStatus(
-      executionId,
+      id,
       'running',
       execution.progress
     );
 
     if (!updated) {
-      throw new NotFoundException(`Failed to update execution ${executionId}`);
+      throw new NotFoundException(`Failed to update execution ${id}`);
     }
 
-    this.logger.log(`Execution ${executionId} resumed (retry attempt ${execution.retryCount})`);
+    this.logger.log(`Execution ${id} resumed (retry attempt ${execution.retryCount})`);
 
     // Process ready steps asynchronously
-    setImmediate(() => this.processReadySteps(executionId));
+    setImmediate(() => this.processReadySteps(id));
 
     return updated;
   }

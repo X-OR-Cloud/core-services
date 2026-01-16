@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseService } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import Ajv from 'ajv';
 import { Execution, ExecutionStep } from './execution.schema';
 import {
   CreateExecutionDto,
@@ -10,21 +12,31 @@ import {
   UpdateExecutionStepDto,
   ExecutionQueryDto,
 } from './execution.dto';
-import { v4 as uuidv4 } from 'uuid';
+import { WorkflowService } from '../workflow/workflow.service';
+import { WorkflowStepService } from '../workflow-step/workflow-step.service';
+import { WorkflowExecutionQueue } from './queues/workflow-execution.queue';
+import { WORKFLOW_EXECUTION_EVENTS } from './queues/queue.constants';
+import { ExecutionOrchestratorService } from './services/execution-orchestrator.service';
+import { Workflow } from '../workflow/workflow.schema';
+import { WorkflowStep } from '../workflow-step/workflow-step.schema';
 
 @Injectable()
 export class ExecutionService extends BaseService<Execution> {
   protected readonly logger = new Logger(ExecutionService.name);
+  private readonly ajv: Ajv;
 
   constructor(
-    @InjectModel(Execution.name) executionModel: Model<Execution>,
-    // TODO: Phase 4 - Inject dependencies for workflow execution
-    // private readonly workflowService: WorkflowService,
-    // private readonly workflowStepService: WorkflowStepService,
-    // private readonly workflowQueue: WorkflowExecutionQueue,
-    // private readonly eventEmitter: EventEmitter2,
+    @InjectModel(Execution.name) private readonly executionModel: Model<Execution>,
+    @InjectModel(Workflow.name) private readonly workflowModel: Model<Workflow>,
+    @InjectModel(WorkflowStep.name) private readonly workflowStepModel: Model<WorkflowStep>,
+    private readonly workflowService: WorkflowService,
+    private readonly workflowStepService: WorkflowStepService,
+    private readonly workflowQueue: WorkflowExecutionQueue,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly executionOrchestratorService: ExecutionOrchestratorService,
   ) {
     super(executionModel as any);
+    this.ajv = new Ajv({ allErrors: true });
   }
 
   /**
@@ -34,15 +46,12 @@ export class ExecutionService extends BaseService<Execution> {
     dto: CreateExecutionDto,
     context: RequestContext
   ): Promise<Execution> {
-    const executionId = uuidv4();
-
     // Calculate timeout deadline
     const timeoutAt = new Date(Date.now() + dto.timeoutSeconds * 1000);
 
     const execution = await super.create(
       {
         ...dto,
-        executionId,
         status: 'pending',
         progress: 0,
         timeoutAt,
@@ -59,17 +68,11 @@ export class ExecutionService extends BaseService<Execution> {
       context
     );
 
-    this.logger.log(`Execution created: ${executionId} - ${dto.name}`);
+    this.logger.log(`Execution created: ${(execution as any)._id} - ${dto.name}`);
 
     return execution as Execution;
   }
 
-  /**
-   * Find execution by executionId
-   */
-  async findByExecutionId(executionId: string): Promise<Execution | null> {
-    return await this.model.findOne({ executionId }).exec();
-  }
 
   /**
    * Query executions with filters
@@ -83,8 +86,6 @@ export class ExecutionService extends BaseService<Execution> {
     const filter: any = {};
 
     if (query.status) filter.status = query.status;
-    if (query.category) filter.category = query.category;
-    if (query.type) filter.type = query.type;
     if (query.resourceType) filter.resourceType = query.resourceType;
     if (query.resourceId) filter.resourceId = query.resourceId;
     if (query.nodeId) filter.nodeId = query.nodeId;
@@ -105,7 +106,7 @@ export class ExecutionService extends BaseService<Execution> {
    * Update execution status and progress
    */
   async updateExecutionStatus(
-    executionId: string,
+    id: string,
     status: string,
     progress?: number,
     result?: any,
@@ -127,11 +128,11 @@ export class ExecutionService extends BaseService<Execution> {
     }
 
     const execution = await this.model
-      .findOneAndUpdate({ executionId }, { $set: update }, { new: true })
+      .findByIdAndUpdate(id, { $set: update }, { new: true })
       .exec();
 
     if (execution) {
-      this.logger.log(`Execution ${executionId} status updated: ${status}`);
+      this.logger.log(`Execution ${id} status updated: ${status}`);
     }
 
     return execution as Execution | null;
@@ -141,18 +142,18 @@ export class ExecutionService extends BaseService<Execution> {
    * Update execution step
    */
   async updateExecutionStep(
-    executionId: string,
+    id: string,
     stepIndex: number,
     dto: UpdateExecutionStepDto
   ): Promise<Execution | null> {
-    const execution = await this.findByExecutionId(executionId);
+    const execution = await this.findById(new Types.ObjectId(id) as any, {} as RequestContext);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     if (!execution.steps[stepIndex]) {
-      throw new BadRequestException(`Step ${stepIndex} not found in execution ${executionId}`);
+      throw new BadRequestException(`Step ${stepIndex} not found in execution ${id}`);
     }
 
     // Update step fields
@@ -178,8 +179,8 @@ export class ExecutionService extends BaseService<Execution> {
 
     // Save execution
     const updated = await this.model
-      .findOneAndUpdate(
-        { executionId },
+      .findByIdAndUpdate(
+        id,
         { $set: { steps: execution.steps } },
         { new: true }
       )
@@ -187,10 +188,10 @@ export class ExecutionService extends BaseService<Execution> {
 
     // Recalculate execution progress
     if (updated) {
-      await this.recalculateProgress(executionId);
+      await this.recalculateProgress(id);
     }
 
-    this.logger.log(`Step ${stepIndex} updated in execution ${executionId}: ${dto.status}`);
+    this.logger.log(`Step ${stepIndex} updated in execution ${id}: ${dto.status}`);
 
     return updated as Execution | null;
   }
@@ -198,19 +199,19 @@ export class ExecutionService extends BaseService<Execution> {
   /**
    * Add message ID to tracking
    */
-  async trackSentMessage(executionId: string, messageId: string): Promise<void> {
+  async trackSentMessage(id: string, messageId: string): Promise<void> {
     await this.model
-      .findOneAndUpdate(
-        { executionId },
+      .findByIdAndUpdate(
+        id,
         { $push: { sentMessageIds: messageId } }
       )
       .exec();
   }
 
-  async trackReceivedMessage(executionId: string, messageId: string): Promise<void> {
+  async trackReceivedMessage(id: string, messageId: string): Promise<void> {
     await this.model
-      .findOneAndUpdate(
-        { executionId },
+      .findByIdAndUpdate(
+        id,
         { $push: { receivedMessageIds: messageId } }
       )
       .exec();
@@ -219,8 +220,8 @@ export class ExecutionService extends BaseService<Execution> {
   /**
    * Recalculate execution progress based on step progress
    */
-  async recalculateProgress(executionId: string): Promise<void> {
-    const execution = await this.findByExecutionId(executionId);
+  async recalculateProgress(id: string): Promise<void> {
+    const execution = await this.findById(new Types.ObjectId(id) as any, {} as RequestContext);
 
     if (!execution || execution.steps.length === 0) return;
 
@@ -229,7 +230,7 @@ export class ExecutionService extends BaseService<Execution> {
     const progress = Math.round(totalProgress / execution.steps.length);
 
     await this.model
-      .findOneAndUpdate({ executionId }, { $set: { progress } })
+      .findByIdAndUpdate(id, { $set: { progress } })
       .exec();
   }
 
@@ -292,13 +293,13 @@ export class ExecutionService extends BaseService<Execution> {
    * Cancel execution
    */
   async cancelExecution(
-    executionId: string,
+    id: string,
     reason?: string
   ): Promise<Execution | null> {
-    const execution = await this.findByExecutionId(executionId);
+    const execution = await this.findById(new Types.ObjectId(id) as any, {} as RequestContext);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     if (['completed', 'failed', 'cancelled'].includes(execution.status)) {
@@ -315,8 +316,8 @@ export class ExecutionService extends BaseService<Execution> {
     }
 
     const updated = await this.model
-      .findOneAndUpdate(
-        { executionId },
+      .findByIdAndUpdate(
+        id,
         {
           $set: {
             status: 'cancelled',
@@ -332,7 +333,7 @@ export class ExecutionService extends BaseService<Execution> {
       )
       .exec();
 
-    this.logger.log(`Execution ${executionId} cancelled: ${reason}`);
+    this.logger.log(`Execution ${id} cancelled: ${reason}`);
 
     return updated as Execution | null;
   }
@@ -341,13 +342,13 @@ export class ExecutionService extends BaseService<Execution> {
    * Retry execution
    */
   async retryExecution(
-    executionId: string,
+    id: string,
     resetSteps: boolean = false
   ): Promise<Execution | null> {
-    const execution = await this.findByExecutionId(executionId);
+    const execution = await this.findById(new Types.ObjectId(id) as any, {} as RequestContext);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     if (!['failed', 'timeout'].includes(execution.status)) {
@@ -404,11 +405,11 @@ export class ExecutionService extends BaseService<Execution> {
     }
 
     const updated = await this.model
-      .findOneAndUpdate({ executionId }, update, { new: true })
+      .findByIdAndUpdate(id, update, { new: true })
       .exec();
 
     this.logger.log(
-      `Execution ${executionId} retry attempt ${execution.retryCount + 1}`
+      `Execution ${id} retry attempt ${execution.retryCount + 1}`
     );
 
     return updated as Execution | null;
@@ -476,112 +477,134 @@ export class ExecutionService extends BaseService<Execution> {
     input: any,
     context: RequestContext
   ): Promise<Execution> {
-    // TODO: Phase 4 - Implement full workflow trigger logic
     // 1. Get workflow and validate status
-    // const workflow = await this.workflowService.findById(workflowId, context);
-    // if (workflow.status !== 'active') {
-    //   throw new BadRequestException('Workflow is not active');
-    // }
+    const workflow = await this.workflowService.findById(new Types.ObjectId(workflowId) as any, context);
+    if (!workflow) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // Allow draft workflows for testing, but log warning
+    if (workflow.status !== 'active' && workflow.status !== 'draft') {
+      throw new BadRequestException(`Workflow is ${workflow.status}. Only active or draft workflows can be executed.`);
+    }
 
     // 2. Get workflow steps
-    // const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
-    // if (steps.length === 0) {
-    //   throw new BadRequestException('Workflow has no steps');
-    // }
+    const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
+    if (steps.length === 0) {
+      throw new BadRequestException('Workflow has no steps');
+    }
+
+    // 3. Validate input against first step's inputSchema
+    const firstStep = steps[0];
+    if (firstStep.inputSchema) {
+      this.validateWorkflowInput(input, firstStep.inputSchema, firstStep.name);
+    }
 
     // 3. Create workflow snapshot
-    // const workflowSnapshot = {
-    //   name: workflow.name,
-    //   description: workflow.description,
-    //   version: workflow.version,
-    //   steps: steps.map((step, index) => ({
-    //     index,
-    //     name: step.name,
-    //     orderIndex: step.orderIndex,
-    //     type: step.type,
-    //     llmConfig: step.llmConfig,
-    //     inputSchema: step.inputSchema,
-    //     outputSchema: step.outputSchema,
-    //     dependencies: step.dependencies,
-    //   })),
-    // };
+    const workflowSnapshot = {
+      name: workflow.name,
+      description: workflow.description,
+      version: workflow.version,
+      steps: steps.map((step) => ({
+        name: step.name,
+        orderIndex: step.orderIndex,
+        type: step.type,
+        llmConfig: step.llmConfig,
+        inputSchema: step.inputSchema,
+        outputSchema: step.outputSchema,
+        dependencies: step.dependencies,
+      })),
+    };
 
     // 4. Create execution steps
-    // const executionSteps: ExecutionStep[] = steps.map((step, index) => ({
-    //   index,
-    //   name: step.name,
-    //   status: 'pending',
-    //   progress: 0,
-    //   type: 'llm',
-    //   llmConfig: step.llmConfig,
-    //   dependencies: step.dependencies,
-    //   errorHandling: step.errorHandling,
-    //   input: null,
-    //   output: null,
-    // }));
+    const executionSteps: ExecutionStep[] = steps.map((step) => ({
+      index: step.orderIndex,
+      name: step.name,
+      status: 'pending',
+      progress: 0,
+      type: 'llm',
+      llmConfig: step.llmConfig,
+      dependencies: step.dependencies,
+      dependsOn: [], // Not used for workflow steps
+      optional: false,
+    }));
 
     // 5. Create execution
-    const executionId = uuidv4();
     const execution = await this.model.create({
-      executionId,
-      name: `Workflow Execution - ${workflowId}`,
-      executionType: 'workflow',
-      workflowId: new Types.ObjectId(workflowId),
-      // workflowVersion: workflow.version,
-      // workflowSnapshot,
+      name: `${workflow.name} - Execution`,
+      type: 'workflow',
+      workflowId: workflowId,
+      workflowVersion: workflow.version,
+      workflowSnapshot,
       input,
-      // steps: executionSteps,
-      steps: [], // TODO: Add actual steps in Phase 4
+      steps: executionSteps,
       status: 'pending',
       progress: 0,
       timeoutSeconds: 3600, // Default 1 hour
-      owner: context,
-      createdBy: context.userId,
-      updatedBy: context.userId,
+      timeoutAt: new Date(Date.now() + 3600 * 1000),
+      maxRetries: 0,
+      retryCount: 0,
+      retryAttempts: [],
+      owner: {
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        userId: context.userId,
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      createdBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      updatedBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
     });
 
-    // 6. Emit workflow:triggered event
-    // this.eventEmitter.emit(WORKFLOW_EVENTS.TRIGGERED, {
-    //   workflowId,
-    //   executionId: execution.executionId,
-    //   triggeredBy: context.userId,
-    // });
+    // 6. Push to BullMQ queue
+    await this.workflowQueue.addExecutionJob((execution as any)._id.toString());
 
-    // 7. Push to BullMQ queue
-    // await this.workflowQueue.addExecutionJob(execution.executionId);
+    // 7. Emit workflow-execution:triggered event
+    this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.TRIGGERED, {
+      executionId: (execution as any)._id.toString(),
+      workflowId,
+      triggeredBy: context.userId,
+    });
 
-    // 8. Emit workflow-execution:queued event
-    // this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.QUEUED, {
-    //   executionId: execution.executionId,
-    //   workflowId,
-    // });
-
-    this.logger.log(`Workflow execution triggered: ${execution.executionId}`);
-    this.logger.warn(`TODO: Phase 4 - Complete triggerWorkflow() implementation`);
+    this.logger.log(`Workflow execution triggered: ${(execution as any)._id} for workflow ${workflowId}`);
 
     return execution as Execution;
   }
 
   /**
    * Get workflow execution status with detailed step information
-   * @param executionId - Execution ID
+   * @param id - Execution ID
    * @param context - Request context
    * @returns Execution status details
    */
-  async getExecutionStatus(executionId: string, context: RequestContext): Promise<any> {
-    const execution = await this.findByExecutionId(executionId);
+  async getExecutionStatus(id: string, context: RequestContext): Promise<any> {
+    const execution = await this.findById(new Types.ObjectId(id) as any, context);
 
     if (!execution) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     // Verify ownership
     if (execution.owner.orgId !== context.orgId) {
-      throw new NotFoundException(`Execution ${executionId} not found`);
+      throw new NotFoundException(`Execution ${id} not found`);
     }
 
     return {
-      executionId: execution.executionId,
+      executionId: (execution as any)._id.toString(),
       workflowId: execution.workflowId?.toString(),
       name: execution.name,
       status: execution.status,
@@ -601,5 +624,412 @@ export class ExecutionService extends BaseService<Execution> {
       completedAt: execution.completedAt,
       createdAt: execution.createdAt,
     };
+  }
+
+  /**
+   * Validate workflow input against JSON Schema
+   * @param input - Input data to validate
+   * @param schema - JSON Schema for validation
+   * @param stepName - Name of the step (for error message)
+   */
+  private validateWorkflowInput(input: any, schema: any, stepName: string): void {
+    // Special handling: if input is undefined and schema expects an object with required fields,
+    // report the required fields instead of type error
+    if ((input === undefined || input === null) && schema.type === 'object' && schema.required && schema.required.length > 0) {
+      const missingFields = schema.required.map((field: string) => ({
+        field,
+        message: `Field '${field}' is required`,
+        value: undefined,
+      }));
+
+      const errorMessage = missingFields.length === 1
+        ? missingFields[0].message
+        : `${missingFields.length} validation errors`;
+
+      throw new BadRequestException({
+        message: `Invalid workflow input for step "${stepName}": ${errorMessage}`,
+        step: stepName,
+        errors: missingFields,
+      });
+    }
+
+    const validate = this.ajv.compile(schema);
+    const valid = validate(input);
+
+    if (!valid) {
+      const errors = validate.errors || [];
+
+      // Format errors for better readability
+      const formattedErrors = errors.map((err) => {
+        const field = err.instancePath ? err.instancePath.replace(/^\//, '') : 'input';
+        const message = err.message || 'validation failed';
+
+        // Build user-friendly error message
+        if (err.keyword === 'required') {
+          const missingField = err.params?.missingProperty;
+          return {
+            field: missingField,
+            message: `Field '${missingField}' is required`,
+            value: undefined,
+          };
+        } else if (err.keyword === 'type') {
+          return {
+            field,
+            message: `Field '${field}' must be of type '${err.params?.type}'`,
+            value: err.data,
+          };
+        } else if (err.keyword === 'minLength') {
+          return {
+            field,
+            message: `Field '${field}' must be at least ${err.params?.limit} characters`,
+            value: err.data,
+          };
+        } else {
+          return {
+            field,
+            message: `Field '${field}' ${message}`,
+            value: err.data,
+          };
+        }
+      });
+
+      this.logger.error(`Workflow input validation failed for step "${stepName}": ${JSON.stringify(formattedErrors)}`);
+
+      // Throw with detailed error information
+      const errorMessage = formattedErrors.length === 1
+        ? formattedErrors[0].message
+        : `${formattedErrors.length} validation errors`;
+
+      throw new BadRequestException({
+        message: `Invalid workflow input for step "${stepName}": ${errorMessage}`,
+        step: stepName,
+        errors: formattedErrors,
+      });
+    }
+  }
+
+  /**
+   * Trigger workflow execution synchronously (sync mode or step testing)
+   * @param workflowId - Workflow ID
+   * @param input - Input data
+   * @param context - Request context
+   * @param stepId - Optional WorkflowStep._id for testing single step
+   * @returns Execution result
+   */
+  async triggerWorkflowSync(
+    workflowId: string,
+    input: any,
+    context: RequestContext,
+    stepId?: string
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+    output?: any;
+    result?: any;
+    error?: any;
+  }> {
+    const { Types } = await import('mongoose');
+
+    // 1. Load workflow
+    const workflow = await this.workflowModel
+      .findById(new Types.ObjectId(workflowId))
+      .where('isDeleted')
+      .equals(false)
+      .lean()
+      .exec();
+
+    if (!workflow) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // Verify ownership
+    if (workflow.owner.orgId !== context.orgId) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // Check workflow status
+    if (workflow.status !== 'active') {
+      throw new BadRequestException(`Workflow "${workflow.name}" is not active. Current status: ${workflow.status}`);
+    }
+
+    // 2. Load workflow steps
+    const workflowSteps = await this.workflowStepModel
+      .find({
+        workflowId: workflowId,
+        $or: [
+          { isDeleted: false },
+        ]
+      })
+      .sort({ orderIndex: 1 })
+      .lean()
+      .exec();
+
+    this.logger.debug(`Found ${workflowSteps?.length || 0} workflow steps for workflow ${workflowId}`);
+
+    if (!workflowSteps || workflowSteps.length === 0) {
+      throw new BadRequestException(`Workflow "${workflow.name}" has no steps defined`);
+    }
+
+    // 3. Handle step testing mode
+    if (stepId) {
+      return await this.executeStepTest(stepId, workflowSteps, input, context, workflowId);
+    }
+
+    // 4. Sync mode - full workflow execution
+    // 4.1 Validate input against first step
+    const firstStep = workflowSteps[0];
+    if (firstStep.inputSchema) {
+      this.validateWorkflowInput(input, firstStep.inputSchema, firstStep.name);
+    }
+
+    // 4.2 Create execution record (similar to async mode)
+    const executionSteps = workflowSteps.map((step, index) => ({
+      index,
+      name: step.name,
+      description: step.description,
+      status: 'pending',
+      progress: 0,
+      type: step.type,
+      llmConfig: step.llmConfig,
+      dependencies: step.dependencies || [],
+    }));
+
+    const execution = await this.executionModel.create({
+      workflowId: new Types.ObjectId(workflowId),
+      name: workflow.name,
+      description: workflow.description,
+      type: 'workflow',
+      status: 'running',
+      progress: 0,
+      steps: executionSteps,
+      input,
+      timeoutSeconds: 3600, // Default 1 hour for sync execution
+      owner: {
+        orgId: context.orgId,
+        userId: context.userId,
+      },
+      createdBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      updatedBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+    });
+
+    const executionId = (execution as any)._id.toString();
+
+    try {
+      // 4.3 Execute workflow synchronously
+      await this.executionOrchestratorService.executeWorkflow(executionId);
+
+      // 4.4 Reload execution to get final result
+      const completedExecution = await this.executionModel
+        .findById(new Types.ObjectId(executionId))
+        .lean()
+        .exec();
+
+      if (!completedExecution) {
+        throw new Error('Execution not found after completion');
+      }
+
+      // 4.5 Return success response
+      return {
+        executionId,
+        status: completedExecution.status,
+        message: 'Workflow execution completed successfully',
+        output: this.extractFinalOutput(completedExecution),
+        result: completedExecution.result,
+      };
+    } catch (error: any) {
+      this.logger.error(`Sync workflow execution failed: ${error.message}`);
+
+      // Reload execution to get error details
+      const failedExecution = await this.executionModel
+        .findById(new Types.ObjectId(executionId))
+        .lean()
+        .exec();
+
+      return {
+        executionId,
+        status: failedExecution?.status || 'failed',
+        message: 'Workflow execution failed',
+        error: {
+          type: 'execution_error',
+          message: error.message,
+          code: error.code || 'UNKNOWN_ERROR',
+          failedStepIndex: failedExecution?.steps.findIndex((s) => s.status === 'failed') ?? -1,
+          details: failedExecution?.error || {},
+        },
+      };
+    }
+  }
+
+  /**
+   * Execute single step test
+   * @param stepId - WorkflowStep._id
+   * @param workflowSteps - All workflow steps
+   * @param input - Input data
+   * @param context - Request context
+   * @param workflowId - Workflow ID
+   * @returns Step execution result
+   */
+  private async executeStepTest(
+    stepId: string,
+    workflowSteps: any[],
+    input: any,
+    context: RequestContext,
+    workflowId: string
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+    output?: any;
+  }> {
+    const { Types } = await import('mongoose');
+
+    // 1. Find step by _id
+    const step = workflowSteps.find((s) => (s as any)._id.toString() === stepId);
+
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found in workflow`);
+    }
+
+    // 2. Validate input against step's inputSchema
+    if (step.inputSchema) {
+      this.validateWorkflowInput(input, step.inputSchema, step.name);
+    }
+
+    // 3. Create minimal execution record (optional - for tracking)
+    const execution = await this.executionModel.create({
+      workflowId: new Types.ObjectId(workflowId),
+      name: `Test Step: ${step.name}`,
+      description: `Testing step ${step.name}`,
+      type: 'workflow',
+      status: 'running',
+      progress: 0,
+      steps: [
+        {
+          index: 0,
+          name: step.name,
+          description: step.description,
+          status: 'running',
+          progress: 0,
+          type: step.type,
+          llmConfig: step.llmConfig,
+          dependencies: [],
+        },
+      ],
+      input,
+      timeoutSeconds: 600, // 10 minutes for step testing
+      owner: {
+        orgId: context.orgId,
+        userId: context.userId,
+      },
+      createdBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      updatedBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+    });
+
+    const executionId = (execution as any)._id.toString();
+
+    try {
+      // 4. Execute step directly
+      const executionStep = execution.steps[0];
+      this.logger.debug(`Executing step test for step: ${step.name}`);
+      this.logger.debug(`Step llmConfig: ${JSON.stringify(step.llmConfig)}`);
+      this.logger.debug(`Execution step llmConfig: ${JSON.stringify(executionStep.llmConfig)}`);
+
+      const output = await this.executionOrchestratorService['executeLLMStep'](
+        executionStep,
+        input
+      );
+
+      // 5. Update execution status
+      await this.executionModel.updateOne(
+        { _id: new Types.ObjectId(executionId) },
+        {
+          $set: {
+            status: 'completed',
+            progress: 100,
+            'steps.0.status': 'completed',
+            'steps.0.progress': 100,
+            'steps.0.output': output,
+            'steps.0.completedAt': new Date(),
+            completedAt: new Date(),
+          },
+        }
+      );
+
+      // 6. Return step output
+      return {
+        executionId,
+        status: 'completed',
+        message: 'Step execution completed successfully',
+        output,
+      };
+    } catch (error: any) {
+      this.logger.error(`Step test failed: ${error.message}`);
+
+      // Update execution to failed status
+      await this.executionModel.updateOne(
+        { _id: new Types.ObjectId(executionId) },
+        {
+          $set: {
+            status: 'failed',
+            'steps.0.status': 'failed',
+            'steps.0.error': {
+              code: error.code || 'UNKNOWN_ERROR',
+              message: error.message,
+            },
+            error: {
+              code: error.code || 'UNKNOWN_ERROR',
+              message: error.message,
+            },
+          },
+        }
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Extract final output from execution
+   * @param execution - Execution document
+   * @returns Final output
+   */
+  private extractFinalOutput(execution: any): any {
+    const completedSteps = execution.steps.filter((s: any) => s.status === 'completed');
+    if (completedSteps.length === 0) {
+      return null;
+    }
+
+    // Return output from last completed step
+    const lastStep = completedSteps[completedSteps.length - 1];
+    return lastStep.output || null;
   }
 }

@@ -13,10 +13,13 @@ export class WorkflowExecutionQueue {
   private queue: Queue;
 
   constructor() {
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = parseInt(process.env.REDIS_PORT || '6379');
+
     this.queue = new Queue(QUEUE_NAMES.WORKFLOW_EXECUTION, {
       connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
+        host: redisHost,
+        port: redisPort,
       },
       defaultJobOptions: {
         attempts: 3,
@@ -39,18 +42,18 @@ export class WorkflowExecutionQueue {
 
   /**
    * Add a workflow execution job to the queue
-   * @param executionId - Unique execution ID
+   * @param id - Unique execution ID (_id)
    */
-  async addExecutionJob(executionId: string): Promise<void> {
+  async addExecutionJob(id: string): Promise<void> {
     await this.queue.add(
       JOB_NAMES.EXECUTE_WORKFLOW,
-      { executionId },
+      { executionId: id },
       {
-        jobId: `workflow-exec-${executionId}`, // Prevent duplicates
+        jobId: `workflow-exec-${id}`, // Prevent duplicates
       }
     );
 
-    this.logger.log(`Added execution job for ${executionId}`);
+    this.logger.log(`Added execution job for ${id}`);
   }
 
   /**

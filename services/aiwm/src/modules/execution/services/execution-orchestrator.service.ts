@@ -1,11 +1,15 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, HydratedDocument } from 'mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as Handlebars from 'handlebars';
 import Ajv from 'ajv';
+import axios from 'axios';
 import { Execution, ExecutionStep, ExecutionErrorType } from '../execution.schema';
 import { WORKFLOW_EXECUTION_EVENTS } from '../queues/queue.constants';
+import { DeploymentService } from '../../deployment/deployment.service';
+import { Deployment } from '../../deployment/deployment.schema';
+import { Model as ModelEntity } from '../../model/model.schema';
 
 /**
  * ExecutionOrchestratorService
@@ -24,9 +28,10 @@ export class ExecutionOrchestratorService {
 
   constructor(
     @InjectModel(Execution.name) private executionModel: Model<Execution>,
+    @InjectModel(Deployment.name) private deploymentModel: Model<Deployment>,
+    @InjectModel(ModelEntity.name) private modelModel: Model<ModelEntity>,
     private readonly eventEmitter: EventEmitter2,
-    // TODO: Phase 4 - Inject DeploymentService for LLM calls
-    // private readonly deploymentService: DeploymentService,
+    private readonly deploymentService: DeploymentService,
   ) {
     this.ajv = new Ajv({ allErrors: true });
   }
@@ -34,18 +39,18 @@ export class ExecutionOrchestratorService {
   /**
    * Main entry point for workflow execution
    * Called by BullMQ worker
-   * @param executionId - Unique execution ID
+   * @param id - Unique execution ID (_id)
    */
-  async executeWorkflow(executionId: string): Promise<void> {
-    const execution = await this.executionModel.findOne({ executionId }).exec();
+  async executeWorkflow(id: string): Promise<void> {
+    const execution = await this.executionModel.findById(id).exec();
 
     if (!execution) {
-      throw new Error(`Execution ${executionId} not found`);
+      throw new Error(`Execution ${id} not found`);
     }
 
     // Emit: workflow-execution:started
     this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.STARTED, {
-      executionId,
+      executionId: id,
       workflowId: execution.workflowId?.toString(),
     });
 
@@ -68,17 +73,17 @@ export class ExecutionOrchestratorService {
 
       // Emit: workflow-execution:completed
       this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.COMPLETED, {
-        executionId,
+        executionId: id,
         result,
       });
 
-      this.logger.log(`Workflow execution ${executionId} completed successfully`);
+      this.logger.log(`Workflow execution ${id} completed successfully`);
     } catch (error) {
       await this.handleExecutionError(execution, error);
 
       // Emit: workflow-execution:failed
       this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.FAILED, {
-        executionId,
+        executionId: id,
         error: error.message,
       });
 
@@ -110,7 +115,7 @@ export class ExecutionOrchestratorService {
       await Promise.all(readySteps.map((step) => this.executeStep(execution, step)));
 
       // Reload execution to get updated step statuses
-      const updated = await this.executionModel.findOne({ executionId: execution.executionId }).exec();
+      const updated = await this.executionModel.findById((execution as any)._id).exec();
       if (updated) {
         execution.steps = updated.steps;
       }
@@ -149,7 +154,7 @@ export class ExecutionOrchestratorService {
 
     // Emit: workflow-execution:step-started
     this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.STEP_STARTED, {
-      executionId: execution.executionId,
+      executionId: (execution as any)._id.toString(),
       stepIndex,
       stepName: step.name,
     });
@@ -157,7 +162,7 @@ export class ExecutionOrchestratorService {
     try {
       // Update step status to running
       await this.executionModel.updateOne(
-        { executionId: execution.executionId },
+        { _id: (execution as any)._id },
         {
           $set: {
             [`steps.${stepIndex}.status`]: 'running',
@@ -192,7 +197,7 @@ export class ExecutionOrchestratorService {
       const durationMs = completedAt.getTime() - (step.startedAt?.getTime() || Date.now());
 
       await this.executionModel.updateOne(
-        { executionId: execution.executionId },
+        { _id: (execution as any)._id },
         {
           $set: {
             [`steps.${stepIndex}.status`]: 'completed',
@@ -202,6 +207,10 @@ export class ExecutionOrchestratorService {
             [`steps.${stepIndex}.result`]: {
               success: true,
               tokensUsed: output.tokensUsed || 0,
+              inputTokens: output.inputTokens || 0,
+              outputTokens: output.outputTokens || 0,
+              cost: output.cost || 0,
+              duration: output.duration || durationMs,
             },
           },
         }
@@ -212,7 +221,7 @@ export class ExecutionOrchestratorService {
 
       // Emit: workflow-execution:step-completed
       this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.STEP_COMPLETED, {
-        executionId: execution.executionId,
+        executionId: (execution as any)._id.toString(),
         stepIndex,
         output,
       });
@@ -223,7 +232,7 @@ export class ExecutionOrchestratorService {
 
       // Emit: workflow-execution:step-failed
       this.eventEmitter.emit(WORKFLOW_EXECUTION_EVENTS.STEP_FAILED, {
-        executionId: execution.executionId,
+        executionId: (execution as any)._id.toString(),
         stepIndex,
         error: error.message,
       });
@@ -259,7 +268,7 @@ export class ExecutionOrchestratorService {
    * Execute LLM step
    * @param step - Step to execute
    * @param input - Input data
-   * @returns LLM output
+   * @returns LLM output with content, tokensUsed, cost
    */
   private async executeLLMStep(step: ExecutionStep, input: any): Promise<any> {
     if (!step.llmConfig) {
@@ -268,27 +277,159 @@ export class ExecutionOrchestratorService {
 
     const { deploymentId, systemPrompt, userPromptTemplate, parameters } = step.llmConfig;
 
-    // TODO: Phase 4 - Get deployment and call LLM
-    // const deployment = await this.deploymentService.findById(deploymentId);
-    // if (!deployment || deployment.status !== 'running') {
-    //   throw new Error(`Deployment ${deploymentId} not found or not running`);
-    // }
+    // 1. Get deployment and validate
+    const deployment = await this.deploymentModel
+      .findById(deploymentId)
+      .where('isDeleted')
+      .equals(false)
+      .lean()
+      .exec();
 
-    // Build user prompt
+    if (!deployment) {
+      throw new NotFoundException(`Deployment ${deploymentId} not found`);
+    }
+
+    if (deployment.status !== 'running') {
+      throw new BadRequestException(
+        `Deployment "${deployment.name}" is not running. Current status: ${deployment.status}`
+      );
+    }
+
+    // 2. Build user prompt from template
     const userPrompt = this.buildUserPrompt(userPromptTemplate, input);
 
-    // TODO: Phase 4 - Call LLM via deployment
-    // For now, return mock response
-    this.logger.warn(`TODO Phase 4: Call LLM via deployment ${deploymentId}`);
-    this.logger.log(`System Prompt: ${systemPrompt.substring(0, 100)}...`);
+    this.logger.log(`Calling LLM via deployment ${deploymentId}`);
+    this.logger.log(`System Prompt: ${systemPrompt?.substring(0, 100) || 'None'}...`);
     this.logger.log(`User Prompt: ${userPrompt.substring(0, 100)}...`);
+    this.logger.debug(`Deployment details: ${JSON.stringify({
+      _id: (deployment as any)._id,
+      name: deployment.name,
+      resourceId: deployment.resourceId,
+      nodeId: deployment.nodeId,
+      status: deployment.status
+    })}`);
 
-    // Mock response
-    return {
-      content: `Mock LLM response for step with deployment ${deploymentId}`,
-      tokensUsed: 150,
-      timestamp: new Date().toISOString(),
+    // 3. Get deployment endpoint
+    const endpoint = await this.deploymentService.getDeploymentEndpoint(deploymentId);
+
+    // 4. Get model for API-based deployments (for API key and model identifier)
+    const model = await this.modelModel
+      .findById(deployment.modelId)
+      .where('isDeleted')
+      .equals(false)
+      .lean()
+      .exec();
+
+    if (!model) {
+      throw new NotFoundException(`Model ${deployment.modelId} not found`);
+    }
+
+    // 5. Build request body (OpenAI-compatible format)
+    const requestBody: any = {
+      messages: [
+        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+        { role: 'user', content: userPrompt },
+      ],
+      ...(parameters || {}), // temperature, max_tokens, etc. - must match provider format
     };
+
+    // Add model identifier for API-based deployments
+    if ((model as any).deploymentType === 'api-based' && (model as any).modelIdentifier) {
+      requestBody.model = (model as any).modelIdentifier;
+    }
+
+    // 6. Build headers
+    const headers: any = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add API key for API-based deployments
+    if ((model as any).deploymentType === 'api-based' && (model as any).apiConfig?.apiKey) {
+      headers['Authorization'] = `Bearer ${(model as any).apiConfig.apiKey}`;
+    }
+
+    try {
+      const startTime = Date.now();
+
+      // 7. Call LLM endpoint
+      const response = await axios.post(`${endpoint}/v1/chat/completions`, requestBody, {
+        headers,
+        timeout: 300000, // 5 minutes
+      });
+
+      const duration = Date.now() - startTime;
+
+      // 8. Extract response data
+      const responseData = response.data;
+      const content = responseData.choices?.[0]?.message?.content || '';
+      const usage = responseData.usage || {};
+      const totalTokens = usage.total_tokens || 0;
+      const inputTokens = usage.prompt_tokens || 0;
+      const outputTokens = usage.completion_tokens || 0;
+
+      // 9. Calculate cost (placeholder - should be configurable per deployment)
+      const cost = this.calculateCost(inputTokens, outputTokens, deployment);
+
+      this.logger.log(
+        `LLM call completed in ${duration}ms - Tokens: ${totalTokens} (in: ${inputTokens}, out: ${outputTokens})`
+      );
+
+      // 10. Return structured output
+      return {
+        content,
+        tokensUsed: totalTokens,
+        inputTokens,
+        outputTokens,
+        cost,
+        duration,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      this.logger.error(`LLM call failed: ${error.message}`);
+
+      // Classify error
+      if (error.code === 'ECONNREFUSED') {
+        throw new BadRequestException(
+          `LLM deployment at ${endpoint} is unreachable. Please check deployment status.`
+        );
+      } else if (error.code === 'ETIMEDOUT') {
+        throw new BadRequestException(
+          `LLM call timed out after 5 minutes. Consider reducing input size or increasing timeout.`
+        );
+      } else if (error.response) {
+        // LLM API returned error
+        const status = error.response.status;
+        const errorData = error.response.data;
+        throw new BadRequestException(
+          `LLM API error (${status}): ${errorData?.error?.message || error.message}`
+        );
+      } else {
+        throw new BadRequestException(`LLM call failed: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Calculate cost based on token usage
+   * @param inputTokens - Number of input tokens
+   * @param outputTokens - Number of output tokens
+   * @param _deployment - Deployment object (unused for now, reserved for future pricing config)
+   * @returns Cost in USD (placeholder implementation)
+   */
+  private calculateCost(
+    inputTokens: number,
+    outputTokens: number,
+    _deployment: any
+  ): number {
+    // TODO Phase 5: Get pricing from deployment config or model pricing table
+    // For now, use placeholder pricing similar to GPT-3.5
+    const inputCostPer1M = 0.5; // $0.50 per 1M input tokens
+    const outputCostPer1M = 1.5; // $1.50 per 1M output tokens
+
+    const inputCost = (inputTokens / 1_000_000) * inputCostPer1M;
+    const outputCost = (outputTokens / 1_000_000) * outputCostPer1M;
+
+    return inputCost + outputCost;
   }
 
   /**
@@ -375,7 +516,7 @@ export class ExecutionOrchestratorService {
 
     // Update step status to failed
     await this.executionModel.updateOne(
-      { executionId: execution.executionId },
+      { _id: (execution as any)._id },
       {
         $set: {
           [`steps.${stepIndex}.status`]: 'failed',
@@ -403,6 +544,13 @@ export class ExecutionOrchestratorService {
   private async handleExecutionError(execution: HydratedDocument<Execution>, error: any): Promise<void> {
     const errorType = this.classifyError(error);
 
+    // Update progress based on completed steps before failure
+    await this.updateExecutionProgress(execution);
+
+    // Calculate partial result (for completed steps before failure)
+    const result = this.calculateResult(execution);
+    execution.result = result;
+
     execution.status = 'failed';
     execution.completedAt = new Date();
     execution.error = {
@@ -416,7 +564,7 @@ export class ExecutionOrchestratorService {
 
     await execution.save();
 
-    this.logger.error(`Execution ${execution.executionId} failed: ${error.message}`);
+    this.logger.error(`Execution ${(execution as any)._id} failed: ${error.message}`);
   }
 
   /**
@@ -438,7 +586,7 @@ export class ExecutionOrchestratorService {
 
     if (Object.keys(updates).length > 0) {
       await this.executionModel.updateOne(
-        { executionId: execution.executionId },
+        { _id: (execution as any)._id },
         { $set: updates }
       );
     }
@@ -471,7 +619,7 @@ export class ExecutionOrchestratorService {
     const progress = Math.round((completedSteps / totalSteps) * 100);
 
     await this.executionModel.updateOne(
-      { executionId: execution.executionId },
+      { _id: (execution as any)._id },
       { $set: { progress } }
     );
   }
@@ -487,14 +635,33 @@ export class ExecutionOrchestratorService {
     const failedSteps = steps.filter((s) => s.status === 'failed');
     const skippedSteps = steps.filter((s) => s.status === 'skipped');
 
+    // Aggregate token usage
     const totalTokens = completedSteps.reduce(
       (sum, step) => sum + (step.result?.tokensUsed || 0),
       0
     );
 
-    const totalDurationMs = execution.completedAt && execution.startedAt
-      ? execution.completedAt.getTime() - execution.startedAt.getTime()
-      : 0;
+    const totalInputTokens = completedSteps.reduce(
+      (sum, step) => sum + (step.result?.inputTokens || 0),
+      0
+    );
+
+    const totalOutputTokens = completedSteps.reduce(
+      (sum, step) => sum + (step.result?.outputTokens || 0),
+      0
+    );
+
+    // Aggregate cost
+    const totalCost = completedSteps.reduce(
+      (sum, step) => sum + (step.result?.cost || 0),
+      0
+    );
+
+    // Calculate total duration from steps
+    const totalDurationMs = completedSteps.reduce(
+      (sum, step) => sum + (step.result?.duration || 0),
+      0
+    );
 
     return {
       success: failedSteps.length === 0,
@@ -503,6 +670,9 @@ export class ExecutionOrchestratorService {
         stepsFailed: failedSteps.length,
         stepsSkipped: skippedSteps.length,
         totalTokensUsed: totalTokens,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCost,
         totalDurationMs,
       },
       finalOutput: this.getFinalOutput(execution),

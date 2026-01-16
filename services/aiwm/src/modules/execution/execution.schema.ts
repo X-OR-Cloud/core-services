@@ -144,9 +144,6 @@ export const ExecutionStepSchema = SchemaFactory.createForClass(ExecutionStep);
  */
 @Schema({ timestamps: true })
 export class Execution extends BaseSchema {
-  @Prop({ required: true, unique: true })
-  executionId!: string; // UUID v4
-
   @Prop({ required: true })
   name!: string; // Human-readable execution name
 
@@ -158,16 +155,7 @@ export class Execution extends BaseSchema {
     required: true,
     enum: Object.values(ExecutionType),
   })
-  executionType!: string; // 'deployment' or 'workflow'
-
-  // Execution type and category (for deployment)
-  @Prop({
-    enum: ['deployment', 'model', 'agent', 'maintenance', 'batch'],
-  })
-  category?: string;
-
-  @Prop()
-  type?: string; // e.g., 'deploy-model', 'download-model', 'setup-agent'
+  type!: string; // 'deployment' or 'workflow'
 
   // Status tracking
   @Prop({
@@ -181,11 +169,11 @@ export class Execution extends BaseSchema {
   progress!: number; // Percentage (0-100)
 
   // Parent-child relationship for composite executions
-  @Prop({ type: String, ref: 'Execution' })
-  parentExecutionId?: string;
+  @Prop({ type: Types.ObjectId, ref: 'Execution' })
+  parentExecutionId?: Types.ObjectId;
 
-  @Prop({ type: [String], default: [] })
-  childExecutionIds!: string[];
+  @Prop({ type: [Types.ObjectId], default: [] })
+  childExecutionIds!: Types.ObjectId[];
 
   // Steps (embedded documents)
   @Prop({ type: [ExecutionStepSchema], default: [] })
@@ -199,8 +187,8 @@ export class Execution extends BaseSchema {
   resourceId?: string; // Foreign key to related resource
 
   // Workflow-specific fields
-  @Prop({ type: Types.ObjectId, ref: 'Workflow' })
-  workflowId?: Types.ObjectId;
+  @Prop()
+  workflowId?: string;
 
   @Prop()
   workflowVersion?: string;
@@ -306,9 +294,8 @@ export class Execution extends BaseSchema {
 export const ExecutionSchema = SchemaFactory.createForClass(Execution);
 
 // Indexes for performance
-ExecutionSchema.index({ executionId: 1 }, { unique: true });
 ExecutionSchema.index({ status: 1, createdAt: -1 });
-ExecutionSchema.index({ executionType: 1, status: 1 }); // NEW: For filtering by execution type
+ExecutionSchema.index({ type: 1, status: 1 }); // NEW: For filtering by execution type
 ExecutionSchema.index({ workflowId: 1, status: 1 }); // NEW: For workflow executions
 ExecutionSchema.index({ parentExecutionId: 1 });
 ExecutionSchema.index({ resourceType: 1, resourceId: 1 });

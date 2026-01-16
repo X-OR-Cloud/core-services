@@ -363,9 +363,9 @@ export class DeploymentService extends BaseService<Deployment> {
 
   /**
    * Get deployment endpoint by resolving resource and node
-   * Builds endpoint URL from node IP and resource container port
+   * Supports both API-based and self-hosted deployments
    * @param deploymentId - Deployment ID (as string)
-   * @returns Endpoint URL (e.g., "http://172.16.3.20:10060")
+   * @returns Endpoint URL (e.g., "https://api.openai.com" or "http://172.16.3.20:10060")
    */
   async getDeploymentEndpoint(deploymentId: string): Promise<string> {
     // Get deployment
@@ -379,6 +379,38 @@ export class DeploymentService extends BaseService<Deployment> {
     if (!deployment) {
       throw new NotFoundException(
         `Deployment with ID ${deploymentId} not found`
+      );
+    }
+
+    // Get model to check deployment type
+    const model = await this.modelModel
+      .findById(deployment.modelId)
+      .where('isDeleted')
+      .equals(false)
+      .lean()
+      .exec();
+
+    if (!model) {
+      throw new NotFoundException(
+        `Model with ID ${deployment.modelId} not found`
+      );
+    }
+
+    // API-based deployment: return model's apiEndpoint
+    if ((model as any).deploymentType === 'api-based') {
+      const apiEndpoint = (model as any).apiEndpoint;
+      if (!apiEndpoint) {
+        throw new BadRequestException(
+          `Model "${model.name}" is API-based but has no apiEndpoint configured`
+        );
+      }
+      return apiEndpoint;
+    }
+
+    // Self-hosted deployment: build endpoint from resource + node
+    if (!deployment.resourceId || !deployment.nodeId) {
+      throw new BadRequestException(
+        `Self-hosted deployment "${deployment.name}" is missing resourceId or nodeId`
       );
     }
 

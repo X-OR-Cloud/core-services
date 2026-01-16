@@ -71,13 +71,13 @@ export class ExecutionTimeoutMonitor implements OnModuleInit {
 
       this.logger.warn(
         `Found ${timedOutExecutions.length} timed-out executions: ` +
-        `[${timedOutExecutions.map((e) => e.executionId).join(', ')}]`
+        `[${timedOutExecutions.map((e) => (e as any)._id.toString()).join(', ')}]`
       );
 
       // Handle each timed-out execution
       await Promise.all(
         timedOutExecutions.map((execution) =>
-          this.handleTimeout(execution.executionId)
+          this.handleTimeout((execution as any)._id.toString())
         )
       );
     } catch (error: any) {
@@ -91,16 +91,17 @@ export class ExecutionTimeoutMonitor implements OnModuleInit {
   /**
    * Handle a single timed-out execution
    */
-  private async handleTimeout(executionId: string): Promise<void> {
+  private async handleTimeout(id: string): Promise<void> {
     try {
-      this.logger.warn(`Handling timeout for execution ${executionId}`);
+      this.logger.warn(`Handling timeout for execution ${id}`);
 
       // Mark execution as timeout
-      await this.executionOrchestrator.handleExecutionTimeout(executionId);
+      await this.executionOrchestrator.handleExecutionTimeout(id);
 
       // Auto retry if enabled
       if (this.autoRetry) {
-        const execution = await this.executionService.findByExecutionId(executionId);
+        const { Types } = await import('mongoose');
+        const execution = await this.executionService.findById(new Types.ObjectId(id) as any, {} as any);
 
         if (!execution) {
           return;
@@ -109,23 +110,23 @@ export class ExecutionTimeoutMonitor implements OnModuleInit {
         // Check if we can auto-retry
         if (execution.retryCount < this.maxAutoRetries) {
           this.logger.log(
-            `Auto-retrying execution ${executionId} (attempt ${execution.retryCount + 1}/${this.maxAutoRetries})`
+            `Auto-retrying execution ${id} (attempt ${execution.retryCount + 1}/${this.maxAutoRetries})`
           );
 
           // Retry execution
-          await this.executionService.retryExecution(executionId, false);
+          await this.executionService.retryExecution(id, false);
 
           // Resume execution
-          await this.executionOrchestrator.resumeExecution(executionId);
+          await this.executionOrchestrator.resumeExecution(id);
         } else {
           this.logger.warn(
-            `Execution ${executionId} reached max auto-retry attempts (${this.maxAutoRetries})`
+            `Execution ${id} reached max auto-retry attempts (${this.maxAutoRetries})`
           );
         }
       }
     } catch (error: any) {
       this.logger.error(
-        `Error handling timeout for execution ${executionId}: ${error.message}`,
+        `Error handling timeout for execution ${id}: ${error.message}`,
         error.stack
       );
     }

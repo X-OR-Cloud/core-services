@@ -18,6 +18,9 @@ export class WorkflowExecutionWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = parseInt(process.env.REDIS_PORT || '6379');
+
     this.worker = new Worker(
       QUEUE_NAMES.WORKFLOW_EXECUTION,
       async (job: Job) => {
@@ -38,19 +41,31 @@ export class WorkflowExecutionWorker implements OnModuleInit, OnModuleDestroy {
       },
       {
         connection: {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379'),
+          host: redisHost,
+          port: redisPort,
         },
         concurrency: parseInt(process.env.WORKFLOW_WORKER_CONCURRENCY || '5'),
       }
     );
 
+    this.worker.on('ready', () => {
+      this.logger.log('✅ Worker is ready and waiting for jobs');
+    });
+
+    this.worker.on('active', (job) => {
+      this.logger.log(`🔄 Worker picked up job ${job.id}`);
+    });
+
     this.worker.on('completed', (job) => {
-      this.logger.log(`Job ${job.id} completed successfully`);
+      this.logger.log(`✅ Job ${job.id} completed successfully`);
     });
 
     this.worker.on('failed', (job, err) => {
-      this.logger.error(`Job ${job?.id} failed: ${err.message}`);
+      this.logger.error(`❌ Job ${job?.id} failed: ${err.message}`);
+    });
+
+    this.worker.on('error', (err) => {
+      this.logger.error(`Worker error: ${err.message}`, err.stack);
     });
 
     this.logger.log('Workflow execution worker started');

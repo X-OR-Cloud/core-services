@@ -32,6 +32,7 @@ export const WORKFLOW_EVENTS = {
 // Workflow execution events (most important for real-time tracking)
 export const WORKFLOW_EXECUTION_EVENTS = {
   // Execution lifecycle
+  TRIGGERED: 'workflow-execution:triggered',
   QUEUED: 'workflow-execution:queued',
   STARTED: 'workflow-execution:started',
   COMPLETED: 'workflow-execution:completed',

@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
@@ -27,6 +28,7 @@ import {
   StartExecutionDto,
   CancelExecutionDto,
   RetryExecutionDto,
+  TriggerWorkflowDto,
 } from './execution.dto';
 
 @ApiTags('executions')
@@ -78,8 +80,12 @@ export class ExecutionController {
   @ApiOperation({ summary: 'Get execution by ID' })
   @ApiReadErrors()
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id') id: string): Promise<Execution | null> {
-    return await this.executionService.findByExecutionId(id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext
+  ): Promise<Execution | null> {
+    const { Types } = await import('mongoose');
+    return await this.executionService.findById(new Types.ObjectId(id) as any, context);
   }
 
   /**
@@ -161,7 +167,7 @@ export class ExecutionController {
 
   /**
    * Trigger workflow execution
-   * Creates execution record and queues it for processing
+   * Supports async mode (queue), sync mode (immediate), and step testing
    */
   @Post('workflows/:workflowId/trigger')
   @HttpCode(HttpStatus.CREATED)
@@ -170,39 +176,60 @@ export class ExecutionController {
   @UseGuards(JwtAuthGuard)
   async triggerWorkflow(
     @Param('workflowId') workflowId: string,
-    @Body() dto: { input: any },
+    @Body() dto: TriggerWorkflowDto,
     @CurrentUser() context: RequestContext
   ): Promise<{
     executionId: string;
     status: string;
     message: string;
+    output?: any;
+    result?: any;
+    error?: any;
   }> {
-    const execution = await this.executionService.triggerWorkflow(
+    // Validate: if stepId is provided, sync must be true
+    if (dto.stepId && !dto.sync) {
+      throw new BadRequestException('Step testing requires sync mode (sync=true)');
+    }
+
+    // Async mode (default)
+    if (!dto.sync) {
+      const execution = await this.executionService.triggerWorkflow(
+        workflowId,
+        dto.input,
+        context
+      );
+
+      return {
+        executionId: (execution as any)._id.toString(),
+        status: 'queued',
+        message: 'Workflow execution queued successfully',
+      };
+    }
+
+    // Sync mode or step testing
+    const result = await this.executionService.triggerWorkflowSync(
       workflowId,
       dto.input,
-      context
+      context,
+      dto.stepId
     );
 
-    return {
-      executionId: execution.executionId,
-      status: 'queued',
-      message: 'Workflow execution queued successfully',
-    };
+    return result;
   }
 
   /**
    * Get workflow execution status
    * Returns detailed status including step progress
    */
-  @Get(':executionId/status')
+  @Get(':id/status')
   @ApiOperation({ summary: 'Get workflow execution status' })
   @ApiReadErrors()
   @UseGuards(JwtAuthGuard)
   async getWorkflowStatus(
-    @Param('executionId') executionId: string,
+    @Param('id') id: string,
     @CurrentUser() context: RequestContext
   ) {
-    return await this.executionService.getExecutionStatus(executionId, context);
+    return await this.executionService.getExecutionStatus(id, context);
   }
 
   /**

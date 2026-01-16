@@ -90,22 +90,6 @@ export class CreateExecutionDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Execution category',
-    enum: ['deployment', 'model', 'agent', 'maintenance', 'batch'],
-    example: 'deployment',
-  })
-  @IsEnum(['deployment', 'model', 'agent', 'maintenance', 'batch'])
-  category!: string;
-
-  @ApiProperty({
-    description: 'Execution type',
-    example: 'deploy-model',
-  })
-  @IsString()
-  @IsNotEmpty()
-  type!: string;
-
-  @ApiProperty({
     description: 'Execution steps',
     type: [ExecutionStepDto],
   })
@@ -256,16 +240,6 @@ export class ExecutionQueryDto {
   @IsOptional()
   status?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by category' })
-  @IsString()
-  @IsOptional()
-  category?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by type' })
-  @IsString()
-  @IsOptional()
-  type?: string;
-
   @ApiPropertyOptional({ description: 'Filter by resource type' })
   @IsString()
   @IsOptional()
@@ -335,4 +309,28 @@ export class RetryExecutionDto {
   @IsBoolean()
   @IsOptional()
   resetSteps?: boolean;
+}
+
+/**
+ * DTO for triggering workflow execution
+ */
+export class TriggerWorkflowDto {
+  @ApiProperty({ description: 'Workflow input data', example: { topic: 'AI in Healthcare' } })
+  @IsNotEmpty()
+  input!: any;
+
+  @ApiPropertyOptional({
+    description: 'Execute synchronously (wait for completion)',
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  sync?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Test specific step by WorkflowStep._id (requires sync=true)',
+  })
+  @IsString()
+  @IsOptional()
+  stepId?: string;
 }

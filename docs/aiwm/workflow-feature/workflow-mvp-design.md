@@ -978,10 +978,10 @@ Authorization: Bearer <jwt_token>
 
 ### 4.3 Workflow Execution
 
-#### 4.3.1 Trigger Workflow
+#### 4.3.1 Trigger Workflow - Async Mode (Default)
 
 ```http
-POST /workflows/:workflowId/runs
+POST /executions/workflows/:workflowId/trigger
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -996,49 +996,173 @@ Content-Type: application/json
 **Response (201)**:
 ```json
 {
-  "executionId": "exec-uuid-12345678-abcd-1234-5678-123456789abc",
-  "workflowId": "6789abcd1234567890abcdef",
-  "status": "pending",
-  "message": "Workflow execution created. Call POST /executions/:executionId/start to begin."
+  "executionId": "6789abc123456789def",
+  "status": "queued",
+  "message": "Workflow execution queued successfully"
 }
 ```
 
 **Flow**:
 1. Validate workflow exists and status = 'active'
 2. Load workflow steps
-3. Create snapshot of workflow + steps
-4. Create Execution document with:
-   - executionType = 'workflow'
-   - workflowId, workflowVersion, workflowSnapshot
-   - input from request
-   - owner = current user
-   - status = 'pending'
-   - steps = converted from WorkflowStep[] to ExecutionStep[]
-5. Return executionId
+3. Validate input against first step's inputSchema
+4. Create Execution document (status = 'queued')
+5. Push to BullMQ queue
+6. Return executionId immediately
+7. Worker processes execution asynchronously
 
-#### 4.3.2 Start Execution
+**Use Case**: Production workflows, long-running processes
+
+#### 4.3.2 Trigger Workflow - Sync Mode (Testing/Debugging)
 
 ```http
-POST /executions/:executionId/start
+POST /executions/workflows/:workflowId/trigger
 Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "input": {
+    "topic": "Artificial Intelligence in Healthcare"
+  },
+  "sync": true
+}
+```
+
+**Response (200)** - Success:
+```json
+{
+  "executionId": "6789abc123456789def",
+  "status": "completed",
+  "message": "Workflow execution completed successfully",
+  "output": {
+    "content": "Artificial Intelligence is revolutionizing healthcare...",
+    "tokensUsed": 1500,
+    "inputTokens": 1000,
+    "outputTokens": 500,
+    "cost": 0.00125,
+    "duration": 2341
+  },
+  "result": {
+    "success": true,
+    "summary": {
+      "stepsCompleted": 3,
+      "stepsFailed": 0,
+      "stepsSkipped": 0,
+      "totalTokensUsed": 4500,
+      "totalInputTokens": 3000,
+      "totalOutputTokens": 1500,
+      "totalCost": 0.00375,
+      "totalDurationMs": 7023
+    },
+    "finalOutput": {
+      "content": "..."
+    }
+  }
+}
+```
+
+**Response (500)** - Failure:
+```json
+{
+  "executionId": "6789abc123456789def",
+  "status": "failed",
+  "message": "Workflow execution failed",
+  "error": {
+    "type": "execution_error",
+    "message": "LLM call failed: timeout",
+    "code": "ETIMEDOUT",
+    "failedStepIndex": 1,
+    "details": {
+      "stepName": "Write Introduction"
+    }
+  }
+}
+```
+
+**Flow**:
+1. Validate workflow and input
+2. Create Execution document
+3. Execute workflow synchronously (no queue)
+4. Wait for all steps to complete
+5. Return final result with output + metrics
+
+**Use Case**: Testing workflow design, debugging steps, immediate feedback
+
+#### 4.3.3 Test Single Step - Sync Mode Only
+
+```http
+POST /executions/workflows/:workflowId/trigger
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "input": {
+    "topic": "Climate Change"
+  },
+  "stepId": "step_6789abc001",
+  "sync": true
+}
 ```
 
 **Response (200)**:
 ```json
 {
-  "executionId": "exec-uuid-12345678-abcd-1234-5678-123456789abc",
-  "status": "running",
-  "message": "Execution started"
+  "executionId": "6789abc123456789def",
+  "status": "completed",
+  "message": "Step execution completed successfully",
+  "output": {
+    "outline": "1. Introduction\n2. Current Impacts\n3. Solutions",
+    "sections": ["Introduction", "Current Impacts", "Solutions"],
+    "tokensUsed": 320,
+    "inputTokens": 150,
+    "outputTokens": 170,
+    "cost": 0.00033,
+    "duration": 2341,
+    "timestamp": "2026-01-14T10:30:45.123Z"
+  }
 }
 ```
 
-**Flow**:
-1. Update execution status = 'running'
-2. Set timing.startedAt
-3. Call `executionOrchestrator.startExecution(executionId)`
-4. Return immediately (execution runs async)
+**Features**:
+- **stepId**: WorkflowStep._id to test
+- **Validation**: Input validated against step's inputSchema (not first step)
+- **Execution**: Only specified step runs (dependencies ignored)
+- **Response**: Immediate return with step output
+- **sync**: Must be `true` (step testing is sync-only)
 
-#### 4.3.3 Get Execution Status
+**Use Case**: Testing individual step configurations during workflow design
+
+#### 4.3.4 Request DTO
+
+```typescript
+export class TriggerWorkflowDto {
+  @ApiProperty({ description: 'Workflow input data' })
+  input: any;
+
+  @ApiPropertyOptional({
+    description: 'Execute synchronously (wait for completion)',
+    default: false
+  })
+  sync?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Test specific step by WorkflowStep._id (requires sync=true)'
+  })
+  stepId?: string;
+}
+```
+
+**Validation Rules**:
+```typescript
+// When stepId is provided:
+// - stepId must reference valid WorkflowStep._id in workflow
+// - sync must be true
+// - input validated against step's inputSchema
+// - dependencies ignored
+// - execution record may be skipped or minimal
+```
+
+#### 4.3.5 Get Execution Status
 
 ```http
 GET /executions/:executionId
@@ -1186,8 +1310,9 @@ Authorization: Bearer <jwt_token>
 | PUT | `/workflow-steps/:id` | Update step | ✅ |
 | DELETE | `/workflow-steps/:id` | Delete step | ✅ |
 | **Execution** |
-| POST | `/workflows/:id/runs` | Trigger workflow | ✅ |
-| POST | `/executions/:id/start` | Start execution | ✅ |
+| POST | `/executions/workflows/:id/trigger` | Trigger workflow (async mode) | ✅ |
+| POST | `/executions/workflows/:id/trigger?sync=true` | Trigger workflow (sync mode) | ✅ |
+| POST | `/executions/workflows/:id/trigger?stepId=xxx&sync=true` | Test single step | ✅ |
 | GET | `/executions/:id` | Get execution status | ✅ |
 | GET | `/executions/:id/steps/:index` | Get step details | ✅ |
 | GET | `/executions` | List executions | ✅ |
