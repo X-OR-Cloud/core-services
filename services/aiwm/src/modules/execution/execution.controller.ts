@@ -17,6 +17,7 @@ import {
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
+  PaginationQueryDto,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { ExecutionService } from './execution.service';
@@ -64,14 +65,10 @@ export class ExecutionController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: ExecutionQueryDto
-  ): Promise<{
-    data: Execution[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    return await this.executionService.queryExecutions(query);
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return await this.executionService.findAll(query, context);
   }
 
   /**
@@ -165,6 +162,33 @@ export class ExecutionController {
   // ============================================================================
   // WORKFLOW EXECUTION ENDPOINTS (Phase 3)
   // ============================================================================
+
+  /**
+   * Get workflow input schema
+   * Returns metadata about required inputs for workflow execution
+   */
+  @Get('workflows/:workflowId/input-schema')
+  @ApiOperation({ summary: 'Get workflow input schema for UI rendering' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async getWorkflowInputSchema(
+    @Param('workflowId') workflowId: string,
+    @CurrentUser() context: RequestContext
+  ): Promise<{
+    workflowId: string;
+    workflowName: string;
+    description?: string;
+    requiredInputs: Array<{
+      stepId: string;
+      stepName: string;
+      description?: string;
+      orderIndex: number;
+      inputSchema: any;
+      isRequired: boolean;
+    }>;
+  }> {
+    return await this.executionService.getWorkflowInputSchema(workflowId, context);
+  }
 
   /**
    * Execute a complete workflow

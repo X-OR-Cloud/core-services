@@ -528,6 +528,7 @@ export class ExecutionService extends BaseService<Execution> {
     const executionSteps: ExecutionStep[] = steps.map((step) => ({
       index: step.orderIndex,
       name: step.name,
+      workflowStepId: (step as any)._id.toString(), // WorkflowStep._id for analytics
       status: 'pending',
       progress: 0,
       type: 'llm',
@@ -1042,6 +1043,71 @@ export class ExecutionService extends BaseService<Execution> {
   }
 
   /**
+   * Get workflow input schema for UI rendering
+   * Returns metadata about required inputs for workflow execution
+   * @param workflowId - Workflow ID
+   * @param context - Request context
+   * @returns Workflow input schema metadata
+   */
+  async getWorkflowInputSchema(
+    workflowId: string,
+    context: RequestContext
+  ): Promise<{
+    workflowId: string;
+    workflowName: string;
+    description?: string;
+    requiredInputs: Array<{
+      stepId: string;
+      stepName: string;
+      description?: string;
+      orderIndex: number;
+      inputSchema: any;
+      isRequired: boolean;
+    }>;
+  }> {
+    // 1. Get workflow
+    const workflow = await this.workflowService.findById(new Types.ObjectId(workflowId) as any, context);
+    if (!workflow) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // 2. Get workflow steps
+    const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
+    if (steps.length === 0) {
+      throw new BadRequestException('Workflow has no steps');
+    }
+
+    // 3. Detect layer 0 steps (orderIndex = 0, no dependencies)
+    const layer0Steps = steps.filter(
+      (step) => step.orderIndex === 0 && (!step.dependencies || step.dependencies.length === 0)
+    );
+
+    if (layer0Steps.length === 0) {
+      throw new BadRequestException('Workflow has no layer 0 steps (steps with orderIndex=0 and no dependencies)');
+    }
+
+    // 4. Build required inputs metadata
+    const requiredInputs = layer0Steps.map((step) => ({
+      stepId: (step as any)._id.toString(),
+      stepName: step.name,
+      description: step.description,
+      orderIndex: step.orderIndex,
+      inputSchema: step.inputSchema || {},
+      isRequired: true, // All layer 0 steps are required
+    }));
+
+    // 5. Sort by orderIndex (though they should all be 0, but just in case)
+    requiredInputs.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    return {
+      workflowId: workflowId,
+      workflowName: workflow.name,
+      description: workflow.description,
+      requiredInputs,
+    };
+  }
+
+  /**
    * Validate layer 0 input
    * Input must be object with stepId keys: { "<stepId>": { ...stepInput } }
    * All layer 0 steps must have corresponding input with valid schema
@@ -1195,6 +1261,7 @@ export class ExecutionService extends BaseService<Execution> {
     const executionSteps: ExecutionStep[] = steps.map((step) => ({
       index: step.orderIndex,
       name: step.name,
+      workflowStepId: (step as any)._id.toString(), // WorkflowStep._id for analytics
       status: 'pending',
       progress: 0,
       type: 'llm',
@@ -1352,6 +1419,7 @@ export class ExecutionService extends BaseService<Execution> {
           index: 0,
           name: step.name,
           description: step.description,
+          workflowStepId: stepId, // WorkflowStep._id for analytics
           status: 'running',
           progress: 0,
           startedAt: new Date(),

@@ -85,6 +85,10 @@ export class ExecutionStep {
   @Prop({ type: Object })
   output?: any;
 
+  // Workflow step reference (for workflow executions)
+  @Prop()
+  workflowStepId?: string; // WorkflowStep._id reference for analytics/reporting
+
   // Node assignment
   @Prop()
   nodeId?: string; // Which node executes this step
