@@ -28,7 +28,8 @@ import {
   StartExecutionDto,
   CancelExecutionDto,
   RetryExecutionDto,
-  TriggerWorkflowDto,
+  ExecuteWorkflowDto,
+  TestWorkflowStepDto,
 } from './execution.dto';
 
 @ApiTags('executions')
@@ -166,17 +167,17 @@ export class ExecutionController {
   // ============================================================================
 
   /**
-   * Trigger workflow execution
-   * Supports async mode (queue), sync mode (immediate), and step testing
+   * Execute a complete workflow
+   * Input must be object with stepId keys: { "<stepId>": { ...stepInput } }
    */
-  @Post('workflows/:workflowId/trigger')
+  @Post('workflows/:workflowId/execute')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Trigger workflow execution' })
+  @ApiOperation({ summary: 'Execute complete workflow' })
   @ApiCreateErrors()
   @UseGuards(JwtAuthGuard)
-  async triggerWorkflow(
+  async executeWorkflow(
     @Param('workflowId') workflowId: string,
-    @Body() dto: TriggerWorkflowDto,
+    @Body() dto: ExecuteWorkflowDto,
     @CurrentUser() context: RequestContext
   ): Promise<{
     executionId: string;
@@ -186,14 +187,9 @@ export class ExecutionController {
     result?: any;
     error?: any;
   }> {
-    // Validate: if stepId is provided, sync must be true
-    if (dto.stepId && !dto.sync) {
-      throw new BadRequestException('Step testing requires sync mode (sync=true)');
-    }
-
     // Async mode (default)
     if (!dto.sync) {
-      const execution = await this.executionService.triggerWorkflow(
+      const execution = await this.executionService.executeWorkflow(
         workflowId,
         dto.input,
         context
@@ -206,12 +202,43 @@ export class ExecutionController {
       };
     }
 
-    // Sync mode or step testing
-    const result = await this.executionService.triggerWorkflowSync(
+    // Sync mode
+    const result = await this.executionService.executeWorkflowSync(
       workflowId,
       dto.input,
-      context,
-      dto.stepId
+      context
+    );
+
+    return result;
+  }
+
+  /**
+   * Test a single workflow step
+   * Always executes synchronously for immediate feedback
+   */
+  @Post('workflows/:workflowId/steps/:stepId/test')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Test single workflow step (sync only)' })
+  @ApiCreateErrors()
+  @UseGuards(JwtAuthGuard)
+  async testWorkflowStep(
+    @Param('workflowId') workflowId: string,
+    @Param('stepId') stepId: string,
+    @Body() dto: TestWorkflowStepDto,
+    @CurrentUser() context: RequestContext
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+    output?: any;
+    result?: any;
+    error?: any;
+  }> {
+    const result = await this.executionService.testWorkflowStep(
+      workflowId,
+      stepId,
+      dto.input,
+      context
     );
 
     return result;

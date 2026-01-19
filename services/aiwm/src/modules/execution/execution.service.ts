@@ -461,20 +461,21 @@ export class ExecutionService extends BaseService<Execution> {
   }
 
   // ============================================================================
-  // WORKFLOW EXECUTION METHODS (Phase 3)
+  // WORKFLOW EXECUTION METHODS (Phase 3 - Refactored)
   // ============================================================================
 
   /**
-   * Trigger a workflow execution
+   * Execute a complete workflow (async mode)
    * Creates execution record and pushes to BullMQ queue
+   * Input must be object with stepId keys: { "<stepId>": { ...stepInput } }
    * @param workflowId - Workflow ID to execute
-   * @param input - Initial input data
+   * @param input - Input object with stepId keys
    * @param context - Request context
    * @returns Created execution
    */
-  async triggerWorkflow(
+  async executeWorkflow(
     workflowId: string,
-    input: any,
+    input: Record<string, any>,
     context: RequestContext
   ): Promise<Execution> {
     // 1. Get workflow and validate status
@@ -494,18 +495,25 @@ export class ExecutionService extends BaseService<Execution> {
       throw new BadRequestException('Workflow has no steps');
     }
 
-    // 3. Validate input against first step's inputSchema
-    const firstStep = steps[0];
-    if (firstStep.inputSchema) {
-      this.validateWorkflowInput(input, firstStep.inputSchema, firstStep.name);
+    // 3. Detect layer 0 steps (orderIndex = 0, no dependencies)
+    const layer0Steps = steps.filter(
+      (step) => step.orderIndex === 0 && (!step.dependencies || step.dependencies.length === 0)
+    );
+
+    if (layer0Steps.length === 0) {
+      throw new BadRequestException('Workflow has no layer 0 steps (steps with orderIndex=0 and no dependencies)');
     }
 
-    // 3. Create workflow snapshot
+    // 4. Validate input: must have all layer 0 steps with correct input
+    this.validateLayer0Input(input, layer0Steps);
+
+    // 3. Create workflow snapshot with step IDs for input mapping
     const workflowSnapshot = {
       name: workflow.name,
       description: workflow.description,
       version: workflow.version,
       steps: steps.map((step) => ({
+        _id: (step as any)._id, // Include step ID for input mapping
         name: step.name,
         orderIndex: step.orderIndex,
         type: step.type,
@@ -1031,5 +1039,435 @@ export class ExecutionService extends BaseService<Execution> {
     // Return output from last completed step
     const lastStep = completedSteps[completedSteps.length - 1];
     return lastStep.output || null;
+  }
+
+  /**
+   * Validate layer 0 input
+   * Input must be object with stepId keys: { "<stepId>": { ...stepInput } }
+   * All layer 0 steps must have corresponding input with valid schema
+   * @param input - Input object with stepId keys
+   * @param layer0Steps - Array of layer 0 WorkflowStep
+   */
+  private validateLayer0Input(input: Record<string, any>, layer0Steps: WorkflowStep[]): void {
+    // 1. Input must be an object
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      throw new BadRequestException({
+        message: 'Input must be an object with stepId keys',
+        expectedFormat: '{ "<stepId>": { ...stepInput }, ... }',
+        received: typeof input,
+      });
+    }
+
+    // 2. Create map of valid step IDs
+    const stepIdMap = new Map<string, WorkflowStep>();
+    layer0Steps.forEach(step => {
+      stepIdMap.set((step as any)._id.toString(), step);
+    });
+
+    const validStepIds = Array.from(stepIdMap.keys());
+    const providedStepIds = Object.keys(input);
+
+    // 3. Check for invalid stepIds in input
+    const invalidStepIds = providedStepIds.filter(id => !stepIdMap.has(id));
+    if (invalidStepIds.length > 0) {
+      throw new BadRequestException({
+        message: `Input contains invalid stepIds: ${invalidStepIds.join(', ')}`,
+        invalidStepIds,
+        validStepIds,
+      });
+    }
+
+    // 4. Check for missing layer 0 steps
+    const missingStepIds = validStepIds.filter(id => !providedStepIds.includes(id));
+    if (missingStepIds.length > 0) {
+      const missingSteps = missingStepIds.map(id => {
+        const step = stepIdMap.get(id)!;
+        return {
+          stepId: id,
+          stepName: step.name,
+          orderIndex: step.orderIndex,
+        };
+      });
+
+      throw new BadRequestException({
+        message: `Missing input for ${missingSteps.length} layer 0 step(s)`,
+        missingSteps,
+        hint: 'All layer 0 steps must have corresponding input',
+      });
+    }
+
+    // 5. Validate each step's input against its inputSchema
+    const validationErrors: any[] = [];
+
+    for (const [stepId, stepInput] of Object.entries(input)) {
+      const step = stepIdMap.get(stepId)!;
+
+      if (step.inputSchema) {
+        try {
+          this.validateWorkflowInput(stepInput, step.inputSchema, step.name);
+        } catch (error: any) {
+          validationErrors.push({
+            stepId,
+            stepName: step.name,
+            error: error.response || error.message,
+          });
+        }
+      }
+    }
+
+    // 6. If there are validation errors, throw aggregated error
+    if (validationErrors.length > 0) {
+      throw new BadRequestException({
+        message: `Input validation failed for ${validationErrors.length} step(s)`,
+        validationErrors,
+      });
+    }
+  }
+
+  /**
+   * Execute workflow synchronously (sync mode)
+   * Waits for workflow execution to complete and returns result
+   * Input must be object with stepId keys: { "<stepId>": { ...stepInput } }
+   * @param workflowId - Workflow ID to execute
+   * @param input - Input object with stepId keys
+   * @param context - Request context
+   * @returns Execution result
+   */
+  async executeWorkflowSync(
+    workflowId: string,
+    input: Record<string, any>,
+    context: RequestContext
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+    output?: any;
+    result?: any;
+    error?: any;
+  }> {
+    // 1. Get workflow and validate status
+    const workflow = await this.workflowService.findById(new Types.ObjectId(workflowId) as any, context);
+    if (!workflow) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // Allow draft workflows for testing, but log warning
+    if (workflow.status !== 'active' && workflow.status !== 'draft') {
+      throw new BadRequestException(`Workflow is ${workflow.status}. Only active or draft workflows can be executed.`);
+    }
+
+    // 2. Get workflow steps
+    const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
+    if (steps.length === 0) {
+      throw new BadRequestException('Workflow has no steps');
+    }
+
+    // 3. Detect layer 0 steps (orderIndex = 0, no dependencies)
+    const layer0Steps = steps.filter(
+      (step) => step.orderIndex === 0 && (!step.dependencies || step.dependencies.length === 0)
+    );
+
+    if (layer0Steps.length === 0) {
+      throw new BadRequestException('Workflow has no layer 0 steps (steps with orderIndex=0 and no dependencies)');
+    }
+
+    // 4. Validate input: must have all layer 0 steps with correct input
+    this.validateLayer0Input(input, layer0Steps);
+
+    // 5. Create workflow snapshot with step IDs for input mapping
+    const workflowSnapshot = {
+      name: workflow.name,
+      description: workflow.description,
+      version: workflow.version,
+      steps: steps.map((step) => ({
+        _id: (step as any)._id, // Include step ID for input mapping
+        name: step.name,
+        orderIndex: step.orderIndex,
+        type: step.type,
+        llmConfig: step.llmConfig,
+        inputSchema: step.inputSchema,
+        outputSchema: step.outputSchema,
+        dependencies: step.dependencies,
+      })),
+    };
+
+    // 6. Create execution steps
+    const executionSteps: ExecutionStep[] = steps.map((step) => ({
+      index: step.orderIndex,
+      name: step.name,
+      status: 'pending',
+      progress: 0,
+      type: 'llm',
+      llmConfig: step.llmConfig,
+      dependencies: step.dependencies,
+      dependsOn: [], // Not used for workflow steps
+      optional: false,
+    }));
+
+    // 7. Create execution
+    const execution = await this.model.create({
+      name: `${workflow.name} - Sync Execution`,
+      type: 'workflow',
+      workflowId: workflowId,
+      workflowVersion: workflow.version,
+      workflowSnapshot,
+      input,
+      steps: executionSteps,
+      status: 'running',
+      progress: 0,
+      startedAt: new Date(),
+      timeoutSeconds: 3600, // Default 1 hour
+      timeoutAt: new Date(Date.now() + 3600 * 1000),
+      maxRetries: 0,
+      retryCount: 0,
+      retryAttempts: [],
+      owner: {
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        userId: context.userId,
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      createdBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      updatedBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+    });
+
+    const executionId = (execution as any)._id.toString();
+
+    try {
+      // 8. Execute workflow synchronously
+      await this.executionOrchestratorService.executeWorkflow(executionId);
+
+      // 9. Reload execution to get final result
+      const completedExecution = await this.model
+        .findById(new Types.ObjectId(executionId))
+        .lean()
+        .exec();
+
+      if (!completedExecution) {
+        throw new Error('Execution not found after completion');
+      }
+
+      // 10. Return success response
+      return {
+        executionId,
+        status: completedExecution.status,
+        message: 'Workflow execution completed successfully',
+        output: this.extractFinalOutput(completedExecution),
+        result: completedExecution.result,
+      };
+    } catch (error: any) {
+      this.logger.error(`Sync workflow execution failed: ${error.message}`);
+
+      // Reload execution to get error details
+      const failedExecution = await this.model
+        .findById(new Types.ObjectId(executionId))
+        .lean()
+        .exec();
+
+      return {
+        executionId,
+        status: failedExecution?.status || 'failed',
+        message: 'Workflow execution failed',
+        error: {
+          type: 'execution_error',
+          message: error.message,
+          code: error.code || 'UNKNOWN_ERROR',
+          failedStepIndex: failedExecution?.steps.findIndex((s) => s.status === 'failed') ?? -1,
+          details: failedExecution?.error || {},
+        },
+      };
+    }
+  }
+
+  /**
+   * Test a single workflow step
+   * Always executes synchronously for immediate feedback
+   * @param workflowId - Workflow ID
+   * @param stepId - WorkflowStep._id to test
+   * @param input - Input data for the step (direct input, not wrapped in stepId)
+   * @param context - Request context
+   * @returns Step execution result
+   */
+  async testWorkflowStep(
+    workflowId: string,
+    stepId: string,
+    input: any,
+    context: RequestContext
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+    output?: any;
+    result?: any;
+    error?: any;
+  }> {
+    // 1. Get workflow
+    const workflow = await this.workflowService.findById(new Types.ObjectId(workflowId) as any, context);
+    if (!workflow) {
+      throw new NotFoundException(`Workflow ${workflowId} not found`);
+    }
+
+    // 2. Get all workflow steps
+    const steps = await this.workflowStepService.findByWorkflow(workflowId, context);
+    if (steps.length === 0) {
+      throw new BadRequestException('Workflow has no steps');
+    }
+
+    // 3. Find the specific step to test
+    const step = steps.find((s) => (s as any)._id.toString() === stepId);
+    if (!step) {
+      throw new NotFoundException(`Step ${stepId} not found in workflow`);
+    }
+
+    // 4. Validate input against step's inputSchema
+    if (step.inputSchema) {
+      this.validateWorkflowInput(input, step.inputSchema, step.name);
+    }
+
+    // 5. Create minimal execution record for tracking
+    const execution = await this.model.create({
+      name: `Test Step: ${step.name}`,
+      description: `Testing step ${step.name}`,
+      type: 'workflow',
+      workflowId: workflowId,
+      workflowVersion: workflow.version,
+      input,
+      steps: [
+        {
+          index: 0,
+          name: step.name,
+          description: step.description,
+          status: 'running',
+          progress: 0,
+          startedAt: new Date(),
+          type: step.type,
+          llmConfig: step.llmConfig,
+          dependencies: [],
+          dependsOn: [],
+          optional: false,
+        },
+      ],
+      status: 'running',
+      progress: 0,
+      startedAt: new Date(),
+      timeoutSeconds: 600, // 10 minutes for step testing
+      timeoutAt: new Date(Date.now() + 600 * 1000),
+      maxRetries: 0,
+      retryCount: 0,
+      retryAttempts: [],
+      owner: {
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        userId: context.userId,
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      createdBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+      updatedBy: {
+        userId: context.userId,
+        roles: context.roles,
+        orgId: context.orgId,
+        groupId: context.groupId || '',
+        agentId: context.agentId || '',
+        appId: context.appId || '',
+      },
+    });
+
+    const executionId = (execution as any)._id.toString();
+
+    try {
+      // 6. Execute step directly using orchestrator
+      const executionStep = execution.steps[0];
+      this.logger.debug(`Executing step test for step: ${step.name}`);
+      this.logger.debug(`Step llmConfig: ${JSON.stringify(step.llmConfig)}`);
+
+      const output = await this.executionOrchestratorService['executeLLMStep'](
+        executionStep,
+        input
+      );
+
+      // 7. Update execution to completed status
+      await this.model.updateOne(
+        { _id: new Types.ObjectId(executionId) },
+        {
+          $set: {
+            status: 'completed',
+            progress: 100,
+            completedAt: new Date(),
+            'steps.0.status': 'completed',
+            'steps.0.progress': 100,
+            'steps.0.output': output,
+            'steps.0.completedAt': new Date(),
+          },
+        }
+      );
+
+      // 8. Return success response
+      return {
+        executionId,
+        status: 'completed',
+        message: 'Step execution completed successfully',
+        output,
+        result: output,
+      };
+    } catch (error: any) {
+      this.logger.error(`Step test failed: ${error.message}`);
+
+      // Update execution to failed status
+      await this.model.updateOne(
+        { _id: new Types.ObjectId(executionId) },
+        {
+          $set: {
+            status: 'failed',
+            completedAt: new Date(),
+            'steps.0.status': 'failed',
+            'steps.0.completedAt': new Date(),
+            'steps.0.error': {
+              code: error.code || 'UNKNOWN_ERROR',
+              message: error.message,
+            },
+            error: {
+              code: error.code || 'UNKNOWN_ERROR',
+              message: error.message,
+            },
+          },
+        }
+      );
+
+      return {
+        executionId,
+        status: 'failed',
+        message: 'Step execution failed',
+        error: {
+          type: 'step_execution_error',
+          message: error.message,
+          code: error.code || 'UNKNOWN_ERROR',
+          stepName: step.name,
+          stepId,
+        },
+      };
+    }
   }
 }

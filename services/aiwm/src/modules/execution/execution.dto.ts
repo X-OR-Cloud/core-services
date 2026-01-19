@@ -312,12 +312,20 @@ export class RetryExecutionDto {
 }
 
 /**
- * DTO for triggering workflow execution
+ * DTO for executing a workflow
+ * Input must be object with stepId as keys: { "<stepId>": { ...stepInput } }
  */
-export class TriggerWorkflowDto {
-  @ApiProperty({ description: 'Workflow input data', example: { topic: 'AI in Healthcare' } })
+export class ExecuteWorkflowDto {
+  @ApiProperty({
+    description: 'Workflow input data as object with stepId keys',
+    example: {
+      '677abc123def456': { topic: 'AI in Healthcare' },
+      '677abc789ghi012': { market_data: { lbma_spot_price: 2650.50 } },
+    },
+  })
+  @IsObject()
   @IsNotEmpty()
-  input!: any;
+  input!: Record<string, any>;
 
   @ApiPropertyOptional({
     description: 'Execute synchronously (wait for completion)',
@@ -326,11 +334,16 @@ export class TriggerWorkflowDto {
   @IsBoolean()
   @IsOptional()
   sync?: boolean;
+}
 
-  @ApiPropertyOptional({
-    description: 'Test specific step by WorkflowStep._id (requires sync=true)',
+/**
+ * DTO for testing a single workflow step
+ */
+export class TestWorkflowStepDto {
+  @ApiProperty({
+    description: 'Input data for the step',
+    example: { topic: 'AI in Healthcare' },
   })
-  @IsString()
-  @IsOptional()
-  stepId?: string;
+  @IsNotEmpty()
+  input!: any;
 }

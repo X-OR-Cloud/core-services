@@ -249,7 +249,45 @@ export class ExecutionOrchestratorService {
    */
   private buildStepInput(execution: HydratedDocument<Execution>, step: ExecutionStep): any {
     if (step.dependencies.length === 0) {
-      // First step: use workflow input
+      // Layer 0 step: extract input from workflow input using step's workflowStep ID
+      // execution.input format: { "<stepId>": { ...stepInput }, ... }
+
+      // Find the step in workflowSnapshot to get its _id
+      const stepIndex = step.index;
+      const workflowStep = execution.workflowSnapshot?.steps[stepIndex];
+
+      if (!workflowStep) {
+        this.logger.warn(`Workflow step not found in snapshot for step index ${stepIndex}, using execution.input directly`);
+        return execution.input || {};
+      }
+
+      // If execution.input is an object with potential stepId keys
+      if (execution.input && typeof execution.input === 'object' && !Array.isArray(execution.input)) {
+        const inputKeys = Object.keys(execution.input);
+
+        // Check if input follows new format (has ObjectId-like keys)
+        const hasStepIdKeys = inputKeys.some(key => /^[0-9a-fA-F]{24}$/.test(key));
+
+        if (hasStepIdKeys && (workflowStep as any)._id) {
+          // New format: { "<stepId>": {...} }
+          // Extract input using the step's _id from workflowSnapshot
+          const stepIdString = (workflowStep as any)._id.toString();
+
+          if (execution.input[stepIdString]) {
+            this.logger.debug(`Found input for step ${stepIdString}: ${JSON.stringify(execution.input[stepIdString])}`);
+            return execution.input[stepIdString];
+          } else {
+            this.logger.warn(`No input found for step ${stepIdString}, available keys: ${inputKeys.join(', ')}`);
+            // Fallback: if single input, use it
+            if (inputKeys.length === 1) {
+              return execution.input[inputKeys[0]];
+            }
+            return {};
+          }
+        }
+      }
+
+      // Old format or fallback: use execution.input directly
       return execution.input || {};
     } else if (step.dependencies.length === 1) {
       // Single dependency: use previous step output
