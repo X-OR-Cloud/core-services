@@ -85,6 +85,10 @@ export class ExecutionStep {
   @Prop({ type: Object })
   output?: any;
 
+  // Reasoning/thinking process (for thinking models like Kimi K2, o1, DeepSeek-R1)
+  @Prop({ type: String })
+  reasoning?: string; // LLM internal reasoning/thinking process for debugging
+
   // Workflow step reference (for workflow executions)
   @Prop()
   workflowStepId?: string; // WorkflowStep._id reference for analytics/reporting

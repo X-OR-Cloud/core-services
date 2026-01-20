@@ -355,10 +355,22 @@ Write something about {{topic}}.
 
 ### Max Tokens
 
+#### Standard Models (GPT-4, Claude, Gemini, etc.):
 - **100-500**: Short summaries, data extraction
 - **500-1000**: Standard articles, reports
 - **1000-2000**: Long-form content
 - **2000-4000**: Comprehensive documents
+
+#### Thinking Models (Kimi K2, o1, DeepSeek-R1, etc.):
+- **Minimum: 2000-3000 tokens** (basic reasoning)
+- **Recommended: 4000-8000 tokens** (standard tasks)
+- **Heavy reasoning: 10000+ tokens** (complex analysis)
+
+**Why higher for thinking models?**
+- Thinking models generate internal reasoning (500-2000 tokens)
+- Final output needs additional tokens
+- Total = reasoning tokens + output tokens
+- If truncated (`finish_reason: "length"`), increase max_tokens
 
 ### Top P
 
@@ -681,6 +693,202 @@ Content-Type: application/json
 ### Get Execution Status
 ```bash
 GET /executions/:executionId/status
+```
+
+---
+
+## Thinking Models Configuration
+
+### Overview
+
+Thinking models (Kimi K2, o1, DeepSeek-R1) generate internal reasoning before producing final output. These models require special configuration for optimal performance.
+
+### Recommended Parameters
+
+```json
+{
+  "deploymentId": "kimi-k2-deployment-id",
+  "systemPrompt": "You are a financial analyst...",
+  "userPromptTemplate": "Analyze: {{data}}",
+  "parameters": {
+    "temperature": 0.3-0.5,
+    "max_tokens": 4000-8000  // IMPORTANT: Higher than standard models!
+  }
+}
+```
+
+### Key Differences from Standard Models
+
+| Aspect | Standard Models | Thinking Models |
+|--------|----------------|-----------------|
+| Response structure | `content` field | `reasoning` + `content`/`reasoning_content` |
+| Token usage | Direct output only | Reasoning + output |
+| Recommended max_tokens | 1000-2000 | 4000-8000 |
+| Internal process | Implicit | Explicit reasoning |
+
+### Response Format
+
+**Standard Model Response:**
+```json
+{
+  "choices": [{
+    "message": {
+      "content": "Final answer..."
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+**Thinking Model Response:**
+```json
+{
+  "choices": [{
+    "message": {
+      "content": null,
+      "reasoning": "Step 1: Analyze input...\nStep 2: Calculate...",
+      "reasoning_content": "Final answer..."
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+### Execution Log with Reasoning
+
+The system automatically stores reasoning process in execution logs for debugging:
+
+```json
+{
+  "steps": [{
+    "name": "Calculate Forward Price",
+    "output": {
+      "content": {
+        "base_forward_price": 2654.325,
+        "calculation_method": "Linear interpolation"
+      }
+    },
+    "reasoning": "The user is asking me to calculate forward price...\n[Full thinking process]"
+  }]
+}
+```
+
+**Benefits:**
+- ✅ Debug complex calculations
+- ✅ Understand model's decision process
+- ✅ Verify logical reasoning
+- ✅ Audit trail for compliance
+
+### Common Issues & Solutions
+
+#### Issue 1: Truncated Output (`finish_reason: "length"`)
+
+**Problem:** Output cut off mid-sentence
+
+**Cause:** `max_tokens` too low for reasoning + output
+
+**Solution:**
+```json
+{
+  "parameters": {
+    "max_tokens": 8000  // Increase from 1000 to 8000
+  }
+}
+```
+
+**Warning in logs:**
+```
+LLM response truncated (finish_reason: length).
+Consider increasing max_tokens in llmConfig.parameters.
+Recommended for thinking models: 4000-8000 tokens.
+```
+
+#### Issue 2: Empty Output
+
+**Problem:** `content` field is empty/null
+
+**Cause:** Thinking models return output in `reasoning_content` field
+
+**Solution:** System automatically handles this with fallback:
+```typescript
+// Priority: content > reasoning_content > reasoning
+const output = message.content || message.reasoning_content || message.reasoning;
+```
+
+No user action needed - this is handled automatically!
+
+#### Issue 3: High Token Usage
+
+**Problem:** Thinking models use 2-5x more tokens
+
+**Cause:** Internal reasoning process consumes tokens
+
+**Solution:** This is expected behavior. Budget accordingly:
+- Standard model: 500 tokens
+- Thinking model: 1500-2500 tokens (same task)
+
+### Best Practices
+
+1. **Start with higher max_tokens**
+   ```json
+   { "max_tokens": 6000 }  // Safe default for thinking models
+   ```
+
+2. **Monitor `finish_reason` in logs**
+   - `stop`: Normal completion ✅
+   - `length`: Truncated, increase max_tokens ⚠️
+
+3. **Review reasoning for debugging**
+   ```bash
+   # Get execution details
+   GET /executions/:executionId
+
+   # Check steps[].reasoning field for thinking process
+   ```
+
+4. **Budget for 2-3x token usage**
+   - If standard model uses 1000 tokens
+   - Budget 2000-3000 tokens for thinking model
+
+5. **Temperature recommendations**
+   - Reasoning tasks: **0.3-0.5** (more deterministic)
+   - Creative tasks: **0.5-0.7** (balanced)
+
+### Example: Thinking Model Step Configuration
+
+```typescript
+{
+  name: "Complex Financial Analysis",
+  orderIndex: 0,
+  type: "llm",
+  llmConfig: {
+    deploymentId: "kimi-k2-thinking-deployment",
+    systemPrompt: `You are a financial analyst.
+
+    Analyze the data carefully and show your reasoning process.
+    Present final results in JSON format according to output schema.`,
+    userPromptTemplate: "Analyze this data: {{market_data}}",
+    parameters: {
+      temperature: 0.4,      // Balanced for reasoning
+      max_tokens: 6000,      // Sufficient for reasoning + output
+      top_p: 1.0
+    },
+    timeout: 60000  // Higher timeout for complex reasoning
+  },
+  inputSchema: {
+    type: "object",
+    properties: {
+      market_data: { type: "string" }
+    }
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      analysis_result: { type: "string" },
+      confidence_score: { type: "number" }
+    }
+  }
+}
 ```
 
 ---

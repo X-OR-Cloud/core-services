@@ -182,7 +182,7 @@ export class ExecutionOrchestratorService {
       // Execute based on type
       let output: any;
       if (step.type === 'llm') {
-        output = await this.executeLLMStep(step, input);
+        output = await this.executeLLMStep(execution, step, input);
       } else {
         throw new Error(`Unsupported step type: ${step.type}`);
       }
@@ -203,6 +203,7 @@ export class ExecutionOrchestratorService {
             [`steps.${stepIndex}.status`]: 'completed',
             [`steps.${stepIndex}.progress`]: 100,
             [`steps.${stepIndex}.output`]: output,
+            [`steps.${stepIndex}.reasoning`]: output.reasoning || null, // Store reasoning for debugging
             [`steps.${stepIndex}.completedAt`]: completedAt,
             [`steps.${stepIndex}.result`]: {
               success: true,
@@ -303,17 +304,23 @@ export class ExecutionOrchestratorService {
   }
 
   /**
-   * Execute LLM step
+   * Execute LLM step with automatic outputSchema injection
+   * @param execution - Execution document (can be null for standalone step testing)
    * @param step - Step to execute
    * @param input - Input data
    * @returns LLM output with content, tokensUsed, cost
    */
-  private async executeLLMStep(step: ExecutionStep, input: any): Promise<any> {
+  private async executeLLMStep(
+    execution: HydratedDocument<Execution> | null,
+    step: ExecutionStep,
+    input: any
+  ): Promise<any> {
     if (!step.llmConfig) {
       throw new Error('LLM config is missing for LLM step');
     }
 
     const { deploymentId, systemPrompt, userPromptTemplate, parameters } = step.llmConfig;
+    const stepIndex = step.index;
 
     // 1. Get deployment and validate
     const deployment = await this.deploymentModel
@@ -333,11 +340,34 @@ export class ExecutionOrchestratorService {
       );
     }
 
-    // 2. Build user prompt from template
-    const userPrompt = this.buildUserPrompt(userPromptTemplate, input);
+    // 2. Get outputSchema and prepare context with schema injection (Hybrid approach)
+    const outputSchema = this.getOutputSchemaForStep(execution, stepIndex);
+    let finalSystemPrompt = systemPrompt || '';
+    let contextForPrompts = { ...input };
+
+    if (outputSchema) {
+      const outputSchemaJson = JSON.stringify(outputSchema, null, 2);
+
+      // Check if systemPrompt has {{outputSchema}} placeholder
+      if (systemPrompt?.includes('{{outputSchema}}')) {
+        // User explicitly wants to control placement - add to context for Handlebars
+        this.logger.debug('Found {{outputSchema}} placeholder in systemPrompt - rendering with Handlebars');
+        contextForPrompts = { ...input, outputSchema: outputSchemaJson };
+        finalSystemPrompt = this.buildPromptFromTemplate(systemPrompt, contextForPrompts);
+      } else {
+        // Auto-inject at the end of systemPrompt
+        this.logger.debug('No {{outputSchema}} placeholder found - auto-injecting at end of systemPrompt');
+        finalSystemPrompt = systemPrompt
+          ? `${systemPrompt}\n\nIMPORTANT: Your response must be valid JSON matching this exact schema:\n\`\`\`json\n${outputSchemaJson}\n\`\`\``
+          : `Return valid JSON matching this schema:\n\`\`\`json\n${outputSchemaJson}\n\`\`\``;
+      }
+    }
+
+    // 3. Build user prompt from template
+    const userPrompt = this.buildUserPrompt(userPromptTemplate, contextForPrompts);
 
     this.logger.log(`Calling LLM via deployment ${deploymentId}`);
-    this.logger.log(`System Prompt: ${systemPrompt?.substring(0, 100) || 'None'}...`);
+    this.logger.log(`System Prompt: ${finalSystemPrompt?.substring(0, 100) || 'None'}...`);
     this.logger.log(`User Prompt: ${userPrompt.substring(0, 100)}...`);
     this.logger.debug(`Deployment details: ${JSON.stringify({
       _id: (deployment as any)._id,
@@ -365,7 +395,7 @@ export class ExecutionOrchestratorService {
     // 5. Build request body (OpenAI-compatible format)
     const requestBody: any = {
       messages: [
-        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+        ...(finalSystemPrompt ? [{ role: 'system', content: finalSystemPrompt }] : []),
         { role: 'user', content: userPrompt },
       ],
       ...(parameters || {}), // temperature, max_tokens, etc. - must match provider format
@@ -389,32 +419,61 @@ export class ExecutionOrchestratorService {
     try {
       const startTime = Date.now();
 
+      this.logger.debug(`LLM request body: ${JSON.stringify(requestBody)}`);
       // 7. Call LLM endpoint
       const response = await axios.post(`${endpoint}/v1/chat/completions`, requestBody, {
         headers,
         timeout: 300000, // 5 minutes
       });
 
+
       const duration = Date.now() - startTime;
 
       // 8. Extract response data
       const responseData = response.data;
-      const content = responseData.choices?.[0]?.message?.content || '';
+      const choice = responseData.choices?.[0];
+      const message = choice?.message || {};
+
+      // Handle thinking models (Kimi K2, o1, DeepSeek-R1) that return content in different fields
+      // Priority: content > reasoning_content > reasoning
+      const rawContent = message.content || message.reasoning_content || message.reasoning || '';
+
+      // Extract reasoning/thinking process for debugging (thinking models only)
+      const reasoning = message.reasoning || message.reasoning_content || null;
+
+      // Fail if output was truncated due to max_tokens limit
+      if (choice?.finish_reason === 'length') {
+        this.logger.error(`LLM response truncated (finish_reason: length)`);
+        throw new BadRequestException({
+          message: 'LLM response truncated due to max_tokens limit',
+          type: ExecutionErrorType.CONFIGURATION_ERROR,
+          details: {
+            finish_reason: 'length',
+            suggestion: 'Increase max_tokens in llmConfig.parameters. Recommended: thinking models 4000-8000 tokens, standard models 2000-4000 tokens'
+          }
+        });
+      }
+
       const usage = responseData.usage || {};
       const totalTokens = usage.total_tokens || 0;
       const inputTokens = usage.prompt_tokens || 0;
       const outputTokens = usage.completion_tokens || 0;
 
-      // 9. Calculate cost (placeholder - should be configurable per deployment)
+      // 9. Parse JSON from content (handle markdown wrappers)
+      const parsedContent = this.extractAndParseJSON(rawContent);
+
+      // 10. Calculate cost (placeholder - should be configurable per deployment)
       const cost = this.calculateCost(inputTokens, outputTokens, deployment);
 
       this.logger.log(
         `LLM call completed in ${duration}ms - Tokens: ${totalTokens} (in: ${inputTokens}, out: ${outputTokens})`
       );
+      this.logger.debug(`LLM response data: ${JSON.stringify(responseData)}`);
 
-      // 10. Return structured output
+      // 11. Return structured output with parsed content and reasoning
       return {
-        content,
+        content: parsedContent, // Parsed JSON if available, otherwise raw string
+        reasoning, // Thinking process for debugging (null for standard models)
         tokensUsed: totalTokens,
         inputTokens,
         outputTokens,
@@ -471,6 +530,22 @@ export class ExecutionOrchestratorService {
   }
 
   /**
+   * Build prompt from template using Handlebars
+   * @param template - Handlebars template string
+   * @param context - Context data for template
+   * @returns Rendered prompt
+   */
+  private buildPromptFromTemplate(template: string, context: any): string {
+    try {
+      const compiledTemplate = Handlebars.compile(template);
+      return compiledTemplate(context);
+    } catch (error) {
+      this.logger.error(`Handlebars template error: ${error.message}`);
+      throw new Error(`Failed to render prompt template: ${error.message}`);
+    }
+  }
+
+  /**
    * Build user prompt from template
    * @param template - Handlebars template string
    * @param input - Input data
@@ -478,14 +553,7 @@ export class ExecutionOrchestratorService {
    */
   private buildUserPrompt(template: string | undefined, input: any): string {
     if (template) {
-      // Use Handlebars to render template
-      try {
-        const compiledTemplate = Handlebars.compile(template);
-        return compiledTemplate(input);
-      } catch (error) {
-        this.logger.error(`Handlebars template error: ${error.message}`);
-        throw new Error(`Failed to render user prompt template: ${error.message}`);
-      }
+      return this.buildPromptFromTemplate(template, input);
     } else {
       // Fallback: stringify input
       if (typeof input === 'string') {
@@ -494,6 +562,59 @@ export class ExecutionOrchestratorService {
         return JSON.stringify(input, null, 2);
       }
     }
+  }
+
+  /**
+   * Get outputSchema for a step from workflowSnapshot
+   * @param execution - Execution document
+   * @param stepIndex - Step index
+   * @returns Output schema or null
+   */
+  private getOutputSchemaForStep(
+    execution: HydratedDocument<Execution> | null,
+    stepIndex: number
+  ): any | null {
+    if (!execution?.workflowSnapshot?.steps?.[stepIndex]) {
+      return null;
+    }
+    return execution.workflowSnapshot.steps[stepIndex].outputSchema || null;
+  }
+
+  /**
+   * Extract and parse JSON from LLM response content
+   * Handles responses with markdown code blocks (```json ... ```)
+   * @param content - Raw LLM response content
+   * @returns Parsed JSON object or original content if not JSON
+   */
+  private extractAndParseJSON(content: string): any {
+    if (!content || typeof content !== 'string') {
+      return content;
+    }
+
+    // Try to extract JSON from markdown code block
+    const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (jsonMatch) {
+      const jsonString = jsonMatch[1].trim();
+      try {
+        return JSON.parse(jsonString);
+      } catch (error) {
+        this.logger.warn(`Failed to parse JSON from markdown block: ${error.message}`);
+      }
+    }
+
+    // Try to parse as direct JSON
+    const trimmed = content.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (error) {
+        this.logger.debug(`Content looks like JSON but failed to parse: ${error.message}`);
+      }
+    }
+
+    // Return original if not parseable
+    return content;
   }
 
   /**

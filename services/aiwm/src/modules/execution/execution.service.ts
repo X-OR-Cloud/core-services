@@ -973,6 +973,7 @@ export class ExecutionService extends BaseService<Execution> {
       this.logger.debug(`Execution step llmConfig: ${JSON.stringify(executionStep.llmConfig)}`);
 
       const output = await this.executionOrchestratorService['executeLLMStep'](
+        execution,
         executionStep,
         input
       );
@@ -987,6 +988,7 @@ export class ExecutionService extends BaseService<Execution> {
             'steps.0.status': 'completed',
             'steps.0.progress': 100,
             'steps.0.output': output,
+            'steps.0.reasoning': output.reasoning || null,
             'steps.0.completedAt': new Date(),
             completedAt: new Date(),
           },
@@ -1406,13 +1408,34 @@ export class ExecutionService extends BaseService<Execution> {
       this.validateWorkflowInput(input, step.inputSchema, step.name);
     }
 
-    // 5. Create minimal execution record for tracking
+    // 5. Create workflow snapshot with outputSchema for injection
+    const workflowSnapshot = {
+      name: workflow.name,
+      description: workflow.description,
+      version: workflow.version,
+      steps: [
+        {
+          _id: (step as any)._id,
+          index: 0,
+          name: step.name,
+          orderIndex: step.orderIndex,
+          type: step.type,
+          llmConfig: step.llmConfig,
+          inputSchema: step.inputSchema,
+          outputSchema: step.outputSchema,
+          dependencies: [],
+        },
+      ],
+    };
+
+    // 6. Create minimal execution record for tracking
     const execution = await this.model.create({
       name: `Test Step: ${step.name}`,
       description: `Testing step ${step.name}`,
       type: 'workflow',
       workflowId: workflowId,
       workflowVersion: workflow.version,
+      workflowSnapshot, // Include snapshot for outputSchema injection
       input,
       steps: [
         {
@@ -1472,6 +1495,7 @@ export class ExecutionService extends BaseService<Execution> {
       this.logger.debug(`Step llmConfig: ${JSON.stringify(step.llmConfig)}`);
 
       const output = await this.executionOrchestratorService['executeLLMStep'](
+        execution,
         executionStep,
         input
       );
@@ -1487,6 +1511,7 @@ export class ExecutionService extends BaseService<Execution> {
             'steps.0.status': 'completed',
             'steps.0.progress': 100,
             'steps.0.output': output,
+            'steps.0.reasoning': output.reasoning || null,
             'steps.0.completedAt': new Date(),
           },
         }
