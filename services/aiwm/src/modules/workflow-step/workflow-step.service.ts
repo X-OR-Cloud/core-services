@@ -43,15 +43,15 @@ export class WorkflowStepService extends BaseService<WorkflowStep> {
   }
 
   /**
-   * Validate that dependencies array references valid step indices
+   * Validate that dependencies array references valid step IDs
    * @param workflowId - Workflow ID to validate against
-   * @param dependencies - Array of step indices
+   * @param dependencies - Array of WorkflowStep._id references
    * @param context - Request context for orgId filtering
    * @returns true if all dependencies are valid
    */
   async validateDependencies(
     workflowId: string,
-    dependencies: number[],
+    dependencies: string[],
     context: RequestContext
   ): Promise<boolean> {
     if (!dependencies || dependencies.length === 0) {
@@ -64,29 +64,20 @@ export class WorkflowStepService extends BaseService<WorkflowStep> {
       isDeleted: false
     }).exec();
 
-    // Get all existing orderIndex values
-    const existingOrderIndices = steps.map(s => s.orderIndex).sort((a, b) => a - b);
-
-    if (existingOrderIndices.length === 0) {
+    if (steps.length === 0) {
       throw new BadRequestException(
         `No existing steps found in workflow. Cannot create step with dependencies.`
       );
     }
 
-    const maxOrderIndex = Math.max(...existingOrderIndices);
+    // Get all existing step IDs
+    const existingStepIds = steps.map(s => s._id.toString());
 
-    // Check all dependencies reference valid orderIndex values
-    for (const dep of dependencies) {
-      if (dep < 0 || dep > maxOrderIndex) {
+    // Check all dependencies reference valid step IDs
+    for (const depStepId of dependencies) {
+      if (!existingStepIds.includes(depStepId)) {
         throw new BadRequestException(
-          `Invalid dependency orderIndex: ${dep}. Valid range is 0-${maxOrderIndex}. Existing orderIndices: ${existingOrderIndices.join(', ')}`
-        );
-      }
-
-      // Verify the orderIndex actually exists
-      if (!existingOrderIndices.includes(dep)) {
-        throw new BadRequestException(
-          `Dependency orderIndex ${dep} does not exist. Existing orderIndices: ${existingOrderIndices.join(', ')}`
+          `Invalid dependency step ID: ${depStepId}. This step does not exist in workflow ${workflowId}.`
         );
       }
     }

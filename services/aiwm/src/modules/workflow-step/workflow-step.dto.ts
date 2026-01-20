@@ -151,14 +151,14 @@ export class CreateWorkflowStepDto {
   outputSchema?: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'Dependency step indices (empty array for first step)',
-    example: [0],
+    description: 'Dependency step IDs (WorkflowStep._id references, empty array for first step)',
+    example: ['6789abcd1234567890abcdef'],
     default: [],
   })
   @IsOptional()
   @IsArray()
-  @IsNumber({}, { each: true })
-  dependencies?: number[];
+  @IsString({ each: true })
+  dependencies?: string[];
 
   @ApiPropertyOptional({
     description: 'Error handling configuration',
