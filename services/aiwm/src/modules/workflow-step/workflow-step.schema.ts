@@ -44,8 +44,8 @@ export class WorkflowStep extends BaseSchema {
   @Prop({ type: Object })
   outputSchema?: Record<string, any>; // JSON Schema
 
-  @Prop({ type: [Number], default: [] })
-  dependencies!: number[]; // Array of step indices
+  @Prop({ type: [String], default: [] })
+  dependencies!: string[]; // Array of WorkflowStep._id references
 
   @Prop({ type: Object })
   errorHandling?: {

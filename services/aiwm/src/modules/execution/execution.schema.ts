@@ -129,8 +129,8 @@ export class ExecutionStep {
   @Prop({ type: [Number], default: [] })
   dependsOn!: number[]; // Indexes of steps that must complete first (deployment)
 
-  @Prop({ type: [Number], default: [] })
-  dependencies!: number[]; // Indexes of steps that must complete first (workflow)
+  @Prop({ type: [String], default: [] })
+  dependencies!: string[]; // WorkflowStep._id references that must complete first (workflow)
 
   @Prop({ default: false })
   optional!: boolean; // Can be skipped if failed

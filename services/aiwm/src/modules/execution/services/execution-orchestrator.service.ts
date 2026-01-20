@@ -290,16 +290,55 @@ export class ExecutionOrchestratorService {
 
       // Old format or fallback: use execution.input directly
       return execution.input || {};
-    } else if (step.dependencies.length === 1) {
-      // Single dependency: use previous step output
-      const prevStep = execution.steps[step.dependencies[0]];
-      return prevStep.output || {};
     } else {
-      // Multiple dependencies: combine outputs
-      const inputs = step.dependencies.map((depIndex) => {
-        return execution.steps[depIndex].output || {};
-      });
-      return { inputs }; // Wrap in object
+      // Has dependencies: merge outputs from all dependency steps
+      // Hybrid approach: flat merge + trace metadata
+      const mergedInput: Record<string, any> = {};
+      const dependenciesTrace: Array<{ stepId: string; stepName: string; output: any }> = [];
+      const conflicts: string[] = [];
+
+      // Process each dependency in order
+      for (const depStepId of step.dependencies) {
+        // Find the dependency step by workflowStepId
+        const depStep = execution.steps.find(s => s.workflowStepId === depStepId);
+
+        if (!depStep) {
+          this.logger.warn(`Dependency step with workflowStepId ${depStepId} not found for step ${step.name}`);
+          continue;
+        }
+
+        // Extract content from output (assuming output = { content: {...}, tokensUsed, cost, ... })
+        const depOutput = depStep.output?.content || depStep.output || {};
+
+        // Track conflicts before merging
+        for (const key of Object.keys(depOutput)) {
+          if (key !== '_dependencies' && Object.prototype.hasOwnProperty.call(mergedInput, key)) {
+            conflicts.push(`Property "${key}" overridden by step "${depStep.name}" (previous value from earlier dependency)`);
+          }
+        }
+
+        // Merge into flat structure (later steps override earlier)
+        Object.assign(mergedInput, depOutput);
+
+        // Build trace metadata
+        dependenciesTrace.push({
+          stepId: depStep.workflowStepId,
+          stepName: depStep.name,
+          output: depOutput
+        });
+      }
+
+      // Log conflicts if any
+      if (conflicts.length > 0) {
+        this.logger.warn(`Input merge conflicts detected for step "${step.name}":\n  - ${conflicts.join('\n  - ')}`);
+      }
+
+      // Add trace metadata
+      mergedInput._dependencies = dependenciesTrace;
+
+      this.logger.debug(`Built merged input for step "${step.name}" from ${step.dependencies.length} dependencies`);
+
+      return mergedInput;
     }
   }
 
@@ -735,10 +774,20 @@ export class ExecutionOrchestratorService {
     execution: HydratedDocument<Execution>,
     failedStepIndex: number
   ): Promise<void> {
-    const updates: any = {};
+    const updates: Record<string, string> = {};
+
+    // Get the workflowStepId of the failed step
+    const failedStep = execution.steps[failedStepIndex];
+    const failedStepId = failedStep?.workflowStepId;
+
+    if (!failedStepId) {
+      this.logger.warn(`Failed step at index ${failedStepIndex} has no workflowStepId, cannot mark dependent steps as skipped`);
+      return;
+    }
 
     execution.steps.forEach((step, index) => {
-      if (step.dependencies.includes(failedStepIndex) && step.status === 'pending') {
+      // Check if this step depends on the failed step (by step ID)
+      if (step.dependencies.includes(failedStepId) && step.status === 'pending') {
         updates[`steps.${index}.status`] = 'skipped';
       }
     });
