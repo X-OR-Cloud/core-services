@@ -529,16 +529,31 @@ export class ExecutionOrchestratorService {
       this.logger.debug(`LLM response data: ${JSON.stringify(responseData)}`);
 
       // 11. Return structured output with parsed content and reasoning
-      return {
-        content: parsedContent, // Parsed JSON if available, otherwise raw string
-        reasoning, // Thinking process for debugging (null for standard models)
-        tokensUsed: totalTokens,
-        inputTokens,
-        outputTokens,
-        cost,
-        duration,
-        timestamp: new Date().toISOString(),
-      };
+      // When parsedContent is already an object (matching outputSchema), return it directly
+      // When parsedContent is a string, wrap it in content field
+      if (typeof parsedContent === 'object' && parsedContent !== null) {
+        return {
+          ...parsedContent, // Spread parsed object (e.g., { content: "...", other: "..." })
+          reasoning, // Thinking process for debugging (null for standard models)
+          tokensUsed: totalTokens,
+          inputTokens,
+          outputTokens,
+          cost,
+          duration,
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        return {
+          content: parsedContent, // Wrap string content
+          reasoning, // Thinking process for debugging (null for standard models)
+          tokensUsed: totalTokens,
+          inputTokens,
+          outputTokens,
+          cost,
+          duration,
+          timestamp: new Date().toISOString(),
+        };
+      }
     } catch (error: any) {
       this.logger.error(`LLM call failed: ${error.message}`);
 
