@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BaseService } from '@hydrabyte/base';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import Ajv from 'ajv';
@@ -37,6 +37,12 @@ export class ExecutionService extends BaseService<Execution> {
   ) {
     super(executionModel as any);
     this.ajv = new Ajv({ allErrors: true });
+  }
+
+  async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Execution>> {
+    options.sort = options.sort || { createdAt: -1 };
+    // Ensure orgId filter is applied
+    return super.findAll(options, context);
   }
 
   /**

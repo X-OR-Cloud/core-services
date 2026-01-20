@@ -108,12 +108,6 @@ export class BaseService<Entity> {
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Entity>> {
-    this.logger.debug('Finding entities', {
-      page: options.page,
-      limit: options.limit,
-      userId: context.userId,
-    });
-
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowRead) {
       this.logger.warn('Read permission denied', {
@@ -137,14 +131,13 @@ export class BaseService<Entity> {
     delete filter['limit']; // Ensure limit is not set by user filter
     // Loop each filter, delete if "" or null
     for (const key in filter) {
-      console.log('Filter key check', key, filter[key]);
       if (filter[key] === '' || filter[key] === null) {
         delete filter[key];
       }
     }
     // Merge scope-based filter with user filter (user filter takes precedence)
     const finalFilter = { ...permissions.filter, ...filter, isDeleted: false };
-    this.logger.debug('Origin filter', filter);
+    this.logger.debug('Origin filter, sort', { filter, sort });
     this.logger.debug('Final query filter', finalFilter);
 
     const [data, total] = await Promise.all([
