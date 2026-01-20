@@ -307,8 +307,27 @@ export class ExecutionOrchestratorService {
           continue;
         }
 
-        // Extract content from output (assuming output = { content: {...}, tokensUsed, cost, ... })
-        const depOutput = depStep.output?.content || depStep.output || {};
+        // Extract content from output
+        // If output.content is a string, wrap it as { content: "..." }
+        // If output.content is an object, use it directly
+        // Otherwise fall back to full output
+        let depOutput: any;
+        if (depStep.output?.content !== undefined) {
+          const content = depStep.output.content;
+          if (typeof content === 'string') {
+            // Wrap string content
+            depOutput = { content };
+          } else if (typeof content === 'object' && content !== null) {
+            // Use object content directly
+            depOutput = content;
+          } else {
+            // Fallback to full output
+            depOutput = depStep.output || {};
+          }
+        } else {
+          // No content field, use full output
+          depOutput = depStep.output || {};
+        }
 
         // Track conflicts before merging
         for (const key of Object.keys(depOutput)) {
