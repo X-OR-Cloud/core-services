@@ -134,9 +134,9 @@ export class ExecutionOrchestratorService {
     return execution.steps.filter((step) => {
       if (step.status !== 'pending') return false;
 
-      // Check if all dependencies are completed
-      return step.dependencies.every((depIndex) => {
-        const depStep = execution.steps[depIndex];
+      // Check if all dependencies are completed (using step IDs)
+      return step.dependencies.every((depStepId) => {
+        const depStep = execution.steps.find(s => s.workflowStepId === depStepId);
         return depStep && depStep.status === 'completed';
       });
     });
