@@ -11,6 +11,7 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DocumentModule } from '../modules/document/document.module';
+import { ContentModule } from '../modules/content/content.module';
 import { ProjectModule } from '../modules/project/project.module';
 import { WorkModule } from '../modules/work/work.module';
 
@@ -23,6 +24,7 @@ import { WorkModule } from '../modules/work/work.module';
     PassportModule,
     HealthModule,
     DocumentModule,
+    ContentModule,
     ProjectModule,
     WorkModule,
   ],
