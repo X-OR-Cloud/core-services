@@ -11,8 +11,9 @@
 1. [API Overview](#api-overview)
 2. [Push API Endpoints](#push-api-endpoints)
 3. [Query API Endpoints](#query-api-endpoints)
-4. [Error Handling](#error-handling)
-5. [API Examples](#api-examples)
+4. [Aggregation API Endpoints](#aggregation-api-endpoints)
+5. [Error Handling](#error-handling)
+6. [API Examples](#api-examples)
 
 ---
 
@@ -21,7 +22,7 @@
 ### 1.1 Base URL
 
 ```
-http://localhost:3003/metrics
+http://localhost:3004/metrics
 ```
 
 ### 1.2 Authentication
@@ -32,13 +33,41 @@ http://localhost:3003/metrics
 Authorization: Bearer <JWT_TOKEN>
 ```
 
+#### 1.2.1 Node JWT (for Push API)
+
+Used by node daemons, container runtimes to push metrics.
+
+```json
+{
+  "sub": "65a0000000000000000000001",
+  "nodeId": "65a0000000000000000000001",
+  "roles": ["node-operator"],
+  "type": "node",
+  "iat": 1706313600,
+  "exp": 1706918400
+}
+```
+
+**Key Claims**:
+- `nodeId`: Node identifier (used for ownership validation)
+- `roles`: Array of role strings for RBAC
+- `type`: `"node"` (identifies this as node authentication)
+
+**How to get token**: See [06-node-authentication.md](./06-node-authentication.md)
+
+#### 1.2.2 User JWT (for Query API)
+
+Used by frontend applications, dashboards to query metrics.
+
+**How to get token**: Login via IAM service `/auth/login` (existing user authentication)
+
 ### 1.3 Endpoint Categories
 
-| Category | Purpose | Primary Users |
-|----------|---------|---------------|
-| **Push API** | Receive metrics từ external systems | Node daemons, Container runtimes |
-| **Query API** | Query metrics data | Frontend apps, External monitoring tools |
-| **Admin API** | Management operations | Platform admins (Phase 2) |
+| Category | Purpose | Primary Users | Authentication |
+|----------|---------|---------------|----------------|
+| **Push API** | Receive metrics từ external systems | Node daemons, Container runtimes | Node JWT |
+| **Query API** | Query metrics data | Frontend apps, Dashboards | User JWT |
+| **Admin API** | Management operations | Platform admins (Phase 2) | User JWT |
 
 ---
 
@@ -50,7 +79,10 @@ Authorization: Bearer <JWT_TOKEN>
 
 **Purpose**: Node daemon push hardware metrics lên server.
 
-**Authentication**: JWT với `nodeId` claim (validates ownership)
+**Authentication**:
+- JWT token với `nodeId` và `roles` claims
+- Token validation: Check nodeId in JWT matches nodeId in request body
+- See [06-node-authentication.md](./06-node-authentication.md) for authentication flow
 
 **Request Body**:
 
@@ -190,15 +222,27 @@ interface PushNodeMetricsDto {
 
 - `400 Bad Request`: Invalid data format hoặc validation failed
 - `401 Unauthorized`: Missing hoặc invalid JWT token
-- `403 Forbidden`: nodeId không match với JWT claim
+- `403 Forbidden`: `nodeId` in request body không match với `nodeId` in JWT claim
 - `422 Unprocessable Entity`: Business logic validation failed
+
+**Validation Logic**:
+
+```typescript
+// Extract nodeId from JWT token
+const tokenNodeId = context.user.nodeId; // From JWT claim
+
+// Validate ownership
+if (tokenNodeId !== dto.nodeId) {
+  throw new ForbiddenException('Node can only push its own metrics');
+}
+```
 
 **Rate Limiting**: 1 request/minute per node (configurable)
 
 **Example cURL**:
 
 ```bash
-curl -X POST http://localhost:3003/metrics/push/node \
+curl -X POST http://localhost:3004/metrics/push/node \
   -H "Authorization: Bearer $NODE_JWT" \
   -H "Content-Type: application/json" \
   -d '{
@@ -248,7 +292,10 @@ curl -X POST http://localhost:3003/metrics/push/node \
 
 **Purpose**: Container runtime hoặc VM hypervisor push resource metrics.
 
-**Authentication**: JWT với appropriate permissions
+**Authentication**:
+- JWT token với `roles` claim
+- Required role: `resource-manager` or `node-operator`
+- Token validation: Check roles contain required permission
 
 **Request Body**:
 
@@ -312,7 +359,7 @@ interface PushResourceMetricsDto {
 **Example cURL**:
 
 ```bash
-curl -X POST http://localhost:3003/metrics/push/resource \
+curl -X POST http://localhost:3004/metrics/push/resource \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -395,7 +442,7 @@ interface PushBatchMetricsDto {
 
 **Purpose**: Query metrics history cho một node cụ thể.
 
-**Authentication**: JWT với read permissions
+**Authentication**: User JWT với `metrics:read` permission
 
 **Query Parameters**:
 
@@ -415,7 +462,36 @@ interface QueryNodeMetricsDto {
 ```json
 {
   "success": true,
-  "data": {
+  "data": [
+    {
+      "timestamp": "2026-01-14T09:00:00.000Z",
+      "cpu": {
+        "usage": 45.8,
+        "cores": 16,
+        "loadAverage": [2.5, 2.8, 3.1]
+      },
+      "memory": {
+        "total": 68719476736,
+        "used": 34359738368,
+        "free": 30359738368,
+        "cached": 4000000000,
+        "usagePercent": 50.0
+      },
+      "gpu": [{
+        "deviceId": "GPU-0",
+        "utilization": 85.5,
+        "memoryPercent": 80.0,
+        "temperature": 72
+      }]
+    }
+    // ... more data points
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 100,
+    "total": 61
+  },
+  "statistics": {
     "nodeId": "65a0000000000000000000001",
     "nodeName": "gpu-worker-01",
     "interval": "1min",
@@ -423,35 +499,10 @@ interface QueryNodeMetricsDto {
       "start": "2026-01-14T09:00:00.000Z",
       "end": "2026-01-14T10:00:00.000Z"
     },
-    "metrics": [
-      {
-        "timestamp": "2026-01-14T09:00:00.000Z",
-        "cpu": {
-          "usage": 45.8,
-          "cores": 16,
-          "loadAverage": [2.5, 2.8, 3.1]
-        },
-        "memory": {
-          "total": 68719476736,
-          "used": 34359738368,
-          "free": 30359738368,
-          "cached": 4000000000,
-          "usagePercent": 50.0
-        },
-        "gpu": [{
-          "deviceId": "GPU-0",
-          "utilization": 85.5,
-          "memoryPercent": 80.0,
-          "temperature": 72
-        }]
-      }
-      // ... more data points
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 100,
-      "total": 61,
-      "pages": 1
+    "summary": {
+      "avgCpuUsage": 47.2,
+      "avgMemoryUsage": 52.5,
+      "maxGpuTemp": 75
     }
   }
 }
@@ -460,7 +511,7 @@ interface QueryNodeMetricsDto {
 **Example cURL**:
 
 ```bash
-curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?startTime=2026-01-14T09:00:00.000Z&endTime=2026-01-14T10:00:00.000Z&interval=1min&fields=cpu,memory,gpu" \
+curl -X GET "http://localhost:3004/metrics/nodes/65a0000000000000000000001?startTime=2026-01-14T09:00:00.000Z&endTime=2026-01-14T10:00:00.000Z&interval=1min&fields=cpu,memory,gpu" \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -479,7 +530,29 @@ curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?start
 ```json
 {
   "success": true,
-  "data": {
+  "data": [
+    {
+      "timestamp": "2026-01-14T09:00:00.000Z",
+      "cpu": {
+        "usagePercent": 75.5,
+        "limitCores": 8
+      },
+      "memory": {
+        "usageBytes": 17179869184,
+        "limitBytes": 21474836480,
+        "usagePercent": 80.0
+      },
+      "status": "running",
+      "uptime": 3600
+    }
+    // ... more data points
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 100,
+    "total": 13
+  },
+  "statistics": {
     "resourceId": "65a0000000000000000000002",
     "resourceName": "llama-inference-01",
     "resourceType": "inference-container",
@@ -488,28 +561,10 @@ curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?start
       "start": "2026-01-14T09:00:00.000Z",
       "end": "2026-01-14T10:00:00.000Z"
     },
-    "metrics": [
-      {
-        "timestamp": "2026-01-14T09:00:00.000Z",
-        "cpu": {
-          "usagePercent": 75.5,
-          "limitCores": 8
-        },
-        "memory": {
-          "usageBytes": 17179869184,
-          "limitBytes": 21474836480,
-          "usagePercent": 80.0
-        },
-        "status": "running",
-        "uptime": 3600
-      }
-      // ... more data points
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 100,
-      "total": 13,
-      "pages": 1
+    "summary": {
+      "avgCpuUsage": 74.8,
+      "avgMemoryUsage": 78.2,
+      "restartCount": 0
     }
   }
 }
@@ -530,7 +585,35 @@ curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?start
 ```json
 {
   "success": true,
-  "data": {
+  "data": [
+    {
+      "timestamp": "2026-01-14T09:00:00.000Z",
+      "requestCount": 150,
+      "requestRate": 0.5,
+      "errorCount": 3,
+      "errorRate": 2.0,
+      "latency": {
+        "p50": 250,
+        "p95": 800,
+        "p99": 1200,
+        "avg": 350
+      },
+      "tokens": {
+        "input": 75000,
+        "output": 50000,
+        "total": 125000
+      },
+      "cost": 0.25,
+      "healthStatus": "healthy"
+    }
+    // ... more data points
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 100,
+    "total": 13
+  },
+  "statistics": {
     "deploymentId": "65a0000000000000000000003",
     "deploymentName": "llama-3.1-8b-production",
     "modelName": "Llama-3.1-8B",
@@ -539,34 +622,11 @@ curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?start
       "start": "2026-01-14T09:00:00.000Z",
       "end": "2026-01-14T10:00:00.000Z"
     },
-    "metrics": [
-      {
-        "timestamp": "2026-01-14T09:00:00.000Z",
-        "requestCount": 150,
-        "requestRate": 0.5,
-        "errorCount": 3,
-        "errorRate": 2.0,
-        "latency": {
-          "p50": 250,
-          "p95": 800,
-          "p99": 1200,
-          "avg": 350
-        },
-        "tokens": {
-          "input": 75000,
-          "output": 50000,
-          "total": 125000
-        },
-        "cost": 0.25,
-        "healthStatus": "healthy"
-      }
-      // ... more data points
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 100,
-      "total": 13,
-      "pages": 1
+    "summary": {
+      "totalRequests": 1950,
+      "totalErrors": 39,
+      "avgLatency": 355,
+      "totalCost": 3.25
     }
   }
 }
@@ -587,35 +647,40 @@ curl -X GET "http://localhost:3003/metrics/nodes/65a0000000000000000000001?start
 ```json
 {
   "success": true,
-  "data": {
+  "data": [
+    {
+      "timestamp": "2026-01-14T09:00:00.000Z",
+      "totalNodes": 10,
+      "nodesOnline": 9,
+      "nodesOffline": 1,
+      "totalResources": 25,
+      "resourcesRunning": 22,
+      "totalDeployments": 15,
+      "deploymentsRunning": 12,
+      "totalRequests": 5000,
+      "totalTokens": 2500000,
+      "totalCost": 12.5,
+      "avgLatency": 450,
+      "errorRate": 1.5
+    }
+    // ... more data points
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 100,
+    "total": 13
+  },
+  "statistics": {
     "interval": "5min",
     "timeRange": {
       "start": "2026-01-14T09:00:00.000Z",
       "end": "2026-01-14T10:00:00.000Z"
     },
-    "metrics": [
-      {
-        "timestamp": "2026-01-14T09:00:00.000Z",
-        "totalNodes": 10,
-        "nodesOnline": 9,
-        "nodesOffline": 1,
-        "totalResources": 25,
-        "resourcesRunning": 22,
-        "totalDeployments": 15,
-        "deploymentsRunning": 12,
-        "totalRequests": 5000,
-        "totalTokens": 2500000,
-        "totalCost": 12.5,
-        "avgLatency": 450,
-        "errorRate": 1.5
-      }
-      // ... more data points
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 100,
-      "total": 13,
-      "pages": 1
+    "summary": {
+      "peakNodes": 10,
+      "peakRequests": 5200,
+      "totalCost": 162.5,
+      "avgErrorRate": 1.8
     }
   }
 }
@@ -650,7 +715,24 @@ interface QueryMultiMetricsDto {
 ```json
 {
   "success": true,
-  "data": {
+  "data": [
+    {
+      "timestamp": "2026-01-14T09:00:00.000Z",
+      "cpu": {
+        "usage": 48.5  // Average across all entities
+      },
+      "memory": {
+        "usagePercent": 55.0
+      }
+    }
+    // ... more aggregated data points
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 100,
+    "total": 61
+  },
+  "statistics": {
     "type": "node",
     "aggregation": "avg",
     "interval": "1min",
@@ -667,25 +749,7 @@ interface QueryMultiMetricsDto {
         "entityId": "65a0000000000000000000002",
         "entityName": "gpu-worker-02"
       }
-    ],
-    "metrics": [
-      {
-        "timestamp": "2026-01-14T09:00:00.000Z",
-        "cpu": {
-          "usage": 48.5  // Average across all entities
-        },
-        "memory": {
-          "usagePercent": 55.0
-        }
-      }
-      // ... more aggregated data points
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 100,
-      "total": 61,
-      "pages": 1
-    }
+    ]
   }
 }
 ```
@@ -693,7 +757,7 @@ interface QueryMultiMetricsDto {
 **Example cURL**:
 
 ```bash
-curl -X GET "http://localhost:3003/metrics/query?type=node&entityIds=65a0001,65a0002&startTime=2026-01-14T09:00:00Z&endTime=2026-01-14T10:00:00Z&aggregation=avg&fields=cpu,memory" \
+curl -X GET "http://localhost:3004/metrics/query?type=node&entityIds=65a0001,65a0002&startTime=2026-01-14T09:00:00Z&endTime=2026-01-14T10:00:00Z&aggregation=avg&fields=cpu,memory" \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -703,7 +767,7 @@ curl -X GET "http://localhost:3003/metrics/query?type=node&entityIds=65a0001,65a
 
 **Endpoint**: `GET /metrics/:type/:entityId/latest`
 
-**Purpose**: Get most recent metric snapshot cho một entity (for real-time displays).
+**Purpose**: Get most recent metric data cho một entity (for real-time displays).
 
 **Path Parameters**:
 - `type`: `node` | `resource` | `deployment`
@@ -742,15 +806,189 @@ curl -X GET "http://localhost:3003/metrics/query?type=node&entityIds=65a0001,65a
 **Example cURL**:
 
 ```bash
-curl -X GET http://localhost:3003/metrics/node/65a0000000000000000000001/latest \
+curl -X GET http://localhost:3004/metrics/node/65a0000000000000000000001/latest \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
 ---
 
-## 4. Error Handling
+## 4. Aggregation API Endpoints
 
-### 4.1 Standard Error Response Format
+### 4.1 Overview
+
+**Purpose**: Manual aggregation trigger endpoints cho external cronjobs.
+
+**Authentication**: API Key authentication (service-to-service)
+
+```
+X-API-Key: <INTERNAL_API_KEY>
+```
+
+**Pattern**: External system cronjob → AIWM API → Worker processes aggregation
+
+---
+
+### 4.2 Trigger 1min → 5min Aggregation
+
+**Endpoint**: `POST /metrics/aggregate/1min-to-5min`
+
+**Purpose**: Trigger aggregation từ 1min metrics sang 5min metrics.
+
+**Authentication**: API Key (X-API-Key header)
+
+**Request Body**:
+
+```typescript
+interface TriggerAggregationDto {
+  metricTypes?: string[];      // Optional: ['node', 'resource', 'deployment'], default: all
+  startTime?: string;          // Optional: ISO 8601 UTC, default: 10 min ago
+  endTime?: string;            // Optional: ISO 8601 UTC, default: 5 min ago
+  batchSize?: number;          // Optional: default 10
+}
+```
+
+**Response**: `202 Accepted`
+
+```json
+{
+  "success": true,
+  "message": "Aggregation job queued successfully",
+  "data": {
+    "jobId": "agg-1min-5min-1705234800",
+    "metricTypes": ["node", "resource", "deployment"],
+    "timeRange": {
+      "start": "2026-01-14T09:50:00.000Z",
+      "end": "2026-01-14T09:55:00.000Z"
+    },
+    "status": "queued"
+  }
+}
+```
+
+**Example cURL**:
+
+```bash
+curl -X POST http://localhost:3004/metrics/aggregate/1min-to-5min \
+  -H "X-API-Key: $INTERNAL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metricTypes": ["node", "resource"],
+    "batchSize": 10
+  }'
+```
+
+---
+
+### 4.3 Trigger 5min → 1hour Aggregation
+
+**Endpoint**: `POST /metrics/aggregate/5min-to-1hour`
+
+**Purpose**: Trigger aggregation từ 5min metrics sang 1hour metrics.
+
+**Authentication**: API Key (X-API-Key header)
+
+**Request Body**: Same as 4.2
+
+**Response**: `202 Accepted` (same format as 4.2)
+
+**Example cURL**:
+
+```bash
+curl -X POST http://localhost:3004/metrics/aggregate/5min-to-1hour \
+  -H "X-API-Key: $INTERNAL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metricTypes": ["node", "deployment"]
+  }'
+```
+
+---
+
+### 4.4 Trigger 1hour → 1day Aggregation
+
+**Endpoint**: `POST /metrics/aggregate/1hour-to-1day`
+
+**Purpose**: Trigger aggregation từ 1hour metrics sang 1day metrics.
+
+**Authentication**: API Key (X-API-Key header)
+
+**Request Body**: Same as 4.2
+
+**Response**: `202 Accepted` (same format as 4.2)
+
+**Example cURL**:
+
+```bash
+curl -X POST http://localhost:3004/metrics/aggregate/1hour-to-1day \
+  -H "X-API-Key: $INTERNAL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+---
+
+### 4.5 Get Aggregation Job Status
+
+**Endpoint**: `GET /metrics/aggregate/jobs/:jobId`
+
+**Purpose**: Check status của aggregation job.
+
+**Authentication**: API Key (X-API-Key header)
+
+**Response**: `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "agg-1min-5min-1705234800",
+    "status": "completed",
+    "progress": {
+      "total": 100,
+      "processed": 100,
+      "failed": 2
+    },
+    "startedAt": "2026-01-14T10:00:00.000Z",
+    "completedAt": "2026-01-14T10:02:30.000Z",
+    "duration": 150000
+  }
+}
+```
+
+**Job Status Values**:
+- `queued`: Job đang chờ xử lý
+- `processing`: Job đang chạy
+- `completed`: Job hoàn thành thành công
+- `failed`: Job thất bại
+- `partial`: Job hoàn thành nhưng có lỗi
+
+---
+
+### 4.6 External Cronjob Setup
+
+**System Crontab Example**:
+
+```bash
+# /etc/crontab
+
+# Aggregate 1min → 5min (every 5 minutes)
+*/5 * * * * curl -X POST http://localhost:3004/metrics/aggregate/1min-to-5min \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
+
+# Aggregate 5min → 1hour (every hour at minute 5)
+5 * * * * curl -X POST http://localhost:3004/metrics/aggregate/5min-to-1hour \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
+
+# Aggregate 1hour → 1day (daily at 00:05)
+5 0 * * * curl -X POST http://localhost:3004/metrics/aggregate/1hour-to-1day \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
+```
+
+---
+
+## 5. Error Handling
+
+### 5.1 Standard Error Response Format
 
 ```json
 {
@@ -769,7 +1007,7 @@ curl -X GET http://localhost:3003/metrics/node/65a0000000000000000000001/latest 
 }
 ```
 
-### 4.2 Error Codes
+### 5.2 Error Codes
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
@@ -782,7 +1020,7 @@ curl -X GET http://localhost:3003/metrics/node/65a0000000000000000000001/latest 
 | `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
 | `INTERNAL_SERVER_ERROR` | 500 | Server error |
 
-### 4.3 Validation Error Details
+### 5.3 Validation Error Details
 
 **Example: Invalid CPU Usage**
 
@@ -810,9 +1048,9 @@ curl -X GET http://localhost:3003/metrics/node/65a0000000000000000000001/latest 
 
 ---
 
-## 5. API Examples
+## 6. API Examples
 
-### 5.1 Node Daemon Push Workflow
+### 6.1 Node Daemon Push Workflow
 
 **Scenario**: Node daemon push metrics every minute
 
@@ -822,7 +1060,7 @@ curl -X GET http://localhost:3003/metrics/node/65a0000000000000000000001/latest 
 
 NODE_ID="65a0000000000000000000001"
 NODE_JWT="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-API_URL="http://localhost:3003/metrics/push/node"
+API_URL="http://localhost:3004/metrics/push/node"
 
 while true; do
   # Collect metrics
@@ -860,7 +1098,7 @@ done
 
 ---
 
-### 5.2 Frontend Query Workflow
+### 6.2 Frontend Query Workflow
 
 **Scenario**: Frontend dashboard query node metrics for last hour
 
@@ -886,7 +1124,7 @@ async function fetchNodeMetrics(params: MetricsQueryParams) {
   }).toString();
 
   const response = await fetch(
-    `http://localhost:3003/metrics/nodes/${nodeId}?${queryString}`,
+    `http://localhost:3004/metrics/nodes/${nodeId}?${queryString}`,
     {
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('jwt')}`,
@@ -920,7 +1158,7 @@ console.log('Node Metrics:', metricsData);
 
 ---
 
-### 5.3 Container Runtime Push Workflow
+### 6.3 Container Runtime Push Workflow
 
 **Scenario**: Docker daemon push container metrics every 5 minutes
 
@@ -932,7 +1170,7 @@ import requests
 import time
 from datetime import datetime
 
-AIWM_API = "http://localhost:3003/metrics/push/resource"
+AIWM_API = "http://localhost:3004/metrics/push/resource"
 JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
 client = docker.from_env()
@@ -1013,9 +1251,9 @@ while True:
 
 ---
 
-## 6. Rate Limiting
+## 7. Rate Limiting
 
-### 6.1 Rate Limit Headers
+### 7.1 Rate Limit Headers
 
 All API responses include rate limit headers:
 
@@ -1025,16 +1263,16 @@ X-RateLimit-Remaining: 58
 X-RateLimit-Reset: 1705234800
 ```
 
-### 6.2 Rate Limit Policies
+### 7.2 Rate Limit Policies
 
 | Endpoint Pattern | Limit | Window |
 |------------------|-------|--------|
 | `POST /metrics/push/node` | 1 request | 1 minute per node |
 | `POST /metrics/push/resource` | 1 request | 5 minutes per resource |
-| `GET /metrics/**` | 60 requests | 1 minute per user |
+| `GET /metrics/**` | 10 requests | 1 minute per user |
 | `POST /metrics/push/batch` | 10 requests | 1 minute per user |
 
-### 6.3 Rate Limit Exceeded Response
+### 7.3 Rate Limit Exceeded Response
 
 ```json
 {
@@ -1050,9 +1288,9 @@ X-RateLimit-Reset: 1705234800
 
 ---
 
-## 7. Pagination
+## 8. Pagination
 
-### 7.1 Pagination Parameters
+### 8.1 Pagination Parameters
 
 ```
 ?page=1&limit=100
@@ -1061,24 +1299,37 @@ X-RateLimit-Reset: 1705234800
 - `page`: Page number (default: 1, min: 1)
 - `limit`: Items per page (default: 100, max: 1000)
 
-### 7.2 Pagination Response
+### 8.2 Pagination Response Structure
+
+**Standard format** (consistent với CRUD APIs):
 
 ```json
 {
+  "success": true,
+  "data": [
+    // ... metric data points
+  ],
   "pagination": {
     "page": 1,
     "limit": 100,
-    "total": 250,
-    "pages": 3,
-    "hasNext": true,
-    "hasPrev": false
+    "total": 250
+  },
+  "statistics": {
+    // ... metadata và summary statistics
   }
 }
 ```
 
+**Fields**:
+- `data`: Array of metric data points
+- `pagination.page`: Current page number
+- `pagination.limit`: Items per page
+- `pagination.total`: Total number of items
+- `statistics`: Metadata (entity info, time range, summary stats)
+
 ---
 
-## 8. Swagger Documentation
+## 9. Swagger Documentation
 
 All endpoints sẽ được document đầy đủ trong Swagger UI:
 
@@ -1089,6 +1340,7 @@ http://localhost:3003/api-docs
 **Swagger Tags**:
 - `Metrics - Push API`: Push endpoints cho external systems
 - `Metrics - Query API`: Query endpoints cho frontend
+- `Metrics - Aggregation API`: Aggregation trigger endpoints (API Key auth)
 - `Metrics - Admin`: Admin endpoints (Phase 2)
 
 ---

@@ -72,37 +72,44 @@ Different metrics sử dụng different aggregation functions:
 | **Status** | `mode()` | Most frequent status |
 | **Temperatures** | `avg()`, `max()` | Track both average và peak |
 
-### 2.3 Aggregation Schedule
+### 2.3 Aggregation Trigger
 
-**Cron Jobs** (BullMQ):
+**API-Driven Approach** (External Cronjob → AIWM API):
 
-```typescript
-// Aggregate 1min → 5min (every 5 minutes)
-@Cron('*/5 * * * *')
-async aggregate1minTo5min() {
-  // Aggregate data from 5 minutes ago
-  const endTime = Date.now() - 300000; // 5 min ago
-  const startTime = endTime - 300000; // 10 min ago
-  await this.aggregateMetrics('1min', '5min', startTime, endTime);
-}
+Thay vì sử dụng `@Cron` decorators trong code, aggregation được trigger thông qua API endpoints từ external system-level cronjobs.
 
-// Aggregate 5min → 1hour (every hour)
-@Cron('5 * * * *')
-async aggregate5minTo1hour() {
-  // Aggregate data from 1 hour ago
-  const endTime = Date.now() - 3600000; // 1 hour ago
-  const startTime = endTime - 3600000; // 2 hours ago
-  await this.aggregateMetrics('5min', '1hour', startTime, endTime);
-}
+**Flow**:
+```
+External Crontab → HTTP POST to AIWM API → BullMQ Queue → Worker processes aggregation
+```
 
-// Aggregate 1hour → 1day (daily at 00:05)
-@Cron('5 0 * * *')
-async aggregate1hourTo1day() {
-  // Aggregate data from yesterday
-  const endTime = Date.now() - 86400000; // 1 day ago
-  const startTime = endTime - 86400000; // 2 days ago
-  await this.aggregateMetrics('1hour', '1day', startTime, endTime);
-}
+**Benefits**:
+- ✅ **Flexibility**: Dễ dàng thay đổi schedule mà không cần deploy lại service
+- ✅ **Monitoring**: External monitoring tools có thể track job execution
+- ✅ **Scalability**: Phù hợp với multi-instance deployment
+- ✅ **Control**: Admin có thể trigger manual aggregation khi cần
+
+**API Endpoints** (see [03-api-design.md](./03-api-design.md#4-aggregation-api-endpoints)):
+- `POST /metrics/aggregate/1min-to-5min` - Aggregate 1min → 5min
+- `POST /metrics/aggregate/5min-to-1hour` - Aggregate 5min → 1hour
+- `POST /metrics/aggregate/1hour-to-1day` - Aggregate 1hour → 1day
+
+**External Cronjob Setup**:
+
+```bash
+# /etc/crontab
+
+# Aggregate 1min → 5min (every 5 minutes)
+*/5 * * * * curl -X POST http://localhost:3004/metrics/aggregate/1min-to-5min \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
+
+# Aggregate 5min → 1hour (every hour at minute 5)
+5 * * * * curl -X POST http://localhost:3004/metrics/aggregate/5min-to-1hour \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
+
+# Aggregate 1hour → 1day (daily at 00:05)
+5 0 * * * curl -X POST http://localhost:3004/metrics/aggregate/1hour-to-1day \
+  -H "X-API-Key: $INTERNAL_API_KEY" -H "Content-Type: application/json"
 ```
 
 ### 2.4 Aggregation Algorithm
@@ -116,7 +123,7 @@ async aggregateNodeMetrics(
   endTime: Date,
   sourceInterval: '1min',
   targetInterval: '5min'
-): Promise<MetricSnapshot> {
+): Promise<MetricData> {
   // 1. Fetch source metrics
   const sourceMetrics = await this.metricModel.find({
     type: 'node',
@@ -285,7 +292,7 @@ MongoDB TTL indexes automatically delete expired documents:
 
 ```typescript
 // In schema file
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { timestamp: 1 },
   {
     expireAfterSeconds: 365 * 24 * 60 * 60, // 365 days max
@@ -305,10 +312,13 @@ MetricSnapshotSchema.index(
 
 ### 3.3 Manual Cleanup (Backup)
 
-In case TTL index không work hoặc cần immediate cleanup:
+In case TTL index không work hoặc cần immediate cleanup, có thể tạo API endpoint tương tự:
+
+**Endpoint**: `POST /metrics/cleanup/expired` (API Key auth)
+
+**Implementation**:
 
 ```typescript
-@Cron('0 2 * * *') // Daily at 2 AM
 async cleanupExpiredMetrics() {
   const now = Date.now();
 
@@ -340,6 +350,14 @@ async cleanupExpiredMetrics() {
 }
 ```
 
+**External Cronjob**:
+
+```bash
+# Daily at 2 AM
+0 2 * * * curl -X POST http://localhost:3004/metrics/cleanup/expired \
+  -H "X-API-Key: $INTERNAL_API_KEY"
+```
+
 ### 3.4 Storage Lifecycle Diagram
 
 ```
@@ -361,92 +379,223 @@ Day 0 ─────────────► Day 7 ────────�
 
 ## 4. Implementation Details
 
-### 4.1 Aggregation Worker Service
+### 4.1 Aggregation API Controller
+
+**File**: `services/mona/src/modules/metrics/metrics-aggregation.controller.ts`
+
+```typescript
+import { Controller, Post, Body, UseGuards, Get, Param } from '@nestjs/common';
+import { ApiKeyGuard } from '@hydrabyte/base';
+import { MetricsAggregationService } from './metrics-aggregation.service';
+
+interface TriggerAggregationDto {
+  metricTypes?: string[];
+  startTime?: string;
+  endTime?: string;
+  batchSize?: number;
+}
+
+@Controller('metrics/aggregate')
+export class MetricsAggregationController {
+  constructor(
+    private readonly aggregationService: MetricsAggregationService
+  ) {}
+
+  @Post('1min-to-5min')
+  @UseGuards(ApiKeyGuard)
+  async trigger1minTo5min(@Body() dto: TriggerAggregationDto) {
+    return this.aggregationService.triggerAggregation('1min', '5min', dto);
+  }
+
+  @Post('5min-to-1hour')
+  @UseGuards(ApiKeyGuard)
+  async trigger5minTo1hour(@Body() dto: TriggerAggregationDto) {
+    return this.aggregationService.triggerAggregation('5min', '1hour', dto);
+  }
+
+  @Post('1hour-to-1day')
+  @UseGuards(ApiKeyGuard)
+  async trigger1hourTo1day(@Body() dto: TriggerAggregationDto) {
+    return this.aggregationService.triggerAggregation('1hour', '1day', dto);
+  }
+
+  @Get('jobs/:jobId')
+  @UseGuards(ApiKeyGuard)
+  async getJobStatus(@Param('jobId') jobId: string) {
+    return this.aggregationService.getJobStatus(jobId);
+  }
+}
+```
+
+### 4.2 Aggregation Service
+
+**File**: `services/mona/src/modules/metrics/metrics-aggregation.service.ts`
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Cron } from '@nestjs/schedule';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Model } from 'mongoose';
-import { MetricSnapshot } from './metrics.schema';
+import { MetricData } from './metrics.schema';
 
 @Injectable()
 export class MetricsAggregationService {
   private readonly logger = new Logger(MetricsAggregationService.name);
 
   constructor(
-    @InjectModel(MetricSnapshot.name)
-    private readonly metricModel: Model<MetricSnapshot>
+    @InjectModel(MetricData.name)
+    private readonly metricModel: Model<MetricData>,
+    @InjectQueue('metrics-aggregation')
+    private readonly aggregationQueue: Queue
   ) {}
 
   /**
-   * Aggregate 1min → 5min (every 5 minutes)
+   * Trigger aggregation job
    */
-  @Cron('*/5 * * * *')
-  async aggregate1minTo5min() {
-    this.logger.log('Starting 1min → 5min aggregation');
+  async triggerAggregation(
+    sourceInterval: string,
+    targetInterval: string,
+    dto: TriggerAggregationDto
+  ) {
+    this.logger.log(`Triggering ${sourceInterval} → ${targetInterval} aggregation`);
 
-    try {
-      const endTime = new Date(Date.now() - 5 * 60 * 1000); // 5 min ago
-      const startTime = new Date(endTime.getTime() - 5 * 60 * 1000); // 10 min ago
+    // Default values
+    const metricTypes = dto.metricTypes || ['node', 'resource', 'deployment'];
+    const endTime = dto.endTime ? new Date(dto.endTime) : this.getDefaultEndTime(sourceInterval);
+    const startTime = dto.startTime ? new Date(dto.startTime) : this.getDefaultStartTime(sourceInterval, endTime);
+    const batchSize = dto.batchSize || 10;
 
-      await this.aggregateAllEntities('node', '1min', '5min', startTime, endTime);
-      await this.aggregateAllEntities('resource', '1min', '5min', startTime, endTime);
-      await this.aggregateAllEntities('deployment', '1min', '5min', startTime, endTime);
+    // Create job ID
+    const jobId = `agg-${sourceInterval}-${targetInterval}-${Date.now()}`;
 
-      this.logger.log('Completed 1min → 5min aggregation');
-    } catch (error) {
-      this.logger.error('Failed to aggregate 1min → 5min:', error);
+    // Enqueue aggregation jobs
+    await this.enqueueAggregationJobs(
+      jobId,
+      metricTypes,
+      sourceInterval,
+      targetInterval,
+      startTime,
+      endTime,
+      batchSize
+    );
+
+    return {
+      success: true,
+      message: 'Aggregation job queued successfully',
+      data: {
+        jobId,
+        metricTypes,
+        timeRange: {
+          start: startTime.toISOString(),
+          end: endTime.toISOString(),
+        },
+        status: 'queued',
+      },
+    };
+  }
+
+  /**
+   * Get default end time based on source interval
+   */
+  private getDefaultEndTime(sourceInterval: string): Date {
+    const now = Date.now();
+    switch (sourceInterval) {
+      case '1min':
+        return new Date(now - 5 * 60 * 1000); // 5 min ago
+      case '5min':
+        return new Date(now - 60 * 60 * 1000); // 1 hour ago
+      case '1hour':
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return today; // Start of today
+      default:
+        return new Date();
     }
   }
 
   /**
-   * Aggregate 5min → 1hour (every hour at minute 5)
+   * Get default start time based on source interval
    */
-  @Cron('5 * * * *')
-  async aggregate5minTo1hour() {
-    this.logger.log('Starting 5min → 1hour aggregation');
-
-    try {
-      const endTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
-      const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 2 hours ago
-
-      await this.aggregateAllEntities('node', '5min', '1hour', startTime, endTime);
-      await this.aggregateAllEntities('resource', '5min', '1hour', startTime, endTime);
-      await this.aggregateAllEntities('deployment', '5min', '1hour', startTime, endTime);
-
-      this.logger.log('Completed 5min → 1hour aggregation');
-    } catch (error) {
-      this.logger.error('Failed to aggregate 5min → 1hour:', error);
+  private getDefaultStartTime(sourceInterval: string, endTime: Date): Date {
+    switch (sourceInterval) {
+      case '1min':
+        return new Date(endTime.getTime() - 5 * 60 * 1000); // 5 min before endTime
+      case '5min':
+        return new Date(endTime.getTime() - 60 * 60 * 1000); // 1 hour before endTime
+      case '1hour':
+        return new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // 1 day before endTime
+      default:
+        return new Date(endTime.getTime() - 3600000);
     }
   }
 
   /**
-   * Aggregate 1hour → 1day (daily at 00:05)
+   * Enqueue aggregation jobs to BullMQ
    */
-  @Cron('5 0 * * *')
-  async aggregate1hourTo1day() {
-    this.logger.log('Starting 1hour → 1day aggregation');
+  private async enqueueAggregationJobs(
+    jobId: string,
+    metricTypes: string[],
+    sourceInterval: string,
+    targetInterval: string,
+    startTime: Date,
+    endTime: Date,
+    batchSize: number
+  ) {
+    for (const metricType of metricTypes) {
+      // Get distinct entity IDs
+      const entityIds = await this.metricModel.distinct('entityId', {
+        type: metricType,
+        interval: sourceInterval,
+        timestamp: { $gte: startTime, $lt: endTime },
+      });
 
-    try {
-      const endTime = new Date();
-      endTime.setHours(0, 0, 0, 0); // Start of today
-      const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000); // Start of yesterday
+      this.logger.log(
+        `Enqueuing ${entityIds.length} ${metricType} aggregation jobs`
+      );
 
-      await this.aggregateAllEntities('node', '1hour', '1day', startTime, endTime);
-      await this.aggregateAllEntities('resource', '1hour', '1day', startTime, endTime);
-      await this.aggregateAllEntities('deployment', '1hour', '1day', startTime, endTime);
+      // Create jobs for each entity
+      const jobs = entityIds.map(entityId => ({
+        name: 'aggregate-entity',
+        data: {
+          jobId,
+          metricType,
+          entityId,
+          sourceInterval,
+          targetInterval,
+          startTime,
+          endTime,
+        },
+      }));
 
-      this.logger.log('Completed 1hour → 1day aggregation');
-    } catch (error) {
-      this.logger.error('Failed to aggregate 1hour → 1day:', error);
+      await this.aggregationQueue.addBulk(jobs);
     }
+  }
+
+  /**
+   * Get aggregation job status
+   */
+  async getJobStatus(jobId: string) {
+    // Implementation: Query BullMQ job status or custom tracking table
+    // For now, return mock data
+    return {
+      success: true,
+      data: {
+        jobId,
+        status: 'completed',
+        progress: {
+          total: 100,
+          processed: 100,
+          failed: 2,
+        },
+      },
+    };
   }
 
   /**
    * Aggregate all entities of a given type
    */
-  private async aggregateAllEntities(
+  async aggregateAllEntities(
     metricType: string,
     sourceInterval: string,
     targetInterval: string,
@@ -505,20 +654,22 @@ export class MetricsAggregationService {
     }
   }
 
-  // aggregateNodeMetrics, aggregateResourceMetrics, etc. implemented as shown earlier
+  // aggregateNodeMetrics, aggregateResourceMetrics, etc. implemented as shown in section 2.4
 }
 ```
 
-### 4.2 Queue-Based Aggregation (Alternative)
+### 4.3 BullMQ Worker (Processor)
 
-For better reliability và scalability, use BullMQ:
+**File**: `services/mona/src/modules/metrics/metrics-aggregation.processor.ts`
 
 ```typescript
-// metrics.aggregation.queue.ts
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { Logger } from '@nestjs/common';
+import { MetricsAggregationService } from './metrics-aggregation.service';
 
 interface AggregationJobData {
+  jobId: string;
   metricType: 'node' | 'resource' | 'deployment';
   entityId: string;
   sourceInterval: string;
@@ -529,10 +680,34 @@ interface AggregationJobData {
 
 @Processor('metrics-aggregation')
 export class MetricsAggregationProcessor extends WorkerHost {
-  async process(job: Job<AggregationJobData>): Promise<void> {
-    const { metricType, entityId, sourceInterval, targetInterval, startTime, endTime } = job.data;
+  private readonly logger = new Logger(MetricsAggregationProcessor.name);
 
-    await this.aggregateEntity(metricType, entityId, sourceInterval, targetInterval, startTime, endTime);
+  constructor(
+    private readonly aggregationService: MetricsAggregationService
+  ) {
+    super();
+  }
+
+  async process(job: Job<AggregationJobData>): Promise<void> {
+    const { jobId, metricType, entityId, sourceInterval, targetInterval, startTime, endTime } = job.data;
+
+    this.logger.log(`Processing aggregation job ${jobId} for ${metricType} ${entityId}`);
+
+    try {
+      await this.aggregationService.aggregateEntity(
+        metricType,
+        entityId,
+        sourceInterval,
+        targetInterval,
+        new Date(startTime),
+        new Date(endTime)
+      );
+
+      this.logger.log(`Completed aggregation for ${metricType} ${entityId}`);
+    } catch (error) {
+      this.logger.error(`Failed to aggregate ${metricType} ${entityId}:`, error);
+      throw error; // BullMQ will retry
+    }
   }
 }
 ```

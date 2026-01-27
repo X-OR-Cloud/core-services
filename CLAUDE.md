@@ -22,101 +22,50 @@ When there are mandatory change requests, follow these steps:
 - Mark todos as completed immediately after finishing each micro-task
 - Keep responses concise by focusing on one micro-task at a time
 
-### Issue-Based Workflow
+### Development Request Workflow
 When receiving new development requests, follow this workflow:
 
-1. **Create Issue**: For every development request, create a new issue in MCP VOA system with status "backlog"
-3. **Populate Information**: Fill in known information and mark missing information as placeholders
-4. **Request Review**: Ask user to review issue, provide missing information, and approve before implementation
-5. **Execute**: Once approved, change status to "in-progress" and implement the solution
-6. **Track Progress**: Update issue progress and status throughout implementation
-7. **Complete**: Mark issue as "done" when finished
+1. **Discuss** - Clarify all requirements and constraints
+2. **Propose** - Create documentation in `docs/<service>/<feature>/` (or user-specified location)
+3. **Approve** - Wait for user review and confirmation
+4. **Implement** - Execute the approved plan
+5. **Verify** - Build, test, and validate changes
 
-#### Issue Content Guidelines
-- **Scope**: Keep requests focused on small features (2-3 files max, single endpoint/module)
-- **Template Flexibility**: Adapt the template content based on request type and complexity
-- **Testing Requirements**: Always include build verification, service testing, and API testing with curl commands
-- **Clear Expectations**: Define exact acceptance criteria and expected outcomes
+#### Response Guidelines
+- Keep responses concise and focused
+- Avoid lengthy explanations unless requested
+- Do not provide sample code unless specifically asked
+- Focus on addressing the specific question or task
 
 #### Common Request Types
-- **API Development**: Creating new endpoints
-- **API Modification**: Updating existing endpoints
-- **API Testing**: Validating endpoint behavior
-- **Module Addition**: Adding new modules to services
-- **Bug Investigation**: Analyzing and fixing issues
-- **New Service Creation**: Creating new microservices (see prompt templates below)
+- API Development/Modification
+- Module Addition
+- Bug Investigation
+- New Service Creation
 
 ## Common Development Commands
 
-### Build Commands
+### Build
 ```bash
-# Build all projects
-npx nx run-many --target=build --all
-
 # Build specific service
-npx nx build iam
-npx nx build cbm
+nx run <service>:build
 
-# Build with development configuration
-npx nx build iam --configuration=development
+# Examples
+nx run iam:build
+nx run aiwm:build
+nx run cbm:build
 ```
 
-### Development Server
+### Run Services
 ```bash
-# Serve a specific service (with hot reload)
-npx nx serve iam
-npx nx serve cbm
+# API mode (REST API server)
+nx run <service>:api
 
-# Serve with production configuration
-npx nx serve iam --configuration=production
-```
+# MCP mode (for AIWM - MCP server)
+nx run aiwm:mcp
 
-### Testing
-```bash
-# Run all tests
-npx nx run-many --target=test --all
-
-# Run tests for specific project
-npx nx test iam
-npx nx test cbm
-npx nx test shared
-npx nx test base
-
-# Run tests with coverage
-npx nx test iam --coverage
-
-# Run e2e tests
-npx nx test iam-e2e
-npx nx test cbm-e2e
-```
-
-### Linting
-```bash
-# Lint all projects
-npx nx run-many --target=lint --all
-
-# Lint specific project
-npx nx lint iam
-npx nx lint cbm
-
-# Lint with auto-fix
-npx nx lint iam --fix
-```
-
-### Other Useful Commands
-```bash
-# Show dependency graph
-npx nx graph
-
-# Show project details
-npx nx show project iam
-npx nx show projects
-
-# Generate new NestJS application
-npx nx g @nx/nest:app <app-name>
-
-# Generate new library
-npx nx g @nx/node:lib <lib-name>
+# Worker mode (microservices worker)
+nx run <service>:wrk
 ```
 
 ## High-Level Architecture
@@ -273,6 +222,7 @@ export class MyEntityController {
 Current services:
 - IAM: 3000
 - CBM: 3001
+- MONA: 3004
 - Template: 3002
 - AIWM: 3003
 

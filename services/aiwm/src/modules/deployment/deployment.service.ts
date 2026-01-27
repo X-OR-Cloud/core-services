@@ -115,9 +115,9 @@ export class DeploymentService extends BaseService<Deployment> {
         );
       }
 
-      if (resource.resourceType !== 'inference-container') {
+      if (resource.type !== 'inference-container') {
         throw new BadRequestException(
-          `Resource "${resource.name}" must be of type 'inference-container'. Current type: ${resource.resourceType}`
+          `Resource "${resource.name}" must be of type 'inference-container'. Current type: ${resource.type}`
         );
       }
 

@@ -61,7 +61,7 @@ export class ResourceController {
   @ApiReadErrors({ notFound: false })
   @ApiQuery({ name: 'page', required: false, description: 'Page number', type: Number })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page', type: Number })
-  @ApiQuery({ name: 'resourceType', required: false, description: 'Filter by resource type' })
+  @ApiQuery({ name: 'type', required: false, description: 'Filter by resource type' })
   @ApiQuery({ name: 'status', required: false, description: 'Filter by status' })
   @ApiQuery({ name: 'nodeId', required: false, description: 'Filter by node ID' })
   @UseGuards(JwtAuthGuard)
@@ -72,13 +72,13 @@ export class ResourceController {
     console.log('Controller received query:', query);
 
     // Extract custom filters and pagination from raw query
-    const { resourceType, status, nodeId, page, limit, ...otherParams } = query;
+    const { type, status, nodeId, page, limit, ...otherParams } = query;
 
-    console.log('Extracted params:', { resourceType, status, nodeId, page, limit });
+    console.log('Extracted params:', { type, status, nodeId, page, limit });
 
     // Build filter object
     const filter: any = {};
-    if (resourceType) filter.resourceType = resourceType;
+    if (type) filter.type = type;
     if (status) filter.status = status;
     if (nodeId) filter.nodeId = new Types.ObjectId(nodeId);
 

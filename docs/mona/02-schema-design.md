@@ -17,7 +17,7 @@
 ## 📋 Table of Contents
 
 1. [Collection Overview](#collection-overview)
-2. [MetricSnapshot Schema](#metricsnapshot-schema)
+2. [MetricData Schema](#metricdata-schema)
 3. [Metric Types](#metric-types)
 4. [Indexes](#indexes)
 5. [Data Samples](#data-samples)
@@ -60,7 +60,7 @@ Metrics được lưu với 4 levels:
 
 ---
 
-## 2. MetricSnapshot Schema
+## 2. MetricData Schema
 
 ### 2.1 Base Schema
 
@@ -69,7 +69,7 @@ import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { BaseSchema } from '@hydrabyte/base';
 
-export type MetricSnapshotDocument = MetricSnapshot & Document;
+export type MetricDataDocument = MetricData & Document;
 
 /**
  * MetricType - Discriminator cho loại metrics (nguồn phát sinh)
@@ -92,11 +92,11 @@ export enum AggregationInterval {
 }
 
 /**
- * MetricSnapshot - Time-series metrics storage
+ * MetricData - Time-series metrics storage
  * Single collection design với type discriminator
  */
 @Schema({ timestamps: true })
-export class MetricSnapshot extends BaseSchema {
+export class MetricData extends BaseSchema {
   // ============= Discriminator & Classification =============
 
   @Prop({
@@ -116,8 +116,8 @@ export class MetricSnapshot extends BaseSchema {
   @Prop({ required: true, index: true })
   entityId!: string; // Reference to Node._id, Resource._id, Deployment._id, etc.
 
-  @Prop({ index: true })
-  entityName?: string; // Optional: tên entity cho easier debugging
+  @Prop()
+  entityName?: string; // Optional: tên entity cho easier debugging (no index)
 
   // ============= Timestamp & Interval =============
 
@@ -202,7 +202,7 @@ export class MetricSnapshot extends BaseSchema {
   // BaseSchema provides: owner (orgId, userId, groupId), createdBy, updatedBy, etc.
 }
 
-export const MetricSnapshotSchema = SchemaFactory.createForClass(MetricSnapshot);
+export const MetricDataSchema = SchemaFactory.createForClass(MetricData);
 ```
 
 ### 2.2 NodeMetrics Structure
@@ -559,31 +559,31 @@ interface SystemMetrics {
 
 ```typescript
 // Compound index for time-range queries
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { type: 1, entityId: 1, timestamp: -1 },
   { name: 'metrics_time_range_query' }
 );
 
 // Compound index for aggregation queries
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { type: 1, interval: 1, timestamp: -1 },
   { name: 'metrics_aggregation_query' }
 );
 
 // Index for entity lookup
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { entityType: 1, entityId: 1 },
   { name: 'metrics_entity_lookup' }
 );
 
 // Index for organization-scoped queries
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { 'owner.orgId': 1, type: 1, timestamp: -1 },
   { name: 'metrics_org_query' }
 );
 
 // TTL index for automatic cleanup (expire after 365 days)
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { timestamp: 1 },
   {
     expireAfterSeconds: 31536000, // 365 days
@@ -592,7 +592,7 @@ MetricSnapshotSchema.index(
 );
 
 // Index for latest metric queries
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { type: 1, entityId: 1, timestamp: -1 },
   { name: 'metrics_latest_lookup' }
 );

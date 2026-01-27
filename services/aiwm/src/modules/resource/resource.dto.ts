@@ -438,7 +438,7 @@ export class CreateResourceDto {
     example: ResourceType.VIRTUAL_MACHINE,
   })
   @IsEnum(ResourceType)
-  resourceType!: string;
+  type!: string;
 
   @ApiProperty({
     description: 'Node ID',
@@ -500,6 +500,16 @@ export class UpdateResourceDto {
   @IsOptional()
   @IsObject()
   config?: Partial<InferenceContainerConfigDto | ApplicationContainerConfigDto | VirtualMachineConfigDto>;
+
+  @ApiPropertyOptional({ description: 'Deployment information' })
+  @IsOptional()
+  @IsObject()
+  deployment?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'Restart count' })
+  @IsOptional()
+  @IsNumber()
+  restartCount?: number;
 
   @ApiPropertyOptional({ description: 'Error message' })
   @IsOptional()

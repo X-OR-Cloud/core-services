@@ -22,8 +22,9 @@ export class ResourceService extends BaseService<Resource> {
    */
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Resource>> {
     if(options.filter){
-      if(options.filter.resourceType === 'container'){
-        options.filter.resourceType = { $in: ['application-container','inference-container','system-container'] };
+      // Support filtering by 'container' to get all container types
+      if(options.filter.type === 'container'){
+        options.filter.type = { $in: ['application-container','inference-container','system-container'] };
       }
     }
     const findResult = await super.findAll(options, context);
@@ -39,12 +40,12 @@ export class ResourceService extends BaseService<Resource> {
       }
     ], context);
 
-    // Aggregate statistics by resourceType
+    // Aggregate statistics by type (changed from resourceType)
     const typeStats = await super.aggregate([
       { $match: { ...options.filter } },
       {
         $group: {
-          _id: '$resourceType',
+          _id: '$type',
           count: { $sum: 1 }
         }
       }
@@ -140,8 +141,10 @@ export class ResourceService extends BaseService<Resource> {
     return {
       resourceId,
       status: resource.status,
-      runtime: resource.runtime || null,
+      deployment: resource.deployment || null,
       lastHealthCheck: resource.lastHealthCheck || null,
+      lastMetricsAt: resource.lastMetricsAt || null,
+      restartCount: resource.restartCount || 0,
       note: 'V1: Status from DB. Real-time status from worker will be implemented in V2.',
     };
   }
@@ -167,7 +170,7 @@ export class ResourceService extends BaseService<Resource> {
       {
         timestamp: new Date(Date.now() - 45000).toISOString(),
         level: 'info',
-        message: `[Mock] Allocating resources (${resource.resourceType})...`,
+        message: `[Mock] Allocating resources (${resource.type})...`,
       },
       {
         timestamp: new Date(Date.now() - 30000).toISOString(),
@@ -176,11 +179,12 @@ export class ResourceService extends BaseService<Resource> {
       },
     ];
 
-    if (resource.resourceType === 'virtual-machine') {
+    if (resource.type === 'virtual-machine') {
+      const deployment = resource.deployment as any;
       mockLogs.push({
         timestamp: new Date(Date.now() - 15000).toISOString(),
         level: 'info',
-        message: `[Mock] SSH available at ${resource.runtime?.endpoint || 'pending'}`,
+        message: `[Mock] SSH available at ${deployment?.sshEndpoint || deployment?.endpoint || 'pending'}`,
       });
     }
 
@@ -248,7 +252,7 @@ export class ResourceService extends BaseService<Resource> {
       throw new Error('Resource not found');
     }
 
-    if (resource.resourceType !== 'virtual-machine') {
+    if (resource.type !== 'virtual-machine') {
       throw new Error('Console access only available for VMs');
     }
 
@@ -273,7 +277,7 @@ export class ResourceService extends BaseService<Resource> {
       throw new Error('Resource not found');
     }
 
-    if (resource.resourceType !== 'virtual-machine') {
+    if (resource.type !== 'virtual-machine') {
       throw new Error('Snapshots only available for VMs');
     }
 
@@ -303,7 +307,7 @@ export class ResourceService extends BaseService<Resource> {
       throw new Error('Resource not found');
     }
 
-    if (resource.resourceType !== 'virtual-machine') {
+    if (resource.type !== 'virtual-machine') {
       throw new Error('Snapshots only available for VMs');
     }
 
@@ -375,7 +379,7 @@ export class ResourceService extends BaseService<Resource> {
       throw new Error('Resource not found');
     }
 
-    if (!resource.resourceType.includes('container')) {
+    if (!resource.type.includes('container')) {
       throw new Error('Exec only available for containers');
     }
 

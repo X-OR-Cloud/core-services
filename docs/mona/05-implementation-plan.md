@@ -21,23 +21,31 @@
 
 ### 1.1 Development Approach
 
-**Methodology**: Incremental development với testing sau mỗi phase
+**Methodology**: Clone Template Service + Incremental customization
 
-**Principles**:
+**Strategy**:
+- ✅ **Clone Template**: Start với `services/template/` để có production-ready foundation
+- ✅ **Single Module**: Tất cả metrics logic trong 1 module (`metrics/`)
+- ✅ **Micro-tasks**: Break down complex tasks thành small, manageable steps
 - ✅ **Test-Driven**: Write tests trước hoặc cùng lúc với implementation
 - ✅ **Incremental**: Ship working features incrementally
-- ✅ **Documentation-First**: Update docs as code changes
-- ✅ **Code Review**: All code được review trước khi merge
+
+**Why Clone Template?**
+- ✅ Production-ready structure (health check, error handling, RBAC)
+- ✅ Consistent patterns across services
+- ✅ Faster scaffolding (save 1-2 days)
+- ✅ Focus on domain logic instead of boilerplate
 
 ### 1.2 Timeline Summary
 
 | Phase | Duration | Deliverables | Dependencies |
 |-------|----------|--------------|--------------|
-| **Phase 1** | 3 days | Schema, DTOs, Module setup | None |
+| **Phase 0** | 0.5 day | Clone & customize template | None |
+| **Phase 1** | 2 days | Schema, DTOs, Constants | Phase 0 |
 | **Phase 2** | 3 days | Push API, Query API, Service layer | Phase 1 |
 | **Phase 3** | 2 days | Aggregation worker, Retention policy | Phase 2 |
 | **Phase 4** | 2 days | Testing, optimization, docs | Phase 3 |
-| **Total** | **10 days** | **Production-ready Metrics Module** | |
+| **Total** | **9.5 days** | **Production-ready MONA Service** | |
 
 ### 1.3 Team Allocation
 
@@ -52,54 +60,143 @@
 
 ---
 
-## 2. Phase 1: Foundation (Days 1-3)
+## 2. Phase 0: Clone Template (Day 0.5)
 
 ### 2.1 Goals
 
-- ✅ Create module structure
-- ✅ Define schemas và indexes
-- ✅ Create DTOs và validation
-- ✅ Setup basic testing infrastructure
+- ✅ Clone template service → MONA service
+- ✅ Replace namespaces and types
+- ✅ Remove template-specific modules
+- ✅ Update configuration (port, database)
+- ✅ Verify build và health check
 
 ### 2.2 Tasks Breakdown
 
-#### Task 1.1: Module Setup (2 hours)
+#### Task 0.1: Clone và Setup Initial Structure (2 hours)
 
-**Objective**: Create Metrics module structure
+**Objective**: Clone template service và customize cơ bản
 
 **Steps**:
 ```bash
-# Create module directory
-mkdir -p services/aiwm/src/modules/metrics
+# 1. Clone template service
+cp -r services/template services/mona
 
-# Create files
-cd services/aiwm/src/modules/metrics
-touch metrics.module.ts
-touch metrics.controller.ts
-touch metrics.service.ts
-touch metrics.schema.ts
-touch metrics.dto.ts
-touch metrics.constants.ts
+# 2. Update service configuration
+cd services/mona
+
+# 3. Update package.json, project.json
+# - name: "template" → "mona"
+# - Database: "hydrabyte-template" → "core_mona"
+# - Port: 3002 → 3004
+
+# 4. Remove template-specific modules
+rm -rf src/modules/category
+rm -rf src/modules/product
+rm -rf src/modules/report
+
+# 5. Create metrics module
+mkdir -p src/modules/metrics
+touch src/modules/metrics/metrics.module.ts
+touch src/modules/metrics/metrics.controller.ts
+touch src/modules/metrics/metrics.service.ts
+touch src/modules/metrics/metrics.schema.ts
+touch src/modules/metrics/metrics.dto.ts
+touch src/modules/metrics/metrics.constants.ts
 ```
 
-**Files to Create**:
-- `metrics.module.ts` - Module definition
-- `metrics.controller.ts` - REST API controller
-- `metrics.service.ts` - Business logic service
-- `metrics.schema.ts` - MongoDB schema
-- `metrics.dto.ts` - Data Transfer Objects
-- `metrics.constants.ts` - Constants và enums
+**Files to Modify**:
+1. `services/mona/project.json`:
+   - Update service name references
+   - Update port to 3004
+
+2. `services/mona/.env.example`:
+   ```env
+   PORT=3004
+   MONGODB_URI=mongodb://localhost:27017/core_mona
+   REDIS_HOST=localhost
+   REDIS_PORT=6379
+   JWT_SECRET=your-jwt-secret
+   INTERNAL_API_KEY=your-internal-api-key
+   ```
+
+3. `services/mona/src/app.module.ts`:
+   - Remove template modules imports
+   - Import MetricsModule
+
+4. `services/mona/README.md`:
+   - Update service name, port, description
 
 **Acceptance Criteria**:
-- ✅ Module imports successfully vào `app.module.ts`
-- ✅ Module compiles without errors
-- ✅ Health check endpoint works: `GET /metrics/health`
+- ✅ Service builds successfully: `nx build mona`
+- ✅ Health check works: `GET http://localhost:3004/health`
+- ✅ Swagger docs accessible: `http://localhost:3004/api-docs`
+- ✅ No template-specific code remains
 
 ---
 
-#### Task 1.2: Schema Implementation (4 hours)
+#### Task 0.2: Setup Metrics Module Skeleton (1 hour)
 
-**Objective**: Implement MetricSnapshot schema với full validation
+**Objective**: Create basic metrics module structure from template patterns
+
+**Implementation**:
+
+**File**: `services/mona/src/modules/metrics/metrics.module.ts`
+```typescript
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { MetricsController } from './metrics.controller';
+import { MetricsService } from './metrics.service';
+import { MetricData, MetricDataSchema } from './metrics.schema';
+
+@Module({
+  imports: [
+    MongooseModule.forFeature([
+      { name: MetricData.name, schema: MetricDataSchema },
+    ]),
+  ],
+  controllers: [MetricsController],
+  providers: [MetricsService],
+  exports: [MetricsService],
+})
+export class MetricsModule {}
+```
+
+**File**: `services/mona/src/modules/metrics/metrics.controller.ts` (skeleton)
+```typescript
+import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+
+@Controller('metrics')
+@ApiTags('Metrics')
+export class MetricsController {
+  @Get('health')
+  healthCheck() {
+    return { status: 'ok', service: 'mona-metrics' };
+  }
+}
+```
+
+**Acceptance Criteria**:
+- ✅ Metrics module loads successfully
+- ✅ Health check endpoint works: `GET /metrics/health`
+- ✅ Ready for schema implementation
+
+---
+
+## 3. Phase 1: Foundation (Days 1-2)
+
+### 3.1 Goals
+
+- ✅ Define MetricData schema với indexes
+- ✅ Create DTOs và validation
+- ✅ Setup constants và enums
+- ✅ Basic unit tests
+
+### 3.2 Tasks Breakdown
+
+#### Task 1.1: Schema Implementation (4 hours)
+
+**Objective**: Implement MetricData schema với full validation
 
 **Steps**:
 1. Copy schema từ `02-schema-design.md`
@@ -130,14 +227,14 @@ export enum AggregationInterval {
 }
 
 @Schema({ timestamps: true })
-export class MetricSnapshot extends BaseSchema {
+export class MetricData extends BaseSchema {
   // ... full schema implementation from design doc
 }
 
-export const MetricSnapshotSchema = SchemaFactory.createForClass(MetricSnapshot);
+export const MetricDataSchema = SchemaFactory.createForClass(MetricData);
 
 // Indexes
-MetricSnapshotSchema.index(
+MetricDataSchema.index(
   { type: 1, entityId: 1, timestamp: -1 },
   { name: 'metrics_time_range_query' }
 );
@@ -152,7 +249,7 @@ MetricSnapshotSchema.index(
 
 ---
 
-#### Task 1.3: DTOs Implementation (4 hours)
+#### Task 1.2: DTOs Implementation (4 hours)
 
 **Objective**: Create DTOs cho Push API và Query API
 
@@ -226,7 +323,7 @@ export class MetricsResponseDto {
 
 ---
 
-#### Task 1.4: Constants & Enums (1 hour)
+#### Task 1.3: Constants & Enums (1 hour)
 
 **Objective**: Define constants cho module
 
@@ -257,7 +354,7 @@ export const RETENTION_POLICY = {
 export const RATE_LIMITS = {
   NODE_PUSH: { limit: 1, window: 60 }, // 1 req/min
   RESOURCE_PUSH: { limit: 1, window: 300 }, // 1 req/5min
-  QUERY: { limit: 60, window: 60 }, // 60 req/min
+  QUERY: { limit: 10, window: 60 }, // 10 req/min
 } as const;
 ```
 
@@ -268,7 +365,7 @@ export const RATE_LIMITS = {
 
 ---
 
-#### Task 1.5: Basic Tests Setup (3 hours)
+#### Task 1.4: Basic Tests Setup (3 hours)
 
 **Objective**: Setup testing infrastructure
 
@@ -280,9 +377,9 @@ export const RATE_LIMITS = {
 **Example Test**:
 ```typescript
 // metrics.schema.spec.ts
-describe('MetricSnapshot Schema', () => {
+describe('MetricData Schema', () => {
   it('should create a valid node metric', () => {
-    const metric = new MetricSnapshot({
+    const metric = new MetricData({
       type: MetricType.NODE,
       entityType: 'node',
       entityId: 'test-node-id',
@@ -303,7 +400,7 @@ describe('MetricSnapshot Schema', () => {
 
   it('should reject invalid CPU usage', () => {
     expect(() => {
-      new MetricSnapshot({
+      new MetricData({
         // ... with cpu.usage = 150
       });
     }).toThrow();
@@ -318,7 +415,7 @@ describe('MetricSnapshot Schema', () => {
 
 ---
 
-### 2.3 Phase 1 Deliverables
+### 3.3 Phase 1 Deliverables
 
 **Checklist**:
 - ✅ Metrics module structure created
@@ -337,9 +434,9 @@ describe('MetricSnapshot Schema', () => {
 
 ---
 
-## 3. Phase 2: Core Features (Days 4-6)
+## 4. Phase 2: Core Features (Days 3-5)
 
-### 3.1 Goals
+### 4.1 Goals
 
 - ✅ Implement Push API endpoints
 - ✅ Implement Query API endpoints
@@ -347,7 +444,7 @@ describe('MetricSnapshot Schema', () => {
 - ✅ Add authentication và authorization
 - ✅ Add rate limiting
 
-### 3.2 Tasks Breakdown
+### 4.2 Tasks Breakdown
 
 #### Task 2.1: Service Layer - Push Methods (6 hours)
 
@@ -357,10 +454,10 @@ describe('MetricSnapshot Schema', () => {
 ```typescript
 // metrics.service.ts
 @Injectable()
-export class MetricsService extends BaseService<MetricSnapshot> {
+export class MetricsService extends BaseService<MetricData> {
   constructor(
-    @InjectModel(MetricSnapshot.name)
-    private readonly metricModel: Model<MetricSnapshot>
+    @InjectModel(MetricData.name)
+    private readonly metricModel: Model<MetricData>
   ) {
     super(metricModel);
   }
@@ -371,7 +468,7 @@ export class MetricsService extends BaseService<MetricSnapshot> {
   async storeNodeMetrics(
     dto: PushNodeMetricsDto,
     context: RequestContext
-  ): Promise<MetricSnapshot> {
+  ): Promise<MetricData> {
     // 1. Validate nodeId ownership (via JWT)
     await this.validateNodeOwnership(dto.nodeId, context);
 
@@ -391,7 +488,7 @@ export class MetricsService extends BaseService<MetricSnapshot> {
   async storeResourceMetrics(
     dto: PushResourceMetricsDto,
     context: RequestContext
-  ): Promise<MetricSnapshot> {
+  ): Promise<MetricData> {
     // Similar implementation
   }
 
@@ -409,7 +506,7 @@ export class MetricsService extends BaseService<MetricSnapshot> {
   /**
    * Business logic validation
    */
-  private validateNodeMetrics(metric: MetricSnapshot): void {
+  private validateNodeMetrics(metric: MetricData): void {
     // Validate: used + free <= total
     if (metric.node.memory.used + metric.node.memory.free > metric.node.memory.total * 1.1) {
       throw new UnprocessableEntityException('Invalid memory stats');
@@ -506,7 +603,7 @@ async queryNodeMetrics(
   nodeId: string,
   query: QueryMetricsDto,
   context: RequestContext
-): Promise<{ metrics: MetricSnapshot[]; pagination: PaginationResponseDto }> {
+): Promise<{ metrics: MetricData[]; pagination: PaginationResponseDto }> {
   // 1. Build query filters
   const filters: any = {
     type: MetricType.NODE,
@@ -556,13 +653,13 @@ async queryNodeMetrics(
 }
 
 /**
- * Get latest metric snapshot
+ * Get latest metric data
  */
 async getLatestMetric(
   type: MetricType,
   entityId: string,
   context: RequestContext
-): Promise<MetricSnapshot | null> {
+): Promise<MetricData | null> {
   return this.metricModel
     .findOne({
       type,
@@ -687,7 +784,7 @@ async querySystemMetrics(
 
 @Get(':type/:entityId/latest')
 @UseGuards(JwtAuthGuard)
-@ApiOperation({ summary: 'Get latest metric snapshot' })
+@ApiOperation({ summary: 'Get latest metric data' })
 async getLatestMetric(
   @Param('type') type: MetricType,
   @Param('entityId') entityId: string,
@@ -739,9 +836,9 @@ export class MetricsController {
   @Throttle({ default: { limit: 1, ttl: 60000 } })
   async pushNodeMetrics() { ... }
 
-  // Query endpoints: 60 req/min
+  // Query endpoints: 10 req/min
   @Get('nodes/:nodeId')
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async queryNodeMetrics() { ... }
 }
 ```
@@ -753,7 +850,7 @@ export class MetricsController {
 
 ---
 
-### 3.3 Phase 2 Deliverables
+### 4.3 Phase 2 Deliverables
 
 **Checklist**:
 - ✅ Push API endpoints working
@@ -767,27 +864,27 @@ export class MetricsController {
 **Integration Tests**:
 ```bash
 # Test push node metrics
-curl -X POST http://localhost:3003/metrics/push/node \
+curl -X POST http://localhost:3004/metrics/push/node \
   -H "Authorization: Bearer $JWT" \
   -d @test-node-metrics.json
 
 # Test query metrics
-curl -X GET "http://localhost:3003/metrics/nodes/test-node?startTime=2026-01-14T00:00:00Z&endTime=2026-01-14T23:59:59Z" \
+curl -X GET "http://localhost:3004/metrics/nodes/test-node?startTime=2026-01-14T00:00:00Z&endTime=2026-01-14T23:59:59Z" \
   -H "Authorization: Bearer $JWT"
 ```
 
 ---
 
-## 4. Phase 3: Aggregation & Retention (Days 7-8)
+## 5. Phase 3: Aggregation & Retention (Days 6-7)
 
-### 4.1 Goals
+### 5.1 Goals
 
 - ✅ Implement aggregation worker
 - ✅ Setup cron jobs
 - ✅ Implement retention cleanup
 - ✅ Add monitoring
 
-### 4.2 Tasks Breakdown
+### 5.2 Tasks Breakdown
 
 #### Task 3.1: Aggregation Service (8 hours)
 
@@ -891,7 +988,7 @@ async getAggregationStats() {
 
 ---
 
-### 4.3 Phase 3 Deliverables
+### 5.3 Phase 3 Deliverables
 
 **Checklist**:
 - ✅ Aggregation worker implemented
@@ -902,16 +999,16 @@ async getAggregationStats() {
 
 ---
 
-## 5. Phase 4: Testing & Optimization (Days 9-10)
+## 6. Phase 4: Testing & Optimization (Days 8-9)
 
-### 5.1 Goals
+### 6.1 Goals
 
 - ✅ Comprehensive testing
 - ✅ Performance optimization
 - ✅ Documentation updates
 - ✅ Production readiness check
 
-### 5.2 Tasks Breakdown
+### 6.2 Tasks Breakdown
 
 #### Task 4.1: End-to-End Testing (6 hours)
 
@@ -983,7 +1080,7 @@ async getAggregationStats() {
 
 ---
 
-### 5.3 Phase 4 Deliverables
+### 6.3 Phase 4 Deliverables
 
 **Checklist**:
 - ✅ All tests passing
@@ -993,13 +1090,13 @@ async getAggregationStats() {
 
 ---
 
-## 6. Deliverables
+## 7. Deliverables
 
-### 6.1 Code Deliverables
+### 7.1 Code Deliverables
 
 **Module Structure**:
 ```
-services/aiwm/src/modules/metrics/
+services/mona/src/modules/metrics/
 ├── metrics.module.ts
 ├── metrics.controller.ts
 ├── metrics.service.ts
@@ -1014,7 +1111,7 @@ services/aiwm/src/modules/metrics/
 └── README.md
 ```
 
-### 6.2 Documentation Deliverables
+### 7.2 Documentation Deliverables
 
 - ✅ API documentation (Swagger UI)
 - ✅ Module README
@@ -1022,14 +1119,14 @@ services/aiwm/src/modules/metrics/
 - ✅ Integration guide
 - ✅ Troubleshooting guide
 
-### 6.3 Testing Deliverables
+### 7.3 Testing Deliverables
 
 - ✅ Unit tests (>85% coverage)
 - ✅ Integration tests
 - ✅ E2E tests
 - ✅ Load test reports
 
-### 6.4 Deployment Deliverables
+### 7.4 Deployment Deliverables
 
 - ✅ Migration scripts (indexes)
 - ✅ Environment configuration
@@ -1038,9 +1135,9 @@ services/aiwm/src/modules/metrics/
 
 ---
 
-## 7. Risk Management
+## 8. Risk Management
 
-### 7.1 Technical Risks
+### 8.1 Technical Risks
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
@@ -1049,7 +1146,7 @@ services/aiwm/src/modules/metrics/
 | Aggregation job failures | Low | Medium | Retry logic, monitoring, alerts |
 | Data inconsistency | Low | Medium | Transaction support, validation |
 
-### 7.2 Schedule Risks
+### 8.2 Schedule Risks
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
@@ -1059,9 +1156,9 @@ services/aiwm/src/modules/metrics/
 
 ---
 
-## 8. Success Criteria
+## 9. Success Criteria
 
-### 8.1 Functional
+### 9.1 Functional
 
 - ✅ Nodes có thể push metrics successfully
 - ✅ Frontend có thể query metrics với filters
@@ -1069,7 +1166,7 @@ services/aiwm/src/modules/metrics/
 - ✅ Old data cleaned up automatically
 - ✅ All tests passing
 
-### 8.2 Non-Functional
+### 9.2 Non-Functional
 
 - ✅ Push API < 100ms response time
 - ✅ Query API < 500ms for 30-day range
@@ -1077,7 +1174,7 @@ services/aiwm/src/modules/metrics/
 - ✅ Test coverage > 85%
 - ✅ Zero data loss
 
-### 8.3 Quality
+### 9.3 Quality
 
 - ✅ Code reviewed và approved
 - ✅ Documentation complete
@@ -1086,9 +1183,9 @@ services/aiwm/src/modules/metrics/
 
 ---
 
-## 9. Post-Implementation
+## 10. Post-Implementation
 
-### 9.1 Monitoring
+### 10.1 Monitoring
 
 **Metrics to Track**:
 - Push API latency và error rate
@@ -1103,7 +1200,7 @@ services/aiwm/src/modules/metrics/
 - Storage approaching limits
 - Query performance degradation
 
-### 9.2 Optimization Opportunities (Phase 2+)
+### 10.2 Optimization Opportunities (Phase 2+)
 
 1. **Caching**: Redis cache cho frequently accessed metrics
 2. **Batch API**: Support batch metric push

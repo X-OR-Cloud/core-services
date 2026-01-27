@@ -1,6 +1,13 @@
-import { IsString, IsOptional, IsEnum, IsArray, IsBoolean, IsNumber, IsDate, IsObject, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsArray, IsBoolean, IsNumber, IsDate, IsObject, ValidateNested, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { SystemInfo } from './node.interface';
 
+// ============= Deprecated DTOs (Backward Compatibility) =============
+
+/**
+ * @deprecated Use SystemInfo DTOs instead
+ */
 export class GPUDevice {
   @ApiProperty({ description: 'GPU device identifier' })
   @IsString()
@@ -27,6 +34,9 @@ export class GPUDevice {
   temperature: number;
 }
 
+/**
+ * @deprecated Not used anymore
+ */
 export class NodeConfig {
   @ApiProperty({ description: 'Controller endpoint URL' })
   @IsString()
@@ -35,6 +45,33 @@ export class NodeConfig {
   @ApiProperty({ description: 'Working directory path' })
   @IsString()
   workingDirectory: string;
+}
+
+// ============= SystemInfo DTOs (NEW) =============
+
+export class SystemInfoDto {
+  @ApiProperty({
+    description: 'System information including hardware specs, network config, and runtime info',
+    required: false,
+    example: {
+      os: { name: 'Ubuntu', version: '22.04 LTS', kernel: '5.15.0-91', platform: 'linux' },
+      architecture: { cpu: 'x86_64', bits: 64, endianness: 'LE' },
+      hardware: {
+        cpu: { model: 'Intel Xeon Gold 6348', vendor: 'Intel', sockets: 2, coresPerSocket: 32, threadsPerCore: 1, totalCores: 64, frequency: 2600 },
+        memory: { total: 137438953472 },
+        disk: { total: 2199023255552 },
+        network: {
+          publicIp: '203.0.113.45',
+          clusterIp: '10.8.0.5',
+          ports: { ssh: 22, websocket: 8080, api: 9090 },
+          interfaces: []
+        }
+      }
+    }
+  })
+  @IsOptional()
+  @IsObject()
+  systemInfo?: SystemInfo;
 }
 
 export class CreateNodeDto {
@@ -46,16 +83,6 @@ export class CreateNodeDto {
   @IsArray()
   @IsEnum(['controller', 'worker', 'proxy', 'storage'], { each: true })
   role: string[];
-
-  @ApiProperty({ description: 'Whether node is local', required: false, default: false })
-  @IsOptional()
-  @IsBoolean()
-  isLocal?: boolean;
-
-  @ApiProperty({ description: 'VPN IP address', required: false })
-  @IsOptional()
-  @IsString()
-  vpnIp?: string;
 }
 
 export class UpdateNodeDto {
@@ -75,16 +102,6 @@ export class UpdateNodeDto {
   @IsEnum(['pending', 'installing', 'online', 'offline', 'maintenance'])
   status?: string;
 
-  @ApiProperty({ description: 'Whether node is local', required: false })
-  @IsOptional()
-  @IsBoolean()
-  isLocal?: boolean;
-
-  @ApiProperty({ description: 'VPN IP address', required: false })
-  @IsOptional()
-  @IsString()
-  vpnIp?: string;
-
   @ApiProperty({ description: 'WebSocket connection status', required: false })
   @IsOptional()
   @IsBoolean()
@@ -95,28 +112,55 @@ export class UpdateNodeDto {
   @IsDate()
   lastHeartbeat?: Date;
 
-  @ApiProperty({ description: 'CPU cores count', required: false })
+  // ============= NEW: SystemInfo =============
+
+  @ApiProperty({
+    description: 'System information (hardware, network, runtime)',
+    required: false
+  })
+  @IsOptional()
+  @IsObject()
+  systemInfo?: SystemInfo;
+
+  // ============= Deprecated Fields (Backward Compatibility) =============
+
+  /**
+   * @deprecated Use systemInfo.hardware.cpu.totalCores instead
+   */
+  @ApiProperty({ description: 'CPU cores count (deprecated)', required: false })
   @IsOptional()
   @IsNumber()
   cpuCores?: number;
 
-  @ApiProperty({ description: 'Total RAM in GB', required: false })
+  /**
+   * @deprecated Use systemInfo.hardware.memory.total instead
+   */
+  @ApiProperty({ description: 'Total RAM in GB (deprecated)', required: false })
   @IsOptional()
   @IsNumber()
   ramTotal?: number;
 
-  @ApiProperty({ description: 'Free RAM in GB', required: false })
+  /**
+   * @deprecated This is dynamic data, should be in MetricData
+   */
+  @ApiProperty({ description: 'Free RAM in GB (deprecated)', required: false })
   @IsOptional()
   @IsNumber()
   ramFree?: number;
 
-  @ApiProperty({ description: 'GPU devices', required: false, type: [GPUDevice] })
+  /**
+   * @deprecated Use systemInfo.hardware.gpu instead
+   */
+  @ApiProperty({ description: 'GPU devices (deprecated)', required: false, type: [GPUDevice] })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   gpuDevices?: GPUDevice[];
 
-  @ApiProperty({ description: 'Node configuration', required: false })
+  /**
+   * @deprecated Not used anymore
+   */
+  @ApiProperty({ description: 'Node configuration (deprecated)', required: false })
   @IsOptional()
   @IsObject()
   @ValidateNested()
