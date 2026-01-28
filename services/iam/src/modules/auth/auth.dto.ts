@@ -139,14 +139,6 @@ export class ProfileResponseDto {
 // Node Authentication DTOs
 export class NodeLoginDto {
   @ApiProperty({
-    description: 'Node ID',
-    example: '65a0000000000000000000001',
-  })
-  @IsString()
-  @IsNotEmpty()
-  nodeId: string;
-
-  @ApiProperty({
     description: 'API Key (UUID)',
     example: 'a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p',
   })

@@ -393,7 +393,6 @@ export class AuthService {
         this.httpService.post(
           `${aiwmUrl}/nodes/verify-credentials`,
           {
-            nodeId: dto.nodeId,
             apiKey: dto.apiKey,
             secret: dto.secret,
           },
