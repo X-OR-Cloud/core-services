@@ -120,11 +120,11 @@ function logEnvVar(envVar: EnvVariable, value: string): void {
  * Mask sensitive values for logging
  */
 function maskSensitiveValue(value: string): string {
-  if (value.length <= 8) {
+  if (value.length <= 4) {
     return '****';
   }
-  const firstPart = value.substring(0, 4);
-  const lastPart = value.substring(value.length - 4);
-  const maskedLength = value.length - 8;
+  const firstPart = value.substring(0, 2);
+  const lastPart = value.substring(value.length - 2);
+  const maskedLength = value.length - 4;
   return `${firstPart}${'*'.repeat(Math.min(maskedLength, 20))}${lastPart}`;
 }

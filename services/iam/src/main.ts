@@ -12,8 +12,6 @@ import { AppModule } from './app.module';
 import { validateEnvironment } from './core/utils/env-validator.util';
 
 async function bootstrap() {
-  // Validate environment variables before starting
-  validateEnvironment();
 
   // initialize SERVICE_CONFIG from environment variables
   SERVICE_CONFIG.iam.mongodbUri = `${process.env.MONGODB_URI}/${SERVICE_CONFIG.iam.name}`;
@@ -77,4 +75,6 @@ async function bootstrap() {
   );
 }
 
+// Validate environment variables before starting
+validateEnvironment();
 bootstrap();
