@@ -9,6 +9,7 @@
  */
 
 import { Logger } from '@nestjs/common';
+import { validateEnvironment } from './core/utils/env-validator.util';
 
 const MODE = process.env.MODE || process.argv[2] || 'api';
 
@@ -28,6 +29,8 @@ async function bootstrap() {
   }
 }
 
+// Validate environment variables before starting
+validateEnvironment();
 bootstrap().catch((error) => {
   Logger.error('Failed to start AIWM Service:', error);
   process.exit(1);

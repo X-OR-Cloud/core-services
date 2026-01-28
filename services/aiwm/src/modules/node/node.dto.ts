@@ -184,3 +184,52 @@ export class GenerateTokenResponseDto {
   @ApiProperty({ description: 'Installation script with embedded token' })
   installScript: string;
 }
+
+// ============= Node Authentication DTOs =============
+
+export class VerifyNodeCredentialsDto {
+  @ApiProperty({
+    description: 'Node API key (unique identifier)',
+    example: 'a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p'
+  })
+  @IsString()
+  apiKey: string;
+
+  @ApiProperty({
+    description: 'Node secret (private credential)',
+    example: 'b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q'
+  })
+  @IsString()
+  secret: string;
+}
+
+export class VerifyNodeCredentialsResponseDto {
+  @ApiProperty({ description: 'Success status', example: true })
+  success: boolean;
+
+  @ApiProperty({
+    description: 'Verification result data',
+    example: {
+      valid: true,
+      node: {
+        _id: '65a0000000000000000000001',
+        name: 'gpu-worker-01',
+        role: ['worker'],
+        owner: {
+          orgId: 'org_001'
+        }
+      }
+    }
+  })
+  data: {
+    valid: boolean;
+    node?: {
+      _id: string;
+      name: string;
+      role: string[];
+      owner: {
+        orgId: string;
+      };
+    };
+  };
+}

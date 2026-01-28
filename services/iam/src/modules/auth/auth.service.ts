@@ -417,7 +417,7 @@ export class AuthService {
         sub: node._id,
         nodeId: node._id,
         orgId: node.owner?.orgId || '',
-        roles: node.roles || ['node-operator'],
+        roles: node.roles || [],
         type: 'node',
       };
 

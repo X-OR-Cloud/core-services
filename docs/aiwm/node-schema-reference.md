@@ -237,16 +237,18 @@ GET /nodes?page=1&limit=10&status=online
 GET /nodes/:id
 ```
 
-### Regenerate Credentials (Admin Only)
+### Regenerate Credentials (Organization Owner Only)
 ```
 POST /nodes/:id/regenerate-credentials
-Authorization: Bearer <admin-jwt-token>
+Authorization: Bearer <org-owner-jwt-token>
 ```
+
+**Permission**: Only organization owner can regenerate credentials for nodes in their organization.
 
 **Response**:
 ```json
 {
-  "node": { /* Node object */ },
+  "nodeId": "65a0000000000000000000001",
   "credentials": {
     "apiKey": "a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p",
     "secret": "b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q"

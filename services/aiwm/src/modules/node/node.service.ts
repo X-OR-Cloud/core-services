@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -376,6 +376,31 @@ export class NodeService extends BaseService<Node> {
       throw new NotFoundException(`Node with ID ${id} not found`);
     }
 
+    // Check if current user is organization owner
+    const hasOrgOwnerRole = context.roles?.some(role =>
+      role === 'organization.owner' || role === 'universe.owner'
+    );
+
+    if (!hasOrgOwnerRole) {
+      this.logger.warn('Attempted to regenerate credentials without org owner permission', {
+        nodeId: id,
+        userId: context.userId,
+        userRoles: context.roles,
+      });
+      throw new ForbiddenException('Only organization owner can regenerate node credentials');
+    }
+
+    // Check if node belongs to the same organization
+    if (node.owner?.orgId !== context.orgId) {
+      this.logger.warn('Attempted to regenerate credentials for node in different organization', {
+        nodeId: id,
+        nodeOrgId: node.owner?.orgId,
+        userOrgId: context.orgId,
+        userId: context.userId,
+      });
+      throw new ForbiddenException('You can only regenerate credentials for nodes in your organization');
+    }
+
     // Generate new credentials
     const { apiKey, secret, secretHash } = await this.generateCredentials();
 
@@ -401,6 +426,7 @@ export class NodeService extends BaseService<Node> {
     this.logger.log(`Credentials regenerated for node ${id}`, {
       nodeId: id,
       regeneratedBy: context.userId,
+      nodeOrgId: node.owner?.orgId,
     });
 
     // Return credentials ONCE (user must save them)
@@ -411,5 +437,73 @@ export class NodeService extends BaseService<Node> {
         secret, // Only shown once!
       },
     };
+  }
+
+  /**
+   * Verify node credentials (for IAM service)
+   * Internal API endpoint - protected by ApiKeyGuard
+   *
+   * Industry standard: Only apiKey + secret (like AWS Access Key ID + Secret Access Key)
+   *
+   * @param dto - Contains apiKey and secret only
+   * @returns Node if credentials are valid, null otherwise
+   */
+  async verifyCredentials(dto: {
+    apiKey: string;
+    secret: string;
+  }): Promise<Node | null> {
+    // Find node by apiKey (unique identifier)
+    const node = await this.model
+      .findOne({
+        apiKey: dto.apiKey,
+        isDeleted: false,
+      })
+      .select('+secretHash') // Include secretHash field (normally hidden)
+      .exec();
+
+    if (!node) {
+      this.logger.warn('Node not found with provided apiKey', {
+        apiKey: dto.apiKey.substring(0, 8) + '...', // Log first 8 chars only
+      });
+      return null;
+    }
+
+    // Check if node has secretHash
+    if (!node.secretHash) {
+      this.logger.warn('Node has no secretHash configured', {
+        nodeId: (node as any)._id.toString(),
+        name: node.name,
+      });
+      return null;
+    }
+
+    // Verify secret using bcrypt compare
+    const isValidSecret = await bcrypt.compare(dto.secret, node.secretHash);
+    if (!isValidSecret) {
+      this.logger.warn('Invalid secret for node', {
+        nodeId: (node as any)._id.toString(),
+        name: node.name,
+      });
+      return null;
+    }
+
+    // Update last auth time
+    await this.model.updateOne(
+      { _id: node._id },
+      {
+        $set: {
+          lastAuthAt: new Date(),
+          updatedAt: new Date(),
+        }
+      }
+    );
+
+    this.logger.log('Node credentials verified successfully', {
+      nodeId: (node as any)._id.toString(),
+      name: node.name,
+      apiKey: dto.apiKey.substring(0, 8) + '...', // Log first 8 chars only
+    });
+
+    return node;
   }
 }

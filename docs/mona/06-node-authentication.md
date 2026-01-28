@@ -133,11 +133,12 @@ X-API-Key: <INTERNAL_API_KEY>
 
 ```typescript
 interface VerifyNodeCredentialsDto {
-  nodeId: string;
-  apiKey: string;
-  secret: string;
+  apiKey: string;  // Unique node identifier (like AWS Access Key ID)
+  secret: string;  // Private credential (like AWS Secret Access Key)
 }
 ```
+
+**Note**: Uses industry standard pattern - only `apiKey` + `secret` required. `nodeId` is determined from `apiKey` lookup.
 
 **Response**: `200 OK`
 
@@ -215,12 +216,11 @@ export class NodeController {
 
 ```typescript
 async verifyCredentials(dto: VerifyNodeCredentialsDto): Promise<Node | null> {
-  // Find node by ID and apiKey
+  // Find node by apiKey (unique identifier)
   const node = await this.nodeModel
     .findOne({
-      _id: dto.nodeId,
       apiKey: dto.apiKey,
-      isActive: true,
+      isDeleted: false,
     })
     .select('+secretHash') // Include secretHash field
     .exec();
@@ -230,7 +230,7 @@ async verifyCredentials(dto: VerifyNodeCredentialsDto): Promise<Node | null> {
   }
 
   // Verify secret
-  const isValidSecret = await node.verifySecret(dto.secret);
+  const isValidSecret = await bcrypt.compare(dto.secret, node.secretHash);
   if (!isValidSecret) {
     return null;
   }
@@ -238,7 +238,12 @@ async verifyCredentials(dto: VerifyNodeCredentialsDto): Promise<Node | null> {
   // Update last auth time
   await this.nodeModel.updateOne(
     { _id: node._id },
-    { lastAuthAt: new Date() }
+    {
+      $set: {
+        lastAuthAt: new Date(),
+        updatedAt: new Date(),
+      }
+    }
   );
 
   return node;
@@ -294,11 +299,12 @@ INTERNAL_API_KEY=your-secure-random-key-here
 
 ```typescript
 interface NodeLoginDto {
-  nodeId: string;
-  apiKey: string;
-  secret: string;
+  apiKey: string;  // Node API key (unique identifier)
+  secret: string;  // Node secret (private credential)
 }
 ```
+
+**Note**: Simplified to industry standard - only `apiKey` + `secret` required.
 
 **Response**: `200 OK`
 
@@ -374,7 +380,6 @@ export class AuthService {
         this.httpService.post(
           `${aiwmUrl}/nodes/verify-credentials`,
           {
-            nodeId: dto.nodeId,
             apiKey: dto.apiKey,
             secret: dto.secret,
           },
@@ -398,7 +403,7 @@ export class AuthService {
         sub: node._id,
         nodeId: node._id,
         orgId: node.owner?.orgId || '',
-        roles: node.roles,
+        role: node.role,  // Use 'role' (array) not 'roles'
         type: 'node',
       };
 
@@ -414,7 +419,7 @@ export class AuthService {
           node: {
             _id: node._id,
             name: node.name,
-            roles: node.roles,
+            role: node.role,  // Use 'role' (array) not 'roles'
           },
         },
       };
@@ -449,14 +454,14 @@ JWT_SECRET=your-jwt-secret-here
 └──────┬───────┘
        │
        │ 1. POST /auth/node/login
-       │    { nodeId, apiKey, secret }
+       │    { apiKey, secret }
        ▼
 ┌──────────────┐
 │ IAM Service  │
 └──────┬───────┘
        │
        │ 2. POST /nodes/verify-credentials
-       │    { nodeId, apiKey, secret }
+       │    { apiKey, secret }
        │    Header: X-API-Key
        ▼
 ┌──────────────┐
@@ -492,7 +497,7 @@ JWT_SECRET=your-jwt-secret-here
   "sub": "65a0000000000000000000001",
   "nodeId": "65a0000000000000000000001",
   "orgId": "org_001",
-  "roles": ["node-operator"],
+  "role": ["controller", "worker"],
   "type": "node",
   "iat": 1706313600,
   "exp": 1706918400
@@ -503,7 +508,7 @@ JWT_SECRET=your-jwt-secret-here
 - `sub`: Subject (node ID)
 - `nodeId`: Node identifier
 - `orgId`: Organization ID (from node.owner.orgId)
-- `roles`: Array of role strings (for future RBAC)
+- `role`: Array of role strings (e.g., `["controller", "worker"]`)
 - `type`: Token type ("node")
 - `iat`: Issued at (timestamp)
 - `exp`: Expires at (timestamp)
@@ -514,20 +519,19 @@ JWT_SECRET=your-jwt-secret-here
 #!/bin/bash
 # Node daemon authentication script
 
-NODE_ID="65a0000000000000000000001"
 API_KEY="a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p"
 SECRET="b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q"
 
-# Login to get token
+# Login to get token (industry standard: apiKey + secret only)
 TOKEN_RESPONSE=$(curl -s -X POST http://localhost:3000/auth/node/login \
   -H "Content-Type: application/json" \
   -d "{
-    \"nodeId\": \"$NODE_ID\",
     \"apiKey\": \"$API_KEY\",
     \"secret\": \"$SECRET\"
   }")
 
 TOKEN=$(echo $TOKEN_RESPONSE | jq -r '.data.token')
+NODE_ID=$(echo $TOKEN_RESPONSE | jq -r '.data.node._id')
 
 # Save token for later use
 echo $TOKEN > /var/lib/node-daemon/token
