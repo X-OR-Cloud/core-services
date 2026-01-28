@@ -18,7 +18,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto } from './auth.dto';
+import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { TokenData } from './auth.entity';
 import { JwtAuthGuard } from '@hydrabyte/base';
 
@@ -133,5 +133,14 @@ export class AuthController {
     const accessToken = authHeader?.replace('Bearer ', '') || '';
 
     return this.authService.logout(accessToken, body.refreshToken, userId);
+  }
+
+  @Post('node')
+  @ApiOperation({ summary: 'Node authentication', description: 'Authenticate node and return JWT token' })
+  @ApiResponse({ status: 200, description: 'Node authentication successful', type: NodeTokenData })
+  @ApiResponse({ status: 401, description: 'Invalid node credentials' })
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async nodeLogin(@Body() dto: NodeLoginDto): Promise<NodeTokenData> {
+    return this.authService.nodeLogin(dto);
   }
 }

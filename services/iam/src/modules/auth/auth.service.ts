@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { sign, verify } from 'jsonwebtoken';
 import { TokenData } from './auth.entity';
-import { LoginData, UpdateProfileDto, ProfileResponseDto } from './auth.dto';
+import { LoginData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AccessTokenTypes } from '../../core/enums/other.enum';
@@ -14,6 +14,8 @@ import { Organization } from '../organization/organization.schema';
 import { User } from '../user/user.schema';
 import { TokenStorageService } from './token-storage.service';
 import { LicenseService } from '../license/license.service';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -22,7 +24,8 @@ export class AuthService {
     @InjectModel(Organization.name) private readonly orgRepo: Model<Organization>,
     @InjectModel(User.name) private readonly userRepo: Model<User>,
     private readonly tokenStorage: TokenStorageService,
-    private readonly licenseService: LicenseService
+    private readonly licenseService: LicenseService,
+    private readonly httpService: HttpService
   ) {}
 
   async login(data: LoginData): Promise<TokenData> {
@@ -364,6 +367,83 @@ export class AuthService {
 
     // Return updated profile
     return this.getProfile(userId);
+  }
+
+  /**
+   * Node authentication - verify credentials via AIWM and issue JWT
+   * @param dto - Node login credentials
+   * @returns JWT token for node
+   */
+  async nodeLogin(dto: NodeLoginDto): Promise<NodeTokenData> {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+
+    const aiwmUrl = process.env.AIWM_SERVICE_URL;
+    const internalApiKey = process.env.INTERNAL_API_KEY;
+
+    if (!aiwmUrl || !internalApiKey) {
+      throw new Error('AIWM_SERVICE_URL or INTERNAL_API_KEY is not configured');
+    }
+
+    try {
+      // Call AIWM to verify node credentials
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${aiwmUrl}/nodes/verify-credentials`,
+          {
+            nodeId: dto.nodeId,
+            apiKey: dto.apiKey,
+            secret: dto.secret,
+          },
+          {
+            headers: {
+              'X-API-Key': internalApiKey,
+              'Content-Type': 'application/json',
+            },
+          }
+        )
+      );
+
+      const { valid, node } = response.data.data;
+
+      if (!valid) {
+        throw new UnauthorizedException('Invalid node credentials');
+      }
+
+      // Generate JWT token with node data
+      const payload = {
+        sub: node._id,
+        nodeId: node._id,
+        orgId: node.owner?.orgId || '',
+        roles: node.roles || ['node-operator'],
+        type: 'node',
+      };
+
+      const token = sign(payload, jwtSecret, {
+        expiresIn: '7d', // 7 days
+      });
+
+      const expiresIn = 7 * 24 * 60 * 60; // 7 days in seconds
+
+      return {
+        accessToken: token,
+        expiresIn,
+        tokenType: AccessTokenTypes.Bearer,
+        node: {
+          _id: node._id,
+          name: node.name,
+          roles: node.roles || ['node-operator'],
+        },
+      };
+    } catch (error) {
+      // Handle AIWM API errors
+      if (error.response?.status === 401) {
+        throw new UnauthorizedException('Invalid node credentials');
+      }
+      throw error;
+    }
   }
 
   /**

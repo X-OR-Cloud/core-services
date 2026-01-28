@@ -135,3 +135,64 @@ export class ProfileResponseDto {
   })
   metadata?: Record<string, any>;
 }
+
+// Node Authentication DTOs
+export class NodeLoginDto {
+  @ApiProperty({
+    description: 'Node ID',
+    example: '65a0000000000000000000001',
+  })
+  @IsString()
+  @IsNotEmpty()
+  nodeId: string;
+
+  @ApiProperty({
+    description: 'API Key (UUID)',
+    example: 'a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p',
+  })
+  @IsString()
+  @IsNotEmpty()
+  apiKey: string;
+
+  @ApiProperty({
+    description: 'Secret key',
+    example: 'b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q',
+  })
+  @IsString()
+  @IsNotEmpty()
+  secret: string;
+}
+
+export class NodeTokenData {
+  @ApiProperty({
+    description: 'JWT access token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
+  accessToken: string;
+
+  @ApiProperty({
+    description: 'Token expiration time in seconds',
+    example: 604800,
+  })
+  expiresIn: number;
+
+  @ApiProperty({
+    description: 'Token type',
+    example: 'Bearer',
+  })
+  tokenType: string;
+
+  @ApiProperty({
+    description: 'Node information',
+    example: {
+      _id: '65a0000000000000000000001',
+      name: 'gpu-worker-01',
+      roles: ['node-operator'],
+    },
+  })
+  node: {
+    _id: string;
+    name: string;
+    roles: string[];
+  };
+}
