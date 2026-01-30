@@ -82,7 +82,7 @@ REDIS_PASSWORD=
 REDIS_DB=0
 
 # Service Configuration
-PORT=3002
+PORT=3005
 NODE_ENV=development
 ```
 
@@ -93,9 +93,9 @@ npx nx serve template
 ```
 
 Service will be available at:
-- **API**: http://localhost:3002/api
-- **Swagger Docs**: http://localhost:3002/api-docs
-- **Health Check**: http://localhost:3002/api/health
+- **API**: http://localhost:3005/api
+- **Swagger Docs**: http://localhost:3005/api-docs
+- **Health Check**: http://localhost:3005/api/health
 
 ## 🏥 Health Check
 
@@ -147,14 +147,14 @@ GET /api/health
 
 ```bash
 # Check service health
-curl http://localhost:3002/api/health
+curl http://localhost:3005/api/health
 
 # Check with detailed HTTP status
-curl -i http://localhost:3002/api/health
+curl -i http://localhost:3005/api/health
 
 # Use in Docker health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3002/api/health || exit 1
+  CMD curl -f http://localhost:3005/api/health || exit 1
 ```
 
 ### Configuration
@@ -207,7 +207,7 @@ Include the token in the `Authorization` header for all API requests:
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
 # Make authenticated request
-curl -X GET http://localhost:3002/api/categories \
+curl -X GET http://localhost:3005/api/categories \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -368,7 +368,7 @@ Audit fields are **protected from manual tampering** through two security layers
 
 ```bash
 # Attempting to set audit fields manually
-curl -X POST http://localhost:3002/api/categories \
+curl -X POST http://localhost:3005/api/categories \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -396,7 +396,7 @@ On **UPDATE**, only `updatedBy` is modified. The `createdBy` field is **immutabl
 
 ```bash
 # Update existing category
-curl -X PUT http://localhost:3002/api/categories/68f1e930d03816679f514824 \
+curl -X PUT http://localhost:3005/api/categories/68f1e930d03816679f514824 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
@@ -418,7 +418,7 @@ When a record is **soft deleted**, `updatedBy` tracks who performed the deletion
 
 ```bash
 # Soft delete category
-curl -X DELETE http://localhost:3002/api/categories/68f1e930d03816679f514824 \
+curl -X DELETE http://localhost:3005/api/categories/68f1e930d03816679f514824 \
   -H "Authorization: Bearer $TOKEN"
 
 # In database:
@@ -481,48 +481,48 @@ All paginated endpoints return a consistent response structure:
 **Basic pagination:**
 ```bash
 # Get first page (5 items per page)
-curl "http://localhost:3002/api/categories?page=1&limit=5" \
+curl "http://localhost:3005/api/categories?page=1&limit=5" \
   -H "Authorization: Bearer $TOKEN"
 
 # Get second page
-curl "http://localhost:3002/api/categories?page=2&limit=5" \
+curl "http://localhost:3005/api/categories?page=2&limit=5" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Filtering by field:**
 ```bash
 # Filter categories by name
-curl "http://localhost:3002/api/categories?filter[name]=Electronics" \
+curl "http://localhost:3005/api/categories?filter[name]=Electronics" \
   -H "Authorization: Bearer $TOKEN"
 
 # Filter products by category
-curl "http://localhost:3002/api/products?filter[categoryId]=68f1d03f81d7fb554e63e4d3" \
+curl "http://localhost:3005/api/products?filter[categoryId]=68f1d03f81d7fb554e63e4d3" \
   -H "Authorization: Bearer $TOKEN"
 
 # Filter active items only
-curl "http://localhost:3002/api/categories?filter[isActive]=true" \
+curl "http://localhost:3005/api/categories?filter[isActive]=true" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Sorting:**
 ```bash
 # Sort by creation date (newest first)
-curl "http://localhost:3002/api/categories?sort=-createdAt" \
+curl "http://localhost:3005/api/categories?sort=-createdAt" \
   -H "Authorization: Bearer $TOKEN"
 
 # Sort by name (ascending)
-curl "http://localhost:3002/api/categories?sort=name" \
+curl "http://localhost:3005/api/categories?sort=name" \
   -H "Authorization: Bearer $TOKEN"
 
 # Multiple sort fields
-curl "http://localhost:3002/api/categories?sort=-createdAt,name" \
+curl "http://localhost:3005/api/categories?sort=-createdAt,name" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Combined query:**
 ```bash
 # Page 2, 10 items, active only, sorted by name
-curl "http://localhost:3002/api/categories?page=2&limit=10&filter[isActive]=true&sort=name" \
+curl "http://localhost:3005/api/categories?page=2&limit=10&filter[isActive]=true&sort=name" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -578,13 +578,13 @@ Every request and response includes an `x-correlation-id` header for end-to-end 
 
 **Client provides correlation ID:**
 ```bash
-curl -i -H "x-correlation-id: my-custom-id" http://localhost:3002/api/categories
+curl -i -H "x-correlation-id: my-custom-id" http://localhost:3005/api/categories
 # Response header: x-correlation-id: my-custom-id
 ```
 
 **Server generates correlation ID:**
 ```bash
-curl -i http://localhost:3002/api/categories
+curl -i http://localhost:3005/api/categories
 # Response header: x-correlation-id: 76da91e5-9fc1-4f33-b096-1f1296bbd042
 ```
 
@@ -595,7 +595,7 @@ curl -i http://localhost:3002/api/categories
 Returned when request data fails validation (class-validator rules):
 
 ```bash
-curl -X POST http://localhost:3002/api/categories \
+curl -X POST http://localhost:3005/api/categories \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{}'
@@ -619,7 +619,7 @@ curl -X POST http://localhost:3002/api/categories \
 Returned when JWT token is missing or invalid:
 
 ```bash
-curl http://localhost:3002/api/categories
+curl http://localhost:3005/api/categories
 
 # Response
 {
@@ -636,7 +636,7 @@ curl http://localhost:3002/api/categories
 Returned when user lacks required permissions (RBAC):
 
 ```bash
-curl -X DELETE http://localhost:3002/api/categories/123 \
+curl -X DELETE http://localhost:3005/api/categories/123 \
   -H "Authorization: Bearer $TOKEN_WITHOUT_DELETE_PERMISSION"
 
 # Response
@@ -654,7 +654,7 @@ curl -X DELETE http://localhost:3002/api/categories/123 \
 Returned when requested resource doesn't exist:
 
 ```bash
-curl http://localhost:3002/api/categories/999999999999999999999999 \
+curl http://localhost:3005/api/categories/999999999999999999999999 \
   -H "Authorization: Bearer $TOKEN"
 
 # Response
@@ -701,7 +701,7 @@ Error: Unexpected error occurred
 All error responses are fully documented in Swagger/OpenAPI with detailed schemas:
 
 **Access Swagger UI:**
-- URL: `http://localhost:3002/api-docs`
+- URL: `http://localhost:3005/api-docs`
 - All endpoints display possible error responses with examples
 - Error schemas include: ValidationErrorResponseDto, UnauthorizedErrorResponseDto, ForbiddenErrorResponseDto, NotFoundErrorResponseDto, InternalServerErrorResponseDto
 
@@ -733,7 +733,7 @@ async findOne() { ... }
 
 **Example - Create Category:**
 ```bash
-curl -X POST http://localhost:3002/api/categories \
+curl -X POST http://localhost:3005/api/categories \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -765,7 +765,7 @@ curl -X POST http://localhost:3002/api/categories \
 
 **Example - Get All Categories (with pagination):**
 ```bash
-curl "http://localhost:3002/api/categories?page=1&limit=10&sort=-createdAt" \
+curl "http://localhost:3005/api/categories?page=1&limit=10&sort=-createdAt" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -803,7 +803,7 @@ curl "http://localhost:3002/api/categories?page=1&limit=10&sort=-createdAt" \
 
 **Example - Create Product:**
 ```bash
-curl -X POST http://localhost:3002/api/products \
+curl -X POST http://localhost:3005/api/products \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -818,7 +818,7 @@ curl -X POST http://localhost:3002/api/products \
 
 **Example - Get Products by Category (with pagination):**
 ```bash
-curl "http://localhost:3002/api/products?filter[categoryId]=68f1d03f81d7fb554e63e4d3&page=1&limit=20" \
+curl "http://localhost:3005/api/products?filter[categoryId]=68f1d03f81d7fb554e63e4d3&page=1&limit=20" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -830,7 +830,7 @@ curl "http://localhost:3002/api/products?filter[categoryId]=68f1d03f81d7fb554e63
 
 **Example - Trigger Report Generation:**
 ```bash
-curl -X POST http://localhost:3002/api/reports/product-summary
+curl -X POST http://localhost:3005/api/reports/product-summary
 ```
 
 Response:
@@ -1109,7 +1109,7 @@ AppModule
 
 1. **Create Category:**
 ```bash
-curl -X POST http://localhost:3002/api/categories \
+curl -X POST http://localhost:3005/api/categories \
   -H "Content-Type: application/json" \
   -d '{"name": "Electronics", "description": "Gadgets"}'
 ```
@@ -1117,7 +1117,7 @@ curl -X POST http://localhost:3002/api/categories \
 
 2. **Create Product:**
 ```bash
-curl -X POST http://localhost:3002/api/products \
+curl -X POST http://localhost:3005/api/products \
   -H "Content-Type: application/json" \
   -d '{"name": "Phone", "description": "Smartphone", "price": 699, "stock": 10, "categoryId": "<category-id>"}'
 ```
@@ -1125,7 +1125,7 @@ curl -X POST http://localhost:3002/api/products \
 
 3. **Generate Report:**
 ```bash
-curl -X POST http://localhost:3002/api/reports/product-summary
+curl -X POST http://localhost:3005/api/reports/product-summary
 ```
 ✅ Check logs: ReportProcessor generates report
 ✅ Verify file created in `/services/template/reports/`
