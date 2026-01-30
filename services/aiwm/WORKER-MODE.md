@@ -69,15 +69,20 @@ pm2 list
 
 ### Service List
 ```
-core.aiwm.api00     → API mode (Port 3350)
-core.aiwm.api01     → API mode (Port 3351)
-core.aiwm.api02     → API mode (Port 3352)
-core.aiwm.mcp00     → MCP mode (Port 3355)
-core.aiwm.mcp01     → MCP mode (Port 3356)
-core.aiwm.mcp02     → MCP mode (Port 3357)
+core.aiwm.api00     → API mode (Port 3330)
+core.aiwm.api01     → API mode (Port 3331)
+core.aiwm.api02     → API mode (Port 3332)
+core.aiwm.api03     → API mode (Port 3333)
+core.aiwm.mcp00     → MCP mode (Port 3334)
+core.aiwm.mcp01     → MCP mode (Port 3335)
+core.aiwm.mcp02     → MCP mode (Port 3336)
+core.aiwm.ws00      → WebSocket mode (Port 3337)
+core.aiwm.ws01      → WebSocket mode (Port 3338)
 core.aiwm.worker00  → Worker mode (NO port, concurrency=5)
 core.aiwm.worker01  → Worker mode (NO port, concurrency=5)
 ```
+
+> See [docs/PORT-ALLOCATION.md](../../docs/PORT-ALLOCATION.md) for complete port allocation strategy
 
 ### Scale Independently
 ```bash
@@ -104,7 +109,7 @@ pm2 restart core.aiwm.worker00 core.aiwm.worker01
      │               │
 ┌────▼────┐    ┌────▼────┐    ┌──────────┐
 │ API #1  │    │ API #2  │    │ API #3   │
-│ :3350   │    │ :3351   │    │ :3352    │
+│ :3330   │    │ :3331   │    │ :3332    │
 └────┬────┘    └────┬────┘    └────┬─────┘
      │              │              │
      └──────────────┼──────────────┘
@@ -139,7 +144,7 @@ pm2 restart core.aiwm.worker00 core.aiwm.worker01
 #### API Mode
 ```bash
 MODE=api
-PORT=3350
+PORT=3330
 SERVICE_NAME=aiwm
 ```
 
@@ -156,7 +161,7 @@ MONGODB_URI=mongodb://localhost:27017/aiwm
 #### MCP Mode
 ```bash
 MODE=mcp
-PORT=3355
+PORT=3335
 SERVICE_NAME=aiwm
 ```
 
@@ -176,7 +181,7 @@ MODE=worker npx nx serve aiwm
 ### Test workflow execution
 ```bash
 # Trigger workflow via API
-curl -X POST http://localhost:3305/executions/workflows/{workflowId}/trigger \
+curl -X POST http://localhost:3003/executions/workflows/{workflowId}/trigger \
   -H "Authorization: Bearer {token}" \
   -H "Content-Type: application/json" \
   -d '{"input": {"topic": "test"}}'
@@ -185,7 +190,7 @@ curl -X POST http://localhost:3305/executions/workflows/{workflowId}/trigger \
 pm2 logs core.aiwm.worker00
 
 # Check queue status
-curl http://localhost:3305/executions/_admin/queue/status \
+curl http://localhost:3003/executions/_admin/queue/status \
   -H "Authorization: Bearer {token}"
 ```
 
@@ -211,7 +216,7 @@ pm2 logs core.aiwm
 pm2 monit
 
 # Queue metrics via API
-curl http://localhost:3305/executions/_admin/queue/status
+curl http://localhost:3003/executions/_admin/queue/status
 ```
 
 ---

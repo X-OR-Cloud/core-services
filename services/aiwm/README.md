@@ -4,9 +4,12 @@
 
 **AIWM (AI Workload Manager)** là dịch vụ cốt lõi của nền tảng Kaisar AI Ops, chịu trách nhiệm quản lý và điều phối toàn bộ workload AI bao gồm models, agents, resources, deployments và execution tracking.
 
-**Port:** 3003
+**Local Port:** 3003
+**Production Ports:** 3330-3339 (API: 3330-3333, MCP: 3334-3336, WS: 3337-3338)
 **Database:** `core_aiwm` (MongoDB)
 **Service Name:** `aiwm`
+
+> See [docs/PORT-ALLOCATION.md](../../docs/PORT-ALLOCATION.md) for complete port allocation strategy
 
 **Dual Mode Operation:**
 - **API Mode (default)**: Full HTTP/WebSocket API server cho web applications

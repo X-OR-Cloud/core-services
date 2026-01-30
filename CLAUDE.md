@@ -74,19 +74,38 @@ nx run <service>:wrk
 This is an Nx monorepo using NestJS framework for microservices architecture with the following key components:
 
 **Services** (`/services/`):
-- **IAM** (Identity & Access Management) - Port 3000
+- **Template** (Service Template) - Port 3000
+  - Reference implementation for new services
+  - CRUD operations with event-driven architecture
+  - BullMQ queue processing examples
+  - See [`services/template/README.md`](services/template/README.md) for details
+
+- **IAM** (Identity & Access Management) - Port 3001
   - User management with MongoDB/Mongoose
   - Organization management
   - JWT authentication strategy
   - Password encryption utilities
 
+- **NOTI** (Notification Service) - Port 3002
+  - Real-time notifications via WebSocket
+  - System events and agent actions
+  - REST API + WebSocket dual mode
+
 - **AIWM** (AI Workload Manager) - Port 3003
   - Core service for AI operations at scale
-  - 10 modules: Model, Agent, Node, Resource, Deployment, Instruction, PII, Guardrail, Execution, Reports
+  - 16 modules: Model, Agent, Node, Resource, Deployment, Instruction, PII, Guardrail, Execution, Reports, etc.
+  - Multi-mode: API, MCP, Worker
   - See [`services/aiwm/README.md`](services/aiwm/README.md) for detailed documentation
 
-- **CBM** (Core Business Management) - Port 3001
-  - Basic service structure ready for business logic
+- **CBM** (Core Business Management) - Port 3004
+  - Business logic and workflows
+  - Document management
+  - Integration hub for business processes
+
+- **MONA** (Monitoring & Analytics) - Port 3005
+  - Metrics aggregation and monitoring
+  - Dashboard data collection
+  - System health tracking
 
 **Libraries** (`/libs/`):
 - **base** - Shared base classes and utilities
@@ -219,14 +238,40 @@ export class MyEntityController {
 ```
 
 ### Port Allocation
-Current services:
-- IAM: 3000
-- CBM: 3001
-- MONA: 3004
-- Template: 3002
-- AIWM: 3003
 
-**Next available ports:** 3004, 3005, 3006, etc.
+**⚠️ See [docs/PORT-ALLOCATION.md](docs/PORT-ALLOCATION.md) for complete port allocation strategy.**
+
+#### Local Development Ports (30XX)
+Services are organized by priority: Template (reference) → Core services → Business services
+
+| Service | Port | Type | Description |
+|---------|------|------|-------------|
+| **Template** | 3000 | Reference | Service template (reference implementation) |
+| **IAM** | 3001 | Core | Identity & Access Management |
+| **NOTI** | 3002 | Core | Notification Service |
+| **AIWM** | 3003 | Business | AI Workload Manager |
+| **CBM** | 3004 | Business | Core Business Management |
+| **MONA** | 3005 | Business | Monitoring & Analytics |
+
+**Next available ports:** 3006, 3007, 3008, etc.
+
+#### Production Ports (33XX-39XX)
+Each service gets 10 ports: 4 for API instances, 6 for MCP/WS/other modes
+
+| Service | API Instances | MCP/WS/Other | Total Range |
+|---------|---------------|--------------|-------------|
+| Template | 3300-3303 | 3304-3309 | 3300-3309 |
+| IAM | 3310-3313 | 3314-3319 | 3310-3319 |
+| NOTI | 3320-3323 | 3324-3329 | 3320-3329 |
+| AIWM | 3330-3333 | 3334-3339 | 3330-3339 |
+| CBM | 3340-3343 | 3344-3349 | 3340-3349 |
+| MONA | 3350-3353 | 3354-3359 | 3350-3359 |
+
+**Example - AIWM Production Deployment:**
+- API: 3330, 3331, 3332, 3333 (4 instances)
+- MCP: 3334, 3335, 3336 (3 instances)
+- WebSocket: 3337, 3338 (2 instances)
+- Reserved: 3339
 
 ### Verification Checklist
 After service creation:
