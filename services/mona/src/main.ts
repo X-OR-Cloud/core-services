@@ -48,10 +48,10 @@ async function bootstrap() {
     customCss: '.swagger-ui .topbar { display: none }',
   });
 
-  const port = process.env['PORT'] || 3002;
+  const port = process.env['PORT'] || 3005;
   await app.listen(port);
 
-  Logger.log(`🚀 Template Service is running on: http://localhost:${port}/${globalPrefix}`);
+  Logger.log(`🚀 MONA Service is running on: http://localhost:${port}/${globalPrefix}`);
   Logger.log(`📚 API Documentation available at: http://localhost:${port}/api-docs`);
   Logger.log(`📊 Redis: ${process.env['REDIS_HOST']}:${process.env['REDIS_PORT']}`);
   Logger.log(`💾 MongoDB: ${process.env['MONGODB_URI']}`);

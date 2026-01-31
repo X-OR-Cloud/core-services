@@ -8,8 +8,10 @@ import {
   Param,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
   CurrentUser,
@@ -18,6 +20,7 @@ import {
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
+  ApiKeyGuard,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -30,6 +33,7 @@ import {
   RejectReviewDto,
   UnblockWorkDto,
   GetNextWorkQueryDto,
+  InternalGetNextWorkDto,
 } from './work.dto';
 
 @ApiTags('Works')
@@ -289,5 +293,49 @@ export class WorkController {
     @CurrentUser() context: RequestContext
   ) {
     return this.workService.canTriggerAgent(new Types.ObjectId(id) as any, context);
+  }
+
+  // =============== Internal Service-to-Service Endpoints ===============
+
+  @Post('internal/next-work')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get next work for user/agent (Internal API)',
+    description: 'Internal API for service-to-service communication. Returns the next work item based on priority rules. Protected by API Key authentication.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Next work retrieved successfully',
+    schema: {
+      example: {
+        work: {
+          _id: '507f1f77bcf86cd799439011',
+          title: 'Implement user authentication',
+          type: 'task',
+          status: 'todo',
+          assignee: { type: 'agent', id: '507f1f77bcf86cd799439012' },
+          reporter: { type: 'user', id: '507f1f77bcf86cd799439013' },
+        },
+        metadata: {
+          priorityLevel: 2,
+          priorityDescription: 'Assigned task without subtasks in todo status',
+          matchedCriteria: ['assigned_to_me', 'task', 'status_todo', 'no_subtasks', 'dependencies_met'],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid API key',
+  })
+  @UseGuards(ApiKeyGuard)
+  async getNextWorkInternal(
+    @Body() dto: InternalGetNextWorkDto
+  ) {
+    return this.workService.getNextWorkInternal(
+      dto.assigneeType,
+      dto.assigneeId,
+      dto.orgId
+    );
   }
 }

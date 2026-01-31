@@ -335,3 +335,31 @@ export class GetNextWorkQueryDto {
   @IsString()
   assigneeId!: string;
 }
+
+/**
+ * DTO for internal get next work API (service-to-service)
+ * Used by other services to fetch next work for user/agent
+ */
+export class InternalGetNextWorkDto {
+  @ApiProperty({
+    description: 'Assignee type',
+    enum: ['user', 'agent'],
+    example: 'agent',
+  })
+  @IsEnum(['user', 'agent'])
+  assigneeType!: 'user' | 'agent';
+
+  @ApiProperty({
+    description: 'Assignee ID',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsString()
+  assigneeId!: string;
+
+  @ApiProperty({
+    description: 'Organization ID for context filtering',
+    example: 'org_001',
+  })
+  @IsString()
+  orgId!: string;
+}

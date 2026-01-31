@@ -11,7 +11,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3300,
+        PORT: 3310,
         SERVICE_NAME: 'iam',
       },
 
@@ -44,7 +44,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3301,
+        PORT: 3311,
         SERVICE_NAME: 'iam',
       },
 
@@ -77,7 +77,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3310,
+        PORT: 3320,
         SERVICE_NAME: 'noti',
       },
 
@@ -111,7 +111,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3350,
+        PORT: 3330,
         SERVICE_NAME: 'aiwm',
       },
 
@@ -145,7 +145,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3351,
+        PORT: 3331,
         SERVICE_NAME: 'aiwm',
       },
 
@@ -179,7 +179,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3352,
+        PORT: 3332,
         SERVICE_NAME: 'aiwm',
       },
 
@@ -213,7 +213,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3355,
+        PORT: 3334,
         MODE: 'mcp',
         SERVICE_NAME: 'aiwm',
       },
@@ -248,7 +248,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3356,
+        PORT: 3335,
         MODE: 'mcp',
         SERVICE_NAME: 'aiwm',
       },
@@ -283,7 +283,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3357,
+        PORT: 3336,
         MODE: 'mcp',
         SERVICE_NAME: 'aiwm',
       },
@@ -382,7 +382,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3360,
+        PORT: 3340,
         SERVICE_NAME: 'cbm',
       },
 
@@ -416,7 +416,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3361,
+        PORT: 3341,
         SERVICE_NAME: 'cbm',
       },
 
@@ -450,7 +450,7 @@ module.exports = {
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        PORT: 3362,
+        PORT: 3342,
         SERVICE_NAME: 'cbm',
       },
 

@@ -856,6 +856,135 @@ export class WorkService extends BaseService<Work> {
     };
   }
 
+  // =============== Internal Service-to-Service API ===============
+
+  /**
+   * Get next work for user/agent (Internal API - service-to-service)
+   * Similar to getNextWork but uses orgId for context filtering
+   *
+   * @param assigneeType - 'user' or 'agent'
+   * @param assigneeId - ID of the assignee
+   * @param orgId - Organization ID for filtering
+   */
+  async getNextWorkInternal(
+    assigneeType: 'user' | 'agent',
+    assigneeId: string,
+    orgId: string
+  ): Promise<{
+    work: Work | null;
+    metadata: {
+      priorityLevel: number;
+      priorityDescription: string;
+      matchedCriteria: string[];
+    };
+  }> {
+    const orgFilter = { 'owner.orgId': orgId, isDeleted: false };
+
+    // Priority 1: Assigned subtasks in todo
+    const subtasks = await this.workModel.find({
+      ...orgFilter,
+      type: 'subtask',
+      'assignee.type': assigneeType,
+      'assignee.id': assigneeId,
+      status: 'todo',
+    }).sort({ createdAt: 1 });
+
+    for (const subtask of subtasks) {
+      if (await this.validateDependencies(subtask)) {
+        return {
+          work: subtask,
+          metadata: {
+            priorityLevel: 1,
+            priorityDescription: 'Assigned subtask in todo status',
+            matchedCriteria: ['assigned_to_me', 'subtask', 'status_todo', 'dependencies_met']
+          }
+        };
+      }
+    }
+
+    // Priority 2: Assigned tasks without subtasks in todo
+    const tasks = await this.workModel.find({
+      ...orgFilter,
+      type: 'task',
+      'assignee.type': assigneeType,
+      'assignee.id': assigneeId,
+      status: 'todo',
+    }).sort({ createdAt: 1 });
+
+    for (const task of tasks) {
+      // Check if task has subtasks
+      const hasSubtasks = await this.workModel.exists({
+        type: 'subtask',
+        parentId: task._id.toString(),
+        isDeleted: false
+      });
+
+      if (hasSubtasks) continue; // Skip tasks with subtasks
+
+      // Check dependencies
+      if (await this.validateDependencies(task)) {
+        return {
+          work: task,
+          metadata: {
+            priorityLevel: 2,
+            priorityDescription: 'Assigned task without subtasks in todo status',
+            matchedCriteria: ['assigned_to_me', 'task', 'status_todo', 'no_subtasks', 'dependencies_met']
+          }
+        };
+      }
+    }
+
+    // Priority 3: Reported works in blocked status
+    const blockedWork = await this.workModel.findOne({
+      ...orgFilter,
+      type: { $in: ['task', 'subtask'] },
+      'reporter.type': assigneeType,
+      'reporter.id': assigneeId,
+      status: 'blocked',
+    }).sort({ createdAt: 1 });
+
+    if (blockedWork) {
+      return {
+        work: blockedWork,
+        metadata: {
+          priorityLevel: 3,
+          priorityDescription: 'Reported work in blocked status requiring resolution',
+          matchedCriteria: ['reported_by_me', 'status_blocked']
+        }
+      };
+    }
+
+    // Priority 4: Reported works in review status
+    const reviewWork = await this.workModel.findOne({
+      ...orgFilter,
+      type: { $in: ['task', 'subtask'] },
+      'reporter.type': assigneeType,
+      'reporter.id': assigneeId,
+      status: 'review',
+    }).sort({ createdAt: 1 });
+
+    if (reviewWork) {
+      return {
+        work: reviewWork,
+        metadata: {
+          priorityLevel: 4,
+          priorityDescription: 'Reported work in review status awaiting approval',
+          matchedCriteria: ['reported_by_me', 'status_review']
+        }
+      };
+    }
+
+    // No work found
+    return {
+      work: null,
+      metadata: {
+        priorityLevel: 0,
+        priorityDescription: 'No work available',
+        matchedCriteria: []
+      }
+    };
+  }
+
   // =============== Agent Triggering ===============
 
   /**
