@@ -576,6 +576,110 @@ module.exports = {
       kill_timeout: 10000,  // Longer timeout for graceful job completion
       wait_ready: false,  // Workers don't listen on ports
       listen_timeout: 10000,
+    },
+    // ========== SCHD (Scheduler Service) ==========
+    {
+      name: 'core.schd.api00',
+      script: './dist/services/schd/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3360,
+        SERVICE_NAME: 'schd',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/schd-api-00-error.log',
+      out_file: './logs/schd-api-00-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.schd.api01',
+      script: './dist/services/schd/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3361,
+        SERVICE_NAME: 'schd',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/schd-api-01-error.log',
+      out_file: './logs/schd-api-01-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.schd.worker00',
+      script: './dist/services/schd/main.js',
+      args: '--mode=worker',
+      instances: 1,
+      exec_mode: 'fork',  // fork mode for workers
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'worker',
+        SERVICE_NAME: 'schd',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/schd-worker-00-error.log',
+      out_file: './logs/schd-worker-00-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 10000,  // Longer timeout for graceful job completion
+      wait_ready: false,  // Workers don't listen on ports
+      listen_timeout: 10000,
     }
   ],
 };

@@ -19,7 +19,6 @@ const isWorkerMode = process.argv.includes('--mode=worker');
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/schd/.env',
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017/hydra-schd'
