@@ -52,8 +52,9 @@ export class ReportsService {
       this.getHealthMetrics(context),
     ]);
 
-    // Generate 30-day usage history
+    // Generate usage history
     const usageHistory = this.generate30DayUsageHistory();
+    const usageHistory60Min = this.generate60MinuteUsageHistory();
 
     return {
       timestamp: new Date().toISOString(),
@@ -62,6 +63,7 @@ export class ReportsService {
       activity,
       health,
       usageHistory,
+      usageHistory60Min,
     };
   }
 
@@ -559,6 +561,67 @@ export class ReportsService {
 
       history.push({
         date: date.toISOString().split('T')[0], // YYYY-MM-DD format
+        cpu,
+        ram,
+        storage,
+        gpu,
+      });
+    }
+
+    return history;
+  }
+
+  /**
+   * Generate fixed 60-minute usage history
+   * Returns consistent data based on baseline values with minute-level variation
+   * Each metric uses different seed and oscillation pattern for realistic variation
+   */
+  private generate60MinuteUsageHistory(): any {
+    const baselineData = {
+      cpu: 43, // 43% baseline
+      ram: 56, // 56% baseline
+      storage: 47, // 47% baseline
+      gpu: 25, // 25% baseline (light workload)
+    };
+
+    const history = [];
+    const now = new Date();
+
+    // Generate data for 60 minutes (from oldest to newest)
+    for (let i = 59; i >= 0; i--) {
+      const time = new Date(now);
+      time.setMinutes(time.getMinutes() - i);
+
+      // Use minute-based seeds for each metric
+      const minuteOfDay = time.getHours() * 60 + time.getMinutes();
+      const dayOfYear = Math.floor((time.getTime() - new Date(time.getFullYear(), 0, 0).getTime()) / 86400000);
+
+      // CPU: High frequency micro-fluctuations (per minute spikes)
+      const cpuSeed = (minuteOfDay * 7 + dayOfYear * 3) % 1000;
+      const cpuVariation = Math.sin(cpuSeed * 0.0628) * 0.15 + Math.sin(cpuSeed * 0.251) * 0.08; // Combined waves
+
+      // RAM: More stable with gradual changes
+      const ramSeed = (minuteOfDay * 2 + dayOfYear * 5) % 1000;
+      const ramVariation = Math.cos(ramSeed * 0.0314) * 0.10; // Slower variation for RAM
+
+      // Storage: Very stable, minimal changes per minute
+      const storageSeed = (minuteOfDay + dayOfYear * 2) % 1000;
+      const storageVariation = Math.sin(storageSeed * 0.0126) * 0.05; // Very small variation
+
+      // GPU: Bursty pattern with occasional spikes
+      const gpuSeed = (minuteOfDay * 11 + dayOfYear * 7) % 1000;
+      const gpuBase = Math.sin(gpuSeed * 0.0942) * 0.20;
+      const gpuSpike = (gpuSeed % 17 === 0) ? 0.15 : 0; // Occasional spikes
+      const gpuVariation = gpuBase + gpuSpike;
+
+      // Calculate values with independent variations
+      const cpu = Math.max(5, Math.min(95, Math.round(baselineData.cpu * (1 + cpuVariation))));
+      const ram = Math.max(5, Math.min(95, Math.round(baselineData.ram * (1 + ramVariation))));
+      const storage = Math.max(5, Math.min(95, Math.round(baselineData.storage * (1 + storageVariation))));
+      const gpu = Math.max(5, Math.min(95, Math.round(baselineData.gpu * (1 + gpuVariation))));
+
+      history.push({
+        time: time.toISOString(), // Full ISO timestamp
         cpu,
         ram,
         storage,
