@@ -14,7 +14,6 @@ import { ProcessorsModule } from '../queues/processors.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/mona/.env',
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017/core_mona'
