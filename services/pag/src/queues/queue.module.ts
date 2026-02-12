@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { redisConfig } from '../config/redis.config';
 import { QUEUE_NAMES } from '../config/queue.config';
+import { InboundProducer } from './producers/inbound.producer';
+import { MemoryProducer } from './producers/memory.producer';
 
 @Module({
   imports: [
@@ -13,13 +15,20 @@ import { QUEUE_NAMES } from '../config/queue.config';
         db: redisConfig.db,
       },
     }),
+    // Register static queues
     BullModule.registerQueue(
-      { name: QUEUE_NAMES.INBOUND },
-      { name: QUEUE_NAMES.MEMORY }
+      { name: QUEUE_NAMES.HEARTBEAT },
+      { name: QUEUE_NAMES.MEMORY_EXTRACT },
+      { name: QUEUE_NAMES.TOKEN_REFRESH }
     ),
   ],
-  providers: [],
+  providers: [
+    InboundProducer,
+    MemoryProducer,
+  ],
   exports: [
+    InboundProducer,
+    MemoryProducer,
     BullModule,
   ],
 })

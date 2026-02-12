@@ -125,13 +125,6 @@ export class ChannelsController {
     @Param('id') id: string,
     @Body() payload: any,
   ) {
-    // TODO: Implement webhook processing logic in Phase 7
-    // This will verify webhook signature, parse message, and queue for processing
-    
-    return {
-      message: 'Webhook received successfully',
-      channelId: id,
-      timestamp: new Date().toISOString()
-    };
+    return this.channelsService.processWebhook(new Types.ObjectId(id) as any, payload);
   }
 }
