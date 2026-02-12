@@ -8,6 +8,13 @@ import { AppService } from './app.service';
 import { QueueModule } from '../queues/queue.module';
 import { ProcessorsModule } from '../queues/processors.module';
 
+// Entity modules
+import { ChannelsModule } from '../modules/channels/channels.module';
+import { SoulsModule } from '../modules/souls/souls.module';
+import { ConversationsModule } from '../modules/conversations/conversations.module';
+import { MessagesModule } from '../modules/messages/messages.module';
+import { MemoriesModule } from '../modules/memories/memories.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,6 +28,12 @@ import { ProcessorsModule } from '../queues/processors.module';
     HealthModule,
     QueueModule,
     ProcessorsModule,
+    // Entity modules
+    ChannelsModule,
+    SoulsModule,
+    ConversationsModule,
+    MessagesModule,
+    MemoriesModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
