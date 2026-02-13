@@ -12,22 +12,12 @@ export class Conversation extends BaseSchema {
   @Prop({ required: true, type: String })
   soulId: string;
 
-  @Prop({
-    type: {
-      id: { type: String, required: true }, // zalo_user_id
-      username: { type: String, required: false }, // display name
-      // extensible: avatar, phone, ...
-      avatar: { type: String, required: false },
-      phone: { type: String, required: false },
-    },
-    required: true,
-  })
+  @Prop({ type: Object, required: true })
   platformUser: {
-    id: string; // zalo_user_id
-    username?: string; // display name
+    id: string;
+    username?: string;
     avatar?: string;
     phone?: string;
-    // extensible for future platform-specific fields
   };
 
   @Prop({ 

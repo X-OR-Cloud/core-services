@@ -19,31 +19,15 @@ export class Message extends BaseSchema {
   @Prop({ required: true, type: String })
   content: string;
 
-  @Prop({
-    type: {
-      id: { type: String, required: true }, // Zalo message ID
-      type: { type: String, required: true }, // 'text' | 'image' | 'file' | 'sticker' | 'location'
-      raw: { type: Object, required: true }, // raw payload từ platform — giữ nguyên
-    },
-    required: true,
-  })
+  @Prop({ type: Object, default: {} })
   platformMessage: {
-    id: string; // Zalo message ID
-    type: string; // 'text' | 'image' | 'file' | 'sticker' | 'location'
-    raw: object; // raw payload từ platform — giữ nguyên
+    id: string;
+    type: string;
+    raw: object;
   };
 
   // LLM info (role=assistant only)
-  @Prop({
-    type: {
-      provider: { type: String, required: false }, // 'gemini' | 'openai' | 'anthropic'
-      model: { type: String, required: false }, // 'gemini-2.0-flash'
-      promptTokens: { type: Number, required: false },
-      completionTokens: { type: Number, required: false },
-      latencyMs: { type: Number, required: false },
-    },
-    required: false,
-  })
+  @Prop({ type: Object, default: null })
   llm?: {
     provider: string;
     model: string;
@@ -52,14 +36,7 @@ export class Message extends BaseSchema {
     latencyMs: number;
   };
 
-  @Prop({
-    type: [{
-      tool: { type: String, required: true },
-      input: { type: Object, required: true },
-      output: { type: Object, required: true },
-    }],
-    required: false,
-  })
+  @Prop({ type: [Object], default: [] })
   toolCalls?: Array<{
     tool: string;
     input: object;

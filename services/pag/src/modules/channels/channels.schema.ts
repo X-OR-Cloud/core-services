@@ -25,17 +25,7 @@ export class Channel extends BaseSchema {
   status: string; // 'active' | 'inactive' | 'error'
 
   // Platform credentials (encrypted)
-  @Prop({
-    type: {
-      appId: { type: String, required: false },
-      appSecret: { type: String, required: false },
-      oaId: { type: String, required: false },
-      accessToken: { type: String, required: false },
-      refreshToken: { type: String, required: false },
-      tokenExpiresAt: { type: Date, required: false },
-    },
-    default: {},
-  })
+  @Prop({ type: Object, default: {} })
   credentials: {
     appId?: string;
     appSecret?: string;
@@ -46,18 +36,11 @@ export class Channel extends BaseSchema {
   };
 
   // Webhook config
-  @Prop({
-    type: {
-      verifyToken: { type: String, required: false },
-      secret: { type: String, required: false },
-      url: { type: String, required: false }, // auto-generated
-    },
-    default: {},
-  })
+  @Prop({ type: Object, default: {} })
   webhook: {
     verifyToken?: string;
     secret?: string;
-    url?: string; // auto-generated
+    url?: string;
   };
 
   @Prop({ type: String, required: false })

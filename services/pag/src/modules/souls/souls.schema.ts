@@ -24,95 +24,50 @@ export class Soul extends BaseSchema {
   channelIds: string[]; // channels soul serves
 
   // LLM Config
-  @Prop({
-    type: {
-      provider: { type: String, required: true, enum: ['gemini', 'openai', 'anthropic'] },
-      model: { type: String, required: true }, // 'gemini-2.0-flash'
-      temperature: { type: Number, default: 0.7 },
-      maxTokens: { type: Number, default: 2048 },
-      apiKeyRef: { type: String, required: false }, // ref to secret store or env var
-    },
-    required: true,
-  })
+  @Prop({ type: Object, required: true })
   llm: {
-    provider: string; // 'gemini' | 'openai' | 'anthropic'
-    model: string; // 'gemini-2.0-flash'
-    temperature: number; // 0.7
-    maxTokens: number; // 2048
-    apiKeyRef?: string; // ref to secret store or env var
+    provider: string;
+    model: string;
+    temperature: number;
+    maxTokens: number;
+    apiKeyRef?: string;
   };
 
   // Persona & Prompt
-  @Prop({
-    type: {
-      systemPrompt: { type: String, required: true }, // "Bạn là TranGPT..."
-      greeting: { type: String, required: false }, // Tin nhắn chào khi user follow
-      tone: { type: String, enum: ['friendly', 'professional', 'casual'], default: 'friendly' },
-      pronouns: {
-        type: {
-          self: { type: String, default: 'em' }, // "em"
-          user: { type: String, default: 'anh/chị' }, // "anh/chị"
-        },
-        default: {},
-      },
-    },
-    required: true,
-  })
+  @Prop({ type: Object, required: true })
   persona: {
-    systemPrompt: string; // "Bạn là TranGPT..."
-    greeting?: string; // Tin nhắn chào khi user follow
-    tone: string; // 'friendly' | 'professional' | 'casual'
+    systemPrompt: string;
+    greeting?: string;
+    tone: string;
     pronouns: {
-      self: string; // "em"
-      user: string; // "anh/chị"
+      self: string;
+      user: string;
     };
   };
 
   // Memory strategy
-  @Prop({
-    type: {
-      enabled: { type: Boolean, default: true },
-      maxHistoryMessages: { type: Number, default: 50 }, // số message gần nhất load làm context
-      summaryAfter: { type: Number, default: 100 }, // sau N messages thì tóm tắt
-      autoExtract: { type: Boolean, default: true }, // tự extract facts từ chat
-    },
-    default: {},
-  })
+  @Prop({ type: Object, default: { enabled: true, maxHistoryMessages: 50, summaryAfter: 100, autoExtract: true } })
   memory: {
     enabled: boolean;
-    maxHistoryMessages: number; // số message gần nhất load làm context
-    summaryAfter: number; // sau N messages thì tóm tắt
-    autoExtract: boolean; // tự extract facts từ chat
+    maxHistoryMessages: number;
+    summaryAfter: number;
+    autoExtract: boolean;
   };
 
   // Tools soul có thể dùng
-  @Prop({
-    type: [{
-      name: { type: String, required: true }, // 'weather' | 'reminder' | 'memory_write' | 'search'
-      enabled: { type: Boolean, default: true },
-      config: { type: Object, default: {} },
-    }],
-    default: [],
-  })
+  @Prop({ type: [Object], default: [] })
   tools: Array<{
-    name: string; // 'weather' | 'reminder' | 'memory_write' | 'search'
+    name: string;
     enabled: boolean;
     config?: object;
   }>;
 
   // Queue config
-  @Prop({
-    type: {
-      name: { type: String, required: false }, // 'pag:soul:transgpt'
-      concurrency: { type: Number, default: 3 }, // 3
-      timeoutMs: { type: Number, default: 30000 }, // 30000
-    },
-    default: {},
-  })
+  @Prop({ type: Object, default: { concurrency: 3, timeoutMs: 30000 } })
   queue: {
-    name?: string; // 'pag:soul:transgpt'
-    concurrency: number; // 3
-    timeoutMs: number; // 30000
+    name?: string;
+    concurrency: number;
+    timeoutMs: number;
   };
 }
 
