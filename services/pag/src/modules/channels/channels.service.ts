@@ -117,15 +117,13 @@ export class ChannelsService extends BaseService<Channel> {
 
       // 3. Find or create conversation
       const conversation = await this.conversationsService.findOrCreateByPlatformUser(
-        channelId,
+        channelId as any,
         new Types.ObjectId(channel.defaultBotId) as any,
-        messageData.platformUserId,
         {
           id: messageData.platformUserId,
           username: messageData.platformUsername || messageData.platformUserId,
-          displayName: messageData.platformDisplayName || messageData.platformUsername || 'Unknown User',
-          avatarUrl: messageData.platformAvatarUrl,
-        }
+        },
+        { userId: 'system' } as any,
       );
 
       // 4. Save user message to database

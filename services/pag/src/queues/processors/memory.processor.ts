@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Types } from 'mongoose';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { QUEUE_NAMES, QUEUE_EVENTS } from '../../config/queue.config';
 import { MessagesService } from '../../modules/messages/messages.service';
 import { MemoriesService } from '../../modules/memories/memories.service';
@@ -18,7 +18,7 @@ interface MemoryExtractJobData {
 @Processor(QUEUE_NAMES.MEMORY_EXTRACT)
 export class MemoryProcessor extends WorkerHost {
   private readonly logger = new Logger(MemoryProcessor.name);
-  private genAI: GoogleGenerativeAI;
+  private genAI: GoogleGenAI;
 
   constructor(
     private messagesService: MessagesService,
@@ -32,7 +32,7 @@ export class MemoryProcessor extends WorkerHost {
     if (!apiKey) {
       throw new Error('GOOGLE_API_KEY environment variable is required for memory extraction');
     }
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.genAI = new GoogleGenAI({ apiKey });
   }
 
   async process(job: Job): Promise<any> {
@@ -74,12 +74,11 @@ export class MemoryProcessor extends WorkerHost {
       // 2. Call LLM to extract key facts
       const prompt = this.buildMemoryExtractionPrompt(recentMessages);
       
-      const model = this.genAI.getGenerativeModel({ 
-        model: soul?.llm?.model || 'gemini-2.0-flash-exp'
+      const result = await this.genAI.models.generateContent({
+        model: soul?.llm?.model || 'gemini-2.0-flash',
+        contents: prompt,
       });
-      
-      const result = await model.generateContent(prompt);
-      const response = result.response.text();
+      const response = result.text || '';
 
       // 3. Parse structured facts
       const extractedFacts = this.parseExtractedFacts(response);

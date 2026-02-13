@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Types } from 'mongoose';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import { QUEUE_NAMES, QUEUE_EVENTS } from '../../config/queue.config';
 import { SoulsService } from '../../modules/souls/souls.service';
@@ -19,7 +19,7 @@ interface HeartbeatJobData {
 @Processor(QUEUE_NAMES.HEARTBEAT)
 export class HeartbeatProcessor extends WorkerHost {
   private readonly logger = new Logger(HeartbeatProcessor.name);
-  private genAI: GoogleGenerativeAI;
+  private genAI: GoogleGenAI;
 
   constructor(
     private soulsService: SoulsService,
@@ -35,7 +35,7 @@ export class HeartbeatProcessor extends WorkerHost {
     if (!apiKey) {
       throw new Error('GOOGLE_API_KEY environment variable is required for heartbeat processing');
     }
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.genAI = new GoogleGenAI({ apiKey });
   }
 
   async process(job: Job): Promise<any> {
@@ -207,13 +207,11 @@ export class HeartbeatProcessor extends WorkerHost {
     try {
       const prompt = this.buildProactiveMessagePrompt(soul, conversation, memories, dueReminders);
       
-      const model = this.genAI.getGenerativeModel({ 
-        model: soul.llm?.model || 'gemini-2.0-flash-exp'
+      const result = await this.genAI.models.generateContent({
+        model: soul.llm?.model || 'gemini-2.0-flash',
+        contents: prompt,
       });
-      
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const messageText = response.text().trim();
+      const messageText = (result.text || '').trim();
 
       // Don't send if the AI decides not to send a message
       if (messageText.toLowerCase().includes('no message needed') || 
@@ -225,9 +223,9 @@ export class HeartbeatProcessor extends WorkerHost {
       return {
         text: messageText,
         tokensUsed: {
-          input: response.usageMetadata?.promptTokenCount || 0,
-          output: response.usageMetadata?.candidatesTokenCount || 0,
-          total: response.usageMetadata?.totalTokenCount || 0,
+          input: result.usageMetadata?.promptTokenCount || 0,
+          output: result.usageMetadata?.candidatesTokenCount || 0,
+          total: result.usageMetadata?.totalTokenCount || 0,
         },
       };
 

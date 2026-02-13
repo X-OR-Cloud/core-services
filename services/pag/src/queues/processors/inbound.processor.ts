@@ -1,7 +1,7 @@
 import { Logger, Injectable } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Types } from 'mongoose';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import { QUEUE_EVENTS, getInboundQueueName } from '../../config/queue.config';
 import { SoulsService } from '../../modules/souls/souls.service';
@@ -23,7 +23,7 @@ interface InboundJobData {
 @Injectable()
 export class InboundProcessor {
   private readonly logger = new Logger(InboundProcessor.name);
-  private genAI: GoogleGenerativeAI;
+  private genAI: GoogleGenAI;
 
   constructor(
     private soulsService: SoulsService,
@@ -38,7 +38,7 @@ export class InboundProcessor {
     if (!apiKey) {
       throw new Error('GOOGLE_API_KEY environment variable is required');
     }
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.genAI = new GoogleGenAI({ apiKey });
   }
 
   /**
@@ -96,13 +96,11 @@ export class InboundProcessor {
       const prompt = this.buildPrompt(soul, memories, recentMessages, data.messageText);
 
       // 6. Call LLM (Gemini Flash)
-      const model = this.genAI.getGenerativeModel({ 
-        model: soul.llm?.model || 'gemini-2.0-flash-exp'
+      const result = await this.genAI.models.generateContent({
+        model: soul.llm?.model || 'gemini-2.0-flash',
+        contents: prompt,
       });
-      
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const aiResponse = response.text();
+      const aiResponse = result.text || '';
 
       this.logger.log(`AI Response generated for conversation: ${data.conversationId}`);
 
@@ -114,9 +112,9 @@ export class InboundProcessor {
         llmProvider: 'google',
         llmModel: soul.llm?.model || 'gemini-2.0-flash-exp',
         llmTokensUsed: {
-          input: result.response.usageMetadata?.promptTokenCount || 0,
-          output: result.response.usageMetadata?.candidatesTokenCount || 0,
-          total: result.response.usageMetadata?.totalTokenCount || 0,
+          input: result.usageMetadata?.promptTokenCount || 0,
+          output: result.usageMetadata?.candidatesTokenCount || 0,
+          total: result.usageMetadata?.totalTokenCount || 0,
         },
       }, { userId: 'system' } as any);
 
