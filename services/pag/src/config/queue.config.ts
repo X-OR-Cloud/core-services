@@ -1,11 +1,11 @@
 // Dynamic queue names based on soulSlug  
-export const getInboundQueueName = (soulSlug: string) => `pag:inbound:${soulSlug}`;
+export const getInboundQueueName = (soulSlug: string) => `pag-inbound-${soulSlug}`;
 
 export const QUEUE_NAMES = {
   // Static queues
-  HEARTBEAT: 'pag:heartbeat',
-  MEMORY_EXTRACT: 'pag:memory:extract',
-  TOKEN_REFRESH: 'pag:token:refresh',
+  HEARTBEAT: 'pag-heartbeat',
+  MEMORY_EXTRACT: 'pag-memory-extract',
+  TOKEN_REFRESH: 'pag-token-refresh',
   
   // Dynamic queue getter
   getInboundQueue: getInboundQueueName,
