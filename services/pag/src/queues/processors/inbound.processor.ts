@@ -36,9 +36,9 @@ export class InboundProcessor {
     // Initialize Google Generative AI
     const apiKey = process.env['GOOGLE_API_KEY'];
     if (!apiKey) {
-      throw new Error('GOOGLE_API_KEY environment variable is required');
+      this.logger.warn('GOOGLE_API_KEY not set - LLM features disabled');
     }
-    this.genAI = new GoogleGenAI({ apiKey });
+    if (apiKey) { this.genAI = new GoogleGenAI({ apiKey }); }
   }
 
   /**

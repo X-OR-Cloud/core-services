@@ -33,9 +33,9 @@ export class HeartbeatProcessor extends WorkerHost {
     // Initialize Google Generative AI
     const apiKey = process.env['GOOGLE_API_KEY'];
     if (!apiKey) {
-      throw new Error('GOOGLE_API_KEY environment variable is required for heartbeat processing');
+      this.logger.warn('GOOGLE_API_KEY not set - LLM features disabled');
     }
-    this.genAI = new GoogleGenAI({ apiKey });
+    if (apiKey) { this.genAI = new GoogleGenAI({ apiKey }); }
   }
 
   async process(job: Job): Promise<any> {
