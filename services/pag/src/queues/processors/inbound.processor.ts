@@ -128,8 +128,9 @@ export class InboundProcessor extends WorkerHost {
         },
       }, this.systemContext);
 
-      // 7. Reply via Zalo OA API
-      await this.sendZaloReply(data.channelId, data.platformUserId, aiResponse);
+      // 7. Strip markdown & reply via Zalo OA API
+      const plainResponse = this.stripMarkdown(aiResponse);
+      await this.sendZaloReply(data.channelId, data.platformUserId, plainResponse);
 
       // 8. Update conversation.lastActiveAt
       await this.conversationsService.update(
@@ -172,6 +173,7 @@ export class InboundProcessor extends WorkerHost {
     }
     const vnTime = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'short' });
     parts.push(`\nThời gian hiện tại: ${vnTime} (giờ Việt Nam, UTC+7).`);
+    parts.push(`\nQUY TẮC ĐỊNH DẠNG: Tin nhắn sẽ gửi qua Zalo — KHÔNG dùng markdown (không **bold**, không *italic*, không bullet *, không heading #). Dùng văn bản thuần: xuống dòng, số thứ tự (1. 2. 3.), gạch ngang (−) nếu cần liệt kê. Giữ tin nhắn ngắn gọn, tự nhiên như chat.`);
 
     // Memories as context
     if (memories.length > 0) {
@@ -201,6 +203,35 @@ export class InboundProcessor extends WorkerHost {
     parts.push('\nTrợ lý:');
 
     return parts.join('\n');
+  }
+
+  /**
+   * Strip markdown formatting for plain-text platforms (Zalo)
+   */
+  private stripMarkdown(text: string): string {
+    return text
+      // Headers: ## Title → Title
+      .replace(/^#{1,6}\s+/gm, '')
+      // Bold/italic: **text** or __text__ or *text* or _text_
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/_(.+?)_/g, '$1')
+      // Strikethrough: ~~text~~
+      .replace(/~~(.+?)~~/g, '$1')
+      // Inline code: `code`
+      .replace(/`(.+?)`/g, '$1')
+      // Code blocks: ```...```
+      .replace(/```[\s\S]*?```/g, (match) => match.replace(/```\w*\n?/g, '').trim())
+      // Bullet points: * item or - item → − item
+      .replace(/^\s*[\*\-]\s+/gm, '− ')
+      // Links: [text](url) → text (url)
+      .replace(/\[(.+?)\]\((.+?)\)/g, '$1 ($2)')
+      // Images: ![alt](url) → (alt)
+      .replace(/!\[(.+?)\]\(.+?\)/g, '($1)')
+      // Clean up multiple blank lines
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**
