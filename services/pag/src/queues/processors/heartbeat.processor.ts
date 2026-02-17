@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { Types } from 'mongoose';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
+import { RequestContext } from '@hydrabyte/shared';
 import { QUEUE_NAMES, QUEUE_EVENTS } from '../../config/queue.config';
 import { SoulsService } from '../../modules/souls/souls.service';
 import { ConversationsService } from '../../modules/conversations/conversations.service';
@@ -18,6 +19,7 @@ interface HeartbeatJobData {
 
 @Processor(QUEUE_NAMES.HEARTBEAT)
 export class HeartbeatProcessor extends WorkerHost {
+  private get systemContext(): RequestContext { return { orgId: "", groupId: "", userId: "system", agentId: "", appId: "", roles: ["universe.owner" as any] }; }
   private readonly logger = new Logger(HeartbeatProcessor.name);
   private genAI: GoogleGenAI;
 
@@ -61,10 +63,10 @@ export class HeartbeatProcessor extends WorkerHost {
       // For now, we'll process all souls. In production, you might want to filter
       let souls = [];
       if (data.soulId) {
-        const soul = await this.soulsService.findById(new Types.ObjectId(data.soulId) as any, { userId: 'system' } as any);
+        const soul = await this.soulsService.findById(new Types.ObjectId(data.soulId) as any, this.systemContext);
         souls = soul ? [soul] : [];
       } else {
-        const result = await this.soulsService.findAll({ limit: 100, page: 1 }, { userId: 'system' } as any);
+        const result = await this.soulsService.findAll({ limit: 100, page: 1 }, this.systemContext);
         souls = (result as any).data || [];
       }
 
@@ -148,7 +150,7 @@ export class HeartbeatProcessor extends WorkerHost {
           llmProvider: 'google',
           llmModel: soul.llm?.model || 'gemini-2.0-flash-exp',
           llmTokensUsed: proactiveMessage.tokensUsed || { input: 0, output: 0, total: 0 },
-        }, { userId: 'system' } as any);
+        }, this.systemContext);
 
         // Send via platform API
         await this.sendProactiveMessage(
@@ -161,7 +163,7 @@ export class HeartbeatProcessor extends WorkerHost {
         await this.conversationsService.update(
           (conversation as any)._id,
           { lastActiveAt: new Date() },
-          { userId: 'system' } as any
+          this.systemContext
         );
 
         messagesSent++;
@@ -296,7 +298,7 @@ Your proactive message:`);
       // Load channel to get access token
       const channel = await this.channelsService.findById(
         new Types.ObjectId(channelId) as any,
-        { userId: 'system' } as any
+        this.systemContext
       );
       
       if (!channel || !channel.credentials?.accessToken) {

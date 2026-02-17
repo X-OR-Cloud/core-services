@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Types } from 'mongoose';
 import { GoogleGenAI } from '@google/genai';
+import { RequestContext } from '@hydrabyte/shared';
 import { QUEUE_NAMES, QUEUE_EVENTS } from '../../config/queue.config';
 import { MessagesService } from '../../modules/messages/messages.service';
 import { MemoriesService } from '../../modules/memories/memories.service';
@@ -19,6 +20,13 @@ interface MemoryExtractJobData {
 export class MemoryProcessor extends WorkerHost {
   private readonly logger = new Logger(MemoryProcessor.name);
   private genAI: GoogleGenAI;
+
+  private get systemContext(): RequestContext {
+    return {
+      orgId: '', groupId: '', userId: 'system',
+      agentId: '', appId: '', roles: ['universe.owner' as any],
+    };
+  }
 
   constructor(
     private messagesService: MessagesService,
@@ -68,7 +76,7 @@ export class MemoryProcessor extends WorkerHost {
       // Load soul config for LLM model preference
       const soul = await this.soulsService.findById(
         new Types.ObjectId(data.soulId) as any,
-        { userId: 'system' } as any
+        this.systemContext
       );
 
       // 2. Call LLM to extract key facts
@@ -100,7 +108,7 @@ export class MemoryProcessor extends WorkerHost {
               source: 'auto_extraction',
               confidence: fact.confidence || 0.7,
             },
-            { userId: 'system' } as any
+            this.systemContext
           );
           upsertedCount++;
         } catch (error) {
