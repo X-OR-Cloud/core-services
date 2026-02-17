@@ -17,6 +17,7 @@ import { MemoryProducer } from './producers/memory.producer';
     }),
     // Register static queues
     BullModule.registerQueue(
+      { name: QUEUE_NAMES.INBOUND },
       { name: QUEUE_NAMES.HEARTBEAT },
       { name: QUEUE_NAMES.MEMORY_EXTRACT },
       { name: QUEUE_NAMES.TOKEN_REFRESH }

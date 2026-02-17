@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-// import { InboundProcessor } from './processors/inbound.processor'; // TODO: Dynamic processor
+import { InboundProcessor } from './processors/inbound.processor';
 import { MemoryProcessor } from './processors/memory.processor';
 import { HeartbeatProcessor } from './processors/heartbeat.processor';
 import { TokenRefreshProcessor } from './processors/token-refresh.processor';
+import { MemoryProducer } from './producers/memory.producer';
 
 // Import entity modules
 import { SoulsModule } from '../modules/souls/souls.module';
@@ -19,6 +20,7 @@ import { QUEUE_NAMES } from '../config/queue.config';
   imports: [
     // Register queues for processors
     BullModule.registerQueue(
+      { name: QUEUE_NAMES.INBOUND },
       { name: QUEUE_NAMES.HEARTBEAT },
       { name: QUEUE_NAMES.MEMORY_EXTRACT },
       { name: QUEUE_NAMES.TOKEN_REFRESH }
@@ -31,10 +33,11 @@ import { QUEUE_NAMES } from '../config/queue.config';
     ChannelsModule,
   ],
   providers: [
-    // InboundProcessor, // TODO: Dynamic processor for soul-specific queues - implement separately
+    InboundProcessor,
     MemoryProcessor,
     HeartbeatProcessor,
     TokenRefreshProcessor,
+    MemoryProducer,
   ],
 })
 export class ProcessorsModule {}
