@@ -139,6 +139,17 @@ export class ChannelsService extends BaseService<Channel> {
         this.systemContext,
       );
 
+      // 3.5 Check re-engagement (user returns after 12h silence)
+      if (conversation.lastActiveAt) {
+        const hoursSinceLastActive = (Date.now() - new Date(conversation.lastActiveAt).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceLastActive >= 12) {
+          this.notifyDiscord('re_engagement', { id: messageData.platformUserId, name: messageData.platformDisplayName }, {
+            hours_silent: Math.round(hoursSinceLastActive),
+            message_preview: messageData.text?.substring(0, 100),
+          }).catch(e => this.logger.warn(`Discord re-engagement notify failed: ${e.message}`));
+        }
+      }
+
       // 4. Save user message to database
       const savedMessage = await this.messagesService.create({
         conversationId: (conversation as any)._id,
@@ -212,29 +223,53 @@ export class ChannelsService extends BaseService<Channel> {
    * Parse Zalo OA webhook payload
    */
   private parseZaloWebhook(payload: any) {
-    // Handle Zalo OA message webhook
-    // Ref: https://developers.zalo.me/docs/official-account/webhook/setup-webhook-post
-    
-    if (payload.event_name === 'user_send_text') {
-      const message = payload.message;
-      const sender = payload.sender;
-      
-      return {
-        platformUserId: sender.id,
-        platformUsername: sender.id, 
-        platformDisplayName: sender.name || 'Zalo User',
-        platformAvatarUrl: sender.avatar,
-        text: message.text,
-        platformMessageId: message.msg_id,
-        metadata: {
-          timestamp: payload.timestamp,
-          app_id: payload.app_id,
-          oa_id: payload.oa_id,
-        }
-      };
+    const event = payload.event_name;
+    const sender = payload.sender;
+    const message = payload.message;
+
+    // Follow/unfollow events → notify Discord, no message processing
+    if (event === 'follow' || event === 'unfollow') {
+      this.notifyDiscord(event, sender, payload).catch(e => 
+        this.logger.warn(`Discord notify failed: ${e.message}`)
+      );
+      return null;
     }
 
-    // Handle other Zalo events as needed (images, stickers, etc.)
+    if (!sender || !message) return null;
+
+    const base = {
+      platformUserId: sender.id,
+      platformUsername: sender.id,
+      platformDisplayName: sender.name || 'Zalo User',
+      platformAvatarUrl: sender.avatar,
+      platformMessageId: message.msg_id,
+      metadata: { timestamp: payload.timestamp, app_id: payload.app_id, oa_id: payload.oa_id, event_name: event },
+    };
+
+    // Text message
+    if (event === 'user_send_text') {
+      return { ...base, text: message.text };
+    }
+
+    // Non-text messages → friendly fallback
+    const fallbacks: Record<string, string> = {
+      'user_send_image': '[Hình ảnh] Em chưa xem được ảnh, anh/chị mô tả giúp em nhé! 📷',
+      'user_send_gif': '[GIF] Haha, em chưa xem được GIF nhưng chắc vui lắm! 😄',
+      'user_send_sticker': '[Sticker] 😊',
+      'user_send_audio': '[Audio] Em chưa nghe được tin nhắn thoại, anh/chị gõ chữ giúp em nhé!',
+      'user_send_file': '[File] Em chưa mở được file đính kèm, anh/chị cho em biết nội dung file nhé!',
+      'user_send_location': '[Vị trí] Em đã nhận vị trí của anh/chị!',
+      'user_send_link': '[Link] ' + (message.text || message.url || 'Em đã nhận link từ anh/chị!'),
+      'user_submit_info': '[Thông tin] Em đã nhận thông tin từ anh/chị!',
+    };
+
+    const fallbackText = fallbacks[event];
+    if (fallbackText) {
+      return { ...base, text: fallbackText, attachments: [{ type: event.replace('user_send_', ''), raw: message }] };
+    }
+
+    // Unknown event → log and skip
+    this.logger.warn(`Unhandled Zalo event: ${event}`);
     return null;
   }
 
@@ -261,6 +296,45 @@ export class ChannelsService extends BaseService<Channel> {
     }
 
     return null;
+  }
+
+  // ==================== Discord Notifications ====================
+
+  private async notifyDiscord(event: string, sender: any, extra: any = {}) {
+    const webhookUrl = process.env['DISCORD_WEBHOOK_URL'];
+    if (!webhookUrl) return;
+
+    const colors: Record<string, number> = {
+      follow: 0x2ecc71,       // green
+      unfollow: 0xe74c3c,     // red
+      re_engagement: 0x3498db, // blue
+    };
+
+    const titles: Record<string, string> = {
+      follow: '👋 Người dùng mới follow OA',
+      unfollow: '😢 Người dùng unfollow OA',
+      re_engagement: '🔔 Người dùng quay lại sau im lặng',
+    };
+
+    const descriptions: Record<string, string> = {
+      follow: `**${sender?.name || sender?.id || 'Unknown'}** vừa follow TranGPT OA`,
+      unfollow: `**${sender?.name || sender?.id || 'Unknown'}** vừa unfollow TranGPT OA`,
+      re_engagement: `**${sender?.name || sender?.id || 'Unknown'}** quay lại sau **${extra.hours_silent || '?'}h** im lặng\n> ${extra.message_preview || ''}`,
+    };
+
+    try {
+      await axios.post(webhookUrl, {
+        embeds: [{
+          title: titles[event] || `📌 Event: ${event}`,
+          description: descriptions[event] || JSON.stringify(extra).substring(0, 200),
+          color: colors[event] || 0x95a5a6,
+          timestamp: new Date().toISOString(),
+          footer: { text: `User ID: ${sender?.id || 'unknown'}` },
+        }],
+      }, { timeout: 5000 });
+    } catch (error) {
+      this.logger.warn(`Discord webhook failed: ${error.message}`);
+    }
   }
 
   // ==================== OAuth v4 ====================

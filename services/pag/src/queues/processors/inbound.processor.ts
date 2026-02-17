@@ -166,10 +166,12 @@ export class InboundProcessor extends WorkerHost {
   private buildContents(soul: any, memories: any[], recentMessages: any[], currentMessage: string): string {
     const parts: string[] = [];
 
-    // System prompt
+    // System prompt + timezone
     if (soul.persona?.systemPrompt) {
       parts.push(soul.persona.systemPrompt);
     }
+    const vnTime = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'short' });
+    parts.push(`\nThời gian hiện tại: ${vnTime} (giờ Việt Nam, UTC+7).`);
 
     // Memories as context
     if (memories.length > 0) {
