@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, NotFoundException, HttpCode, HttpStatus, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, NotFoundException, HttpCode, HttpStatus, ValidationPipe, Res, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -126,5 +126,52 @@ export class ChannelsController {
     @Body() payload: any,
   ) {
     return this.channelsService.processWebhook(new Types.ObjectId(id) as any, payload);
+  }
+
+  @Get(':id/oauth')
+  @ApiOperation({
+    summary: 'Start OAuth flow',
+    description: 'Redirect to Zalo OAuth authorization page. No authentication required.'
+  })
+  @ApiParam({ name: 'id', description: 'Channel ID' })
+  // No auth - this is the OAuth initiation
+  async oauthStart(
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const url = await this.channelsService.getOAuthUrl(new Types.ObjectId(id) as any);
+    return res.redirect(url);
+  }
+
+  @Get(':id/oauth-callback')
+  @ApiOperation({
+    summary: 'OAuth callback',
+    description: 'Handle OAuth callback from Zalo. Exchanges code for access token.'
+  })
+  @ApiParam({ name: 'id', description: 'Channel ID' })
+  // No auth - Zalo redirects here
+  async oauthCallback(
+    @Param('id') id: string,
+    @Query('code') code: string,
+    @Query('oa_id') oaId: string,
+    @Query('code_challenge') codeChallenge: string,
+    @Res() res: any,
+  ) {
+    try {
+      const result = await this.channelsService.handleOAuthCallback(
+        new Types.ObjectId(id) as any,
+        code,
+      );
+      return res.json({
+        message: 'OAuth thành công! Access token đã được lưu.',
+        channel: result.name,
+        tokenExpiresAt: result.tokenExpiresAt,
+      });
+    } catch (error) {
+      return res.status(400).json({
+        message: 'OAuth thất bại',
+        error: error.message,
+      });
+    }
   }
 }

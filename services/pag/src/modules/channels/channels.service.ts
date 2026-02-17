@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService } from '@hydrabyte/base';
@@ -7,6 +7,8 @@ import { Channel } from './channels.schema';
 import { ConversationsService } from '../conversations/conversations.service';
 import { MessagesService } from '../messages/messages.service';
 import { InboundProducer } from '../../queues/producers/inbound.producer';
+import axios from 'axios';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ChannelsService extends BaseService<Channel> {
@@ -259,5 +261,183 @@ export class ChannelsService extends BaseService<Channel> {
     }
 
     return null;
+  }
+
+  // ==================== OAuth v4 ====================
+
+  // Store code_verifier temporarily (in-memory for MVP, should be Redis for production)
+  private codeVerifiers = new Map<string, string>();
+
+  /**
+   * Generate OAuth URL for Zalo OA authorization
+   */
+  async getOAuthUrl(channelId: ObjectId): Promise<string> {
+    const channel = await this.findById(channelId, this.systemContext);
+    if (!channel) {
+      throw new NotFoundException(`Channel ${channelId} not found`);
+    }
+
+    const appId = channel.credentials?.appId;
+    if (!appId) {
+      throw new BadRequestException('Channel missing appId in credentials');
+    }
+
+    // Generate PKCE code_verifier and code_challenge
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+
+    // Store code_verifier for later exchange
+    this.codeVerifiers.set(channelId.toString(), codeVerifier);
+
+    const redirectUri = `${process.env['PAG_BASE_URL'] || 'https://api.hydrabyte.co/pag'}/channels/${channelId}/oauth-callback`;
+
+    const params = new URLSearchParams({
+      app_id: appId,
+      redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+    });
+
+    return `https://oauth.zaloapp.com/v4/oa/permission?${params.toString()}`;
+  }
+
+  /**
+   * Handle OAuth callback — exchange code for access token
+   */
+  async handleOAuthCallback(channelId: ObjectId, code: string) {
+    const channel = await this.findById(channelId, this.systemContext);
+    if (!channel) {
+      throw new NotFoundException(`Channel ${channelId} not found`);
+    }
+
+    const codeVerifier = this.codeVerifiers.get(channelId.toString());
+    if (!codeVerifier) {
+      throw new BadRequestException('OAuth session expired. Please start the OAuth flow again.');
+    }
+
+    const appId = channel.credentials?.appId;
+    const appSecret = channel.credentials?.appSecret;
+
+    if (!appId || !appSecret) {
+      throw new BadRequestException('Channel missing appId or appSecret');
+    }
+
+    try {
+      // Exchange code for access token
+      const response = await axios.post(
+        'https://oauth.zaloapp.com/v4/oa/access_token',
+        new URLSearchParams({
+          code,
+          app_id: appId,
+          grant_type: 'authorization_code',
+          code_verifier: codeVerifier,
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'secret_key': appSecret,
+          },
+          timeout: 10000,
+        },
+      );
+
+      const { access_token, refresh_token, expires_in } = response.data;
+
+      if (!access_token) {
+        throw new Error(`Zalo OAuth error: ${JSON.stringify(response.data)}`);
+      }
+
+      // Calculate expiry
+      const tokenExpiresAt = new Date(Date.now() + (expires_in || 86400) * 1000);
+
+      // Update channel with tokens
+      await this.update(channelId, {
+        credentials: {
+          ...channel.credentials,
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          tokenExpiresAt: tokenExpiresAt.toISOString(),
+        },
+        status: 'active',
+      } as any, this.systemContext);
+
+      // Clean up code_verifier
+      this.codeVerifiers.delete(channelId.toString());
+
+      this.logger.log(`OAuth completed for channel ${channelId}, token expires at ${tokenExpiresAt.toISOString()}`);
+
+      return {
+        name: channel.name,
+        tokenExpiresAt: tokenExpiresAt.toISOString(),
+      };
+
+    } catch (error) {
+      this.logger.error(`OAuth token exchange failed: ${error.message}`, error.stack);
+      throw new BadRequestException(`OAuth failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Refresh Zalo OA access token using refresh_token
+   */
+  async refreshZaloToken(channelId: ObjectId): Promise<void> {
+    const channel = await this.findById(channelId, this.systemContext);
+    if (!channel) {
+      throw new NotFoundException(`Channel ${channelId} not found`);
+    }
+
+    const refreshToken = channel.credentials?.refreshToken;
+    const appId = channel.credentials?.appId;
+    const appSecret = channel.credentials?.appSecret;
+
+    if (!refreshToken || !appId || !appSecret) {
+      throw new BadRequestException('Channel missing refresh token or app credentials');
+    }
+
+    try {
+      const response = await axios.post(
+        'https://oauth.zaloapp.com/v4/oa/access_token',
+        new URLSearchParams({
+          refresh_token: refreshToken,
+          app_id: appId,
+          grant_type: 'refresh_token',
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'secret_key': appSecret,
+          },
+          timeout: 10000,
+        },
+      );
+
+      const { access_token, refresh_token: newRefreshToken, expires_in } = response.data;
+
+      if (!access_token) {
+        throw new Error(`Zalo refresh error: ${JSON.stringify(response.data)}`);
+      }
+
+      const tokenExpiresAt = new Date(Date.now() + (expires_in || 86400) * 1000);
+
+      await this.update(channelId, {
+        credentials: {
+          ...channel.credentials,
+          accessToken: access_token,
+          refreshToken: newRefreshToken || refreshToken,
+          tokenExpiresAt: tokenExpiresAt.toISOString(),
+        },
+      } as any, this.systemContext);
+
+      this.logger.log(`Token refreshed for channel ${channelId}, new expiry: ${tokenExpiresAt.toISOString()}`);
+
+    } catch (error) {
+      this.logger.error(`Token refresh failed for channel ${channelId}: ${error.message}`, error.stack);
+      
+      // Mark channel as error if refresh fails
+      await this.update(channelId, { status: 'error' } as any, this.systemContext);
+      throw error;
+    }
   }
 }
