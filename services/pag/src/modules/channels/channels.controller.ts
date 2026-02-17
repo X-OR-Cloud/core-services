@@ -128,6 +128,18 @@ export class ChannelsController {
     return this.channelsService.processWebhook(new Types.ObjectId(id) as any, payload);
   }
 
+  @Post(':id/broadcast')
+  @ApiOperation({ summary: 'Send broadcast message', description: 'Send a message to specific users or all followers' })
+  @ApiParam({ name: 'id', description: 'Channel ID' })
+  @UseGuards(JwtAuthGuard)
+  async broadcast(
+    @Param('id') id: string,
+    @Body() body: { message: string; userIds?: string[] },
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.channelsService.broadcast(new Types.ObjectId(id) as any, body.message, body.userIds);
+  }
+
   @Get(':id/oauth')
   @ApiOperation({
     summary: 'Start OAuth flow',

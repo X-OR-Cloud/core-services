@@ -298,6 +298,63 @@ export class ChannelsService extends BaseService<Channel> {
     return null;
   }
 
+  // ==================== Broadcast ====================
+
+  async broadcast(channelId: ObjectId, message: string, userIds?: string[]) {
+    const channel = await this.findById(channelId, this.systemContext);
+    if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
+    if (!channel.credentials?.accessToken) throw new BadRequestException('Channel missing access token');
+
+    // If no userIds specified, get all conversations (= all known users)
+    let targets = userIds;
+    if (!targets || targets.length === 0) {
+      const convos = await this.conversationsService.findAll({ limit: 10000, page: 1 }, this.systemContext);
+      targets = ((convos as any).data || [])
+        .filter((c: any) => c.channelId?.toString() === channelId.toString() && c.status !== 'blocked')
+        .map((c: any) => c.platformUser?.id)
+        .filter(Boolean);
+    }
+
+    this.logger.log(`Broadcasting to ${targets.length} users on channel ${channelId}`);
+
+    const results = { sent: 0, failed: 0, errors: [] as any[] };
+
+    for (const userId of targets) {
+      try {
+        const response = await axios.post(
+          'https://openapi.zalo.me/v3.0/oa/message/cs',
+          {
+            recipient: { user_id: userId },
+            message: { text: message },
+          },
+          {
+            headers: {
+              'access_token': channel.credentials.accessToken,
+              'Content-Type': 'application/json',
+            },
+            timeout: 10000,
+          },
+        );
+
+        if (response.data.error === 0) {
+          results.sent++;
+        } else {
+          results.failed++;
+          results.errors.push({ userId, error: response.data.message, code: response.data.error });
+        }
+      } catch (error) {
+        results.failed++;
+        results.errors.push({ userId, error: error.message });
+      }
+
+      // Rate limit: small delay between sends
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    this.logger.log(`Broadcast complete: ${results.sent} sent, ${results.failed} failed`);
+    return results;
+  }
+
   // ==================== Discord Notifications ====================
 
   private async notifyDiscord(event: string, sender: any, extra: any = {}) {
