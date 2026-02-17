@@ -300,38 +300,86 @@ export class ChannelsService extends BaseService<Channel> {
 
   // ==================== Broadcast ====================
 
-  async broadcast(channelId: ObjectId, message: string, userIds?: string[]) {
+  /**
+   * Get all followers from Zalo OA
+   */
+  async getFollowers(channelId: ObjectId) {
     const channel = await this.findById(channelId, this.systemContext);
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
     if (!channel.credentials?.accessToken) throw new BadRequestException('Channel missing access token');
 
-    // If no userIds specified, get all conversations (= all known users)
+    const followers: { userId: string }[] = [];
+    let offset = 0;
+    const count = 50;
+
+    // Paginate through all followers
+    while (true) {
+      try {
+        const response = await axios.get('https://openapi.zalo.me/v3.0/oa/user/getlist', {
+          params: { data: JSON.stringify({ offset, count }) },
+          headers: { 'access_token': channel.credentials.accessToken },
+          timeout: 10000,
+        });
+
+        if (response.data.error !== 0) {
+          throw new Error(`Zalo API error ${response.data.error}: ${response.data.message}`);
+        }
+
+        const data = response.data.data;
+        if (!data?.users || data.users.length === 0) break;
+
+        for (const f of data.users) {
+          followers.push({ userId: f.user_id });
+        }
+
+        if (followers.length >= data.total) break;
+        offset += count;
+      } catch (error) {
+        this.logger.error(`getFollowers failed at offset ${offset}: ${error.message}`);
+        throw error;
+      }
+    }
+
+    return { total: followers.length, followers };
+  }
+
+  /**
+   * Broadcast message to users. dryRun=true returns preview without sending.
+   */
+  async broadcast(channelId: ObjectId, message: string, userIds?: string[], dryRun = false) {
+    const channel = await this.findById(channelId, this.systemContext);
+    if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
+    if (!channel.credentials?.accessToken) throw new BadRequestException('Channel missing access token');
+
+    // Resolve targets
     let targets = userIds;
     if (!targets || targets.length === 0) {
-      const convos = await this.conversationsService.findAll({ limit: 10000, page: 1 }, this.systemContext);
-      targets = ((convos as any).data || [])
-        .filter((c: any) => c.channelId?.toString() === channelId.toString() && c.status !== 'blocked')
-        .map((c: any) => c.platformUser?.id)
-        .filter(Boolean);
+      const { followers } = await this.getFollowers(channelId);
+      targets = followers.map(f => f.userId);
+    }
+
+    // Dry run — return preview
+    if (dryRun) {
+      return {
+        dryRun: true,
+        totalRecipients: targets.length,
+        recipients: targets,
+        messagePreview: message.substring(0, 200) + (message.length > 200 ? '...' : ''),
+        messageLength: message.length,
+        estimatedCost: `${targets.length} tin Tư vấn (nếu ngoài 48h window)`,
+      };
     }
 
     this.logger.log(`Broadcasting to ${targets.length} users on channel ${channelId}`);
-
-    const results = { sent: 0, failed: 0, errors: [] as any[] };
+    const results = { sent: 0, failed: 0, total: targets.length, errors: [] as any[] };
 
     for (const userId of targets) {
       try {
         const response = await axios.post(
           'https://openapi.zalo.me/v3.0/oa/message/cs',
+          { recipient: { user_id: userId }, message: { text: message } },
           {
-            recipient: { user_id: userId },
-            message: { text: message },
-          },
-          {
-            headers: {
-              'access_token': channel.credentials.accessToken,
-              'Content-Type': 'application/json',
-            },
+            headers: { 'access_token': channel.credentials.accessToken, 'Content-Type': 'application/json' },
             timeout: 10000,
           },
         );
@@ -347,9 +395,16 @@ export class ChannelsService extends BaseService<Channel> {
         results.errors.push({ userId, error: error.message });
       }
 
-      // Rate limit: small delay between sends
       await new Promise(r => setTimeout(r, 200));
     }
+
+    // Notify Discord about broadcast
+    this.notifyDiscord('broadcast', { id: 'system' }, {
+      message_preview: message.substring(0, 100),
+      sent: results.sent,
+      failed: results.failed,
+      total: results.total,
+    }).catch(() => {});
 
     this.logger.log(`Broadcast complete: ${results.sent} sent, ${results.failed} failed`);
     return results;
@@ -365,18 +420,21 @@ export class ChannelsService extends BaseService<Channel> {
       follow: 0x2ecc71,       // green
       unfollow: 0xe74c3c,     // red
       re_engagement: 0x3498db, // blue
+      broadcast: 0xf39c12,    // orange
     };
 
     const titles: Record<string, string> = {
       follow: '👋 Người dùng mới follow OA',
       unfollow: '😢 Người dùng unfollow OA',
       re_engagement: '🔔 Người dùng quay lại sau im lặng',
+      broadcast: '📢 Broadcast đã gửi',
     };
 
     const descriptions: Record<string, string> = {
       follow: `**${sender?.name || sender?.id || 'Unknown'}** vừa follow TranGPT OA`,
       unfollow: `**${sender?.name || sender?.id || 'Unknown'}** vừa unfollow TranGPT OA`,
       re_engagement: `**${sender?.name || sender?.id || 'Unknown'}** quay lại sau **${extra.hours_silent || '?'}h** im lặng\n> ${extra.message_preview || ''}`,
+      broadcast: `✅ ${extra.sent || 0}/${extra.total || 0} gửi thành công, ❌ ${extra.failed || 0} thất bại\n> ${extra.message_preview || ''}`,
     };
 
     try {

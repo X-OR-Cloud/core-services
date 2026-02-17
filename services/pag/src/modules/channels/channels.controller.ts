@@ -128,16 +128,27 @@ export class ChannelsController {
     return this.channelsService.processWebhook(new Types.ObjectId(id) as any, payload);
   }
 
+  @Get(':id/followers')
+  @ApiOperation({ summary: 'List followers', description: 'Get all followers from platform (Zalo OA)' })
+  @ApiParam({ name: 'id', description: 'Channel ID' })
+  @UseGuards(JwtAuthGuard)
+  async getFollowers(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.channelsService.getFollowers(new Types.ObjectId(id) as any);
+  }
+
   @Post(':id/broadcast')
-  @ApiOperation({ summary: 'Send broadcast message', description: 'Send a message to specific users or all followers' })
+  @ApiOperation({ summary: 'Send broadcast message', description: 'Send message to specific users or all followers. Use dryRun=true to preview.' })
   @ApiParam({ name: 'id', description: 'Channel ID' })
   @UseGuards(JwtAuthGuard)
   async broadcast(
     @Param('id') id: string,
-    @Body() body: { message: string; userIds?: string[] },
+    @Body() body: { message: string; userIds?: string[]; dryRun?: boolean },
     @CurrentUser() context: RequestContext,
   ) {
-    return this.channelsService.broadcast(new Types.ObjectId(id) as any, body.message, body.userIds);
+    return this.channelsService.broadcast(new Types.ObjectId(id) as any, body.message, body.userIds, body.dryRun);
   }
 
   @Get(':id/oauth')
