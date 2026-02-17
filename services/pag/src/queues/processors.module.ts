@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
+import { BullModule, InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { InboundProcessor } from './processors/inbound.processor';
 import { MemoryProcessor } from './processors/memory.processor';
 import { HeartbeatProcessor } from './processors/heartbeat.processor';
@@ -40,4 +41,28 @@ import { QUEUE_NAMES } from '../config/queue.config';
     MemoryProducer,
   ],
 })
-export class ProcessorsModule {}
+export class ProcessorsModule implements OnModuleInit {
+  private readonly logger = new Logger(ProcessorsModule.name);
+
+  constructor(
+    @InjectQueue(QUEUE_NAMES.TOKEN_REFRESH) private tokenRefreshQueue: Queue,
+  ) {}
+
+  async onModuleInit() {
+    // Schedule token refresh every 30 minutes
+    const jobName = 'scheduled-token-refresh';
+    
+    // Remove existing repeatable to avoid duplicates
+    const existing = await this.tokenRefreshQueue.getRepeatableJobs();
+    for (const job of existing) {
+      await this.tokenRefreshQueue.removeRepeatableByKey(job.key);
+    }
+
+    await this.tokenRefreshQueue.add(jobName, { triggeredAt: new Date().toISOString() }, {
+      repeat: { every: 30 * 60 * 1000 }, // every 30 min
+      removeOnComplete: 5,
+      removeOnFail: 5,
+    });
+    this.logger.log('Token refresh scheduled: every 30 minutes');
+  }
+}

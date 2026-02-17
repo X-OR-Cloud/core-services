@@ -177,11 +177,14 @@ export class InboundProcessor extends WorkerHost {
     if (memories.length > 0) {
       const memoryContext = memories
         .filter((m: any) => m.type !== 'reminder')
-        .map((m: any) => `${m.key}: ${m.value}`)
+        .map((m: any) => `- ${m.key}: ${m.value} (${m.type}, độ tin cậy: ${(m.confidence * 100).toFixed(0)}%)`)
         .join('\n');
       if (memoryContext) {
-        parts.push(`\nThông tin đã biết về người dùng:\n${memoryContext}`);
+        parts.push(`\nThông tin em đã ghi nhớ về người dùng này:\n${memoryContext}`);
+        parts.push('Nếu người dùng hỏi "em nhớ gì về anh/chị?" hoặc tương tự, hãy liệt kê các thông tin trên một cách tự nhiên, thân thiện.');
       }
+    } else {
+      parts.push('\nEm chưa biết nhiều về người dùng này. Nếu họ hỏi em nhớ gì, hãy nói em chưa biết nhiều và muốn tìm hiểu thêm.');
     }
 
     // Recent conversation history
