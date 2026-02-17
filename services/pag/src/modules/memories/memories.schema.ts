@@ -18,9 +18,9 @@ export class Memory extends BaseSchema {
   @Prop({ 
     required: true, 
     type: String,
-    enum: ['fact', 'preference', 'schedule', 'note']
+    enum: ['fact', 'preference', 'schedule', 'note', 'personal', 'interest', 'goal', 'relationship', 'event']
   })
-  type: string; // 'fact' | 'preference' | 'schedule' | 'note'
+  type: string;
 
   @Prop({ required: true, type: String })
   key: string; // "name" | "favorite_food" | "work_hours"
@@ -31,9 +31,9 @@ export class Memory extends BaseSchema {
   @Prop({ 
     required: true, 
     type: String,
-    enum: ['extracted', 'user_told', 'bot_inferred']
+    enum: ['extracted', 'user_told', 'bot_inferred', 'auto_extraction']
   })
-  source: string; // 'extracted' | 'user_told' | 'bot_inferred'
+  source: string;
 
   @Prop({ type: Number, min: 0, max: 1, default: 1.0 })
   confidence: number; // 0-1
