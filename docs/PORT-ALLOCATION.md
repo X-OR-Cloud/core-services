@@ -38,11 +38,12 @@ This document defines the standardized port allocation strategy for all services
 | **CBM** | Business | **3004** | 3340-3343 | 3344-3349 | Core Business Management |
 | **MONA** | Business | **3005** | 3350-3353 | 3354-3359 | Monitoring & Analytics |
 
-### C. Future Services (Reserved)
+### C. PAG & Future Services
 
-| Service | Local | Prod API | Prod MCP/WS | Notes |
-|---------|-------|----------|-------------|-------|
-| Service-07 | 3006 | 3360-3363 | 3364-3369 | Reserved for future service |
+| Service | Type | Local | Prod API | Prod Worker | Description |
+|---------|------|-------|----------|-------------|-------------|
+| **PAG** | Business | **3006** | 3360-3361 | N/A (BullMQ) | Personal Agent Gateway (Zalo OA, chat) |
+
 | Service-08 | 3007 | 3370-3373 | 3374-3379 | Reserved for future service |
 | Service-09 | 3008 | 3380-3383 | 3384-3389 | Reserved for future service |
 | Service-10 | 3009 | 3390-3393 | 3394-3399 | Reserved for future service |
