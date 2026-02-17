@@ -98,12 +98,23 @@ export class ChannelsService extends BaseService<Channel> {
    * Process webhook from platform (Zalo, Telegram, etc)
    * Implements Flow 1 & 2 from flows.md
    */
+  private get systemContext(): RequestContext {
+    return {
+      orgId: '',
+      groupId: '',
+      userId: 'system',
+      agentId: '',
+      appId: '',
+      roles: ['universe.owner' as any],
+    };
+  }
+
   async processWebhook(channelId: ObjectId, payload: any) {
     this.logger.log(`Processing webhook for channel: ${channelId}`, { payload });
 
     try {
       // 1. Load channel
-      const channel = await this.findById(channelId, { userId: 'system' } as any);
+      const channel = await this.findById(channelId, this.systemContext);
       if (!channel) {
         throw new NotFoundException(`Channel with ID ${channelId} not found`);
       }
@@ -123,7 +134,7 @@ export class ChannelsService extends BaseService<Channel> {
           id: messageData.platformUserId,
           username: messageData.platformUsername || messageData.platformUserId,
         },
-        { userId: 'system' } as any,
+        this.systemContext,
       );
 
       // 4. Save user message to database
@@ -134,7 +145,7 @@ export class ChannelsService extends BaseService<Channel> {
         platformMessageId: messageData.platformMessageId,
         attachments: messageData.attachments || [],
         metadata: messageData.metadata || {},
-      }, { userId: 'system' } as any);
+      }, this.systemContext);
 
       // 5. Get soul slug for queue routing
       const soul = await this.model.db.collection('souls').findOne({ 
