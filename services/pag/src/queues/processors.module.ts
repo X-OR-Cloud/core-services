@@ -5,7 +5,9 @@ import { InboundProcessor } from './processors/inbound.processor';
 import { MemoryProcessor } from './processors/memory.processor';
 import { HeartbeatProcessor } from './processors/heartbeat.processor';
 import { TokenRefreshProcessor } from './processors/token-refresh.processor';
+import { TaskProcessor } from './processors/task.processor';
 import { MemoryProducer } from './producers/memory.producer';
+import { TaskProducer } from './producers/task.producer';
 
 // Import entity modules
 import { SoulsModule } from '../modules/souls/souls.module';
@@ -13,6 +15,7 @@ import { ConversationsModule } from '../modules/conversations/conversations.modu
 import { MessagesModule } from '../modules/messages/messages.module';
 import { MemoriesModule } from '../modules/memories/memories.module';
 import { ChannelsModule } from '../modules/channels/channels.module';
+import { TasksModule } from '../modules/tasks/tasks.module';
 
 // Import queue config
 import { QUEUE_NAMES } from '../config/queue.config';
@@ -24,7 +27,8 @@ import { QUEUE_NAMES } from '../config/queue.config';
       { name: QUEUE_NAMES.INBOUND },
       { name: QUEUE_NAMES.HEARTBEAT },
       { name: QUEUE_NAMES.MEMORY_EXTRACT },
-      { name: QUEUE_NAMES.TOKEN_REFRESH }
+      { name: QUEUE_NAMES.TOKEN_REFRESH },
+      { name: QUEUE_NAMES.TASKS }
     ),
     // Import entity modules for services
     SoulsModule,
@@ -32,13 +36,16 @@ import { QUEUE_NAMES } from '../config/queue.config';
     MessagesModule,
     MemoriesModule,
     ChannelsModule,
+    TasksModule,
   ],
   providers: [
     InboundProcessor,
     MemoryProcessor,
     HeartbeatProcessor,
     TokenRefreshProcessor,
+    TaskProcessor,
     MemoryProducer,
+    TaskProducer,
   ],
 })
 export class ProcessorsModule implements OnModuleInit {

@@ -17,6 +17,7 @@ import { SoulsModule } from '../modules/souls/souls.module';
 import { ConversationsModule } from '../modules/conversations/conversations.module';
 import { MessagesModule } from '../modules/messages/messages.module';
 import { MemoriesModule } from '../modules/memories/memories.module';
+import { TasksModule } from '../modules/tasks/tasks.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MemoriesModule } from '../modules/memories/memories.module';
     ConversationsModule,
     MessagesModule,
     MemoriesModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
