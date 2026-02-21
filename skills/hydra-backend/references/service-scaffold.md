@@ -55,11 +55,10 @@ Key setup:
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '../../.env' }),
-    MongooseModule.forRootAsync({
-      useFactory: () => ({
-        uri: `${process.env['MONGODB_URI']}/hydra_<service>`,
-      }),
-    }),
+    MongooseModule.forRoot(
+      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
+      { dbName: 'core_<service>' },
+    ),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     // Entity modules
     HealthModule,
