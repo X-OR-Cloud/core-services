@@ -14,18 +14,10 @@ import { CallsModule } from '../modules/calls/calls.module';
       isGlobal: true,
       envFilePath: '../../.env',
     }),
-    MongooseModule.forRootAsync({
-      useFactory: () => {
-        const uri = process.env['MONGODB_URI'] || 'mongodb://localhost:27017';
-        // If URI has query params (e.g. ?authSource=admin), insert DB name before ?
-        const dbName = 'hydra_vbx';
-        if (uri.includes('?')) {
-          const [base, query] = uri.split('?');
-          return { uri: `${base.replace(/\/$/, '')}/${dbName}?${query}` };
-        }
-        return { uri: `${uri.replace(/\/$/, '')}/${dbName}` };
-      },
-    }),
+    MongooseModule.forRoot(
+      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
+      { dbName: 'hydra_vbx' },
+    ),
     HealthModule,
     ExtensionsModule,
     CallsModule,
