@@ -26,7 +26,8 @@ import { TasksModule } from '../modules/tasks/tasks.module';
       envFilePath: 'services/pag/.env',
     }),
     MongooseModule.forRoot(
-      process.env['MONGODB_URI'] || 'mongodb://localhost:27017/hydra-pag'
+      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
+      { dbName: 'core_pag' },
     ),
     PassportModule,
     HealthModule,

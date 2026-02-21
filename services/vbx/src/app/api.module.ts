@@ -16,7 +16,7 @@ import { CallsModule } from '../modules/calls/calls.module';
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
-      { dbName: 'hydra_vbx' },
+      { dbName: 'core_vbx' },
     ),
     HealthModule,
     ExtensionsModule,
