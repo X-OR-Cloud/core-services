@@ -5,10 +5,12 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HealthModule, CorrelationIdMiddleware } from '@hydrabyte/base';
+import { AppController } from './app.controller';
 import { ExtensionsModule } from '../modules/extensions/extensions.module';
 import { CallsModule } from '../modules/calls/calls.module';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
