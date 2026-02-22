@@ -184,7 +184,6 @@ export class ReportsController {
             name: 'worker-gpu-01',
             role: ['worker'],
             status: 'online',
-            websocketConnected: true,
             cpuUsage: 45,
             ramUsage: 128,
             ramTotal: 256,

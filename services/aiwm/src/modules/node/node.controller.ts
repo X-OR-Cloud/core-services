@@ -1,13 +1,10 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Query, NotFoundException, UnauthorizedException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors, ApiKeyGuard } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { NodeService } from './node.service';
-import { VerifyNodeCredentialsDto, VerifyNodeCredentialsResponseDto } from './node.dto';
-
-// Commented imports for later use
-// import { CreateNodeDto, UpdateNodeDto, GenerateTokenDto, GenerateTokenResponseDto } from './node.dto';
+import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto } from './node.dto';
 
 @ApiTags('nodes')
 @ApiBearerAuth('JWT-auth')
@@ -15,19 +12,22 @@ import { VerifyNodeCredentialsDto, VerifyNodeCredentialsResponseDto } from './no
 export class NodeController {
   constructor(private readonly nodeService: NodeService) {}
 
-  // TODO: Will be analyzed and implemented later
-  // @Post()
-  // @ApiOperation({ summary: 'Register node', description: 'Register a new GPU node' })
-  // @ApiResponse({ status: 201, description: 'Node registered successfully' })
-  // @ApiCreateErrors()
-  // @UseGuards(JwtAuthGuard)
-  // @RequireUniverseRole()
-  // async create(
-  //   @Body() createNodeDto: CreateNodeDto,
-  //   @CurrentUser() context: RequestContext,
-  // ) {
-  //   return this.nodeService.create(createNodeDto, context);
-  // }
+  @Post()
+  @ApiOperation({ summary: 'Create node', description: 'Create a new node with auto-generated credentials' })
+  @ApiResponse({ status: 201, description: 'Node created successfully' })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async create(
+    @Body() createNodeDto: CreateNodeDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const result = await this.nodeService.createWithCredentials(createNodeDto, context);
+    return {
+      node: result.node,
+      credentials: result.credentials,
+      warning: 'Secret shown only ONCE. Save it now!',
+    };
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get all nodes', description: 'Retrieve list of all GPU nodes with pagination' })
@@ -159,60 +159,41 @@ export class NodeController {
     };
   }
 
-  @Post('verify-credentials')
+  // ============= Node Authentication =============
+
+  @Post('auth/login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Verify node credentials (Internal API)',
-    description: 'Internal API for IAM service to verify node credentials using apiKey + secret (industry standard like AWS). Protected by API Key authentication.',
+    summary: 'Node login',
+    description: 'Authenticate node using apiKey + secret credentials. Returns JWT token for WebSocket connection and API calls.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Credentials verified successfully',
-    type: VerifyNodeCredentialsResponseDto,
-    schema: {
-      example: {
-        success: true,
-        data: {
-          valid: true,
-          node: {
-            _id: '65a0000000000000000000001',
-            name: 'gpu-worker-01',
-            role: ['worker'],
-            owner: {
-              orgId: 'org_001'
-            }
-          }
-        }
-      }
-    }
+    description: 'Login successful',
+    type: NodeLoginResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  async login(
+    @Body() dto: NodeLoginDto,
+  ): Promise<NodeLoginResponseDto> {
+    return this.nodeService.login(dto);
+  }
+
+  @Post('auth/refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Refresh node token',
+    description: 'Refresh an existing JWT token before it expires. Returns a new token with extended expiration.',
   })
   @ApiResponse({
-    status: 401,
-    description: 'Invalid credentials or API key',
+    status: 200,
+    description: 'Token refreshed successfully',
+    type: NodeRefreshTokenResponseDto,
   })
-  @UseGuards(ApiKeyGuard)
-  async verifyCredentials(
-    @Body() dto: VerifyNodeCredentialsDto,
-  ): Promise<VerifyNodeCredentialsResponseDto> {
-    const node = await this.nodeService.verifyCredentials(dto);
-
-    if (!node) {
-      throw new UnauthorizedException('Invalid node credentials');
-    }
-
-    return {
-      success: true,
-      data: {
-        valid: true,
-        node: {
-          _id: (node as any)._id.toString(),
-          name: node.name,
-          role: node.role,
-          owner: {
-            orgId: node.owner?.orgId || '',
-          },
-        },
-      },
-    };
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async refreshToken(
+    @Body() dto: NodeRefreshTokenDto,
+  ): Promise<NodeRefreshTokenResponseDto> {
+    return this.nodeService.refreshToken(dto);
   }
 }

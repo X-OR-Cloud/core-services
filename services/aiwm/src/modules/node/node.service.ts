@@ -1,15 +1,17 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Node } from './node.schema';
-// Commented imports for later use
-// import { CreateNodeDto, UpdateNodeDto } from './node.dto';
+import { NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto } from './node.dto';
 import { NodeProducer } from '../../queues/producers/node.producer';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+
+const NODE_TOKEN_EXPIRES_IN = 3600; // 1 hour in seconds
+const NODE_TOKEN_REFRESH_GRACE_PERIOD = 300; // Allow refresh within 5 min after expiry
 
 @Injectable()
 export class NodeService extends BaseService<Node> {
@@ -163,8 +165,12 @@ export class NodeService extends BaseService<Node> {
   /**
    * Find node by MongoDB _id (used by WebSocket gateway)
    */
-  async findByObjectId(id: Types.ObjectId): Promise<Node | null> {
-    return await this.model.findOne({ _id: id, isDeleted: false }).exec();
+  async findByObjectId(id: string | Types.ObjectId): Promise<Node | null> {
+    const objectId = typeof id === 'string' ? new Types.ObjectId(id) : id;
+    return await this.model.findOne({
+      _id: objectId,
+      isDeleted: { $ne: true },
+    }).exec();
   }
 
   // TODO: Will be analyzed and implemented later
@@ -260,15 +266,21 @@ export class NodeService extends BaseService<Node> {
 
   /**
    * Update node status (used by WebSocket gateway)
-   * TODO: Will be refactored to update systemInfo when needed
    */
   async updateStatus(id: string, status: string): Promise<void> {
+    const update: Record<string, unknown> = {
+      status,
+      updatedAt: new Date(),
+    };
+
+    // Set lastHeartbeat when going online
+    if (status === 'online') {
+      update.lastHeartbeat = new Date();
+    }
+
     await this.model.updateOne(
       { _id: new Types.ObjectId(id) },
-      {
-        status,
-        updatedAt: new Date(),
-      }
+      { $set: update },
     );
 
     this.logger.log(`Node ${id} status updated to ${status}`);
@@ -440,69 +452,168 @@ export class NodeService extends BaseService<Node> {
   }
 
   /**
-   * Verify node credentials (for IAM service)
-   * Internal API endpoint - protected by ApiKeyGuard
-   *
-   * Industry standard: Only apiKey + secret (like AWS Access Key ID + Secret Access Key)
-   *
-   * @param dto - Contains apiKey and secret only
-   * @returns Node if credentials are valid, null otherwise
+   * Node login - verify credentials and return JWT token
    */
-  async verifyCredentials(dto: {
-    apiKey: string;
-    secret: string;
-  }): Promise<Node | null> {
-    // Find node by apiKey (unique identifier)
+  async login(dto: NodeLoginDto): Promise<NodeLoginResponseDto> {
+    const node = await this.verifyNodeCredentials(dto.apiKey, dto.secret);
+
+    const payload = {
+      sub: (node as any)._id.toString(),
+      type: 'node',
+      username: node.name,
+      status: node.status,
+      roles: node.role || [],
+      orgId: node.owner?.orgId || '',
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: NODE_TOKEN_EXPIRES_IN,
+    });
+
+    // Update last auth time and token metadata
+    await this.model.updateOne(
+      { _id: (node as any)._id },
+      {
+        $set: {
+          lastAuthAt: new Date(),
+          tokenMetadata: {
+            tokenGeneratedAt: new Date(),
+            tokenExpiresAt: new Date(Date.now() + NODE_TOKEN_EXPIRES_IN * 1000),
+          },
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    this.logger.log('Node login successful', {
+      nodeId: (node as any)._id.toString(),
+      name: node.name,
+    });
+
+    return {
+      accessToken,
+      expiresIn: NODE_TOKEN_EXPIRES_IN,
+      tokenType: 'Bearer',
+      node: {
+        _id: (node as any)._id.toString(),
+        name: node.name,
+        status: node.status,
+        roles: node.role || [],
+        orgId: node.owner?.orgId || '',
+      },
+    };
+  }
+
+  /**
+   * Refresh node JWT token
+   */
+  async refreshToken(dto: NodeRefreshTokenDto): Promise<NodeRefreshTokenResponseDto> {
+    let decoded: any;
+
+    try {
+      // Try verifying normally first
+      decoded = this.jwtService.verify(dto.token);
+    } catch (error) {
+      // Allow recently expired tokens (within grace period)
+      if (error.name === 'TokenExpiredError') {
+        decoded = this.jwtService.decode(dto.token) as any;
+        if (!decoded) {
+          throw new UnauthorizedException('Invalid token');
+        }
+        const expiredAt = decoded.exp * 1000;
+        const now = Date.now();
+        if (now - expiredAt > NODE_TOKEN_REFRESH_GRACE_PERIOD * 1000) {
+          throw new UnauthorizedException('Token expired beyond refresh grace period');
+        }
+      } else {
+        throw new UnauthorizedException('Invalid token');
+      }
+    }
+
+    // Only allow node tokens to be refreshed
+    if (decoded.type !== 'node') {
+      throw new UnauthorizedException('Only node tokens can be refreshed via this endpoint');
+    }
+
+    // Verify node still exists and is not deleted
     const node = await this.model
-      .findOne({
-        apiKey: dto.apiKey,
-        isDeleted: false,
-      })
-      .select('+secretHash') // Include secretHash field (normally hidden)
+      .findOne({ _id: new Types.ObjectId(decoded.sub), isDeleted: false })
+      .exec();
+
+    if (!node) {
+      throw new UnauthorizedException('Node not found');
+    }
+
+    const payload = {
+      sub: (node as any)._id.toString(),
+      type: 'node',
+      username: node.name,
+      status: node.status,
+      roles: node.role || [],
+      orgId: node.owner?.orgId || '',
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: NODE_TOKEN_EXPIRES_IN,
+    });
+
+    // Update token metadata
+    await this.model.updateOne(
+      { _id: (node as any)._id },
+      {
+        $set: {
+          tokenMetadata: {
+            tokenGeneratedAt: new Date(),
+            tokenExpiresAt: new Date(Date.now() + NODE_TOKEN_EXPIRES_IN * 1000),
+            tokenLastUsed: new Date(),
+          },
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    this.logger.log('Node token refreshed', {
+      nodeId: (node as any)._id.toString(),
+      name: node.name,
+    });
+
+    return {
+      accessToken,
+      expiresIn: NODE_TOKEN_EXPIRES_IN,
+      tokenType: 'Bearer',
+    };
+  }
+
+  /**
+   * Verify node credentials (internal helper)
+   */
+  private async verifyNodeCredentials(apiKey: string, secret: string): Promise<Node> {
+    const node = await this.model
+      .findOne({ apiKey, isDeleted: false })
+      .select('+secretHash')
       .exec();
 
     if (!node) {
       this.logger.warn('Node not found with provided apiKey', {
-        apiKey: dto.apiKey.substring(0, 8) + '...', // Log first 8 chars only
+        apiKey: apiKey.substring(0, 8) + '...',
       });
-      return null;
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Check if node has secretHash
     if (!node.secretHash) {
       this.logger.warn('Node has no secretHash configured', {
         nodeId: (node as any)._id.toString(),
-        name: node.name,
       });
-      return null;
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Verify secret using bcrypt compare
-    const isValidSecret = await bcrypt.compare(dto.secret, node.secretHash);
-    if (!isValidSecret) {
+    const isValid = await bcrypt.compare(secret, node.secretHash);
+    if (!isValid) {
       this.logger.warn('Invalid secret for node', {
         nodeId: (node as any)._id.toString(),
-        name: node.name,
       });
-      return null;
+      throw new UnauthorizedException('Invalid credentials');
     }
-
-    // Update last auth time
-    await this.model.updateOne(
-      { _id: node._id },
-      {
-        $set: {
-          lastAuthAt: new Date(),
-          updatedAt: new Date(),
-        }
-      }
-    );
-
-    this.logger.log('Node credentials verified successfully', {
-      nodeId: (node as any)._id.toString(),
-      name: node.name,
-      apiKey: dto.apiKey.substring(0, 8) + '...', // Log first 8 chars only
-    });
 
     return node;
   }

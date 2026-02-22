@@ -3,4 +3,5 @@ export enum ServiceName {
   CBM = 'cbm',
   NOTI = 'noti',
   AIWM = 'aiwm',
+  MONA = 'mona',
 }

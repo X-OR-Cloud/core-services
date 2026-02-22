@@ -10,6 +10,7 @@ import { Tool, ToolSchema } from '../tool/tool.schema';
 import { QueueModule } from '../../queues/queue.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DeploymentModule } from '../deployment/deployment.module';
+import { NodeModule } from '../node/node.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { DeploymentModule } from '../deployment/deployment.module';
     QueueModule,
     ConfigurationModule,
     DeploymentModule, // Import to access DeploymentService
+    NodeModule, // Import to access NodeGateway for sending agent.start commands
   ],
   controllers: [AgentController],
   providers: [AgentService],

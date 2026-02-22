@@ -41,9 +41,6 @@ export class Node extends BaseSchema {
 
   // ============= Connection State =============
 
-  @Prop({ default: false })
-  websocketConnected: boolean;
-
   @Prop({ default: () => new Date() })
   lastHeartbeat: Date;
 

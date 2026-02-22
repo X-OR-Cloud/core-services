@@ -42,7 +42,7 @@
       "dependsOn": ["prune-lockfile", "copy-workspace-modules"],
       "executor": "nx:noop"
     },
-    "serve": {
+    "api": {
       "continuous": true,
       "executor": "@nx/js:node",
       "defaultConfiguration": "development",

@@ -88,7 +88,8 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2OTY2MDM0MGJiYjg4OGYyOTY1MzI5NDAiLCJ1c2VybmFtZSI6ImRldkB4LW9yLmNsb3VkIiwic3RhdHVzIjoiYWN0aXZlIiwicm9sZXMiOlsib3JnYW5pemF0aW9uLm93bmVyIl0sIm9yZ0lkIjoiNjkxZWI5ZTY1MTdmOTE3OTQzYWUxZjlkIiwiZ3JvdXBJZCI6IiIsImFnZW50SWQiOiIiLCJhcHBJZCI6IiIsImxpY2Vuc2VzIjp7ImlhbSI6ImZ1bGwiLCJjYm0iOiJmdWxsIiwiYWl3bSI6ImZ1bGwiLCJub3RpIjoiZnVsbCJ9LCJpYXQiOjE3NjkwNzEzMDYsImV4cCI6MTc2OTA3NDkwNn0.4s5d-XGWbraXXegSXL4MMHnpct7ED52jBcnnz7ujmaY\")",
       "Bash(__NEW_LINE_7db7d4e86ea43dce__ echo \"=== Test 3: Get Metadata \\(no body\\) ===\")",
       "Bash(__NEW_LINE_8f1b080d0d924725__ echo \"\")",
-      "Bash(npx nx run:*)"
+      "Bash(npx nx run:*)",
+      "Bash(nc:*)"
     ],
     "deny": [],
     "ask": [],

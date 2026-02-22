@@ -102,11 +102,6 @@ export class UpdateNodeDto {
   @IsEnum(['pending', 'installing', 'online', 'offline', 'maintenance'])
   status?: string;
 
-  @ApiProperty({ description: 'WebSocket connection status', required: false })
-  @IsOptional()
-  @IsBoolean()
-  websocketConnected?: boolean;
-
   @ApiProperty({ description: 'Last heartbeat timestamp', required: false })
   @IsOptional()
   @IsDate()
@@ -187,49 +182,67 @@ export class GenerateTokenResponseDto {
 
 // ============= Node Authentication DTOs =============
 
-export class VerifyNodeCredentialsDto {
+export class NodeLoginDto {
   @ApiProperty({
     description: 'Node API key (unique identifier)',
-    example: 'a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p'
+    example: 'd9721cea-803a-45b3-9381-93972d512d69',
   })
   @IsString()
   apiKey: string;
 
   @ApiProperty({
     description: 'Node secret (private credential)',
-    example: 'b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q'
+    example: 'e95ec1e2-a295-4373-972d-0db949df7e2a',
   })
   @IsString()
   secret: string;
 }
 
-export class VerifyNodeCredentialsResponseDto {
-  @ApiProperty({ description: 'Success status', example: true })
-  success: boolean;
+export class NodeLoginResponseDto {
+  @ApiProperty({ description: 'JWT access token', example: 'eyJhbGciOiJIUzI1NiIs...' })
+  accessToken: string;
+
+  @ApiProperty({ description: 'Token expiration time in seconds', example: 3600 })
+  expiresIn: number;
+
+  @ApiProperty({ description: 'Token type', example: 'Bearer' })
+  tokenType: string;
 
   @ApiProperty({
-    description: 'Verification result data',
+    description: 'Authenticated node information',
     example: {
-      valid: true,
-      node: {
-        _id: '65a0000000000000000000001',
-        name: 'gpu-worker-01',
-        role: ['worker'],
-        owner: {
-          orgId: 'org_001'
-        }
-      }
-    }
+      _id: '6942690ddfc4396c89d3a3ea',
+      name: 'test-node-00',
+      status: 'online',
+      roles: ['controller', 'worker', 'storage', 'proxy'],
+      orgId: '691eb9e6517f917943ae1f9d',
+    },
   })
-  data: {
-    valid: boolean;
-    node?: {
-      _id: string;
-      name: string;
-      role: string[];
-      owner: {
-        orgId: string;
-      };
-    };
+  node: {
+    _id: string;
+    name: string;
+    status: string;
+    roles: string[];
+    orgId: string;
   };
+}
+
+export class NodeRefreshTokenDto {
+  @ApiProperty({
+    description: 'Current JWT access token (must be valid or recently expired)',
+    example: 'eyJhbGciOiJIUzI1NiIs...',
+  })
+  @IsString()
+  token: string;
+}
+
+export class NodeRefreshTokenResponseDto {
+  @ApiProperty({ description: 'New JWT access token', example: 'eyJhbGciOiJIUzI1NiIs...' })
+  accessToken: string;
+
+  @ApiProperty({ description: 'Token expiration time in seconds', example: 3600 })
+  expiresIn: number;
+
+  @ApiProperty({ description: 'Token type', example: 'Bearer' })
+  tokenType: string;
 }

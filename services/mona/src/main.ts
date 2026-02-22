@@ -33,8 +33,8 @@ async function bootstrap() {
 
   // Swagger configuration
   const config = new DocumentBuilder()
-    .setTitle('Template Service API')
-    .setDescription('Microservices Template - Category, Product CRUD with Event-Driven Report Generation')
+    .setTitle('Mona Service API')
+    .setDescription('Microservices Mona - Category, Product CRUD with Event-Driven Report Generation')
     .setVersion('1.0.0')
     .addTag('categories', 'Category management endpoints')
     .addTag('products', 'Product management endpoints')
@@ -53,7 +53,7 @@ async function bootstrap() {
 
   Logger.log(`🚀 MONA Service is running on: http://localhost:${port}`);
   Logger.log(`📚 API Documentation available at: http://localhost:${port}/api-docs`);
-  Logger.log(`📊 Redis: ${process.env['REDIS_HOST']}:${process.env['REDIS_PORT']}`);
+  Logger.log(`📊 Redis: ${process.env.REDIS_URL || 'redis://localhost:6379'}`);
   Logger.log(`💾 MongoDB: ${process.env['MONGODB_URI']}`);
 }
 

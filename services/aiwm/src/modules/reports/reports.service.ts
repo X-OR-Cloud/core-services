@@ -145,7 +145,6 @@ export class ReportsService {
       name: node.name,
       role: node.role,
       status: node.status,
-      websocketConnected: node.websocketConnected,
       lastHeartbeat: node.lastHeartbeat,
       cpuUsage: node.cpuUsage,
       ramUsage:

@@ -24,9 +24,9 @@ export class CreateAgentDto {
   status: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type',
+    description: 'Agent type: managed = system-managed (deployed to node, has secret), autonomous = user-controlled (via UI, uses user JWT)',
     enum: ['managed', 'autonomous'],
-    example: 'managed',
+    example: 'autonomous',
     required: false
   })
   @IsOptional()
@@ -43,7 +43,7 @@ export class CreateAgentDto {
   @IsString()
   guardrailId?: string;
 
-  @ApiPropertyOptional({ description: 'Node ID where agent runs (required for autonomous agents)', required: false })
+  @ApiPropertyOptional({ description: 'Node ID where agent runs (required for managed agents)', required: false })
   @IsString()
   @IsOptional()
   nodeId?: string;
@@ -106,7 +106,7 @@ export class UpdateAgentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type',
+    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI)',
     enum: ['managed', 'autonomous'],
     required: false
   })
@@ -124,7 +124,7 @@ export class UpdateAgentDto {
   @IsString()
   guardrailId?: string;
 
-  @ApiPropertyOptional({ description: 'Deployment ID (for managed agents)', required: false })
+  @ApiPropertyOptional({ description: 'Deployment ID (for autonomous agents)', required: false })
   @IsOptional()
   @IsString()
   deploymentId?: string;
@@ -236,7 +236,7 @@ export class AgentConnectResponseDto {
   settings: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: 'Deployment configuration (for managed agents only)',
+    description: 'Deployment configuration (for autonomous agents only)',
     required: false,
     example: {
       id: '507f1f77bcf86cd799439011',

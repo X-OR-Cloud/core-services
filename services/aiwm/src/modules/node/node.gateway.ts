@@ -8,8 +8,10 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Logger, UseGuards, Inject, forwardRef, Optional } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
+import { verify } from 'jsonwebtoken';
 import { NodeService } from './node.service';
 import { NodeConnectionService } from './node-connection.service';
 import {
@@ -50,7 +52,8 @@ export class NodeGateway
 
   constructor(
     private readonly nodeService: NodeService,
-    private readonly connectionService: NodeConnectionService
+    private readonly connectionService: NodeConnectionService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ExecutionOrchestrator injected via setter to avoid circular dependency
@@ -61,9 +64,41 @@ export class NodeGateway
   }
 
   /**
-   * Gateway initialization
+   * Gateway initialization - apply JWT middleware for /ws/node namespace
    */
   afterInit(server: Server) {
+    const jwtSecret = this.configService.get<string>('JWT_SECRET');
+
+    server.use((socket, next) => {
+      try {
+        const token = socket.handshake.auth?.token;
+        if (!token) {
+          this.logger.warn(`Connection rejected: No token - ${socket.id}`);
+          return next(new Error('TOKEN_MISSING'));
+        }
+
+        const decoded = verify(token, jwtSecret as string) as Record<string, unknown>;
+        socket.data.user = {
+          nodeId: decoded.sub,
+          type: decoded.type,
+          username: decoded.username,
+          status: decoded.status,
+          roles: (decoded.roles as string[]) || [],
+          orgId: decoded.orgId,
+        };
+
+        this.logger.log(`Socket authenticated: ${socket.id} - Node: ${decoded.sub}`);
+        next();
+      } catch (err: unknown) {
+        const error = err as Error & { name?: string };
+        this.logger.error(`Auth failed for socket ${socket.id}: ${error.message}`);
+        if (error.name === 'TokenExpiredError') {
+          return next(new Error('TOKEN_EXPIRED'));
+        }
+        return next(new Error('TOKEN_INVALID'));
+      }
+    });
+
     this.logger.log('Node WebSocket Gateway initialized on /ws/node');
   }
 
@@ -163,47 +198,82 @@ export class NodeGateway
 
   /**
    * Handle node registration
+   * Accepts both new systemInfo format and legacy flat fields
    */
   @SubscribeMessage(MessageType.NODE_REGISTER)
   async handleNodeRegister(
     @MessageBody() data: NodeRegisterDto,
     @ConnectedSocket() client: Socket
   ) {
-    const nodeId = client.data.user?.nodeId; // MongoDB _id from JWT token
+    const nodeId = client.data.user?.nodeId;
     this.logger.log(`Node registration received from ${nodeId}`);
 
     try {
-      // Update node information in database
       const registerData = data.data;
 
-      await this.nodeService.updateNodeInfo(nodeId, {
-        hostname: registerData.hostname,
-        ipAddress: registerData.ipAddress,
-        publicIpAddress: registerData.publicIpAddress,
-        os: registerData.os,
-        cpuCores: registerData.cpuCores,
-        cpuModel: registerData.cpuModel,
-        ramTotal: registerData.ramTotal,
-        diskTotal: registerData.diskTotal,
-        gpuDevices: registerData.gpuDevices,
-        daemonVersion: registerData.daemonVersion,
-        uptimeSeconds: registerData.uptimeSeconds,
-        containerRuntime: registerData.containerRuntime,
-        status: 'installing', // Update status to installing during registration
-      });
+      // Support both systemInfo (new) and flat fields (legacy)
+      if ((registerData as any).systemInfo) {
+        // New format: Node Agent sends systemInfo directly
+        await this.nodeService.updateNodeInfo(nodeId, {
+          systemInfo: (registerData as any).systemInfo,
+          status: 'online',
+        });
+      } else {
+        // Legacy format: map flat fields to systemInfo
+        await this.nodeService.updateNodeInfo(nodeId, {
+          systemInfo: {
+            os: registerData.os ? {
+              name: registerData.os.distro,
+              version: registerData.os.version,
+              kernel: registerData.os.kernel,
+              platform: registerData.os.platform,
+            } : undefined,
+            architecture: {
+              cpu: registerData.os?.arch || 'x86_64',
+              bits: 64,
+              endianness: 'LE',
+            },
+            hardware: {
+              cpu: {
+                model: registerData.cpuModel,
+                vendor: registerData.cpuModel?.split(' ')[0] || 'Unknown',
+                totalCores: registerData.cpuCores,
+                frequency: 0,
+              },
+              memory: { total: registerData.ramTotal * 1024 * 1024 },
+              disk: { total: registerData.diskTotal * 1024 * 1024 },
+              network: {
+                publicIp: registerData.publicIpAddress,
+                clusterIp: registerData.ipAddress,
+                ports: {},
+                interfaces: [],
+              },
+              gpu: registerData.gpuDevices?.map((g: any) => ({
+                deviceId: g.deviceId,
+                model: g.model,
+                vendor: 'NVIDIA',
+                memoryTotal: g.memoryTotal * 1024 * 1024,
+              })),
+            },
+            containerRuntime: registerData.containerRuntime ? {
+              type: registerData.containerRuntime.type,
+              version: registerData.containerRuntime.version,
+              storage: { driver: '', filesystem: '' },
+            } : undefined,
+          },
+          daemonVersion: registerData.daemonVersion,
+          status: 'online',
+        });
+      }
 
-      // Send registration acknowledgment
       this.sendRegisterAck(client, nodeId);
-
       this.logger.log(`Node ${nodeId} registered successfully`);
-    } catch (error) {
+    } catch (err: unknown) {
+      const error = err as Error;
       this.logger.error(`Node registration failed for ${nodeId}: ${error.message}`);
       client.emit('error', {
         type: 'error',
-        error: {
-          code: 'REGISTRATION_FAILED',
-          message: error.message,
-        },
+        error: { code: 'REGISTRATION_FAILED', message: error.message },
       });
     }
   }

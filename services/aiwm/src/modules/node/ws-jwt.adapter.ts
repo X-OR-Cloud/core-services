@@ -48,13 +48,11 @@ export class WsJwtAdapter extends IoAdapter {
         // Attach decoded token to socket
         socket.data.user = {
           nodeId: decoded.sub,
+          type: decoded.type,
           username: decoded.username,
           status: decoded.status,
           roles: decoded.roles || [],
           orgId: decoded.orgId,
-          groupId: decoded.groupId,
-          agentId: decoded.agentId,
-          appId: decoded.appId,
         };
 
         this.logger.log(

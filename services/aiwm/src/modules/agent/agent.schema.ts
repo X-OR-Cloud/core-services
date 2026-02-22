@@ -23,7 +23,7 @@ export class Agent extends BaseSchema {
   @Prop({
     type: String,
     enum: ['managed', 'autonomous'],
-    default: 'managed'
+    default: 'autonomous'
   })
   type: string;
 
@@ -34,10 +34,10 @@ export class Agent extends BaseSchema {
   guardrailId?: string;
 
   @Prop({ type: String, ref: 'Deployment' })
-  deploymentId?: string; // For managed agents - link to LLM deployment
+  deploymentId?: string; // For autonomous agents - link to LLM deployment
 
   @Prop({ required: false, type: String, ref: 'Node' })
-  nodeId?: string; // Optional - only for autonomous agents running on specific nodes
+  nodeId?: string; // For managed agents - node where agent is deployed and managed by the system
 
   @Prop({
     type: String,
@@ -49,9 +49,9 @@ export class Agent extends BaseSchema {
   @Prop({ default: [] })
   tags: string[];
 
-  // Authentication & Connection Management (only for autonomous agents)
+  // Authentication & Connection Management (only for managed agents)
   @Prop({ required: false, select: false })
-  secret?: string; // Hashed secret for agent authentication (autonomous only)
+  secret?: string; // Hashed secret for agent authentication (managed only)
 
   @Prop({ type: [String], ref: 'Tool', default: [] })
   allowedToolIds: string[]; // Whitelist of tool IDs this agent can use

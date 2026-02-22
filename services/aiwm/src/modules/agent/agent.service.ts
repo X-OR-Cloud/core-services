@@ -26,6 +26,8 @@ import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { ConfigKey } from '../configuration/enums/config-key.enum';
 import { DeploymentService } from '../deployment/deployment.service';
+import { NodeGateway } from '../node/node.gateway';
+import { MessageType } from '@hydrabyte/shared';
 
 @Injectable()
 export class AgentService extends BaseService<Agent> {
@@ -36,7 +38,8 @@ export class AgentService extends BaseService<Agent> {
     private readonly jwtService: JwtService,
     private readonly agentProducer: AgentProducer,
     private readonly configurationService: ConfigurationService,
-    private readonly deploymentService: DeploymentService
+    private readonly deploymentService: DeploymentService,
+    private readonly nodeGateway: NodeGateway,
   ) {
     super(agentModel as any);
   }
@@ -133,8 +136,8 @@ export class AgentService extends BaseService<Agent> {
     createAgentDto: CreateAgentDto,
     context: RequestContext
   ): Promise<Agent> {
-    // Only autonomous agents have secrets
-    if (createAgentDto.type === 'autonomous') {
+    // Only managed agents have secrets (system-managed, deployed to nodes)
+    if (createAgentDto.type === 'managed') {
       // Hash secret if provided
       if (createAgentDto.secret) {
         const hashedSecret = await bcrypt.hash(createAgentDto.secret, 10);
@@ -145,7 +148,7 @@ export class AgentService extends BaseService<Agent> {
         createAgentDto.secret = await bcrypt.hash(randomSecret, 10);
       }
     } else {
-      // Managed agents don't need secrets
+      // Autonomous agents don't need secrets (user-controlled via UI)
       delete createAgentDto.secret;
     }
 
@@ -156,6 +159,7 @@ export class AgentService extends BaseService<Agent> {
     this.logger.log('Agent created with details', {
       id: (saved as any)._id,
       name: saved.name,
+      type: saved.type,
       status: saved.status,
       nodeId: saved.nodeId,
       instructionId: saved.instructionId,
@@ -166,11 +170,36 @@ export class AgentService extends BaseService<Agent> {
     // Emit event to queue
     await this.agentProducer.emitAgentCreated(saved);
 
+    // For managed agents, send agent.start command to the target node via WebSocket
+    if (saved.type === 'managed' && saved.nodeId) {
+      try {
+        await this.nodeGateway.sendCommandToNode(
+          saved.nodeId,
+          MessageType.AGENT_START,
+          { type: 'agent', id: (saved as any)._id.toString() },
+          {
+            agentId: (saved as any)._id.toString(),
+            name: saved.name,
+            description: saved.description,
+            status: saved.status,
+            type: saved.type,
+            instructionId: saved.instructionId,
+            guardrailId: saved.guardrailId,
+            deploymentId: saved.deploymentId,
+            settings: saved.settings,
+          },
+        );
+        this.logger.log(`agent.start sent to node ${saved.nodeId} for agent ${(saved as any)._id}`);
+      } catch (error) {
+        this.logger.warn(`Could not send agent.start to node ${saved.nodeId}: ${error.message}`);
+      }
+    }
+
     return saved as Agent;
   }
 
   /**
-   * Get agent configuration for managed agents
+   * Get agent configuration for autonomous agents
    * Requires user authentication, returns config without issuing new JWT
    */
   async getAgentConfig(
@@ -216,9 +245,9 @@ export class AgentService extends BaseService<Agent> {
       },
     };
 
-    // Prepare response (no accessToken for managed agents - they don't get agent JWT)
+    // Prepare response (no accessToken for autonomous agents - they use user's JWT)
     const response: AgentConnectResponseDto = {
-      accessToken: '', // Empty - managed agents use user's JWT token
+      accessToken: '', // Empty - autonomous agents use user's JWT token
       expiresIn: 0,
       refreshToken: null,
       refreshExpiresIn: 0,
@@ -228,8 +257,8 @@ export class AgentService extends BaseService<Agent> {
       settings: agent.settings || {},
     };
 
-    // For managed agents, populate deployment info
-    if (agent.type === 'managed' && agent.deploymentId) {
+    // For autonomous agents, populate deployment info
+    if (agent.type === 'autonomous' && agent.deploymentId) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -277,7 +306,7 @@ export class AgentService extends BaseService<Agent> {
   /**
    * Agent connection/authentication endpoint
    * Validates agentId + secret, returns JWT token + config
-   * For autonomous agents only
+   * For managed agents only (system-managed agents with secrets)
    */
   async connect(
     agentId: string,
@@ -293,9 +322,9 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    // Both autonomous and managed agents can connect
-    // autonomous: background agents (Discord, etc.)
-    // managed: user-controlled agents (chat UI)
+    // Both managed and autonomous agents can connect
+    // managed: system-managed agents (deployed to nodes, background agents)
+    // autonomous: user-controlled agents (chat UI)
 
     // Check if agent is suspended
     if (agent.status === 'suspended') {
@@ -395,8 +424,8 @@ export class AgentService extends BaseService<Agent> {
       settings: agent.settings || {},
     };
 
-    // For managed agents, populate deployment info
-    if (agent.type === 'managed' && agent.deploymentId) {
+    // For autonomous agents, populate deployment info
+    if (agent.type === 'autonomous' && agent.deploymentId) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -604,7 +633,7 @@ export class AgentService extends BaseService<Agent> {
   /**
    * Regenerate agent credentials (admin only)
    * Returns new secret + env config + install script
-   * Only works for autonomous agents
+   * Only works for managed agents (system-managed agents with secrets)
    */
   async regenerateCredentials(
     agentId: string,
@@ -618,9 +647,9 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    // Only autonomous agents have credentials
-    if (agent.type !== 'autonomous') {
-      throw new BadRequestException('Only autonomous agents have credentials to regenerate');
+    // Only managed agents have credentials
+    if (agent.type !== 'managed') {
+      throw new BadRequestException('Only managed agents have credentials to regenerate');
     }
 
     // Generate new secret

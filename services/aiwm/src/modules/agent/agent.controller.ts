@@ -93,8 +93,8 @@ export class AgentController {
 
   @Get(':id/config')
   @ApiOperation({
-    summary: 'Get agent configuration (for managed agents)',
-    description: 'Get complete configuration for managed agent including deployment endpoint, MCP tools, and instruction. Requires user JWT token.'
+    summary: 'Get agent configuration (for autonomous agents)',
+    description: 'Get complete configuration for autonomous agent including deployment endpoint, MCP tools, and instruction. Requires user JWT token.'
   })
   @ApiResponse({
     status: 200,
@@ -113,8 +113,8 @@ export class AgentController {
 
   @Post(':id/connect')
   @ApiOperation({
-    summary: 'Agent connection/authentication (for autonomous agents)',
-    description: 'Public endpoint for autonomous agent to connect and authenticate using secret. Returns JWT token + instruction + tools config.'
+    summary: 'Agent connection/authentication (for managed agents)',
+    description: 'Public endpoint for managed agent to connect and authenticate using secret. Returns JWT token + instruction + tools config.'
   })
   @ApiResponse({
     status: 200,
