@@ -202,6 +202,109 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 10000,
     },
+    // ========== AIWM WebSocket Instances (dedicated for skt.x-or.cloud) ==========
+    {
+      name: 'core.aiwm.ws00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3337,
+        SERVICE_NAME: 'aiwm',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/aiwm-ws-00-error.log',
+      out_file: './logs/aiwm-ws-00-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.aiwm.ws01',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3338,
+        SERVICE_NAME: 'aiwm',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/aiwm-ws-01-error.log',
+      out_file: './logs/aiwm-ws-01-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.aiwm.ws02',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3339,
+        SERVICE_NAME: 'aiwm',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/aiwm-ws-02-error.log',
+      out_file: './logs/aiwm-ws-02-out.log',
+      //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
     {
       name: 'core.aiwm.mcp00',
       script: './dist/services/aiwm/main.js',
