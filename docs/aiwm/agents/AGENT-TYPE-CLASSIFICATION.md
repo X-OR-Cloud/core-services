@@ -2,69 +2,33 @@
 
 ## Overview
 
-AIWM now supports two types of agents with different management models:
+AIWM supports two types of agents with different management models:
 
-1. **Managed Agents** (`managed`) - Lightweight agents managed entirely by AIWM
-2. **Autonomous Agents** (`autonomous`) - Self-deployed agents with Claude Code SDK
+1. **Managed Agents** (`managed`) - System-managed agents deployed to nodes, with secret-based authentication
+2. **Autonomous Agents** (`autonomous`) - User-controlled agents via UI, using user JWT and LLM deployment
 
 ## Agent Types
 
 ### Managed Agent (`type: 'managed'`)
 
 **Characteristics:**
-- Lightweight agents with MCP tools
-- Fully managed by AIWM platform
-- No self-deployment required
-- AIWM handles all execution and lifecycle
-- No secret/credential management needed
+- System-managed agents deployed to specific nodes
+- Has secret-based authentication (bcrypt hashed)
+- AIWM manages lifecycle: start/stop/restart via WebSocket commands
+- Runs on node infrastructure (Discord/Telegram bots, background workers)
+- When created with `nodeId`, AIWM sends `agent.start` event to node via WebSocket
 
 **Use Cases:**
-- Simple task automation
-- MCP tool-based workflows
-- Centrally managed agent fleets
-- Quick agent deployment without infrastructure
-
-**Configuration:**
-```json
-{
-  "name": "Simple Task Agent",
-  "type": "managed",
-  "status": "active",
-  "instructionId": "...",
-  "nodeId": "...",
-  "allowedToolIds": ["tool1", "tool2"]
-}
-```
-
-**Limitations:**
-- Cannot connect via `/agents/:id/connect` endpoint
-- No credential regeneration (no `/credentials/regenerate`)
-- No deployment scripts
-- Cannot run autonomously outside AIWM
-
----
-
-### Autonomous Agent (`type: 'autonomous'`)
-
-**Characteristics:**
-- Full-featured agents using Claude Code SDK
-- Self-deployed on customer infrastructure
-- Connects to AIWM for configuration
-- Has secret-based authentication
-- Receives instruction + tools via connection API
-
-**Use Cases:**
-- Complex multi-turn conversations
-- Discord/Telegram bots
-- Customer-deployed agents
-- Advanced tool usage with Claude Code SDK
+- Discord/Telegram bots running on dedicated nodes
+- Background AI workers
+- Customer-deployed agents on infrastructure
 - Agents requiring custom runtime environment
 
 **Configuration:**
 ```json
 {
   "name": "Customer Support Bot",
-  "type": "autonomous",
+  "type": "managed",
   "status": "active",
   "instructionId": "...",
   "nodeId": "...",
@@ -88,10 +52,46 @@ AIWM now supports two types of agents with different management models:
 - Installation script generation
 - Heartbeat monitoring
 - Connection tracking
+- WebSocket command handling (`agent.start`, `agent.stop`)
 
 ---
 
-## Schema Changes
+### Autonomous Agent (`type: 'autonomous'`)
+
+**Characteristics:**
+- User-controlled agents via chat UI
+- Uses `deploymentId` to link to LLM deployment
+- No secret/credential management needed
+- Frontend calls LLM directly (client-side execution)
+- Uses MCP tools via HTTP transport
+
+**Use Cases:**
+- Chat UI assistants
+- Interactive agent playground
+- Client-side AI chatbots with Vercel AI SDK
+- Quick agent setup without infrastructure
+
+**Configuration:**
+```json
+{
+  "name": "Finance Assistant",
+  "type": "autonomous",
+  "status": "active",
+  "instructionId": "...",
+  "deploymentId": "...",
+  "allowedToolIds": ["tool1", "tool2"]
+}
+```
+
+**Limitations:**
+- Cannot connect via `/agents/:id/connect` endpoint with secret
+- No credential regeneration (no `/credentials/regenerate`)
+- No deployment scripts or installation scripts
+- No WebSocket lifecycle management
+
+---
+
+## Schema
 
 ### Agent Schema
 
@@ -103,13 +103,21 @@ export class Agent extends BaseSchema {
   @Prop({
     type: String,
     enum: ['managed', 'autonomous'],
-    default: 'managed'
+    default: 'autonomous'
   })
   type: string;
 
-  // Authentication & Connection Management (only for autonomous agents)
+  // For autonomous agents - link to LLM deployment
+  @Prop({ type: String, ref: 'Deployment' })
+  deploymentId?: string;
+
+  // For managed agents - node where agent is deployed
+  @Prop({ required: false, type: String, ref: 'Node' })
+  nodeId?: string;
+
+  // Authentication & Connection Management (managed agents only)
   @Prop({ required: false, select: false })
-  secret?: string; // Hashed secret (autonomous only)
+  secret?: string; // Hashed secret (managed only)
 
   @Prop({ type: [String], ref: 'Tool', default: [] })
   allowedToolIds: string[];
@@ -117,7 +125,7 @@ export class Agent extends BaseSchema {
   @Prop({ type: Object, default: {} })
   settings: Record<string, unknown>;
 
-  // Connection tracking (autonomous only)
+  // Connection tracking (managed only)
   @Prop()
   lastConnectedAt?: Date;
 
@@ -140,13 +148,13 @@ AgentSchema.index({ type: 1 });
 
 ## Important: Type Changes Are NOT Allowed
 
-⚠️ **You CANNOT change agent type after creation**
+You CANNOT change agent type after creation.
 
 Once an agent is created with a specific type (`managed` or `autonomous`), the type field is **immutable**.
 
 **Why?**
 - **Data Integrity**: Switching types would require secret generation/deletion, causing connection issues
-- **Deployment Conflicts**: Autonomous agents deployed on customer infrastructure cannot be migrated to managed
+- **Deployment Conflicts**: Managed agents deployed on nodes cannot be migrated to autonomous
 - **Complexity**: Too many edge cases and potential failures during migration
 - **User Safety**: Prevents accidental breaking of running agents
 
@@ -179,7 +187,7 @@ If you need to change agent type:
   "name": "My Agent",
   "description": "...",
   "status": "active",
-  "type": "autonomous",  // NEW: 'managed' (default) or 'autonomous'
+  "type": "managed",
   "instructionId": "...",
   "nodeId": "...",
   "allowedToolIds": ["..."],
@@ -188,12 +196,14 @@ If you need to change agent type:
 ```
 
 **Behavior:**
-- If `type: 'autonomous'`:
+- If `type: 'managed'`:
   - Secret is auto-generated and hashed (or use provided secret)
   - Agent can connect via connection API
-- If `type: 'managed'` (default):
+  - If `nodeId` specified, `agent.start` event sent to node via WebSocket
+- If `type: 'autonomous'` (default):
   - No secret generated
   - Cannot use connection/credentials APIs
+  - Requires `deploymentId` for LLM deployment
 
 ---
 
@@ -206,25 +216,17 @@ If you need to change agent type:
 {
   "name": "Updated Name",
   "status": "inactive",
-  "type": "autonomous"  // ❌ Will be REJECTED if different from current type
+  "type": "managed"
 }
 ```
 
 **Type Change Validation:**
-- ✅ Same type or type not included: Update allowed
-- ❌ Different type: Returns 400 Bad Request
-
-**Error Response:**
-```json
-{
-  "statusCode": 400,
-  "message": "Cannot change agent type from 'managed' to 'autonomous'. Please delete and recreate the agent with the desired type."
-}
-```
+- Same type or type not included: Update allowed
+- Different type: Returns 400 Bad Request
 
 ---
 
-### 3. Agent Connection (Autonomous Only)
+### 3. Agent Connection (Managed Only)
 
 **Endpoint:** `POST /agents/:id/connect`
 
@@ -235,75 +237,47 @@ If you need to change agent type:
 }
 ```
 
-**Response (IAM TokenData-compatible):**
-```json
-{
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresIn": 86400,
-  "refreshToken": null,
-  "refreshExpiresIn": 0,
-  "tokenType": "bearer",
-  "mcpEndpoint": "http://localhost:3305/mcp",
-  "instruction": "You are a customer support agent...",
-  "tools": [...],
-  "settings": {
-    "auth_roles": ["agent"],
-    "claude_model": "claude-3-5-sonnet-latest",
-    ...
-  }
-}
-```
-
-**JWT Payload (decoded from accessToken):**
-```json
-{
-  "sub": "agentId",
-  "username": "agent:<agentId>",
-  "status": "active",
-  "roles": ["agent"],
-  "orgId": "orgId",
-  "groupId": "",
-  "agentId": "agentId",
-  "userId": "",
-  "type": "agent",
-  "iat": 1234567890,
-  "exp": 1234654290
-}
-```
-
 **Validation:**
-- ✅ Works for `type: 'autonomous'`
-- ❌ Returns 400 for `type: 'managed'`
+- Works for `type: 'managed'`
+- Returns 400 for `type: 'autonomous'`
 
-**Error Response for Managed Agents:**
+**Error Response for Autonomous Agents:**
 ```json
 {
   "statusCode": 400,
-  "message": "Only autonomous agents can connect via this endpoint"
+  "message": "Only managed agents can connect via this endpoint"
 }
 ```
 
 ---
 
-### 3. Regenerate Credentials (Autonomous Only)
+### 4. Regenerate Credentials (Managed Only)
 
 **Endpoint:** `POST /agents/:id/credentials/regenerate`
 
 **Validation:**
-- ✅ Works for `type: 'autonomous'`
-- ❌ Returns 400 for `type: 'managed'`
+- Works for `type: 'managed'`
+- Returns 400 for `type: 'autonomous'`
 
-**Error Response for Managed Agents:**
+**Error Response for Autonomous Agents:**
 ```json
 {
   "statusCode": 400,
-  "message": "Only autonomous agents have credentials to regenerate"
+  "message": "Only managed agents have credentials to regenerate"
 }
 ```
 
 ---
 
-### 5. List Agents with Statistics
+### 5. Get Agent Config (Autonomous Only)
+
+**Endpoint:** `GET /agents/:id/config`
+
+For autonomous agents to get LLM deployment info, instruction, and MCP tools.
+
+---
+
+### 6. List Agents with Statistics
 
 **Endpoint:** `GET /agents`
 
@@ -320,14 +294,12 @@ If you need to change agent type:
       "suspended": 10
     },
     "byType": {
-      "managed": 60,
-      "autonomous": 40
+      "managed": 40,
+      "autonomous": 60
     }
   }
 }
 ```
-
-**NEW:** Statistics now include `byType` breakdown.
 
 ---
 
@@ -337,13 +309,13 @@ If you need to change agent type:
 
 ```typescript
 const AGENT_TYPE_LABELS = {
-  managed: 'Agent quản lý tập trung',
-  autonomous: 'Agent tự chủ'
+  managed: 'Agent hệ thống quản lý',
+  autonomous: 'Agent người dùng tự quản lý'
 };
 
 const AGENT_TYPE_DESCRIPTIONS = {
-  managed: 'Agent được quản lý hoàn toàn bởi AIWM, sử dụng MCP tools',
-  autonomous: 'Agent tự triển khai, sử dụng Claude Code SDK'
+  managed: 'Hệ thống tự deploy và quản lý trên node, có secret, chạy background',
+  autonomous: 'Người dùng tự triển khai qua UI, sử dụng LLM deployment'
 };
 ```
 
@@ -354,27 +326,27 @@ const AGENT_TYPE_DESCRIPTIONS = {
   <Radio.Group>
     <Radio value="managed">
       <Space direction="vertical" size={0}>
-        <Text strong>Agent quản lý tập trung</Text>
+        <Text strong>Agent hệ thống quản lý</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Lightweight, AIWM quản lý hoàn toàn
+          Deploy to node, có credentials, chạy background
         </Text>
       </Space>
     </Radio>
     <Radio value="autonomous">
       <Space direction="vertical" size={0}>
-        <Text strong>Agent tự chủ</Text>
+        <Text strong>Agent người dùng tự quản lý</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Tự triển khai, Claude Code SDK, có credentials
+          Qua UI, sử dụng LLM deployment
         </Text>
       </Space>
     </Radio>
   </Radio.Group>
 </Form.Item>
 
-{/* Show credentials button only for autonomous agents */}
-{agent.type === 'autonomous' && (
+{/* Show credentials button only for managed agents */}
+{agent.type === 'managed' && (
   <Button onClick={handleRegenerateCredentials}>
-    🔑 Tạo lại Credentials
+    Tao lai Credentials
   </Button>
 )}
 ```
@@ -383,12 +355,12 @@ const AGENT_TYPE_DESCRIPTIONS = {
 
 ```tsx
 <Select
-  placeholder="Lọc theo loại"
+  placeholder="Loc theo loai"
   onChange={(value) => setFilter({ ...filter, type: value })}
   allowClear
 >
-  <Option value="managed">Agent quản lý tập trung</Option>
-  <Option value="autonomous">Agent tự chủ</Option>
+  <Option value="managed">Agent he thong quan ly</Option>
+  <Option value="autonomous">Agent nguoi dung tu quan ly</Option>
 </Select>
 ```
 
@@ -396,9 +368,9 @@ const AGENT_TYPE_DESCRIPTIONS = {
 
 ```tsx
 {agent.type === 'managed' ? (
-  <Badge color="blue">Quản lý tập trung</Badge>
+  <Badge color="blue">He thong quan ly</Badge>
 ) : (
-  <Badge color="green">Tự chủ</Badge>
+  <Badge color="green">Tu quan ly</Badge>
 )}
 ```
 
@@ -406,32 +378,32 @@ const AGENT_TYPE_DESCRIPTIONS = {
 
 ## Migration Guide
 
-### Existing Agents (No Schema Migration Required)
+### Existing Agents
 
-All existing agents will default to `type: 'managed'` because:
+Default type is now `autonomous`:
 ```typescript
 @Prop({
   type: String,
   enum: ['managed', 'autonomous'],
-  default: 'managed'  // ← Default value
+  default: 'autonomous'
 })
 type: string;
 ```
 
 **Behavior:**
-- Existing agents without `type` field → treated as `managed`
-- Existing agents with `secret` → **should be manually updated** to `type: 'autonomous'`
+- Existing agents without `type` field -> treated as `autonomous`
+- Existing agents with `secret` -> **should be manually updated** to `type: 'managed'`
 
-### Updating Existing Autonomous Agents
+### Updating Existing Managed Agents
 
 If you have existing agents that use connection API:
 
 ```bash
-# Update agent type to 'autonomous'
+# Update agent type to 'managed'
 curl -X PUT "http://localhost:3305/agents/{AGENT_ID}" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"type": "autonomous"}'
+  -d '{"type": "managed"}'
 ```
 
 ---
@@ -440,7 +412,7 @@ curl -X PUT "http://localhost:3305/agents/{AGENT_ID}" \
 
 ### Test Script Updated
 
-[scripts/test-agent-connection.sh](../../../scripts/test-agent-connection.sh) now creates agents with `type: 'autonomous'`.
+[scripts/test-agent-connection.sh](../../../scripts/test-agent-connection.sh) now creates agents with `type: 'managed'`.
 
 ### Manual Testing
 
@@ -465,7 +437,7 @@ curl -X PUT "http://localhost:3305/agents/$AGENT_ID" \
   -d '{"type": "autonomous"}'
 ```
 
-**Expected:** 400 Bad Request - "Cannot change agent type from 'managed' to 'autonomous'. Please delete and recreate the agent with the desired type."
+**Expected:** 400 Bad Request
 
 **2. Create Managed Agent:**
 ```bash
@@ -476,19 +448,22 @@ curl -X POST "http://localhost:3305/agents" \
     "name": "Managed Agent Test",
     "type": "managed",
     "status": "active",
-    "instructionId": "...",
-    "nodeId": "..."
+    "nodeId": "...",
+    "settings": {
+      "discord_token": "...",
+      "discord_channelIds": ["..."]
+    }
   }'
 ```
 
-**3. Try to Connect Managed Agent (Should Fail):**
+**3. Connect Managed Agent (Should Work):**
 ```bash
 curl -X POST "http://localhost:3305/agents/{MANAGED_AGENT_ID}/connect" \
   -H "Content-Type: application/json" \
-  -d '{"secret": "any-secret"}'
+  -d '{"secret": "secret-from-regenerate"}'
 ```
 
-**Expected:** 400 Bad Request - "Only autonomous agents can connect via this endpoint"
+**Expected:** 200 OK with token, instruction, tools, settings
 
 **4. Create Autonomous Agent:**
 ```bash
@@ -499,33 +474,32 @@ curl -X POST "http://localhost:3305/agents" \
     "name": "Autonomous Agent Test",
     "type": "autonomous",
     "status": "active",
-    "instructionId": "...",
-    "nodeId": "..."
+    "deploymentId": "..."
   }'
 ```
 
-**5. Regenerate Credentials (Should Work):**
+**5. Try to Connect Autonomous Agent (Should Fail):**
 ```bash
-curl -X POST "http://localhost:3305/agents/{AUTONOMOUS_AGENT_ID}/credentials/regenerate" \
+curl -X POST "http://localhost:3305/agents/{AUTONOMOUS_AGENT_ID}/connect" \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "any-secret"}'
+```
+
+**Expected:** 400 Bad Request - "Only managed agents can connect via this endpoint"
+
+**6. Regenerate Credentials for Managed Agent (Should Work):**
+```bash
+curl -X POST "http://localhost:3305/agents/{MANAGED_AGENT_ID}/credentials/regenerate" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Expected:** 200 OK with secret, envConfig, installScript
 
-**6. Connect Autonomous Agent (Should Work):**
-```bash
-curl -X POST "http://localhost:3305/agents/{AUTONOMOUS_AGENT_ID}/connect" \
-  -H "Content-Type: application/json" \
-  -d '{"secret": "secret-from-regenerate"}'
-```
-
-**Expected:** 200 OK with token, instruction, tools, settings
-
 ---
 
 ## MCP Tool Integration
 
-When autonomous agents connect, they receive an MCP endpoint for tool discovery and execution.
+When managed agents connect, they receive an MCP endpoint for tool discovery and execution.
 
 ### Agent Workflow
 
@@ -538,172 +512,25 @@ When autonomous agents connect, they receive an MCP endpoint for tool discovery 
    - `settings` - Runtime configuration
 
 3. **Agent discovers tools**: `POST /mcp/tools/list` with agent JWT
-   - Returns filtered list based on agent's `allowedToolIds`
-   - Only `type='api'` and `status='active'` tools included
-   - Response format: `{ "tools": [{ "name", "description", "inputSchema" }] }`
-
 4. **Agent executes tools**: `POST /mcp/tools/call` with agent JWT
-   - Proxies request to CBM service
-   - Uses agent JWT directly (no user JWT generation)
-   - Response format: `{ "content": [{ "type": "text", "text": "..." }] }`
-
-### Connect Response with MCP Endpoint
-
-```json
-{
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresIn": 86400,
-  "refreshToken": null,
-  "refreshExpiresIn": 0,
-  "tokenType": "bearer",
-  "mcpEndpoint": "http://localhost:3305/mcp",  // ⭐ NEW: MCP endpoint for tool operations
-  "instruction": "You are a customer support agent...",
-  "tools": [...],  // Legacy, use MCP endpoint instead
-  "settings": {
-    "auth_roles": ["agent", "document.editor"],
-    "claude_model": "claude-3-5-sonnet-latest",
-    ...
-  }
-}
-```
-
-### MCP Protocol Endpoints
-
-**1. POST /mcp/tools/list** - Discover available tools
-```bash
-curl -X POST "http://localhost:3305/mcp/tools/list" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-Response:
-```json
-{
-  "tools": [
-    {
-      "name": "cbm_documents_createOne",
-      "description": "Create a new document in CBM...",
-      "inputSchema": {
-        "type": "object",
-        "required": ["summary", "content"],
-        "properties": {
-          "summary": { "type": "string", "maxLength": 500 },
-          "content": { "type": "string" }
-        }
-      }
-    }
-  ]
-}
-```
-
-**2. POST /mcp/tools/call** - Execute a tool
-```bash
-curl -X POST "http://localhost:3305/mcp/tools/call" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "cbm_documents_createOne",
-    "arguments": {
-      "summary": "Meeting notes",
-      "content": "Discussion about Q1 planning",
-      "type": "markdown"
-    }
-  }'
-```
-
-Response:
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "{\"_id\":\"...\",\"summary\":\"Meeting notes\",\"createdAt\":\"...\"}"
-    }
-  ]
-}
-```
-
-### Tool Filtering
-
-- Only tools in agent's `allowedToolIds` array are returned
-- Only `type: 'api'` tools (CBM service integration)
-- Only `status: 'active'` tools
-- Claude builtin tools are configured in agent's `settings` (not from MCP endpoint)
-
-### Authentication Flow
-
-1. Agent uses agent JWT (from connect) for all MCP requests
-2. AIWM validates agent JWT via JwtAuthGuard
-3. AIWM proxies tool calls to CBM with the **same agent JWT** (no user JWT generation)
-4. CBM validates agent JWT and applies RBAC based on `roles` in JWT payload
-5. CBM returns response → AIWM wraps in MCP format → Agent receives result
-
-### Error Handling
-
-MCP endpoints return errors in standard format:
-```json
-{
-  "error": {
-    "code": "TOOL_EXECUTION_FAILED",
-    "message": "Failed to execute tool: cbm_documents_createOne",
-    "details": {
-      "statusCode": 400,
-      "message": "Validation failed: summary is required"
-    }
-  }
-}
-```
-
-### Example: Complete MCP Workflow
-
-```bash
-# Step 1: Agent connects
-CONNECT_RESPONSE=$(curl -X POST "http://localhost:3305/agents/$AGENT_ID/connect" \
-  -d '{"secret": "$AGENT_SECRET"}')
-
-AGENT_TOKEN=$(echo "$CONNECT_RESPONSE" | jq -r '.accessToken')
-MCP_ENDPOINT=$(echo "$CONNECT_RESPONSE" | jq -r '.mcpEndpoint')
-
-# Step 2: Discover tools
-TOOLS=$(curl -X POST "$MCP_ENDPOINT/tools/list" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -d '{}')
-
-# Step 3: Execute tool
-RESULT=$(curl -X POST "$MCP_ENDPOINT/tools/call" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -d '{
-    "name": "cbm_documents_createOne",
-    "arguments": {
-      "summary": "Test",
-      "content": "Content",
-      "type": "text"
-    }
-  }')
-```
 
 ---
 
 ## Summary
 
-✅ **Completed Changes:**
-- Added `type` field to Agent schema (`managed` | `autonomous`)
-- Updated create logic to handle secret generation based on type
-- Added type validation in `connect()` and `regenerateCredentials()`
-- **Blocked type changes** in `updateAgent()` to prevent migration issues
-- Added statistics by type in list endpoint
-- Updated test script
-- Created comprehensive documentation
+**Semantic Definitions:**
+- `managed` = System-managed: hệ thống tự quản lý, deploy to node, có secret, WebSocket lifecycle
+- `autonomous` = User-controlled: người dùng tự triển khai qua UI, dùng JWT user, LLM deployment
 
-✅ **Benefits:**
-- Clear separation between managed vs autonomous agents
-- Prevents confusion about which agents can connect
-- Better user experience in frontend (show credentials only when relevant)
-- Simpler classification (single field instead of dual fields)
-- Extensible for future types (e.g., 'hybrid', 'enterprise')
+**Key Differences:**
 
-✅ **Backward Compatible:**
-- Existing agents default to `type: 'managed'`
-- No database migration required
-- Existing autonomous agents can be manually updated via API
+| Feature | Managed | Autonomous |
+|---------|---------|------------|
+| Quản lý bởi | Hệ thống (AIWM) | Người dùng |
+| Secret | Có (bcrypt hashed) | Không |
+| Deploy | Tới node via WebSocket | Qua UI |
+| DeploymentId | Không cần | Cần (link tới LLM) |
+| NodeId | Cần (chạy trên node) | Không cần |
+| Connect API | Có | Không |
+| Config API | Không | Có |
+| WebSocket events | agent.start/stop | Không |

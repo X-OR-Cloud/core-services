@@ -72,14 +72,14 @@ ids = [t['_id'] for t in data['data']]
 print(json.dumps(ids))
 ")
 
-# Create autonomous agent with allowed tools
+# Create managed agent with allowed tools
 AGENT_RESPONSE=$(curl -s -X POST "http://localhost:3305/agents" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"name\": \"MCP Test Agent\",
     \"description\": \"Test agent for MCP integration\",
-    \"type\": \"autonomous\",
+    \"type\": \"managed\",
     \"status\": \"active\",
     \"nodeId\": \"$NODE_ID\",
     \"instructionId\": \"$INSTRUCTION_ID\",
@@ -96,7 +96,7 @@ echo "Agent ID: $AGENT_ID"
 
 **Check:**
 - [ ] Agent created successfully
-- [ ] Agent type = 'autonomous'
+- [ ] Agent type = 'managed'
 - [ ] Agent có allowedToolIds (5 tools)
 - [ ] Agent có settings.auth_roles
 

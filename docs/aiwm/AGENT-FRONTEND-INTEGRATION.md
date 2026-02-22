@@ -2,32 +2,33 @@
 
 ## Overview
 
-AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và managed) và lấy configuration cho client-side chat implementation.
+AIWM Agent API cung cap endpoints de quan ly AI agents (managed va autonomous) va lay configuration cho client-side chat implementation.
 
-**Base URL:** `https://api.x-or.cloud/dev/aiwm` hoặc `http://localhost:3003`
+**Base URL:** `https://api.x-or.cloud/dev/aiwm` hoac `http://localhost:3003`
 
-**Authentication:** Tất cả endpoints yêu cầu Bearer token (JWT) trong header `Authorization: Bearer <token>`
+**Authentication:** Tat ca endpoints yeu cau Bearer token (JWT) trong header `Authorization: Bearer <token>`
 
 ---
 
 ## Agent Types
 
-### Autonomous Agent
-- **Purpose:** Background agents chạy tự động, kết nối với Discord/Telegram
-- **Characteristics:**
-  - Có `secret` để authenticate khi connect
-  - Chạy độc lập, không cần user interaction
-  - Tự động xử lý messages từ chat platform
-  - Sử dụng MCP tools builtin
-
 ### Managed Agent
+- **Purpose:** System-managed agents, deploy to node, chay background
+- **Characteristics:**
+  - Co `secret` de authenticate khi connect
+  - He thong quan ly lifecycle (start/stop via WebSocket)
+  - Tu dong xu ly messages tu chat platform (Discord/Telegram)
+  - Chay tren node infrastructure
+  - Su dung MCP tools builtin
+
+### Autonomous Agent
 - **Purpose:** User-controlled agents cho chat UI
 - **Characteristics:**
-  - **KHÔNG có** `secret` (user không connect trực tiếp)
-  - Cần `deploymentId` link tới LLM deployment
-  - Frontend gọi LLM trực tiếp (không qua server)
-  - Client-side execution với Vercel AI SDK
-  - Sử dụng MCP tools qua HTTP transport
+  - **KHONG co** `secret` (user khong connect truc tiep)
+  - Can `deploymentId` link toi LLM deployment
+  - Frontend goi LLM truc tiep (khong qua server)
+  - Client-side execution voi Vercel AI SDK
+  - Su dung MCP tools qua HTTP transport
 
 ---
 
@@ -38,16 +39,16 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
 ```typescript
 {
   _id: string;                    // MongoDB ObjectId
-  name: string;                   // Tên agent
-  description: string;            // Mô tả chức năng
+  name: string;                   // Ten agent
+  description: string;            // Mo ta chuc nang
   status: 'active' | 'inactive' | 'busy' | 'suspended';
-  type: 'managed' | 'autonomous'; // IMMUTABLE - không thay đổi sau khi tạo
+  type: 'managed' | 'autonomous'; // IMMUTABLE - khong thay doi sau khi tao
 
   // References
   instructionId?: string;         // Link to Instruction document
   guardrailId?: string;           // Link to Guardrail document
-  deploymentId?: string;          // Link to Deployment (REQUIRED for managed agents)
-  nodeId: string;                 // Link to Node (infrastructure)
+  deploymentId?: string;          // Link to Deployment (for autonomous agents)
+  nodeId?: string;                // Link to Node (for managed agents)
 
   // RBAC
   role: 'organization.owner' | 'organization.editor' | 'organization.viewer';
@@ -60,7 +61,7 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
 
   // Runtime configuration (flat structure with prefixes)
   settings: {
-    // For autonomous agents
+    // For managed agents
     auth_roles?: string[];        // DEPRECATED - use `role` field instead
     claude_model?: string;        // e.g., 'claude-3-5-sonnet-latest'
     claude_maxTurns?: number;     // Default: 100
@@ -73,7 +74,7 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
     // ... extensible for future platforms
   };
 
-  // Connection tracking (autonomous only)
+  // Connection tracking (managed only)
   lastConnectedAt?: Date;
   lastHeartbeatAt?: Date;
   connectionCount: number;
@@ -87,7 +88,7 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
 }
 ```
 
-### Deployment Entity (Referenced by managed agents)
+### Deployment Entity (Referenced by autonomous agents)
 
 ```typescript
 {
@@ -108,7 +109,7 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
   type: 'llm' | 'vision' | 'embedding' | 'voice';
   deploymentType: 'api-based' | 'self-hosted';
 
-  // For api-based models (used by managed agents)
+  // For api-based models (used by autonomous agents)
   provider?: 'anthropic' | 'openai' | 'google' | 'azure' | 'cohere';
   apiEndpoint?: string;           // e.g., "https://api.anthropic.com/v1/messages"
   modelIdentifier?: string;       // e.g., "claude-3-5-sonnet-20241022", "gpt-4-turbo"
@@ -127,16 +128,16 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
 
 **Endpoint:** `GET /agents`
 
-**Purpose:** Lấy danh sách agents với pagination và filtering
+**Purpose:** Lay danh sach agents voi pagination va filtering
 
 **Query Parameters:**
-- `page` (number, default: 1) - Trang hiện tại
-- `limit` (number, default: 10) - Số items per page
-- `search` (string, optional) - Tìm kiếm theo name/description
+- `page` (number, default: 1) - Trang hien tai
+- `limit` (number, default: 10) - So items per page
+- `search` (string, optional) - Tim kiem theo name/description
 - `filter[status]` (string, optional) - Filter by status: `active`, `inactive`, `busy`, `suspended`
 - `filter[type]` (string, optional) - Filter by type: `managed`, `autonomous`
 - `sort` (string, optional) - Sort field, prefix `-` for descending (e.g., `-createdAt`, `name`)
-- `populate` (string, optional) - Set to `instruction` để include instruction details
+- `populate` (string, optional) - Set to `instruction` de include instruction details
 
 **Response:**
 ```typescript
@@ -164,61 +165,61 @@ AIWM Agent API cung cấp endpoints để quản lý AI agents (autonomous và m
 
 ---
 
-### 2. Create Managed Agent
+### 2. Create Autonomous Agent
 
 **Endpoint:** `POST /agents`
 
-**Purpose:** Tạo managed agent cho chat UI
+**Purpose:** Tao autonomous agent cho chat UI
 
 **Required Fields:**
 ```typescript
 {
-  name: string;                   // Tên agent (max 100 chars)
-  description: string;            // Mô tả chức năng
-  type: 'managed';                // MUST be 'managed'
+  name: string;                   // Ten agent (max 100 chars)
+  description: string;            // Mo ta chuc nang
+  type: 'autonomous';             // MUST be 'autonomous'
   deploymentId: string;           // REQUIRED - Link to LLM deployment
   instructionId?: string;         // Optional - System prompt
   role?: string;                  // Optional - Default: 'organization.viewer'
-  nodeId: string;                 // Infrastructure node ID
   tags?: string[];                // Optional - For categorization
   allowedToolIds?: string[];      // Optional - Tool whitelist (empty = all allowed)
   settings?: Record<string, any>; // Optional - Custom config
 }
 ```
 
-**KHÔNG cần fields:**
-- ❌ `secret` - Managed agents không dùng secret authentication
-- ❌ `status` - Auto-set to 'active'
-- ❌ `lastConnectedAt`, `connectionCount` - Không relevant cho managed agents
+**KHONG can fields:**
+- `secret` - Autonomous agents khong dung secret authentication
+- `status` - Auto-set to 'active'
+- `nodeId` - Khong can node cho autonomous agents
+- `lastConnectedAt`, `connectionCount` - Khong relevant cho autonomous agents
 
 **Response:** Agent object (201 Created)
 
 **Validation:**
-- `deploymentId` MUST point to valid Deployment với `status: 'running'`
+- `deploymentId` MUST point to valid Deployment voi `status: 'running'`
 - Deployment's Model MUST have `deploymentType: 'api-based'`
 - `role` MUST be one of: `organization.owner`, `organization.editor`, `organization.viewer`
 
 **Use Case:**
-User tạo chatbot mới → Frontend call POST /agents → Nhận agent ID → Dùng để call /agents/:id/connect
+User tao chatbot moi -> Frontend call POST /agents -> Nhan agent ID -> Dung de call /agents/:id/config
 
 ---
 
-### 3. Create Autonomous Agent
+### 3. Create Managed Agent
 
 **Endpoint:** `POST /agents`
 
-**Purpose:** Tạo autonomous agent cho Discord/Telegram bot
+**Purpose:** Tao managed agent cho Discord/Telegram bot (system-managed)
 
 **Required Fields:**
 ```typescript
 {
   name: string;
   description: string;
-  type: 'autonomous';             // MUST be 'autonomous'
-  secret: string;                 // REQUIRED - Plain text secret (will be hashed)
+  type: 'managed';                // MUST be 'managed'
+  secret?: string;                // Optional - Plain text secret (will be hashed). Auto-generated if not provided
   instructionId?: string;         // Optional - System prompt
   role?: string;                  // Optional - Default: 'organization.viewer'
-  nodeId: string;                 // Infrastructure node
+  nodeId: string;                 // REQUIRED - Node where agent will be deployed
   tags?: string[];
   allowedToolIds?: string[];
 
@@ -236,18 +237,20 @@ User tạo chatbot mới → Frontend call POST /agents → Nhận agent ID → 
 }
 ```
 
-**KHÔNG cần field:**
-- ❌ `deploymentId` - Autonomous agents không dùng deployment (dùng Claude Desktop SDK)
+**KHONG can field:**
+- `deploymentId` - Managed agents khong dung deployment (dung Claude Code SDK tren node)
 
-**Response:** Agent object với `secret` đã được hash (201 Created)
+**Response:** Agent object voi `secret` da duoc hash (201 Created)
+
+**Side Effect:** If `nodeId` specified and node is connected, AIWM sends `agent.start` event via WebSocket to the node.
 
 **Security:**
-- `secret` sẽ được hash bằng bcrypt trước khi lưu
-- Response KHÔNG trả về plaintext secret
-- Save secret securely - sẽ cần cho agent authentication
+- `secret` se duoc hash bang bcrypt truoc khi luu
+- Response KHONG tra ve plaintext secret
+- Save secret securely - se can cho agent authentication
 
 **Use Case:**
-Admin setup Discord bot → Create autonomous agent → Deploy agent với secret → Agent connect về server
+Admin setup Discord bot -> Create managed agent -> AIWM sends agent.start to node -> Node Agent starts bot
 
 ---
 
@@ -255,7 +258,7 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
 
 **Endpoint:** `PUT /agents/:id`
 
-**Purpose:** Cập nhật agent configuration và metadata
+**Purpose:** Cap nhat agent configuration va metadata
 
 **Allowed Fields:**
 ```typescript
@@ -265,7 +268,7 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
   status?: string;                // Change status: active/inactive/busy/suspended
   instructionId?: string;         // Change instruction
   guardrailId?: string;           // Add/change guardrail
-  deploymentId?: string;          // For managed: change LLM deployment
+  deploymentId?: string;          // For autonomous: change LLM deployment
   role?: string;                  // Change RBAC role
   tags?: string[];                // Update tags
   allowedToolIds?: string[];      // Update tool whitelist
@@ -273,22 +276,22 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
 }
 ```
 
-**IMMUTABLE Fields (KHÔNG được thay đổi):**
-- ❌ `type` - Agent type cannot be changed after creation
-- ❌ `nodeId` - Infrastructure assignment is permanent
-- ❌ `owner`, `createdBy`, `createdAt` - System-managed fields
+**IMMUTABLE Fields (KHONG duoc thay doi):**
+- `type` - Agent type cannot be changed after creation
+- `nodeId` - Infrastructure assignment is permanent
+- `owner`, `createdBy`, `createdAt` - System-managed fields
 
 **Response:** Updated Agent object (200 OK)
 
 **Business Rules:**
-- Managed agent: `deploymentId` có thể update sang deployment khác
-- Autonomous agent: Không nên update `settings.discord_*` khi agent đang connect (status: active)
-- Changing `status` to `suspended` sẽ disconnect active agent
-- `role` update sẽ ảnh hưởng tới MCP tool permissions ngay lập tức
+- Autonomous agent: `deploymentId` co the update sang deployment khac
+- Managed agent: Khong nen update `settings.discord_*` khi agent dang connect (status: active)
+- Changing `status` to `suspended` se disconnect active agent
+- `role` update se anh huong toi MCP tool permissions ngay lap tuc
 
 **Use Cases:**
-- Switch managed agent to different LLM model
-- Update autonomous agent's Discord channels
+- Switch autonomous agent to different LLM model
+- Update managed agent's Discord channels
 - Temporarily suspend misbehaving agent
 - Upgrade agent's RBAC permissions
 
@@ -308,38 +311,24 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
 ```
 
 **Behavior:**
-- Soft delete: Agent vẫn tồn tại trong DB với `deletedAt` timestamp
-- Deleted agents KHÔNG xuất hiện trong list/get queries
-- Active connections sẽ bị terminate
-- Có thể restore bằng cách unset `deletedAt` (admin operation)
+- Soft delete: Agent van ton tai trong DB voi `deletedAt` timestamp
+- Deleted agents KHONG xuat hien trong list/get queries
+- Active connections se bi terminate
+- Co the restore bang cach unset `deletedAt` (admin operation)
 
 ---
 
-### 6. Agent Connect (For Managed Agents)
+### 6. Agent Config (For Autonomous Agents)
 
-**Endpoint:** `POST /agents/:id/connect`
+**Endpoint:** `GET /agents/:id/config`
 
-**Purpose:** Lấy complete configuration cho client-side chat implementation với Vercel AI SDK
+**Purpose:** Lay complete configuration cho client-side chat implementation voi Vercel AI SDK
 
-**Authentication:** Public endpoint (KHÔNG cần Bearer token)
+**Authentication:** Bearer token (user JWT)
 
-**Request Body:**
+**Response for Autonomous Agent:**
 ```typescript
 {
-  secret: string;   // Agent secret (for autonomous) or empty string (for managed)
-}
-```
-
-**Response for Managed Agent:**
-```typescript
-{
-  // JWT Token
-  accessToken: string;            // JWT token containing agent identity & roles
-  expiresIn: number;              // Token expiration (seconds) - typically 86400 (24h)
-  refreshToken: null;             // Not implemented for agents
-  refreshExpiresIn: 0;
-  tokenType: "bearer";
-
   // MCP Tools Configuration
   mcpServers: {
     "Builtin": {
@@ -357,7 +346,7 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
   // Runtime Settings
   settings: Record<string, any>;  // Agent's settings object
 
-  // LLM Deployment Info (ONLY for managed agents)
+  // LLM Deployment Info (for autonomous agents)
   deployment: {
     id: string;                   // Deployment ID
     provider: string;             // 'anthropic' | 'openai' | 'google'
@@ -369,63 +358,72 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
 
 **Field Purposes:**
 
-1. **accessToken** - Use for:
-   - Authenticating MCP tool calls
-   - Identifying agent in logs
-   - RBAC permission checks
-
-2. **mcpServers** - MCP tool server configuration:
+1. **mcpServers** - MCP tool server configuration:
    - `url`: Endpoint to call MCP tools
    - `headers.Authorization`: Include in every MCP request
-   - Frontend calls MCP tools via HTTP POST with JSON-RPC format
 
-3. **instruction** - System prompt:
+2. **instruction** - System prompt:
    - Pass to LLM as `system` message
    - Contains agent's behavioral instructions
-   - Pre-merged from Instruction document
 
-4. **deployment** - LLM configuration:
+3. **deployment** - LLM configuration:
    - `provider`: Which SDK to use (@anthropic-ai/sdk, openai, @ai-sdk/google)
    - `model`: Model name to request
-   - `apiEndpoint`: API base URL (usually provider default)
-
-**JWT Token Payload (Decoded):**
-```typescript
-{
-  sub: string;                    // Agent ID
-  username: string;               // "agent:<agentId>"
-  status: string;                 // Agent status
-  roles: string[];                // [agent.role] - e.g., ['organization.owner']
-  orgId: string;                  // Organization ID
-  agentId: string;                // Same as sub
-  type: "agent";                  // Token type marker
-  iat: number;                    // Issued at (timestamp)
-  exp: number;                    // Expiration (timestamp)
-}
-```
-
-**Roles in Token:**
-- Used by MCP server for RBAC checks
-- Each MCP tool has required roles
-- Agent can only use tools if `token.roles` satisfies tool's requirements
+   - `apiEndpoint`: API base URL
 
 **Error Responses:**
-- `401 Unauthorized` - Invalid secret or agent suspended
+- `401 Unauthorized` - Invalid token or agent suspended
 - `404 Not Found` - Agent not found
-- `400 Bad Request` - Managed agent called with secret (not needed)
+- `400 Bad Request` - Managed agent does not support this endpoint
 
 ---
 
-## Integration Flow: Managed Agent Chat
+### 7. Agent Connect (For Managed Agents)
+
+**Endpoint:** `POST /agents/:id/connect`
+
+**Purpose:** Managed agent authentication and retrieve full config
+
+**Authentication:** Agent secret (in body)
+
+**Request Body:**
+```typescript
+{
+  secret: string;   // Agent secret
+}
+```
+
+**Response:**
+```typescript
+{
+  accessToken: string;
+  expiresIn: number;              // 86400 (24h)
+  refreshToken: null;
+  refreshExpiresIn: 0;
+  tokenType: "bearer";
+  mcpEndpoint: string;            // MCP endpoint URL
+  instruction: string;
+  tools: [...];
+  settings: Record<string, any>;
+}
+```
+
+**Validation:**
+- Works for `type: 'managed'`
+- Returns 400 for `type: 'autonomous'`
+
+---
+
+## Integration Flow: Autonomous Agent Chat
 
 ### Setup Flow
 
-1. **Create Managed Agent**
+1. **Create Autonomous Agent**
    ```
    POST /agents
    {
      name: "Finance Assistant",
-     type: "managed",
+     type: "autonomous",
      deploymentId: "507f...",  // Points to Claude deployment
      instructionId: "608f...",  // Finance domain instructions
      role: "organization.owner"
@@ -434,38 +432,35 @@ Admin setup Discord bot → Create autonomous agent → Deploy agent với secre
 
 2. **Get Agent Config**
    ```
-   POST /agents/{agentId}/connect
-   { secret: "" }  // Empty for managed
+   GET /agents/{agentId}/config
+   Authorization: Bearer <userJWT>
 
-   → Response contains:
+   -> Response contains:
      - deployment.provider = "anthropic"
      - deployment.model = "claude-3-5-sonnet-20241022"
      - deployment.apiEndpoint = "https://api.anthropic.com/v1/messages"
      - instruction = "You are a finance assistant..."
      - mcpServers.Builtin.url = "http://localhost:3306"
-     - accessToken = "eyJhbG..."
    ```
 
 3. **Frontend Implementation with Vercel AI SDK**
 
-   Frontend sử dụng response data để:
+   Frontend su dung response data de:
 
    a. **Initialize LLM Client**
    - Use `deployment.provider` to select SDK
-   - Configure with `deployment.model` và `deployment.apiEndpoint`
+   - Configure with `deployment.model` va `deployment.apiEndpoint`
 
    b. **Setup System Prompt**
    - Pass `instruction` as system message
 
    c. **Configure MCP Tools**
-   - Call `mcpServers.Builtin.url` để list available tools
-   - Include `accessToken` trong Authorization header
+   - Call `mcpServers.Builtin.url` de list available tools
    - Map MCP tools to Vercel AI SDK tool format
 
    d. **Tool Execution**
    - When LLM requests tool use
-   - Frontend calls MCP endpoint với tool name + arguments
-   - Include `accessToken` for authentication
+   - Frontend calls MCP endpoint voi tool name + arguments
    - Return tool result to LLM
 
 ### MCP Tool Call Format
@@ -481,7 +476,7 @@ Body: {
   params: {}
 }
 
-→ Response: Array of available tools with schemas
+-> Response: Array of available tools with schemas
 ```
 
 **Call Tool:**
@@ -502,14 +497,14 @@ Body: {
   }
 }
 
-→ Response: Tool execution result
+-> Response: Tool execution result
 ```
 
 ---
 
 ## Best Practices
 
-### For Managed Agents
+### For Autonomous Agents
 
 1. **Deployment Selection**
    - Choose deployment based on:
@@ -522,7 +517,6 @@ Body: {
    - Keep instructions clear and specific
    - Include tool usage guidelines
    - Define agent's role and boundaries
-   - Example domains: finance, customer support, code review
 
 3. **Role Assignment**
    - Start with `organization.viewer` for limited access
@@ -532,9 +526,8 @@ Body: {
 4. **Tool Whitelisting**
    - Leave `allowedToolIds` empty for full access
    - Restrict to specific tools for focused agents
-   - Update whitelist as agent capabilities evolve
 
-### For Autonomous Agents
+### For Managed Agents
 
 1. **Secret Management**
    - Generate strong, unique secrets (min 32 chars)
@@ -546,7 +539,12 @@ Body: {
    - Configure platform tokens (Discord/Telegram) in `settings`
    - Test platform integration before activating
 
-3. **Monitoring**
+3. **Node Assignment**
+   - Assign to node with sufficient resources
+   - Verify node is online before creating agent
+   - AIWM sends `agent.start` automatically when creating
+
+4. **Monitoring**
    - Track `lastHeartbeatAt` for health monitoring
    - Monitor `connectionCount` for usage patterns
    - Alert on status changes to `suspended` or connection drops
@@ -557,10 +555,10 @@ Body: {
 
 ### Scenario 1: Create Chat UI for Document Assistant
 
-1. Create managed agent with `deploymentId` pointing to Claude deployment
+1. Create autonomous agent with `deploymentId` pointing to Claude deployment
 2. Set `instructionId` with document assistant instructions
 3. Set `role: "organization.viewer"` for read-only access
-4. Frontend calls `/connect` to get config
+4. Frontend calls `GET /agents/:id/config` to get deployment info
 5. Use Vercel AI SDK to setup chat with:
    - Claude API client (from deployment info)
    - System prompt (from instruction)
@@ -568,17 +566,18 @@ Body: {
 
 ### Scenario 2: Deploy Discord Bot
 
-1. Create autonomous agent with Discord settings
+1. Create managed agent with Discord settings and `nodeId`
 2. Include `discord_token`, `discord_channelIds`, `discord_botId` in settings
-3. Agent connects using secret authentication
-4. Backend handles Discord webhook → Agent processing → Tool calls → Response
+3. AIWM sends `agent.start` to node via WebSocket
+4. Node Agent starts Discord bot with provided settings
+5. Bot automatically handles messages from Discord channels
 
 ### Scenario 3: Switch Agent to Different LLM
 
 1. User wants to switch from Claude to GPT-4
 2. Create new Deployment with OpenAI model
-3. Update managed agent: `PUT /agents/:id` with new `deploymentId`
-4. Frontend re-connects to get updated deployment config
+3. Update autonomous agent: `PUT /agents/:id` with new `deploymentId`
+4. Frontend re-fetches config to get updated deployment info
 5. Chat UI now uses OpenAI client instead of Anthropic
 
 ### Scenario 4: Temporarily Disable Agent
@@ -615,7 +614,7 @@ Response format:
 ### Business Logic Errors
 
 Examples:
-- "Only autonomous agents can connect via this endpoint"
+- "Only managed agents can connect via this endpoint"
 - "Agent is suspended"
 - "Deployment not found or not running"
 - "Cannot change agent type after creation"
@@ -626,8 +625,9 @@ Examples:
 
 ### Authentication
 
-- **User operations** (list, create, update, delete): Require JWT token với valid org roles
-- **Agent connect**: Public endpoint but requires agent secret (autonomous) or agent existence (managed)
+- **User operations** (list, create, update, delete): Require JWT token voi valid org roles
+- **Agent connect**: Requires agent secret (managed agents only)
+- **Agent config**: Requires user JWT (autonomous agents only)
 
 ### Authorization (RBAC)
 
@@ -641,12 +641,12 @@ Agent's `role` field controls MCP tool access:
 - Model API keys stored in Model.apiConfig (encrypted at rest)
 - NEVER exposed in API responses
 - Frontend NEVER sees provider API keys
-- Backend handles API key injection for managed agents (future: proxy mode)
+- Backend handles API key injection for autonomous agents (future: proxy mode)
 
 ### Token Lifecycle
 
 - Agent JWT tokens expire after 24 hours
-- Frontend should handle token refresh (re-call /connect)
+- Frontend should handle token refresh (re-call /config or /connect)
 - Suspended agents' tokens immediately invalid
 
 ---
@@ -661,8 +661,11 @@ Agent's `role` field controls MCP tool access:
 
 ## Version History
 
-- **v1.0** (Current) - Initial release
+- **v1.0** - Initial release
   - Support managed and autonomous agents
-  - Deployment integration for managed agents
+  - Deployment integration for autonomous agents
   - Role-based MCP tool access
-  - Connect endpoint for frontend integration
+  - Config endpoint for frontend integration
+- **v1.1** - Type semantics update
+  - `managed` = system-managed (deploy to node, has secret, WebSocket lifecycle)
+  - `autonomous` = user-controlled (via UI, uses deployment, no secret)

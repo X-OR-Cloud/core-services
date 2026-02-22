@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Document này mô tả chi tiết kiến trúc và kế hoạch triển khai **Agent Framework** - hệ thống cho phép triển khai và quản lý AI agents với 2 deployment modes: **Autonomous** và **Managed**.
+Document này mô tả chi tiết kiến trúc và kế hoạch triển khai **Agent Framework** - hệ thống cho phép triển khai và quản lý AI agents với 2 deployment modes: **Managed** và **Autonomous**.
 
 **Tình trạng:** 🟡 Planning (chưa implement)
 
@@ -12,17 +12,17 @@ Document này mô tả chi tiết kiến trúc và kế hoạch triển khai **A
 
 ### Agent Types
 
-#### 1. Autonomous Agent
-- **Định nghĩa:** Agent được người dùng tự cài đặt và vận hành trên infrastructure của họ
-- **Use case:** User muốn control hoàn toàn môi trường, bảo mật dữ liệu, custom setup
-- **Deployment:** User tự download và chạy agent binary trên Ubuntu server
-- **Connection:** Agent tự kết nối về AIWM controller để lấy config và nhận instructions
+#### 1. Managed Agent (`type: 'managed'`)
+- **Định nghĩa:** Agent được hệ thống (AIWM) quản lý, deploy xuống node, có secret authentication
+- **Use case:** Discord/Telegram bots, background AI workers chạy trên node infrastructure
+- **Deployment:** AIWM gửi `agent.start` event qua WebSocket tới node, hoặc user tự download và chạy agent binary
+- **Connection:** Agent kết nối về AIWM controller bằng secret để lấy config và nhận instructions
 
-#### 2. Managed Agent
-- **Định nghĩa:** Agent được AIWM tự động triển khai và quản lý trên Node cluster
-- **Use case:** User muốn deployment tự động, không cần lo infrastructure
-- **Deployment:** AIWM tự động deploy agent lên available Node trong cluster
-- **Connection:** Tự động setup, không cần user intervention
+#### 2. Autonomous Agent (`type: 'autonomous'`)
+- **Định nghĩa:** Agent do người dùng tự quản lý qua UI, sử dụng LLM deployment
+- **Use case:** Chat UI assistants, interactive agents qua Vercel AI SDK
+- **Deployment:** Không cần deploy, frontend gọi LLM trực tiếp qua deployment config
+- **Connection:** Sử dụng user JWT, không cần secret
 
 ### Agent Implementations
 
@@ -115,8 +115,8 @@ MCP_CONFIG_FILE=./mcp-servers.json
 - `lastHeartbeatAt`: tracking heartbeat
 - `connectionCount`: số lần connect
 - `allowedToolIds`: whitelist tools
-- `deploymentId`: for managed agents
-- `nodeId`: for autonomous agents on specific node
+- `deploymentId`: for autonomous agents (link to LLM deployment)
+- `nodeId`: for managed agents running on specific node
 
 **Không cần thay đổi schema - đã đầy đủ!**
 
@@ -172,7 +172,7 @@ export enum ConfigKey {
 
 **Endpoint:** `POST /agents/:id/regenerate-credentials`
 
-**Description:** Generate new secret và installation script cho autonomous agent
+**Description:** Generate new secret và installation script cho managed agent
 
 **Authorization:** User JWT (organization.owner or organization.editor)
 
@@ -246,7 +246,7 @@ AIWM_AGENT_SECRET=624577f0190d1d1dd016f4d799769dd82faad2de180319b41df99550fb373c
   // Agent settings (discord, telegram, claude configs)
   settings: Record<string, unknown>;
 
-  // Deployment (cho managed agents only)
+  // Deployment (cho autonomous agents only)
   deployment?: {
     id: string;
     provider: 'anthropic' | 'openai' | 'local';
@@ -278,7 +278,7 @@ AIWM_AGENT_SECRET=624577f0190d1d1dd016f4d799769dd82faad2de180319b41df99550fb373c
 - Verify secret (bcrypt compare với `agent.secret`)
 - Generate JWT token với agent context
 - Load instruction từ `agent.instructionId`
-- Load deployment từ `agent.deploymentId` (if managed)
+- Load deployment từ `agent.deploymentId` (if autonomous)
 - Build MCP servers config
 - Update `agent.lastConnectedAt` và increment `agent.connectionCount`
 - Return full config
@@ -634,7 +634,7 @@ PROCESS_MANAGER=pm2 ./install-agent.sh
 
 ## Agent Runtime Behavior
 
-### Startup Flow (Autonomous Agent)
+### Startup Flow (Managed Agent)
 
 ```
 1. Agent starts
@@ -652,7 +652,7 @@ PROCESS_MANAGER=pm2 ./install-agent.sh
    - Instruction (systemPrompt)
    - Settings (Discord/Telegram tokens, Claude config)
    - MCP servers
-   - Deployment info (if managed)
+   - Deployment info (if autonomous)
    ↓
 6. Initialize Agent SDK:
    - Setup Claude Code SDK with instruction
@@ -761,7 +761,7 @@ mongosh mongodb://172.16.3.20:27017/core_aiwm scripts/seed-agent-download-config
    - Accept status and optional metrics
    - Return success response
 5. ✅ Implement `GET /agents/:id/config` - [agent.service.ts:176-276](services/aiwm/src/modules/agent/agent.service.ts#L176-L276)
-   - For managed agents (requires user JWT)
+   - For autonomous agents (requires user JWT)
    - Return latest instruction + tools + MCP servers
    - No new JWT issued (uses user's token)
    - Enable hot reload of agent configuration
@@ -781,8 +781,8 @@ mongosh mongodb://172.16.3.20:27017/core_aiwm scripts/seed-agent-download-config
 - Installation script uses String.raw template to handle bash special characters
 - buildInstallScript() is async to load CDN URL from configuration
 - JWT roles come from agent.role field (NOT agent.settings.auth_roles)
-- Both autonomous and managed agents can use connect() endpoint
-- Managed agents get deployment info populated in connect response
+- Only managed agents can use connect() endpoint (secret-based auth)
+- Autonomous agents use config endpoint (user JWT) and get deployment info
 
 ### Phase 3: Installation Script Template ✅ (Complete)
 
@@ -1000,7 +1000,7 @@ export CDN_TYPE=custom
 | Tool System | Built-in tools | Custom tool definitions |
 | MCP Support | Native MCP client | Custom MCP client |
 | Hot Reload | Instruction + settings only | Instruction + settings + **provider/model switch** |
-| Deployment Config | Optional (for managed agents) | **Required** (specifies provider/model) |
+| Deployment Config | Optional (for autonomous agents) | **Required** (specifies provider/model) |
 
 **Tasks:**
 1. ⏳ AIWM Connection (Phase 5B.1)
@@ -1068,7 +1068,7 @@ export CDN_TYPE=custom
 
 **Tasks:**
 1. ⏳ E2E testing
-   - Test autonomous agent deployment on Ubuntu VM
+   - Test managed agent deployment on Ubuntu VM
    - Test agent connection flow
    - Test heartbeat & token refresh
    - Test hot reload
@@ -1078,16 +1078,16 @@ export CDN_TYPE=custom
    - Add connection flow diagrams
 3. ⏳ Write user guide
    - `docs/aiwm/AGENT-DEPLOYMENT-GUIDE.md`
-   - Step-by-step setup for autonomous agents
+   - Step-by-step setup for managed agents
 
 **Estimated time:** 1-2 days
 
-### Phase 7: Managed Agent Deployment (Future) ⏳
+### Phase 7: Advanced Managed Agent Features (Future) ⏳
 
 **Tasks:**
-1. ⏳ Node cluster management
-   - Auto-select available Node
-   - Deploy agent container/process
+1. ⏳ Enhanced node cluster management
+   - Auto-select available Node for new managed agents
+   - Load balancing across nodes
 2. ⏳ Container orchestration
    - Docker image build
    - Kubernetes deployment (optional)
@@ -1101,7 +1101,7 @@ export CDN_TYPE=custom
 
 ## Total Estimated Time
 
-**MVP (Autonomous Agent only):**
+**MVP (Managed Agent only):**
 - Phase 2: 2-3 days
 - Phase 3: 1-2 days
 - Phase 4: 1 day
@@ -1197,8 +1197,8 @@ curl -X POST https://api.x-or.cloud/dev/aiwm/agents/{agentId}/heartbeat \
 - [ ] Add config: `agent.download.baseUrl` = `https://cdn.x-or.cloud/agents`
 - [ ] Verify endpoint: `GET /configurations?key=agent.download.baseUrl`
 
-**Test autonomous deployment:**
-- [ ] Create test agent: `POST /agents`
+**Test managed agent deployment:**
+- [ ] Create managed agent: `POST /agents` with `type: 'managed'`
 - [ ] Generate credentials: `POST /agents/:id/regenerate-credentials`
 - [ ] Run installation script trên Ubuntu VM
 - [ ] Verify agent connects: check `lastConnectedAt`

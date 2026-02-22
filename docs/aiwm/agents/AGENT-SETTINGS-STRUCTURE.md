@@ -52,7 +52,7 @@ Agent settings use a **flat structure with prefixes** to organize configuration 
 ```
 
 **Permission Modes:**
-- `bypassPermissions` - Agent runs without user confirmation (autonomous)
+- `bypassPermissions` - Agent runs without user confirmation (managed agents on nodes)
 - `requirePermissions` - Requires user approval for each action
 
 ---
@@ -184,7 +184,7 @@ const discordToken = settings.discord_token || settings.discord?.token;
   "name": "Customer Support Agent",
   "description": "AI agent for customer support on Discord",
   "status": "active",
-  "type": "autonomous",
+  "type": "managed",
   "nodeId": "node-gpu-001",
   "instructionId": "instruction-customer-support",
   "allowedToolIds": ["tool-1", "tool-2"],
