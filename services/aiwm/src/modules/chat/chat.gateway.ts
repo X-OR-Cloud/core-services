@@ -35,7 +35,7 @@ import { MessageDocument } from '../message/message.schema';
  * - presence:update - Online status update
  */
 @WebSocketGateway({
-  namespace: '/ws',
+  namespace: '/ws/chat',
   /* cors: {
     origin: '*', // TODO: Configure CORS properly in production
     credentials: true,
