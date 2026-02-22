@@ -1,31 +1,31 @@
 /**
- * Worker Module - Queue processors only, no HTTP endpoints
- * Used by worker.main.ts for worker-only instances
+ * VBX Worker Module - AudioSocket server + OpenAI Realtime
+ * No HTTP endpoints — runs AudioSocket TCP server
  */
 import { Module, Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { QueueModule } from '../queues/queue.module';
-import { ProcessorsModule } from '../queues/processors.module';
+import { ExtensionsModule } from '../modules/extensions/extensions.module';
+import { CallsModule } from '../modules/calls/calls.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/pag/.env',
+      envFilePath: '../../.env',
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
-      { dbName: 'core_pag' },
+      { dbName: 'core_vbx' },
     ),
-    QueueModule,
-    ProcessorsModule,
+    ExtensionsModule,
+    CallsModule,
   ],
 })
 export class WorkerModule {
   private readonly logger = new Logger(WorkerModule.name);
 
   onModuleInit() {
-    this.logger.log('🔧 PAG Worker started — processing queues');
+    this.logger.log('🔧 VBX Worker started — AudioSocket + AI processing');
   }
 }

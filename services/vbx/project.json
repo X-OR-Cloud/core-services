@@ -1,0 +1,40 @@
+{
+  "name": "vbx",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "services/vbx/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx webpack-cli build",
+        "args": ["--node-env=production"],
+        "cwd": "services/vbx"
+      },
+      "configurations": {
+        "development": {
+          "args": ["--node-env=development"]
+        }
+      }
+    },
+    "api": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "vbx:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "vbx:build:development"
+        },
+        "production": {
+          "buildTarget": "vbx:build:production"
+        }
+      }
+    }
+  },
+  "tags": []
+}

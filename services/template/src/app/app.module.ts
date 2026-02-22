@@ -18,7 +18,8 @@ import { ProcessorsModule } from '../queues/processors.module';
       envFilePath: 'services/template/.env',
     }),
     MongooseModule.forRoot(
-      process.env['MONGODB_URI'] || 'mongodb://localhost:27017/hydra-template'
+      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
+      { dbName: 'core_template' },
     ),
     PassportModule,
     HealthModule,
