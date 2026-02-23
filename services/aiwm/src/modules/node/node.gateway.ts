@@ -9,7 +9,6 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
 import { NodeService } from './node.service';
@@ -53,7 +52,6 @@ export class NodeGateway
   constructor(
     private readonly nodeService: NodeService,
     private readonly connectionService: NodeConnectionService,
-    private readonly configService: ConfigService,
   ) {}
 
   // ExecutionOrchestrator injected via setter to avoid circular dependency
@@ -67,11 +65,12 @@ export class NodeGateway
    * Gateway initialization - apply JWT middleware for /ws/node namespace
    */
   afterInit(server: Server) {
-    const jwtSecret = this.configService.get<string>('JWT_SECRET');
+    // Use process.env directly to match JwtModule.register() which also reads process.env
+    const jwtSecret = process.env.JWT_SECRET || 'hydra-secret-key';
     const masked = jwtSecret && jwtSecret.length > 4
       ? jwtSecret.substring(0, 2) + '***' + jwtSecret.substring(jwtSecret.length - 2)
       : '****';
-    this.logger.log(`WebSocket JWT_SECRET: ${masked} (len=${jwtSecret?.length || 0})`);
+    this.logger.log(`WebSocket JWT_SECRET (from process.env): ${masked} (len=${jwtSecret?.length || 0})`);
 
     server.use((socket, next) => {
       try {
