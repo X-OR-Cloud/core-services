@@ -99,7 +99,7 @@ export class NodeGateway
         next();
       } catch (err: unknown) {
         const error = err as Error & { name?: string };
-        this.logger.error(`Auth failed for socket ${socket.id}: ${error.message}`);
+        this.logger.error(`Auth failed for socket ${socket.id}: ${error.message} | JWT_SECRET: ${masked} (len=${jwtSecret?.length || 0})`);
         if (error.name === 'TokenExpiredError') {
           return next(new Error('TOKEN_EXPIRED'));
         }
