@@ -1061,36 +1061,41 @@ echo "Installation script placeholder - implement actual logic"
       await this.agentProducer.emitAgentUpdated(updated);
 
       // Send agent.update to node via WebSocket if managed agent
-      // Regenerate secret so node agent can update systemd config
+      // Only regenerate secret if node is online (to avoid secret mismatch)
       if (updated.type === 'managed' && updated.nodeId) {
-        try {
-          const newSecret = crypto.randomBytes(32).toString('hex');
-          const hashedSecret = await bcrypt.hash(newSecret, 10);
-          await this.agentModel.updateOne(
-            { _id: (updated as any)._id },
-            { secret: hashedSecret },
-          );
+        const nodeOnline = this.nodeGateway.isNodeOnline(updated.nodeId);
+        if (nodeOnline) {
+          try {
+            const newSecret = crypto.randomBytes(32).toString('hex');
+            const hashedSecret = await bcrypt.hash(newSecret, 10);
+            await this.agentModel.updateOne(
+              { _id: (updated as any)._id },
+              { secret: hashedSecret },
+            );
 
-          await this.nodeGateway.sendCommandToNode(
-            updated.nodeId,
-            MessageType.AGENT_UPDATE,
-            { type: 'agent', id: (updated as any)._id.toString() },
-            {
-              agentId: (updated as any)._id.toString(),
-              name: updated.name,
-              description: updated.description,
-              status: updated.status,
-              type: updated.type,
-              secret: newSecret,
-              instructionId: updated.instructionId,
-              guardrailId: updated.guardrailId,
-              deploymentId: updated.deploymentId,
-              settings: updated.settings,
-            },
-          );
-          this.logger.log(`agent.update sent to node ${updated.nodeId} for agent ${(updated as any)._id}`);
-        } catch (error: any) {
-          this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
+            await this.nodeGateway.sendCommandToNode(
+              updated.nodeId,
+              MessageType.AGENT_UPDATE,
+              { type: 'agent', id: (updated as any)._id.toString() },
+              {
+                agentId: (updated as any)._id.toString(),
+                name: updated.name,
+                description: updated.description,
+                status: updated.status,
+                type: updated.type,
+                secret: newSecret,
+                instructionId: updated.instructionId,
+                guardrailId: updated.guardrailId,
+                deploymentId: updated.deploymentId,
+                settings: updated.settings,
+              },
+            );
+            this.logger.log(`agent.update sent to node ${updated.nodeId} for agent ${(updated as any)._id}`);
+          } catch (error: any) {
+            this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
+          }
+        } else {
+          this.logger.warn(`Node ${updated.nodeId} is offline, skipping agent.update and secret regeneration for agent ${(updated as any)._id}`);
         }
       }
     }
