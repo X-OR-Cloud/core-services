@@ -674,6 +674,10 @@ export class AgentService extends BaseService<Agent> {
 
     this.logger.log('Agent credentials regenerated', {
       agentId,
+      name: agent.name,
+      type: agent.type,
+      status: agent.status,
+      nodeId: agent.nodeId,
       regeneratedBy: context.userId,
     });
 
