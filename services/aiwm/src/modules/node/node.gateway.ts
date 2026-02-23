@@ -441,6 +441,10 @@ export class NodeGateway
       priority?: 'low' | 'normal' | 'high';
     }
   ): Promise<string> {
+    // DEBUG: Log Map keys vs requested nodeId
+    const onlineNodes = this.connectionService.getOnlineNodes();
+    this.logger.debug(`sendCommandToNode: requested nodeId="${nodeId}" (type=${typeof nodeId}), online nodes=[${onlineNodes.map(n => `"${n}"(type=${typeof n})`).join(', ')}]`);
+
     const connection = this.connectionService.getConnection(nodeId);
 
     if (!connection) {
