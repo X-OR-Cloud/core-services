@@ -38,6 +38,9 @@ When working on a specific module, read the corresponding docs:
 - **Deployment**: Read `docs/aiwm/DEPLOYMENT-INFERENCE-PLAN.md`
 - **Tool module**: Read `docs/aiwm/tool/OVERVIEW.md` + `docs/aiwm/tool/ROADMAP.md` AND `docs/aiwm/tools/TOOL-TYPES-AND-EXECUTION.md`
 - **Workflow**: Read `docs/aiwm/workflow-feature/` directory
+- **Guardrail module**: Read `docs/aiwm/guardrail/OVERVIEW.md` + `docs/aiwm/guardrail/ROADMAP.md`
+- **PII module**: Read `docs/aiwm/pii/OVERVIEW.md` + `docs/aiwm/pii/ROADMAP.md`
+- **MCP module**: Read `docs/aiwm/mcp/OVERVIEW.md` + `docs/aiwm/mcp/ROADMAP.md` AND `services/aiwm/src/mcp/README.md` (builtin tools guide)
 - **Configuration**: Read `docs/aiwm/configuration-management-proposal-v2.md`
 
 ## Key Architecture Patterns
