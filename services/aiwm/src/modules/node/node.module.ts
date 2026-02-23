@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NodeController } from './node.controller';
 import { NodeService } from './node.service';
 import { Node, NodeSchema } from './node.schema';
@@ -12,11 +13,16 @@ import { QueueModule } from '../../queues/queue.module';
   imports: [
     MongooseModule.forFeature([{ name: Node.name, schema: NodeSchema }]),
     QueueModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'hydra-secret-key',
-      signOptions: {
-        algorithm: 'HS256',
-      },
+    // Use registerAsync to ensure ConfigModule has loaded .env before reading JWT_SECRET
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET') || 'hydra-secret-key',
+        signOptions: {
+          algorithm: 'HS256' as const,
+        },
+      }),
     }),
   ],
   controllers: [NodeController],
