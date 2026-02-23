@@ -24,8 +24,15 @@ export async function makeServiceRequest(
     Authorization: `Bearer ${context.token}`,
     ...fetchOptions.headers,
   };
+  const maskedHeaders = {
+    ...headers,
+    Authorization: `Bearer ${headers.Authorization?.substring(0, 7)}****`,
+  };
 
-  logger.log(`📡 Making request: ${fetchOptions.method || 'GET'} ${url}`);
+  logger.log(`📡 Making request: ${fetchOptions.method || 'GET'} ${url}`, {
+    headers: maskedHeaders,
+    body: fetchOptions.body,
+  });
 
   // Debug: Log request body if present
   if (fetchOptions.body) {
