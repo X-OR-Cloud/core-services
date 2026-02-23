@@ -485,9 +485,15 @@ export class NodeService extends BaseService<Node> {
       },
     );
 
+    const secret = process.env.JWT_SECRET || '';
+    const masked = secret.length > 4
+      ? secret.substring(0, 2) + '***' + secret.substring(secret.length - 2)
+      : '****';
     this.logger.log('Node login successful', {
       nodeId: (node as any)._id.toString(),
       name: node.name,
+      jwtSecret: masked,
+      jwtSecretLength: secret.length,
     });
 
     return {

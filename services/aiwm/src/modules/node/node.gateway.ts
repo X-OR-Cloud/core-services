@@ -68,10 +68,18 @@ export class NodeGateway
    */
   afterInit(server: Server) {
     const jwtSecret = this.configService.get<string>('JWT_SECRET');
+    const masked = jwtSecret && jwtSecret.length > 4
+      ? jwtSecret.substring(0, 2) + '***' + jwtSecret.substring(jwtSecret.length - 2)
+      : '****';
+    this.logger.log(`WebSocket JWT_SECRET: ${masked} (len=${jwtSecret?.length || 0})`);
 
     server.use((socket, next) => {
       try {
-        const token = socket.handshake.auth?.token;
+        // Support multiple token sources: auth object, Authorization header, query param
+        const token =
+          socket.handshake.auth?.token ||
+          socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
+          (socket.handshake.query?.token as string);
         if (!token) {
           this.logger.warn(`Connection rejected: No token - ${socket.id}`);
           return next(new Error('TOKEN_MISSING'));
