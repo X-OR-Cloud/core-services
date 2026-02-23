@@ -3,7 +3,11 @@
  */
 
 import { ToolDefinition } from '../types';
-import { DocumentManagementTools, WorkManagementTools } from './cbm';
+import {
+  DocumentManagementTools,
+  WorkManagementTools,
+  ProjectManagementTools,
+} from './cbm';
 import { UserManagementTools } from './iam';
 import { AgentManagementTools } from './aiwm';
 
@@ -13,9 +17,9 @@ import { AgentManagementTools } from './aiwm';
 export const BuiltInTools: ToolDefinition[] = [
   ...DocumentManagementTools,
   ...WorkManagementTools,
+  ...ProjectManagementTools,
   ...UserManagementTools,
   ...AgentManagementTools,
-  // Future: ProjectManagementTools, etc.
 ];
 
 /**

@@ -43,7 +43,7 @@ export const DocumentManagementTools: ToolDefinition[] = [
   {
     name: 'CreateDocument',
     description:
-      'Create a new document with summary, content, type, and optional labels/status/scope',
+      'Create a new document with summary, content, type, and optional labels/status',
     type: 'builtin',
     category: 'DocumentManagement',
     executor: executeCreateDocument,
@@ -52,7 +52,7 @@ export const DocumentManagementTools: ToolDefinition[] = [
   {
     name: 'ListDocuments',
     description:
-      'List documents with pagination, search, and filters (type, status, scope)',
+      'List documents with pagination, search, and filters (type, status, projectId)',
     type: 'builtin',
     category: 'DocumentManagement',
     executor: executeListDocuments,
@@ -76,7 +76,7 @@ export const DocumentManagementTools: ToolDefinition[] = [
   },
   {
     name: 'UpdateDocument',
-    description: 'Update document metadata (summary, labels, status, scope)',
+    description: 'Update document metadata (summary, labels, status, projectId)',
     type: 'builtin',
     category: 'DocumentManagement',
     executor: executeUpdateDocument,

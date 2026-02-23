@@ -44,7 +44,6 @@ export async function executeCreateDocument(
     type: 'html' | 'text' | 'markdown' | 'json';
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
-    scope?: 'public' | 'org' | 'private';
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -99,13 +98,32 @@ export async function executeListDocuments(
     search?: string;
     type?: 'html' | 'text' | 'markdown' | 'json';
     status?: 'draft' | 'published' | 'archived';
-    scope?: 'public' | 'org' | 'private';
+    projectId?: string;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
-    const queryString = buildQueryString(args);
+
+    // Build query params — filter fields go into filter JSON object
+    const { page, limit, search, ...filterFields } = args;
+    const queryParams: Record<string, any> = {};
+    if (page !== undefined) queryParams.page = page;
+    if (limit !== undefined) queryParams.limit = limit;
+    if (search) queryParams.search = search;
+
+    // Pack type, status, projectId into filter JSON
+    const filter: Record<string, any> = {};
+    for (const [key, value] of Object.entries(filterFields)) {
+      if (value !== undefined && value !== null) {
+        filter[key] = value;
+      }
+    }
+    if (Object.keys(filter).length > 0) {
+      queryParams.filter = JSON.stringify(filter);
+    }
+
+    const queryString = buildQueryString(queryParams);
     const response = await makeServiceRequest(
       `${cbmBaseUrl}/documents${queryString}`,
       {
@@ -235,7 +253,7 @@ export async function executeUpdateDocument(
     summary?: string;
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
-    scope?: 'public' | 'org' | 'private';
+    projectId?: string;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -295,10 +313,13 @@ export async function executeUpdateDocumentContent(
       | 'append'
       | 'append-after-text'
       | 'append-to-section';
-    content: string;
-    findText?: string;
-    findPattern?: string;
-    sectionTitle?: string;
+    content?: string;
+    find?: string;
+    replace?: string;
+    pattern?: string;
+    flags?: string;
+    section?: string;
+    sectionContent?: string;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -313,6 +334,21 @@ export async function executeUpdateDocumentContent(
         body: JSON.stringify(updateData),
       }
     );
+
+    // Sanitize response to optimize token usage
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.includes('application/json')) {
+      const json = await response.json();
+      const sanitized = sanitizeDocument(json);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(sanitized, null, 2),
+          },
+        ],
+      };
+    }
 
     return formatToolResponse(response);
   } catch (error: any) {

@@ -10,9 +10,6 @@ const DocumentTypeEnum = z.enum(['html', 'text', 'markdown', 'json']);
 // Document status enum
 const DocumentStatusEnum = z.enum(['draft', 'published', 'archived']);
 
-// Document scope enum
-const DocumentScopeEnum = z.enum(['public', 'org', 'private']);
-
 // Content operation type enum
 const ContentOperationEnum = z.enum([
   'replace',
@@ -41,9 +38,6 @@ export const CreateDocumentSchema = z.object({
   status: DocumentStatusEnum.optional().describe(
     'Document status (default: draft)'
   ),
-  scope: DocumentScopeEnum.optional().describe(
-    'Document visibility scope (default: private)'
-  ),
 });
 
 /**
@@ -68,7 +62,7 @@ export const ListDocumentsSchema = z.object({
   search: z.string().optional().describe('Search in summary, content, labels'),
   type: DocumentTypeEnum.optional().describe('Filter by document type'),
   status: DocumentStatusEnum.optional().describe('Filter by status'),
-  scope: DocumentScopeEnum.optional().describe('Filter by scope'),
+  projectId: z.string().optional().describe('Filter by project ID'),
 });
 
 /**
@@ -93,7 +87,7 @@ export const UpdateDocumentSchema = z.object({
   summary: z.string().max(500).optional().describe('Updated summary'),
   labels: z.array(z.string()).optional().describe('Updated labels'),
   status: DocumentStatusEnum.optional().describe('Updated status'),
-  scope: DocumentScopeEnum.optional().describe('Updated scope'),
+  projectId: z.string().optional().describe('Updated project ID'),
 });
 
 /**
@@ -102,19 +96,34 @@ export const UpdateDocumentSchema = z.object({
 export const UpdateDocumentContentSchema = z.object({
   id: z.string().describe('Document ID'),
   operation: ContentOperationEnum.describe('Content manipulation operation'),
-  content: z.string().describe('New content or content to append'),
-  findText: z
+  content: z
     .string()
     .optional()
-    .describe('Text to find (for find-replace operations)'),
-  findPattern: z
+    .describe('New content (for replace, append, append-after-text, append-to-section)'),
+  find: z
     .string()
     .optional()
-    .describe('Regex pattern to find (for find-replace-regex)'),
-  sectionTitle: z
+    .describe('Text to find (for find-replace-text, append-after-text)'),
+  replace: z
     .string()
     .optional()
-    .describe('Section title (for append-to-section in markdown)'),
+    .describe('Replacement text (for find-replace-text, find-replace-regex)'),
+  pattern: z
+    .string()
+    .optional()
+    .describe('Regex pattern (for find-replace-regex)'),
+  flags: z
+    .string()
+    .optional()
+    .describe('Regex flags (for find-replace-regex, default: g)'),
+  section: z
+    .string()
+    .optional()
+    .describe('Markdown heading (for find-replace-markdown, append-to-section)'),
+  sectionContent: z
+    .string()
+    .optional()
+    .describe('New section content (for find-replace-markdown)'),
 });
 
 /**
