@@ -1,0 +1,162 @@
+# Agent Module - Technical Overview
+
+> Last updated: 2026-02-23 (P0 completed)
+
+## 1. File Structure
+
+```
+services/aiwm/src/modules/agent/
+├── agent.schema.ts      # MongoDB schema (extends BaseSchema)
+├── agent.dto.ts         # DTOs: Create, Update, Connect, Heartbeat, Credentials, Disconnect
+├── agent.service.ts     # Business logic (extends BaseService)
+├── agent.controller.ts  # REST API endpoints
+└── agent.module.ts      # NestJS module (imports: NodeModule, DeploymentModule, QueueModule, ConfigurationModule)
+```
+
+## 2. Agent Types
+
+### Managed (`type: 'managed'`)
+- System deploys to a Node via WebSocket commands (`agent.start`, `agent.update`, `agent.delete`)
+- Has `secret` (bcrypt hashed) for authentication
+- Requires `nodeId` — specifies which node runs this agent
+- Runs as systemd service on the node (future: Container via Deployment)
+- `deploymentId` NOT needed in v1.0 (only needed if Container deployment in future)
+
+### Autonomous (`type: 'autonomous'`, default)
+- User self-deploys following install guide + credentials
+- Has `secret` for self-authentication via `POST /agents/:id/connect`
+- Does NOT need `nodeId`
+- `deploymentId` optional — links to LLM deployment for config API
+
+### Key Rule
+Type is **immutable** after creation. Cannot change managed <-> autonomous.
+
+## 3. Status State Machine
+
+| Status | Meaning | Set by | When |
+|--------|---------|--------|------|
+| `inactive` | Not connected / offline | System | Create, disconnect, heartbeat timeout |
+| `idle` | Connected, available | System (connect), Agent (heartbeat) | Connect success, heartbeat status=idle |
+| `busy` | Connected, working | Agent (heartbeat) | Heartbeat status=busy |
+| `suspended` | User paused agent | User (API) | User updates status=suspended |
+
+**State transitions:**
+```
+create          → inactive (forced)
+connect         → idle (automatic)
+heartbeat(idle) → idle (from busy)
+heartbeat(busy) → busy (from idle)
+disconnect      → inactive
+suspended blocks connect + heartbeat
+```
+
+**Heartbeat DTO**: Enum `'idle' | 'busy'` only.
+
+## 4. Schema Fields
+
+```
+Agent extends BaseSchema:
+  name: string (required)
+  description: string (required)
+  status: 'inactive' | 'idle' | 'busy' | 'suspended' (default: 'inactive')
+  type: 'managed' | 'autonomous' (default: 'autonomous')
+  framework: 'claude-agent-sdk' (default: 'claude-agent-sdk')
+    // Determines which runtime engine the system uses to run the agent.
+    // Managed: required — system picks runtime based on this field.
+    // Autonomous: optional — informational, used for install script/config template.
+  instructionId?: ref Instruction
+  guardrailId?: ref Guardrail
+  deploymentId?: ref Deployment
+  nodeId?: ref Node (required for managed)
+  role: string (RBAC role, default: 'organization.viewer')
+  tags: string[]
+  secret?: string (bcrypt hashed, select: false) — both types have secrets
+  allowedToolIds: string[] (ref Tool)
+  settings: Record<string, unknown> (flat prefix structure: claude_, discord_, telegram_)
+  lastConnectedAt?: Date
+  lastHeartbeatAt?: Date
+  connectionCount: number (default: 0)
+  // Inherited from BaseSchema: owner, createdBy, updatedBy, isDeleted, metadata, timestamps
+```
+
+**Indexes**: `{ status: 1, createdAt: -1 }`, `{ type: 1 }`, `{ framework: 1 }`, `{ nodeId: 1 }`, `{ instructionId: 1 }`, `{ guardrailId: 1 }`, `{ tags: 1 }`, `{ name: 'text', description: 'text' }`
+
+## 5. API Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/agents` | User JWT | Create agent (both types get secret). Managed → send `agent.start` via WS to node |
+| GET | `/agents` | User JWT | List agents + statistics (byStatus, byType, byFramework) |
+| GET | `/agents/:id` | User JWT | Get agent. Supports `?populate=instruction` |
+| PUT | `/agents/:id` | User JWT | Update agent. Managed → send `agent.update` via WS to node |
+| DELETE | `/agents/:id` | User JWT | Soft delete. Managed → send `agent.delete` via WS to node |
+| GET | `/agents/:id/config` | User JWT | Config for autonomous agent (deployment, mcpServers, instruction) |
+| POST | `/agents/:id/connect` | Public (secret) | Auth for both types → returns JWT + config + tools, sets status=idle |
+| POST | `/agents/:id/heartbeat` | Agent/User JWT | Heartbeat - update status (idle/busy) + lastHeartbeatAt. Rejects if suspended |
+| POST | `/agents/:id/disconnect` | Agent/User JWT | Disconnect - set status=inactive |
+| POST | `/agents/:id/credentials/regenerate` | User JWT | Regenerate secret (both types) + envConfig + installScript |
+
+## 6. Connect Response Structure
+
+```typescript
+AgentConnectResponseDto {
+  accessToken: string       // JWT (managed connect) or '' (autonomous config)
+  expiresIn: number
+  mcpServers: { Builtin: { type, url, headers } }
+  instruction: { id, systemPrompt, guidelines[] }
+  tools: Tool[]             // Allowed tools for this agent
+  settings: Record<string, unknown>
+  deployment?: { id, provider, model, baseAPIEndpoint, apiEndpoint }
+}
+```
+
+## 7. Managed Agent Deploy Flow
+
+```
+User creates agent (type=managed, nodeId=xxx)
+  → AgentService.create()
+    → Gen secret + bcrypt hash
+    → Force status: inactive
+    → Save to DB
+    → Emit agent.created event (BullMQ)
+    → NodeGateway.sendCommandToNode(nodeId, AGENT_START, { agentId, secret, framework, ... })
+      → Node receives command
+      → Agent on node calls POST /agents/:id/connect with secret
+      → Receives JWT + config
+      → Agent status → idle (set by connect)
+```
+
+## 8. Dependencies
+
+- **NodeGateway**: Send agent lifecycle commands to nodes via WebSocket
+- **DeploymentService**: Build endpoint info for LLM deployment
+- **ConfigurationService**: Read system configs (AIWM_BASE_MCP_URL, AIWM_BASE_API_URL, etc.)
+- **AgentProducer**: Emit BullMQ events (agent.created, agent.updated, agent.deleted)
+- **Instruction model**: Build instruction object for agent
+- **Tool model**: Get allowed tools whitelist
+
+## 9. Queue Events
+
+Producer: `AgentProducer` → `agents.queue`
+- `agent.created` — full agent data
+- `agent.updated` — full agent data
+- `agent.deleted` — `{ id }`
+
+**Note**: No AgentProcessor exists yet. Events are produced but not consumed.
+
+## 10. Related Modules
+
+- **Node module** (`src/modules/node/`): Node management + WebSocket gateway. Agent commands sent via `NodeGateway.sendCommandToNode()`.
+- **Chat module** (`src/modules/chat/`): Real-time chat. Agent auto-joins conversation on WS connect. Presence tracked in Redis.
+- **Tool module** (`src/modules/tool/`): Agent references tools via `allowedToolIds`. Tools fetched via `getAllowedTools()`.
+- **Instruction module** (`src/modules/instruction/`): Agent references instruction via `instructionId`. Built via `buildInstructionObjectForAgent()`.
+
+## 11. Existing Documentation
+
+- `docs/aiwm/agents/README.md` — Client integration overview
+- `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md` — Full client integration guide
+- `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` — Managed vs Autonomous details
+- `docs/aiwm/agents/AGENT-SETTINGS-STRUCTURE.md` — Settings flat prefix structure
+- `docs/aiwm/agents/FRONTEND-API-SPEC.md` — Frontend API spec
+- `docs/aiwm/AGENT-WEBSOCKET-INTEGRATION.md` — WebSocket integration details
+- `docs/aiwm/node-agent/05-agent-commands.md` — Agent commands reference

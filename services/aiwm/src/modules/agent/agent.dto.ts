@@ -15,13 +15,15 @@ export class CreateAgentDto {
   @IsString()
   description: string;
 
-  @ApiProperty({
-    description: 'Agent status',
-    enum: ['active', 'inactive', 'busy', 'suspended'],
-    example: 'active'
+  @ApiPropertyOptional({
+    description: 'Agent status (defaults to inactive, set by system)',
+    enum: ['inactive', 'idle', 'busy', 'suspended'],
+    example: 'inactive',
+    required: false
   })
-  @IsEnum(['active', 'inactive', 'busy', 'suspended'])
-  status: string;
+  @IsOptional()
+  @IsEnum(['inactive', 'idle', 'busy', 'suspended'])
+  status?: string;
 
   @ApiPropertyOptional({
     description: 'Agent type: managed = system-managed (deployed to node, has secret), autonomous = user-controlled (via UI, uses user JWT)',
@@ -32,6 +34,16 @@ export class CreateAgentDto {
   @IsOptional()
   @IsEnum(['managed', 'autonomous'])
   type?: string;
+
+  @ApiPropertyOptional({
+    description: 'Agent framework (determines runtime engine)',
+    enum: ['claude-agent-sdk'],
+    example: 'claude-agent-sdk',
+    required: false
+  })
+  @IsOptional()
+  @IsEnum(['claude-agent-sdk'])
+  framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID (optional)', required: false })
   @IsOptional()
@@ -98,11 +110,11 @@ export class UpdateAgentDto {
 
   @ApiPropertyOptional({
     description: 'Agent status',
-    enum: ['active', 'inactive', 'busy', 'suspended'],
+    enum: ['inactive', 'idle', 'busy', 'suspended'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['active', 'inactive', 'busy', 'suspended'])
+  @IsEnum(['inactive', 'idle', 'busy', 'suspended'])
   status?: string;
 
   @ApiPropertyOptional({
@@ -113,6 +125,15 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsEnum(['managed', 'autonomous'])
   type?: string;
+
+  @ApiPropertyOptional({
+    description: 'Agent framework (determines runtime engine)',
+    enum: ['claude-agent-sdk'],
+    required: false
+  })
+  @IsOptional()
+  @IsEnum(['claude-agent-sdk'])
+  framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID', required: false })
   @IsOptional()
@@ -232,6 +253,9 @@ export class AgentConnectResponseDto {
     guidelines: string[];
   };
 
+  @ApiProperty({ description: 'Allowed tools for this agent', type: [Object] })
+  tools: Tool[];
+
   @ApiProperty({ description: 'Agent runtime settings/configuration' })
   settings: Record<string, unknown>;
 
@@ -261,10 +285,10 @@ export class AgentConnectResponseDto {
 export class AgentHeartbeatDto {
   @ApiProperty({
     description: 'Current agent status',
-    enum: ['online', 'busy', 'idle'],
-    example: 'online'
+    enum: ['idle', 'busy'],
+    example: 'idle'
   })
-  @IsEnum(['online', 'busy', 'idle'])
+  @IsEnum(['idle', 'busy'])
   status: string;
 
   @ApiPropertyOptional({ description: 'Optional metrics', required: false })

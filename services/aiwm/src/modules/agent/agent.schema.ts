@@ -17,7 +17,7 @@ export class Agent extends BaseSchema {
   @Prop({ required: true })
   description: string;
 
-  @Prop({ required: true, enum: ['active', 'inactive', 'busy', 'suspended'] })
+  @Prop({ required: true, enum: ['inactive', 'idle', 'busy', 'suspended'], default: 'inactive' })
   status: string;
 
   @Prop({
@@ -26,6 +26,13 @@ export class Agent extends BaseSchema {
     default: 'autonomous'
   })
   type: string;
+
+  @Prop({
+    type: String,
+    enum: ['claude-agent-sdk'],
+    default: 'claude-agent-sdk'
+  })
+  framework: string;
 
   @Prop({ type: String, ref: 'Instruction' })
   instructionId?: string;
@@ -49,9 +56,9 @@ export class Agent extends BaseSchema {
   @Prop({ default: [] })
   tags: string[];
 
-  // Authentication & Connection Management (only for managed agents)
+  // Authentication & Connection Management (both managed and autonomous agents)
   @Prop({ required: false, select: false })
-  secret?: string; // Hashed secret for agent authentication (managed only)
+  secret?: string; // Hashed secret for agent authentication
 
   @Prop({ type: [String], ref: 'Tool', default: [] })
   allowedToolIds: string[]; // Whitelist of tool IDs this agent can use
@@ -104,6 +111,7 @@ export const AgentSchema = SchemaFactory.createForClass(Agent);
 // Indexes for performance
 AgentSchema.index({ status: 1, createdAt: -1 });
 AgentSchema.index({ type: 1 });
+AgentSchema.index({ framework: 1 });
 AgentSchema.index({ nodeId: 1 });
 AgentSchema.index({ instructionId: 1 });
 AgentSchema.index({ guardrailId: 1 });

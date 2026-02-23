@@ -111,11 +111,26 @@ export class AgentService extends BaseService<Agent> {
       context
     );
 
+    // Aggregate statistics by framework
+    const frameworkStats = await super.aggregate(
+      [
+        { $match: { ...options.filter } },
+        {
+          $group: {
+            _id: '$framework',
+            count: { $sum: 1 },
+          },
+        },
+      ],
+      context
+    );
+
     // Build statistics object
     const statistics: any = {
       total: findResult.pagination.total,
       byStatus: {},
       byType: {},
+      byFramework: {},
     };
 
     // Map status statistics
@@ -128,6 +143,11 @@ export class AgentService extends BaseService<Agent> {
       statistics.byType[stat._id] = stat.count;
     });
 
+    // Map framework statistics
+    frameworkStats.forEach((stat: any) => {
+      statistics.byFramework[stat._id || 'claude-agent-sdk'] = stat.count;
+    });
+
     findResult.statistics = statistics;
     return findResult;
   }
@@ -136,22 +156,20 @@ export class AgentService extends BaseService<Agent> {
     createAgentDto: CreateAgentDto,
     context: RequestContext
   ): Promise<Agent> {
-    // Only managed agents have secrets (system-managed, deployed to nodes)
-    let plaintextSecret: string | undefined;
-    if (createAgentDto.type === 'managed') {
-      // Hash secret if provided, keep plaintext for agent.start event
-      if (createAgentDto.secret) {
-        plaintextSecret = createAgentDto.secret;
-        createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
-      } else {
-        // Generate random secret if not provided
-        plaintextSecret = crypto.randomBytes(32).toString('hex');
-        createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
-      }
+    // Both managed and autonomous agents have secrets for authentication
+    let plaintextSecret: string;
+    if (createAgentDto.secret) {
+      // Hash provided secret, keep plaintext for response/events
+      plaintextSecret = createAgentDto.secret;
+      createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
     } else {
-      // Autonomous agents don't need secrets (user-controlled via UI)
-      delete createAgentDto.secret;
+      // Generate random secret
+      plaintextSecret = crypto.randomBytes(32).toString('hex');
+      createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
     }
+
+    // Force initial status to inactive (agent must connect to become idle)
+    createAgentDto.status = 'inactive';
 
     // BaseService handles permissions, ownership, save, and generic logging
     const saved = await super.create(createAgentDto, context);
@@ -184,6 +202,7 @@ export class AgentService extends BaseService<Agent> {
             description: saved.description,
             status: saved.status,
             type: saved.type,
+            framework: saved.framework,
             secret: plaintextSecret,
             instructionId: saved.instructionId,
             guardrailId: saved.guardrailId,
@@ -256,6 +275,7 @@ export class AgentService extends BaseService<Agent> {
       tokenType: 'bearer',
       mcpServers,
       instruction,
+      tools,
       settings: agent.settings || {},
     };
 
@@ -379,11 +399,11 @@ export class AgentService extends BaseService<Agent> {
     // Get allowed tools
     const tools = await this.getAllowedTools(agent);
 
-    // Update connection tracking
+    // Update connection tracking + set status to idle
     await this.agentModel.updateOne(
       { _id: agent._id },
       {
-        $set: { lastConnectedAt: new Date() },
+        $set: { lastConnectedAt: new Date(), status: 'idle' },
         $inc: { connectionCount: 1 },
       }
     );
@@ -423,6 +443,7 @@ export class AgentService extends BaseService<Agent> {
       tokenType: 'bearer',
       mcpServers,                            // MCP server configurations
       instruction,
+      tools,
       settings: agent.settings || {},
     };
 
@@ -513,44 +534,6 @@ export class AgentService extends BaseService<Agent> {
   }
 
   /**
-   * Build merged instruction for agent (legacy format - for backward compatibility)
-   * MVP: Just return agent's instruction content
-   * TODO: Future - merge global + agent-specific + context instructions
-   */
-  private async buildInstructionForAgent(agent: Agent): Promise<string> {
-    if (!agent.instructionId) {
-      return 'No instruction configured for this agent.';
-    }
-
-    const instruction = await this.instructionModel
-      .findOne({ _id: agent.instructionId, isDeleted: false })
-      .exec();
-
-    if (!instruction) {
-      this.logger.warn('Instruction not found for agent', {
-        agentId: (agent as any)._id,
-        instructionId: agent.instructionId,
-      });
-      return 'Instruction not found.';
-    }
-
-    // MVP: Return systemPrompt + guidelines
-    let instructionText = instruction.systemPrompt;
-
-    if (instruction.guidelines && instruction.guidelines.length > 0) {
-      instructionText += '\n\n## Guidelines\n';
-      instruction.guidelines.forEach((guideline, index) => {
-        instructionText += `${index + 1}. ${guideline}\n`;
-      });
-    }
-
-    // TODO: Merge with global instruction (org-level)
-    // TODO: Merge with context instruction (project/feature)
-
-    return instructionText;
-  }
-
-  /**
    * Get allowed tools for agent (whitelist)
    */
   private async getAllowedTools(agent: Agent): Promise<Tool[]> {
@@ -586,14 +569,21 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
+    // Reject heartbeat if agent is suspended
+    if (agent.status === 'suspended') {
+      throw new BadRequestException('Agent is suspended. Heartbeat rejected.');
+    }
+
+    // Update lastHeartbeatAt + status from heartbeat DTO
     await this.agentModel.updateOne(
       { _id: agent._id },
-      { $set: { lastHeartbeatAt: new Date() } }
+      { $set: { lastHeartbeatAt: new Date(), status: heartbeatDto.status } }
     );
 
     this.logger.debug('Agent heartbeat received', {
       agentId,
       status: heartbeatDto.status,
+      previousStatus: agent.status,
       metrics: heartbeatDto.metrics,
     });
 
@@ -616,10 +606,10 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    // Update agent - clear lastConnectedAt to indicate disconnected
+    // Update agent - set status to inactive and clear lastConnectedAt
     await this.agentModel.updateOne(
       { _id: agent._id },
-      { $set: { lastConnectedAt: null } }
+      { $set: { lastConnectedAt: null, status: 'inactive' } }
     );
 
     this.logger.log('Agent disconnected', {
@@ -635,7 +625,7 @@ export class AgentService extends BaseService<Agent> {
   /**
    * Regenerate agent credentials (admin only)
    * Returns new secret + env config + install script
-   * Only works for managed agents (system-managed agents with secrets)
+   * Works for both managed and autonomous agents
    */
   async regenerateCredentials(
     agentId: string,
@@ -647,11 +637,6 @@ export class AgentService extends BaseService<Agent> {
 
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
-    }
-
-    // Only managed agents have credentials
-    if (agent.type !== 'managed') {
-      throw new BadRequestException('Only managed agents have credentials to regenerate');
     }
 
     // Generate new secret
@@ -708,6 +693,7 @@ AIWM_AGENT_SECRET=${secret}
 
 # ===== Agent Info =====
 AGENT_NAME=${agent.name}
+AGENT_FRAMEWORK=${agent.framework || 'claude-agent-sdk'}
 
 # ===== Claude Code SDK Configuration =====
 CLAUDE_MODEL=${claudeModel}
@@ -796,6 +782,7 @@ CLAUDE_RESUME=${resume}
 # Agent Installation Script
 # ============================================
 # Auto-generated for Agent: ${agent.name}
+# Framework: ${agent.framework || 'claude-agent-sdk'}
 # Generated at: ${new Date().toISOString()}
 # AIWM Controller: ${baseUrl}
 # ============================================
@@ -1061,41 +1048,28 @@ echo "Installation script placeholder - implement actual logic"
       await this.agentProducer.emitAgentUpdated(updated);
 
       // Send agent.update to node via WebSocket if managed agent
-      // Only regenerate secret if node is online (to avoid secret mismatch)
       if (updated.type === 'managed' && updated.nodeId) {
-        const nodeOnline = this.nodeGateway.isNodeOnline(updated.nodeId);
-        if (nodeOnline) {
-          try {
-            const newSecret = crypto.randomBytes(32).toString('hex');
-            const hashedSecret = await bcrypt.hash(newSecret, 10);
-            await this.agentModel.updateOne(
-              { _id: (updated as any)._id },
-              { secret: hashedSecret },
-            );
-
-            await this.nodeGateway.sendCommandToNode(
-              updated.nodeId,
-              MessageType.AGENT_UPDATE,
-              { type: 'agent', id: (updated as any)._id.toString() },
-              {
-                agentId: (updated as any)._id.toString(),
-                name: updated.name,
-                description: updated.description,
-                status: updated.status,
-                type: updated.type,
-                secret: newSecret,
-                instructionId: updated.instructionId,
-                guardrailId: updated.guardrailId,
-                deploymentId: updated.deploymentId,
-                settings: updated.settings,
-              },
-            );
-            this.logger.log(`agent.update sent to node ${updated.nodeId} for agent ${(updated as any)._id}`);
-          } catch (error: any) {
-            this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
-          }
-        } else {
-          this.logger.warn(`Node ${updated.nodeId} is offline, skipping agent.update and secret regeneration for agent ${(updated as any)._id}`);
+        try {
+          await this.nodeGateway.sendCommandToNode(
+            updated.nodeId,
+            MessageType.AGENT_UPDATE,
+            { type: 'agent', id: (updated as any)._id.toString() },
+            {
+              agentId: (updated as any)._id.toString(),
+              name: updated.name,
+              description: updated.description,
+              status: updated.status,
+              type: updated.type,
+              framework: updated.framework,
+              instructionId: updated.instructionId,
+              guardrailId: updated.guardrailId,
+              deploymentId: updated.deploymentId,
+              settings: updated.settings,
+            },
+          );
+          this.logger.log(`agent.update sent to node ${updated.nodeId} for agent ${(updated as any)._id}`);
+        } catch (error: any) {
+          this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
         }
       }
     }
