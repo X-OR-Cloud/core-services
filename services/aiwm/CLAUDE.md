@@ -36,7 +36,7 @@ When working on a specific module, read the corresponding docs:
 - **Instruction module**: Read `docs/aiwm/instruction/OVERVIEW.md` + `docs/aiwm/instruction/ROADMAP.md`
 - **Chat/WebSocket**: Read `docs/aiwm/CHAT-WEBSOCKET-ARCHITECTURE.md`
 - **Deployment**: Read `docs/aiwm/DEPLOYMENT-INFERENCE-PLAN.md`
-- **Tool**: Read `docs/aiwm/tools/TOOL-TYPES-AND-EXECUTION.md`
+- **Tool module**: Read `docs/aiwm/tool/OVERVIEW.md` + `docs/aiwm/tool/ROADMAP.md` AND `docs/aiwm/tools/TOOL-TYPES-AND-EXECUTION.md`
 - **Workflow**: Read `docs/aiwm/workflow-feature/` directory
 - **Configuration**: Read `docs/aiwm/configuration-management-proposal-v2.md`
 

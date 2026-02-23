@@ -27,6 +27,7 @@ import { ConfigurationService } from '../configuration/configuration.service';
 import { ConfigKey } from '../configuration/enums/config-key.enum';
 import { DeploymentService } from '../deployment/deployment.service';
 import { NodeGateway } from '../node/node.gateway';
+import { NodeService } from '../node/node.service';
 import { MessageType } from '@hydrabyte/shared';
 
 @Injectable()
@@ -40,6 +41,7 @@ export class AgentService extends BaseService<Agent> {
     private readonly configurationService: ConfigurationService,
     private readonly deploymentService: DeploymentService,
     private readonly nodeGateway: NodeGateway,
+    private readonly nodeService: NodeService,
   ) {
     super(agentModel as any);
   }
@@ -166,6 +168,27 @@ export class AgentService extends BaseService<Agent> {
       // Generate random secret
       plaintextSecret = crypto.randomBytes(32).toString('hex');
       createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
+    }
+
+    // Validate nodeId for managed agents
+    if (createAgentDto.type === 'managed') {
+      if (!createAgentDto.nodeId) {
+        throw new BadRequestException('nodeId is required for managed agents');
+      }
+
+      const node = await this.nodeService.findByObjectId(createAgentDto.nodeId);
+      if (!node) {
+        throw new BadRequestException(`Node with ID ${createAgentDto.nodeId} not found`);
+      }
+      if (node.status !== 'online') {
+        throw new BadRequestException(`Node ${createAgentDto.nodeId} is not online (current status: ${node.status})`);
+      }
+
+      // Check lastHeartbeat within 10 minutes
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      if (!node.lastHeartbeat || node.lastHeartbeat < tenMinutesAgo) {
+        throw new BadRequestException(`Node ${createAgentDto.nodeId} has not sent a heartbeat in the last 10 minutes`);
+      }
     }
 
     // Force initial status to inactive (agent must connect to become idle)
@@ -653,6 +676,33 @@ export class AgentService extends BaseService<Agent> {
       agentId,
       regeneratedBy: context.userId,
     });
+
+    // For managed agents, notify node via WebSocket with new secret
+    if (agent.type === 'managed' && agent.nodeId) {
+      try {
+        await this.nodeGateway.sendCommandToNode(
+          agent.nodeId,
+          MessageType.AGENT_UPDATE,
+          { type: 'agent', id: agentId },
+          {
+            agentId,
+            name: agent.name,
+            description: agent.description,
+            status: agent.status,
+            type: agent.type,
+            framework: agent.framework,
+            secret: newSecret,
+            instructionId: agent.instructionId,
+            guardrailId: agent.guardrailId,
+            deploymentId: agent.deploymentId,
+            settings: agent.settings,
+          },
+        );
+        this.logger.log(`agent.update sent to node ${agent.nodeId} after credential regeneration for agent ${agentId}`);
+      } catch (error: any) {
+        this.logger.warn(`Could not send agent.update to node ${agent.nodeId}: ${error.message}`);
+      }
+    }
 
     // Build env config snippet
     const envConfig = this.buildEnvConfig(agentId, newSecret, agent);

@@ -35,10 +35,7 @@ import type { ExecutionOrchestrator } from '../execution/execution.orchestrator'
  */
 @WebSocketGateway({
   namespace: '/ws/node',
-  cors: {
-    origin: '*', // TODO: Configure proper CORS in production
-    credentials: true,
-  },
+  /* cors: handled at Nginx proxy level in production */
   transports: ['websocket', 'polling'],
 })
 export class NodeGateway
