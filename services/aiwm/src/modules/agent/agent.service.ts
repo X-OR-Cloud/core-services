@@ -137,15 +137,16 @@ export class AgentService extends BaseService<Agent> {
     context: RequestContext
   ): Promise<Agent> {
     // Only managed agents have secrets (system-managed, deployed to nodes)
+    let plaintextSecret: string | undefined;
     if (createAgentDto.type === 'managed') {
-      // Hash secret if provided
+      // Hash secret if provided, keep plaintext for agent.start event
       if (createAgentDto.secret) {
-        const hashedSecret = await bcrypt.hash(createAgentDto.secret, 10);
-        createAgentDto.secret = hashedSecret;
+        plaintextSecret = createAgentDto.secret;
+        createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
       } else {
         // Generate random secret if not provided
-        const randomSecret = crypto.randomBytes(32).toString('hex');
-        createAgentDto.secret = await bcrypt.hash(randomSecret, 10);
+        plaintextSecret = crypto.randomBytes(32).toString('hex');
+        createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
       }
     } else {
       // Autonomous agents don't need secrets (user-controlled via UI)
@@ -183,6 +184,7 @@ export class AgentService extends BaseService<Agent> {
             description: saved.description,
             status: saved.status,
             type: saved.type,
+            secret: plaintextSecret,
             instructionId: saved.instructionId,
             guardrailId: saved.guardrailId,
             deploymentId: saved.deploymentId,
