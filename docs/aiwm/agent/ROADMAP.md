@@ -1,7 +1,7 @@
 # Agent Module - v1.0 Roadmap
 
 > Last updated: 2026-02-23
-> Status: P0 completed — P1 next
+> Status: P0 + P1 completed — P2 next
 
 ## Decisions Made
 
@@ -104,21 +104,21 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] `framework` in `agent.start` / `agent.update` WS payloads
 - [x] `framework` in `buildEnvConfig()` and `buildInstallScript()`
 
-### P1 — Important Improvements
+### P1 — Important Improvements ✅ COMPLETED
 
-#### P1-1: Validate nodeId for Managed Agents
-- [ ] In `create()`: Validate nodeId exists in DB
-- [ ] Check node status === `'online'`
-- [ ] Check `lastHeartbeat` within 10 minutes
-- [ ] Throw `BadRequestException` with clear message if validation fails
+#### P1-1: Validate nodeId for Managed Agents ✅
+- [x] In `create()`: Validate nodeId exists in DB via `NodeService.findByObjectId()`
+- [x] Check node status === `'online'`
+- [x] Check `lastHeartbeat` within 10 minutes
+- [x] Throw `BadRequestException` with clear message if validation fails
 
-#### P1-2: Regenerate Credentials → Notify Node
-- [ ] After regenerating secret, send `agent.update` (or `agent.restart`) via WebSocket to node
-- [ ] Include new secret in the WS payload so node can reconnect
+#### P1-2: Regenerate Credentials → Notify Node ✅
+- [x] After regenerating secret, send `agent.update` via WebSocket to node (managed agents)
+- [x] Include new secret in the WS payload so node can reconnect
 
-#### P1-3: CORS Cleanup
-- [ ] Remove CORS config from `ChatGateway` (already commented out)
-- [ ] Remove or make env-conditional CORS in `NodeGateway`
+#### P1-3: CORS Cleanup ✅
+- [x] `ChatGateway` — already commented out (no change needed)
+- [x] `NodeGateway` — removed `cors: { origin: '*' }`, handled at Nginx proxy level
 
 ### P2 — Planned (Needs Coordination)
 
