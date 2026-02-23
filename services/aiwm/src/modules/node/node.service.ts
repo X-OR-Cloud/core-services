@@ -7,7 +7,7 @@ import { RequestContext } from '@hydrabyte/shared';
 import { Node } from './node.schema';
 import { NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto } from './node.dto';
 import { NodeProducer } from '../../queues/producers/node.producer';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 
 const NODE_TOKEN_EXPIRES_IN = 3600; // 1 hour in seconds
@@ -485,28 +485,7 @@ export class NodeService extends BaseService<Node> {
       },
     );
 
-    const secret = process.env.JWT_SECRET || '';
-    const masked = secret.length > 4
-      ? secret.substring(0, 2) + '***' + secret.substring(secret.length - 2)
-      : '****';
-    const secretHash = createHash('sha256').update(secret).digest('hex').substring(0, 8);
-
-    // Debug: verify token immediately after signing to check if JwtModule uses same secret
-    try {
-      const { verify: jwtVerify } = require('jsonwebtoken');
-      jwtVerify(accessToken, secret);
-      this.logger.log('DEBUG: Token self-verify with process.env.JWT_SECRET: OK');
-    } catch (e: any) {
-      this.logger.error(`DEBUG: Token self-verify FAILED: ${e.message} - JwtModule uses DIFFERENT secret than process.env.JWT_SECRET!`);
-    }
-
-    this.logger.log('Node login successful', {
-      nodeId: (node as any)._id.toString(),
-      name: node.name,
-      jwtSecret: masked,
-      jwtSecretLength: secret.length,
-      jwtSecretSha256: secretHash,
-    });
+    this.logger.log(`Node login successful: ${node.name} (${(node as any)._id})`);
 
     return {
       accessToken,

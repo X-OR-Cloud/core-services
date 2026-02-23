@@ -1063,6 +1063,9 @@ echo "Installation script placeholder - implement actual logic"
   }
 
   async remove(id: string, context: RequestContext): Promise<void> {
+    // Read agent before deleting to get type and nodeId for WebSocket notification
+    const agent = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false });
+
     // BaseService handles soft delete, permissions, and generic logging
     const result = await super.softDelete(
       new Types.ObjectId(id) as any,
@@ -1078,6 +1081,24 @@ echo "Installation script placeholder - implement actual logic"
 
       // Emit event to queue
       await this.agentProducer.emitAgentDeleted(id);
+
+      // For managed agents, send agent.delete command to the node via WebSocket
+      if (agent && agent.type === 'managed' && agent.nodeId) {
+        try {
+          await this.nodeGateway.sendCommandToNode(
+            agent.nodeId,
+            MessageType.AGENT_DELETE,
+            { type: 'agent', id },
+            {
+              agentId: id,
+              name: agent.name,
+            },
+          );
+          this.logger.log(`agent.delete sent to node ${agent.nodeId} for agent ${id}`);
+        } catch (error: any) {
+          this.logger.warn(`Could not send agent.delete to node ${agent.nodeId}: ${error.message}`);
+        }
+      }
     }
   }
 }

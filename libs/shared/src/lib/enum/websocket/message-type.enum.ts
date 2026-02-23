@@ -45,6 +45,7 @@ export enum MessageType {
   // Agent Commands (Controller → Worker) - Future
   AGENT_START = 'agent.start',
   AGENT_STOP = 'agent.stop',
+  AGENT_DELETE = 'agent.delete',
   AGENT_EXECUTE = 'agent.execute',
   AGENT_QUERY = 'agent.query',
 

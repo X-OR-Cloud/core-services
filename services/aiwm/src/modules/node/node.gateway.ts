@@ -11,7 +11,6 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
-import { createHash } from 'crypto';
 import { NodeService } from './node.service';
 import { NodeConnectionService } from './node-connection.service';
 import {
@@ -66,13 +65,7 @@ export class NodeGateway
    * Gateway initialization - apply JWT middleware for /ws/node namespace
    */
   afterInit(server: Server) {
-    // Use process.env directly to match JwtModule.register() which also reads process.env
     const jwtSecret = process.env.JWT_SECRET || 'hydra-secret-key';
-    const masked = jwtSecret && jwtSecret.length > 4
-      ? jwtSecret.substring(0, 2) + '***' + jwtSecret.substring(jwtSecret.length - 2)
-      : '****';
-    const secretHash = createHash('sha256').update(jwtSecret).digest('hex').substring(0, 8);
-    this.logger.log(`WebSocket JWT_SECRET (from process.env): ${masked} (len=${jwtSecret?.length || 0}, sha256=${secretHash})`);
 
     server.use((socket, next) => {
       try {
@@ -85,14 +78,6 @@ export class NodeGateway
           this.logger.warn(`Connection rejected: No token - ${socket.id}`);
           return next(new Error('TOKEN_MISSING'));
         }
-
-        // Debug: log token source and masked token
-        const tokenSource = socket.handshake.auth?.token ? 'auth' :
-          socket.handshake.headers?.authorization ? 'header' : 'query';
-        const maskedToken = token.length > 20
-          ? token.substring(0, 10) + '...' + token.substring(token.length - 10)
-          : '***';
-        this.logger.log(`Socket ${socket.id} token: source=${tokenSource}, len=${token.length}, masked=${maskedToken}`);
 
         const decoded = verify(token, jwtSecret as string) as Record<string, unknown>;
         socket.data.user = {
@@ -108,7 +93,7 @@ export class NodeGateway
         next();
       } catch (err: unknown) {
         const error = err as Error & { name?: string };
-        this.logger.error(`Auth failed for socket ${socket.id}: ${error.message} | JWT_SECRET: ${masked} (len=${jwtSecret?.length || 0}, sha256=${secretHash})`);
+        this.logger.error(`Auth failed for socket ${socket.id}: ${error.message}`);
         if (error.name === 'TokenExpiredError') {
           return next(new Error('TOKEN_EXPIRED'));
         }
