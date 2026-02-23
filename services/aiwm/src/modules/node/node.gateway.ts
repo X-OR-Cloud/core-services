@@ -84,6 +84,14 @@ export class NodeGateway
           return next(new Error('TOKEN_MISSING'));
         }
 
+        // Debug: log token source and masked token
+        const tokenSource = socket.handshake.auth?.token ? 'auth' :
+          socket.handshake.headers?.authorization ? 'header' : 'query';
+        const maskedToken = token.length > 20
+          ? token.substring(0, 10) + '...' + token.substring(token.length - 10)
+          : '***';
+        this.logger.log(`Socket ${socket.id} token: source=${tokenSource}, len=${token.length}, masked=${maskedToken}`);
+
         const decoded = verify(token, jwtSecret as string) as Record<string, unknown>;
         socket.data.user = {
           nodeId: decoded.sub,
