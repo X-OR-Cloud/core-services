@@ -1061,8 +1061,16 @@ echo "Installation script placeholder - implement actual logic"
       await this.agentProducer.emitAgentUpdated(updated);
 
       // Send agent.update to node via WebSocket if managed agent
+      // Regenerate secret so node agent can update systemd config
       if (updated.type === 'managed' && updated.nodeId) {
         try {
+          const newSecret = crypto.randomBytes(32).toString('hex');
+          const hashedSecret = await bcrypt.hash(newSecret, 10);
+          await this.agentModel.updateOne(
+            { _id: (updated as any)._id },
+            { secret: hashedSecret },
+          );
+
           await this.nodeGateway.sendCommandToNode(
             updated.nodeId,
             MessageType.AGENT_UPDATE,
@@ -1073,6 +1081,7 @@ echo "Installation script placeholder - implement actual logic"
               description: updated.description,
               status: updated.status,
               type: updated.type,
+              secret: newSecret,
               instructionId: updated.instructionId,
               guardrailId: updated.guardrailId,
               deploymentId: updated.deploymentId,
