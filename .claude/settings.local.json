@@ -89,7 +89,8 @@
       "Bash(__NEW_LINE_7db7d4e86ea43dce__ echo \"=== Test 3: Get Metadata \\(no body\\) ===\")",
       "Bash(__NEW_LINE_8f1b080d0d924725__ echo \"\")",
       "Bash(npx nx run:*)",
-      "Bash(nc:*)"
+      "Bash(nc:*)",
+      "Bash(nx run aiwm:build 2>&1 | tail -20)"
     ],
     "deny": [],
     "ask": [],

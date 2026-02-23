@@ -148,6 +148,9 @@ export class NodeGateway
         client.data.user?.groupId
       );
 
+      // Join room for cross-instance command routing via Redis adapter
+      await client.join(`node:${nodeId}`);
+
       // Send success acknowledgment
       this.sendConnectionAck(client, 'success', undefined, {
         nodeId,
@@ -438,14 +441,17 @@ export class NodeGateway
       priority?: 'low' | 'normal' | 'high';
     }
   ): Promise<string> {
-    // DEBUG: Log Map keys vs requested nodeId
-    const onlineNodes = this.connectionService.getOnlineNodes();
-    this.logger.debug(`sendCommandToNode: requested nodeId="${nodeId}" (type=${typeof nodeId}), online nodes=[${onlineNodes.map(n => `"${n}"(type=${typeof n})`).join(', ')}]`);
+    const roomName = `node:${nodeId}`;
 
-    const connection = this.connectionService.getConnection(nodeId);
+    // Check if node is connected on any instance (cross-instance via Redis adapter)
+    const sockets = await this.server.in(roomName).fetchSockets();
 
-    if (!connection) {
-      this.logger.warn(`Cannot send command: Node ${nodeId} is not connected`);
+    this.logger.debug(
+      `sendCommandToNode: nodeId="${nodeId}", sockets in room=${sockets.length}`
+    );
+
+    if (sockets.length === 0) {
+      this.logger.warn(`Cannot send command: Node ${nodeId} is not connected to any instance`);
       throw new Error(`Node ${nodeId} is not connected`);
     }
 
@@ -464,7 +470,9 @@ export class NodeGateway
       },
     };
 
-    connection.socket.emit(commandType, message);
+    // Emit via room — Redis adapter routes to the correct instance
+    this.server.to(roomName).emit(commandType, message);
+
     this.logger.log(
       `Command sent to ${nodeId}: ${commandType} (${resource.id}) - messageId: ${messageId}`
     );
@@ -476,9 +484,8 @@ export class NodeGateway
    * Broadcast a message to all connected nodes
    */
   broadcastToAllNodes(messageType: string, data: any): void {
-    const onlineCount = this.connectionService.getOnlineCount();
     this.server.emit(messageType, data);
-    this.logger.log(`Broadcast message to ${onlineCount} nodes: ${messageType}`);
+    this.logger.log(`Broadcast message to all nodes: ${messageType}`);
   }
 
   /**
@@ -528,23 +535,31 @@ export class NodeGateway
   }
 
   /**
-   * Get online node IDs
+   * Get online node IDs across all instances (via Redis adapter)
    */
-  getOnlineNodes(): string[] {
-    return this.connectionService.getOnlineNodes();
+  async getOnlineNodes(): Promise<string[]> {
+    const sockets = await this.server.fetchSockets();
+    const nodeIds = new Set<string>();
+    for (const socket of sockets) {
+      const nodeId = (socket as any).data?.user?.nodeId;
+      if (nodeId) nodeIds.add(nodeId);
+    }
+    return Array.from(nodeIds);
   }
 
   /**
-   * Check if node is online
+   * Check if node is online on any instance (via Redis adapter)
    */
-  isNodeOnline(nodeId: string): boolean {
-    return this.connectionService.isNodeOnline(nodeId);
+  async isNodeOnline(nodeId: string): Promise<boolean> {
+    const sockets = await this.server.in(`node:${nodeId}`).fetchSockets();
+    return sockets.length > 0;
   }
 
   /**
-   * Get online node count
+   * Get online node count across all instances
    */
-  getOnlineCount(): number {
-    return this.connectionService.getOnlineCount();
+  async getOnlineCount(): Promise<number> {
+    const nodeIds = await this.getOnlineNodes();
+    return nodeIds.length;
   }
 }

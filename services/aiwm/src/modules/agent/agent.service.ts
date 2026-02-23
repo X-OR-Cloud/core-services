@@ -239,7 +239,11 @@ export class AgentService extends BaseService<Agent> {
       }
     }
 
-    return saved as Agent;
+    // Remove secret from response (never expose hashed secret)
+    const result = saved as any;
+    if (result.secret) delete result.secret;
+
+    return result as Agent;
   }
 
   /**
@@ -1126,6 +1130,12 @@ echo "Installation script placeholder - implement actual logic"
           this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
         }
       }
+    }
+
+    // Remove secret from response (never expose hashed secret)
+    if (updated) {
+      const obj = updated as any;
+      if (obj.secret) delete obj.secret;
     }
 
     return updated as Agent;

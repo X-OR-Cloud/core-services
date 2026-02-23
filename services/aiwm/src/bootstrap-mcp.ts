@@ -28,9 +28,7 @@ import { getBuiltInToolsByCategory } from './mcp/builtin';
 import { ExecutionContext as BuiltInExecutionContext } from './mcp/types';
 
 const logger = new Logger('McpBootstrap');
-const MCP_PORT = process.env.MCP_PORT
-  ? parseInt(process.env.PORT || process.env.MCP_PORT, 10)
-  : 3355;
+const MCP_PORT = parseInt(process.env.MCP_PORT || '3355', 10);
 
 export async function bootstrapMcpServer() {
   logger.log('=== Step 1: Starting NestJS Application Context ===');
@@ -281,36 +279,23 @@ export async function bootstrapMcpServer() {
     }
 
     // Step 3: Convert string IDs to ObjectId for MongoDB query
-    const toolObjectIds = agent.allowedToolIds;
+    const toolObjectIds = agent.allowedToolIds.map(id => new Types.ObjectId(id));
 
     // Step 4: Fetch active tools from allowedToolIds whitelist
-    const toolFilter = {
-      //_id: { $in: toolObjectIds },
-      status: 'active',
-      //"owner.orgId": orgId,
-      //isDeleted: false,
-    };
-    let tools: Tool[] = [];
+    // BaseService automatically applies owner.orgId (from context) and isDeleted: false
     const findToolResult = await toolService.findAll(
       {
-        ...toolFilter,
+        filter: {
+          _id: { $in: toolObjectIds },
+          status: 'active',
+        },
         limit: 100,
       },
       context
     );
-    logger.log(`✅ Tool query returned ${findToolResult.pagination.total} total tools`, findToolResult.data.map(t => ({id: (t as any)._id, name: t.name, type: t.type})));
-    if (findToolResult) {
-      tools = findToolResult.data.filter((tool: any) =>
-        toolObjectIds.some((id) => {
-          logger.debug(`Comparing tool ID ${id.toString()} with tool._id ${tool._id.toString()} -> ${id.toString() === tool._id.toString()}`);
-          return id.toString() === tool._id.toString();
-        })
-      );
-    }
+    const tools: Tool[] = findToolResult?.data ?? [];
     logger.log(
-      `✅ Found ${
-        tools.length
-      } active tools from allowedToolIds: ${agent.allowedToolIds.join(', ')}`
+      `✅ Found ${tools.length} active tools from allowedToolIds: ${agent.allowedToolIds.join(', ')}`
     );
 
     // Register each tool with MCP server
