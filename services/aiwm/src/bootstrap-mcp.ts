@@ -244,7 +244,8 @@ export async function bootstrapMcpServer() {
   };
 
   // Step 3.1: Function to load and register tools for agent
-  const registerToolsForAgent = async (tokenPayload: any, bearerToken: string) => {
+  // Returns true if tools were registered, false if skipped (agent not found or no tools)
+  const registerToolsForAgent = async (tokenPayload: any, bearerToken: string): Promise<boolean> => {
     const { orgId, agentId, userId, roles, groupId } = tokenPayload;
 
     logger.log(`📋 Loading tools for agent: ${agentId} (org: ${orgId})`);
@@ -263,7 +264,7 @@ export async function bootstrapMcpServer() {
     const agent = await agentService.findById(agentId, context);
     if (!agent) {
       logger.warn(`Agent not found: ${agentId}`);
-      return;
+      return false;
     }
 
     logger.log(
@@ -272,10 +273,10 @@ export async function bootstrapMcpServer() {
       }`
     );
 
-    // Step 2: If no allowed tools, skip registration
+    // Step 2: If no allowed tools, skip registration (do NOT cache — agent may get tools later)
     if (!agent.allowedToolIds || agent.allowedToolIds.length === 0) {
       logger.log(`⚠️  Agent has no allowed tools, skipping registration`);
-      return;
+      return false;
     }
 
     // Step 3: Convert string IDs to ObjectId for MongoDB query
@@ -450,6 +451,7 @@ export async function bootstrapMcpServer() {
     }
 
     logger.log(`✅ All tools registered for org: ${orgId}`);
+    return true;
   };
 
   // Step 2.2: Setup Express app with Streamable HTTP transport
@@ -558,8 +560,12 @@ export async function bootstrapMcpServer() {
 
       if (!registeredAgents.has(agentKey)) {
         try {
-          await registerToolsForAgent(userContext, bearerToken);
-          registeredAgents.add(agentKey);
+          const registered = await registerToolsForAgent(userContext, bearerToken);
+          if (registered) {
+            registeredAgents.add(agentKey);
+          } else {
+            logger.warn(`⚠️  Tool registration skipped for agent: ${agentKey} — will retry on next request`);
+          }
         } catch (error) {
           logger.error('Failed to register tools:', error);
           return res.status(500).json({
