@@ -95,16 +95,22 @@ Tất cả endpoints cần header `Authorization: Bearer <token>`.
 |-------|------|-------|
 | `page` | number | Trang (default: 1) |
 | `limit` | number | Số items/trang (default: 10) |
-| `sort` | string | Sắp xếp (vd: `-createdAt`, `name`) |
-| `filter[status]` | string | Lọc theo status |
-| `filter[tags]` | string | Lọc theo tag |
+| `search` | string | Tìm trong name, description, tags |
+| `filter` | JSON object | Lọc theo điều kiện (vd: `{"status":"active"}`) |
+
+**Ví dụ query:**
+```
+GET /projects?page=1&limit=10&search=product launch
+GET /projects?filter={"status":"active"}
+GET /projects?search=q1&filter={"status":"draft"}
+```
 
 **Output:**
 
 ```
 {
-  data: Project[],              // Không có trường `description` (giảm response size)
-  pagination: { page, limit, total, totalPages },
+  data: Project[],              // Không có trường `description`
+  pagination: { page, limit, total },
   statistics: {
     total: number,
     byStatus: { draft: N, active: N, on_hold: N, completed: N, archived: N }
@@ -291,4 +297,6 @@ Tất cả error trả về dạng:
 
 7. **Date format**: Tất cả date fields dùng ISO 8601: `YYYY-MM-DDTHH:mm:ss.sssZ`.
 
-8. **Full-text search**: Có thể tìm kiếm trên `name` và `description` qua text index (nếu backend hỗ trợ search query).
+8. **Search**: Dùng query param `?search=keyword` — tìm trong name, description, và tags cùng lúc. Case-insensitive.
+
+9. **Filter format**: Filter truyền dạng JSON object: `?filter={"status":"active"}`. Hỗ trợ lọc theo bất kỳ field nào của entity.

@@ -30,11 +30,44 @@ export class ProjectService extends BaseService<Project> {
    * Override findAll to handle statistics aggregation and optimize response
    * Aggregates by status only
    * Excludes 'description' field to reduce response size
+   * Supports search query for name, description, and tags
    */
   async findAll(
-    options: FindManyOptions,
+    options: FindManyOptions & { search?: string },
     context: RequestContext
   ): Promise<FindManyResult<Project>> {
+
+    // Handle search parameter - convert to MongoDB filter
+    const searchQuery = options.search || (options.filter as any)?.search;
+    if (searchQuery && typeof searchQuery === 'string') {
+      const searchRegex = new RegExp(searchQuery, 'i');
+
+      // Build search conditions
+      const searchConditions = [
+        { name: searchRegex },
+        { description: searchRegex },
+        { tags: searchQuery }, // Exact match for tags array
+      ];
+
+      // Get existing filter fields (excluding search)
+      const existingFilter: any = {};
+      if (options) {
+        Object.keys(options).forEach(key => {
+          if (key !== 'search') {
+            existingFilter[key] = (options as any)[key];
+          }
+        });
+      }
+
+      options = {
+        ...existingFilter,
+        $or: searchConditions,
+      };
+
+      // Clean up search parameter
+      delete options.search;
+    }
+
     const findResult = await super.findAll(options, context);
 
     // Exclude description field from results to reduce response size
@@ -45,10 +78,29 @@ export class ProjectService extends BaseService<Project> {
       return rest as Project;
     });
 
+    // Build base match filter for aggregation
+    const baseMatch: any = {
+      isDeleted: false,
+    };
+
+    if (context.orgId) {
+      baseMatch['owner.orgId'] = context.orgId;
+    }
+
+    // Merge with search filters if any
+    let matchFilter: any;
+    if (options.filter && Object.keys(options.filter).length > 0) {
+      matchFilter = {
+        $and: [baseMatch, options.filter]
+      };
+    } else {
+      matchFilter = baseMatch;
+    }
+
     // Aggregate statistics by status
     const statusStats = await super.aggregate(
       [
-        { $match: { ...options.filter } },
+        { $match: matchFilter },
         {
           $group: {
             _id: '$status',

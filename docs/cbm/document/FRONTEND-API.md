@@ -88,18 +88,22 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 |-------|------|-------|
 | `page` | number | Trang (default: 1) |
 | `limit` | number | Số items/trang (default: 10) |
-| `sort` | string | Sắp xếp (vd: `-createdAt`) |
 | `search` | string | Tìm trong summary, content, labels |
-| `filter[status]` | string | Lọc theo status |
-| `filter[type]` | string | Lọc theo type |
-| `filter[projectId]` | string | Lọc theo project |
+| `filter` | JSON object | Lọc theo điều kiện (vd: `{"status":"draft","type":"markdown"}`) |
+
+**Ví dụ query:**
+```
+GET /documents?page=1&limit=10&search=API integration
+GET /documents?filter={"status":"published","type":"markdown"}
+GET /documents?search=guide&filter={"projectId":"507f1f77bcf86cd799439011"}
+```
 
 **Output:**
 
 ```
 {
   data: Document[],              // Không có trường `content`
-  pagination: { page, limit, total, totalPages },
+  pagination: { page, limit, total },
   statistics: {
     total: number,
     byStatus: { draft: N, published: N, archived: N },
@@ -160,6 +164,7 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 | Trường | Kiểu | Mô tả |
 |--------|------|-------|
 | `summary` | string | Tiêu đề mới (min 1, max 500) |
+| `content` | string | Nội dung mới (min 1) |
 | `type` | enum | Type mới |
 | `labels` | string[] | Labels mới |
 | `status` | enum | Status mới |
@@ -167,7 +172,7 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 
 **Output:** Document object (đã cập nhật, không có `content`).
 
-> Dùng endpoint này cho metadata. Dùng 2.6 cho content operations.
+> Dùng endpoint này cho metadata và simple content update. Dùng 2.6 cho advanced content operations.
 
 ---
 
@@ -251,16 +256,18 @@ Tất cả error trả về dạng:
    - `json` → parse và hiển thị formatted JSON
    - `text` → hiển thị trong `<pre>` hoặc text area
 
-3. **Search**: Dùng query param `?search=keyword` — tìm trong summary, content, và labels cùng lúc.
+3. **Search**: Dùng query param `?search=keyword` — tìm trong summary, content, và labels cùng lúc. Case-insensitive.
 
-4. **Statistics**: Response từ GET `/documents` có sẵn `statistics` (byStatus, byType) — dùng cho dashboard/filter counts.
+4. **Filter format**: Filter truyền dạng JSON object: `?filter={"status":"published","type":"markdown"}`. Hỗ trợ lọc theo bất kỳ field nào của entity.
 
-5. **Labels**: Labels là mảng string tự do, dùng cho tagging và filtering. Frontend nên cung cấp autocomplete từ labels đã tồn tại.
+5. **Statistics**: Response từ GET `/documents` có sẵn `statistics` (byStatus, byType) — dùng cho dashboard/filter counts.
 
-6. **Content operations cho editor**: Nếu build rich editor, dùng `replace` operation cho simple save. Dùng `find-replace-*` và `append-*` operations cho AI agent hoặc collaborative editing.
+6. **Labels**: Labels là mảng string tự do, dùng cho tagging và filtering. Frontend nên cung cấp autocomplete từ labels đã tồn tại.
 
-7. **updatedBy có thể là agentId**: Trường `updatedBy` có thể chứa agent ID (nếu AI agent cập nhật document). Frontend cần xử lý cả hai trường hợp khi hiển thị "last edited by".
+7. **Content operations cho editor**: Nếu build rich editor, dùng `replace` operation cho simple save. Dùng `find-replace-*` và `append-*` operations cho AI agent hoặc collaborative editing.
 
-8. **projectId**: Optional — document có thể tồn tại độc lập hoặc thuộc project. Dùng `filter[projectId]` để lấy documents của một project cụ thể.
+8. **updatedBy có thể là agentId**: Trường `updatedBy` có thể chứa agent ID (nếu AI agent cập nhật document). Frontend cần xử lý cả hai trường hợp khi hiển thị "last edited by".
 
-9. **Form tạo document**: Không cần field `status` — hệ thống tự đặt `draft`.
+9. **projectId**: Optional — document có thể tồn tại độc lập hoặc thuộc project. Dùng `filter={"projectId":"..."}` để lấy documents của một project cụ thể.
+
+10. **Form tạo document**: Không cần field `status` — hệ thống tự đặt `draft`.

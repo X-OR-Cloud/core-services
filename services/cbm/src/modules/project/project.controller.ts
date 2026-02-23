@@ -13,7 +13,6 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
   CurrentUser,
-  PaginationQueryDto,
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
@@ -22,7 +21,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { ProjectService } from './project.service';
-import { CreateProjectDto, UpdateProjectDto } from './project.dto';
+import { CreateProjectDto, UpdateProjectDto, ProjectQueryDto } from './project.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -46,7 +45,7 @@ export class ProjectController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: ProjectQueryDto,
     @CurrentUser() context: RequestContext
   ) {
     return this.projectService.findAll(query, context);

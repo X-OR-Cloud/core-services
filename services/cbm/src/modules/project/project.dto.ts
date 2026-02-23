@@ -8,6 +8,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaginationQueryDto } from '@hydrabyte/base';
 
 /**
  * DTO for creating a new project
@@ -142,4 +143,18 @@ export class UpdateProjectDto {
   tags?: string[];
 
   // status changes only via action endpoints (activate, hold, resume, complete, archive)
+}
+
+/**
+ * DTO for querying projects with search support
+ * Extends PaginationQueryDto to include search functionality
+ */
+export class ProjectQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: 'Search text - searches in name, description, and tags',
+    example: 'product launch',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }
