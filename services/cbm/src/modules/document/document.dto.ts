@@ -50,24 +50,14 @@ export class CreateDocumentDto {
   labels!: string[];
 
   @ApiPropertyOptional({
-    description: 'Document status',
-    enum: ['draft', 'published', 'archived'],
-    example: 'draft',
-    default: 'draft',
+    description: 'Project ID to associate this document with',
+    example: '507f1f77bcf86cd799439011',
   })
   @IsOptional()
-  @IsEnum(['draft', 'published', 'archived'])
-  status?: string;
+  @IsString()
+  projectId?: string;
 
-  @ApiPropertyOptional({
-    description: 'Access scope',
-    enum: ['public', 'org', 'private'],
-    example: 'private',
-    default: 'private',
-  })
-  @IsOptional()
-  @IsEnum(['public', 'org', 'private'])
-  scope?: string;
+  // status is forced to 'draft' by DocumentService.create() — not settable by client
 }
 
 /**
@@ -124,13 +114,12 @@ export class UpdateDocumentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Access scope',
-    enum: ['public', 'org', 'private'],
-    example: 'org',
+    description: 'Project ID to associate this document with',
+    example: '507f1f77bcf86cd799439011',
   })
   @IsOptional()
-  @IsEnum(['public', 'org', 'private'])
-  scope?: string;
+  @IsString()
+  projectId?: string;
 }
 
 /**

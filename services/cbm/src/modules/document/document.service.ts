@@ -24,6 +24,14 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
+   * Override create to force status as 'draft'
+   */
+  async create(data: any, context: RequestContext): Promise<Partial<Document>> {
+    data.status = 'draft';
+    return super.create(data, context);
+  }
+
+  /**
    * Override findById to exclude content field and respect ownership
    */
   async findById(

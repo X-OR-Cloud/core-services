@@ -27,8 +27,8 @@ export class Document extends BaseSchema {
   @Prop({ enum: ['draft', 'published', 'archived'], default: 'draft' })
   status?: string; // Document status
 
-  @Prop({ enum: ['public', 'org', 'private'], default: 'private' })
-  scope?: string; // Access control
+  @Prop({ type: String })
+  projectId?: string; // Optional reference to Project
 
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
@@ -41,3 +41,4 @@ DocumentSchema.index({ type: 1, status: 1 });
 DocumentSchema.index({ labels: 1 });
 DocumentSchema.index({ summary: 'text', content: 'text' }); // Full-text search
 DocumentSchema.index({ createdAt: -1 }); // Sort by creation date
+DocumentSchema.index({ projectId: 1 }); // Filter by project
