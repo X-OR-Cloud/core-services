@@ -490,6 +490,16 @@ export class NodeService extends BaseService<Node> {
       ? secret.substring(0, 2) + '***' + secret.substring(secret.length - 2)
       : '****';
     const secretHash = createHash('sha256').update(secret).digest('hex').substring(0, 8);
+
+    // Debug: verify token immediately after signing to check if JwtModule uses same secret
+    try {
+      const { verify: jwtVerify } = require('jsonwebtoken');
+      jwtVerify(accessToken, secret);
+      this.logger.log('DEBUG: Token self-verify with process.env.JWT_SECRET: OK');
+    } catch (e: any) {
+      this.logger.error(`DEBUG: Token self-verify FAILED: ${e.message} - JwtModule uses DIFFERENT secret than process.env.JWT_SECRET!`);
+    }
+
     this.logger.log('Node login successful', {
       nodeId: (node as any)._id.toString(),
       name: node.name,
