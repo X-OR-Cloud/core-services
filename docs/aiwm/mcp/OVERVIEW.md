@@ -1,6 +1,7 @@
 # MCP Module - Technical Overview
 
 > Last updated: 2026-02-24
+> Fixes applied: P0-1 (MCP_PORT), P0-2 (tool filter), P0-4 (registeredAgents cache poisoning)
 
 ## 1. File Structure
 
@@ -45,7 +46,7 @@ services/aiwm/src/mcp/
 |--|--|--|
 | **Mode** | API mode (`nx run aiwm:api`) | MCP mode (`nx run aiwm:mcp`) |
 | **Transport** | JSON-RPC 2.0 over HTTP (`POST /mcp`) | Streamable HTTP (POST + SSE) via `@modelcontextprotocol/sdk` |
-| **Port** | 3003 (API port) | `MCP_PORT` env or `3355` |
+| **Port** | 3003 (API port) | `MCP_PORT` env (default `3355`) |
 | **Auth** | `JwtAuthGuard` (NestJS guard) | Manual JWT Bearer validation per request |
 | **Tool types served** | `api` only | `builtin`, `api`, `mcp` (stub), `custom` (stub) |
 | **CORS** | `localhost:6274` (hardcoded) | `*` (all origins) |
@@ -108,7 +109,7 @@ nx run aiwm:mcp
 
 1. Creates NestJS application context (DI only, no HTTP server) from `AppModule`
 2. Gets `JwtService`, `ToolService`, `AgentService`, `ConfigurationService` from DI
-3. Starts Express HTTP server on `MCP_PORT` (see bug note below)
+3. Starts Express HTTP server on `MCP_PORT` env (default `3355`)
 4. Each `POST /` request: validate JWT → register tools (once per agent) → create/reuse session transport
 
 ### Authentication
@@ -118,16 +119,19 @@ nx run aiwm:mcp
 
 ### Tool Registration (`registerToolsForAgent`)
 
+Returns `boolean`: `true` when tools were registered, `false` when skipped (agent not found or no `allowedToolIds`). The caller only adds to `registeredAgents` Set when return value is `true` — preventing cache poisoning when agent temporarily has no tools.
+
 Runs **once per agent** (keyed by `orgId:agentId` in in-memory `Set`). Flow:
 
 1. Fetch agent from DB using `agentService.findById(agentId, context)`
-2. If no `allowedToolIds` → skip
-3. Fetch all active tools → JS-filter to `allowedToolIds` match (see issue below)
+2. If `allowedToolIds` is empty → return `false` (do NOT cache — agent may get tools later)
+3. Convert `allowedToolIds` (string[]) → `Types.ObjectId[]`, query via `toolService.findAll({ filter: { _id: { $in: toolObjectIds }, status: 'active' } })`
 4. For each tool:
    - `builtin`: call `getBuiltInToolsByCategory(tool.name)` → register all sub-tools
    - `api`: convert `tool.schema.inputSchema` (JSON Schema) → Zod string fields → register
    - `mcp`: register stub returning "not yet implemented"
    - `custom`: register stub returning "not yet implemented"
+5. Return `true`
 
 ### Builtin Tool Execution
 

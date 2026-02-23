@@ -1,7 +1,7 @@
 # MCP Module - Roadmap
 
 > Last updated: 2026-02-24
-> Status: Planning — awaiting implementation
+> Status: P0-1, P0-2, P0-4 completed. P0-3, P1–P3 pending.
 
 ---
 
@@ -57,7 +57,21 @@ The `_id` filter is commented out, causing `findAll()` to return **all active to
 - [x] Convert `agent.allowedToolIds` (string[]) to `Types.ObjectId[]` before passing to `$in`
 - [x] Add `_id: { $in: toolObjectIds }` to MongoDB filter — `owner.orgId` and `isDeleted: false` are handled automatically by `BaseService.findAll()` via context
 
-#### P0-3: Fix HTTP MCP CORS Hardcoded to `localhost:6274`
+#### P0-3: Fix `registeredAgents` Cache Poisoning (no-tools case)
+
+`bootstrap-mcp.ts` — when `agent.allowedToolIds` was empty, `registerToolsForAgent` returned early but the outer code still added the agent key to `registeredAgents`. All subsequent connections from the same agent were blocked by the cache even after tools were added.
+
+**Root cause observed**: Agent `699c18c202a531ea9761bd03` was created before `allowedToolIds` were added. First MCP connection found 0 tools → poisoned cache. Second connection (after tools added) hit "Tools already registered" and never re-registered.
+
+**Fix**:
+- `registerToolsForAgent` now returns `boolean` (`true` = tools registered, `false` = skipped)
+- Caller (`POST /` handler) only calls `registeredAgents.add(agentKey)` when return value is `true`
+- Agents with 0 tools will retry on every request until tools are configured
+
+- [x] `bootstrap-mcp.ts`: `registerToolsForAgent` returns `false` when agent not found or no tools
+- [x] `bootstrap-mcp.ts`: Outer code guards `registeredAgents.add()` with `if (registered)`
+
+#### P0-4: Fix HTTP MCP CORS Hardcoded to `localhost:6274`
 
 `mcp.controller.ts`:
 ```typescript
@@ -67,7 +81,7 @@ res.setHeader('Access-Control-Allow-Origin', 'http://localhost:6274');
 
 This only works for MCP Inspector in local development. Production deployments and other MCP clients will fail CORS preflight.
 
-- [ ] Replace hardcoded origin with configurable `MCP_CORS_ORIGIN` env var
+- [ ] `mcp.controller.ts`: Replace hardcoded `localhost:6274` with configurable `MCP_CORS_ORIGIN` env var
 - [ ] Or: move CORS config to app-level middleware
 
 ### P1 — Important Improvements
@@ -117,18 +131,18 @@ This makes 3 DB queries (`configService.findByKey()` × 3) per tool call.
 
 #### P1-4: Reload Tools on Config Change (Standalone Server)
 
-`registeredAgents` Set prevents re-registration:
+`registeredAgents` Set prevents re-registration after initial success. P0-3 fixed the "no tools" cache poisoning case, but if an agent's `allowedToolIds` or a tool's config changes **after** initial registration, the standalone server will serve stale registrations until restart.
+
 ```typescript
+// Current state after P0-3 fix:
 if (!registeredAgents.has(agentKey)) {
-  await registerToolsForAgent(userContext, bearerToken);
-  registeredAgents.add(agentKey);
+  const registered = await registerToolsForAgent(userContext, bearerToken);
+  if (registered) registeredAgents.add(agentKey);
 }
 ```
 
-If an agent's `allowedToolIds` changes or a tool's config is updated, the standalone server will serve stale tool registrations until restart.
-
-- [ ] Add a TTL to `registeredAgents` entries (e.g., 10 minutes)
-- [ ] Or: expose admin endpoint to clear the registration cache for specific agents
+- [ ] Add a TTL to `registeredAgents` entries (e.g., 10 minutes) so config changes are picked up automatically
+- [ ] Or: expose admin endpoint `DELETE /mcp/agents/:agentId/cache` to manually clear registration for a specific agent
 
 #### P1-5: Expose HTTP MCP `tools/list` for `builtin` Type
 
