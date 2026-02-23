@@ -21,7 +21,7 @@ Single mode: API (REST).
 When working on a specific module, read the corresponding docs:
 
 - **Project module**: Read `docs/cbm/project/OVERVIEW.md` + `docs/cbm/project/ROADMAP.md` AND `docs/cbm/project/FRONTEND-API.md` (frontend integration)
-- **Work module**: Read `docs/cbm/work-api.md` + `docs/cbm/WORK-MANAGEMENT-IMPLEMENTATION-PLAN.md` AND `docs/cbm/work-frontend-guide.md`
+- **Work module**: Read `docs/cbm/work/OVERVIEW.md` + `docs/cbm/work/ROADMAP.md` AND `docs/cbm/work/FRONTEND-API.md` (frontend integration). Also `docs/cbm/NEXT-WORK-PRIORITY-LOGIC.md` (priority logic detail)
 - **Document module**: Read `docs/cbm/document/OVERVIEW.md` + `docs/cbm/document/ROADMAP.md` AND `docs/cbm/document/FRONTEND-API.md` (frontend integration)
 - **Content module**: Read `docs/cbm/CONTENT-MODULE-PLAN.md`
 
