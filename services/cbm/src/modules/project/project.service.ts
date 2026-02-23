@@ -19,6 +19,14 @@ export class ProjectService extends BaseService<Project> {
   }
 
   /**
+   * Override create to force status as 'draft'
+   */
+  async create(data: any, context: RequestContext): Promise<Partial<Project>> {
+    data.status = 'draft';
+    return super.create(data, context);
+  }
+
+  /**
    * Override findAll to handle statistics aggregation and optimize response
    * Aggregates by status only
    * Excludes 'description' field to reduce response size

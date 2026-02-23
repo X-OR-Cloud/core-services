@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
-  IsEnum,
   IsOptional,
   IsArray,
   IsDate,
@@ -56,14 +55,14 @@ export class CreateProjectDto {
   startDate?: Date;
 
   @ApiPropertyOptional({
-    description: 'Project due date',
+    description: 'Project end date',
     example: '2025-03-31T23:59:59.000Z',
     type: Date,
   })
   @IsOptional()
   @IsDate()
   @Type(() => Date)
-  dueDate?: Date;
+  endDate?: Date;
 
   @ApiPropertyOptional({
     description: 'Tags for categorization',
@@ -75,25 +74,7 @@ export class CreateProjectDto {
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiPropertyOptional({
-    description: 'Array of document IDs',
-    example: ['doc123', 'doc456'],
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  documents?: string[];
-
-  @ApiPropertyOptional({
-    description: 'Project status',
-    enum: ['draft', 'active', 'on_hold', 'completed', 'archived'],
-    example: 'draft',
-    default: 'draft',
-  })
-  @IsOptional()
-  @IsEnum(['draft', 'active', 'on_hold', 'completed', 'archived'])
-  status?: string;
+  // status is forced to 'draft' by ProjectService.create() — not settable by client
 }
 
 /**
@@ -142,13 +123,13 @@ export class UpdateProjectDto {
   startDate?: Date;
 
   @ApiPropertyOptional({
-    description: 'Project due date',
+    description: 'Project end date',
     type: Date,
   })
   @IsOptional()
   @IsDate()
   @Type(() => Date)
-  dueDate?: Date;
+  endDate?: Date;
 
   @ApiPropertyOptional({
     description: 'Tags for categorization',
@@ -160,22 +141,5 @@ export class UpdateProjectDto {
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiPropertyOptional({
-    description: 'Array of document IDs',
-    example: ['doc123', 'doc456', 'doc789'],
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  documents?: string[];
-
-  @ApiPropertyOptional({
-    description: 'Project status',
-    enum: ['draft', 'active', 'on_hold', 'completed', 'archived'],
-    example: 'active',
-  })
-  @IsOptional()
-  @IsEnum(['draft', 'active', 'on_hold', 'completed', 'archived'])
-  status?: string;
+  // status changes only via action endpoints (activate, hold, resume, complete, archive)
 }

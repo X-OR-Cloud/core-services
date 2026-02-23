@@ -24,13 +24,10 @@ export class Project extends BaseSchema {
   startDate?: Date; // Project start date
 
   @Prop({ type: Date })
-  dueDate?: Date; // Project due date
+  endDate?: Date; // Project end date
 
   @Prop({ type: [String], default: [] })
   tags!: string[]; // Tags for categorization
-
-  @Prop({ type: [String], default: [] })
-  documents!: string[]; // Array of document IDs
 
   @Prop({
     required: true,
