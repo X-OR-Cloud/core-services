@@ -11,6 +11,7 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
+import { createHash } from 'crypto';
 import { NodeService } from './node.service';
 import { NodeConnectionService } from './node-connection.service';
 import {
@@ -70,7 +71,8 @@ export class NodeGateway
     const masked = jwtSecret && jwtSecret.length > 4
       ? jwtSecret.substring(0, 2) + '***' + jwtSecret.substring(jwtSecret.length - 2)
       : '****';
-    this.logger.log(`WebSocket JWT_SECRET (from process.env): ${masked} (len=${jwtSecret?.length || 0})`);
+    const secretHash = createHash('sha256').update(jwtSecret).digest('hex').substring(0, 8);
+    this.logger.log(`WebSocket JWT_SECRET (from process.env): ${masked} (len=${jwtSecret?.length || 0}, sha256=${secretHash})`);
 
     server.use((socket, next) => {
       try {
