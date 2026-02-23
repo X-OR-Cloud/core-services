@@ -1,7 +1,7 @@
 # Agent Module - v1.0 Roadmap
 
-> Last updated: 2026-02-23
-> Status: P0 + P1 completed — P2 next
+> Last updated: 2026-02-24
+> Status: P0 + P1 + P1.5 completed — P2 next
 
 ## Decisions Made
 
@@ -119,6 +119,21 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 #### P1-3: CORS Cleanup ✅
 - [x] `ChatGateway` — already commented out (no change needed)
 - [x] `NodeGateway` — removed `cors: { origin: '*' }`, handled at Nginx proxy level
+
+### P1.5 — Multi-Instance WebSocket Fix ✅ COMPLETED
+
+#### P1.5-1: sendCommandToNode() Cross-Instance Routing ✅
+- [x] Node connect → join Socket.IO room `node:{nodeId}` for Redis adapter routing
+- [x] `sendCommandToNode()` dùng `server.in(room).fetchSockets()` check online cross-instance
+- [x] `sendCommandToNode()` dùng `server.to(room).emit()` thay vì direct `socket.emit()`
+- [x] `broadcastToAllNodes()` fix log (đã dùng `server.emit()` cross-instance sẵn)
+- [x] `isNodeOnline()`, `getOnlineNodes()`, `getOnlineCount()` chuyển sang async dùng `fetchSockets()`
+- [x] `NodeConnectionService` giữ nguyên cho local operations (heartbeat, stale detection)
+
+#### P1.5-2: Secret Not Exposed in API Response ✅
+- [x] `create()` explicit delete `secret` từ response trước khi return
+- [x] `updateAgent()` explicit delete `secret` từ response trước khi return
+- [x] Schema `select: false` đã đảm bảo GET endpoints không trả secret
 
 ### P2 — Planned (Needs Coordination)
 

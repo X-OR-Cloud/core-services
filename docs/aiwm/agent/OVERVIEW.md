@@ -1,6 +1,6 @@
 # Agent Module - Technical Overview
 
-> Last updated: 2026-02-23 (P0 completed)
+> Last updated: 2026-02-24 (P0 + P1 + P1.5 completed)
 
 ## 1. File Structure
 
@@ -115,27 +115,49 @@ AgentConnectResponseDto {
 ```
 User creates agent (type=managed, nodeId=xxx)
   → AgentService.create()
+    → Validate nodeId: exists in DB, status=online, heartbeat < 10min
     → Gen secret + bcrypt hash
     → Force status: inactive
-    → Save to DB
+    → Save to DB (secret removed from response)
     → Emit agent.created event (BullMQ)
     → NodeGateway.sendCommandToNode(nodeId, AGENT_START, { agentId, secret, framework, ... })
+      → Emit via Socket.IO room `node:{nodeId}` (cross-instance via Redis adapter)
       → Node receives command
       → Agent on node calls POST /agents/:id/connect with secret
       → Receives JWT + config
       → Agent status → idle (set by connect)
 ```
 
-## 8. Dependencies
+## 8. WebSocket Command Routing (Multi-Instance)
 
-- **NodeGateway**: Send agent lifecycle commands to nodes via WebSocket
+NodeGateway sử dụng **Socket.IO rooms + Redis adapter** để route commands cross-instance:
+
+- Node connect → join room `node:{nodeId}`
+- `sendCommandToNode()` → `server.to('node:{nodeId}').emit()` (Redis adapter broadcast)
+- Online check → `server.in('node:{nodeId}').fetchSockets()` (cross-instance query)
+
+Giải quyết vấn đề khi chạy nhiều WS instance phía sau load balancer: command từ instance A có thể reach node đang kết nối ở instance B.
+
+`NodeConnectionService` (in-memory Map) vẫn giữ cho local operations: heartbeat tracking, stale connection detection, duplicate handling.
+
+## 9. Security — Secret Handling
+
+- `secret` field có `select: false` trong schema → **không trả về** trong GET queries
+- `create()` và `updateAgent()` explicit delete `secret` từ response trước khi return
+- Chỉ `connect()` dùng `.select('+secret')` để verify — không bao giờ trả secret trong response
+- `regenerateCredentials()` trả plaintext secret **1 lần duy nhất** cho user copy
+
+## 10. Dependencies
+
+- **NodeGateway**: Send agent lifecycle commands to nodes via WebSocket (cross-instance via Redis adapter)
+- **NodeService**: Validate nodeId exists, status online, heartbeat within 10min
 - **DeploymentService**: Build endpoint info for LLM deployment
 - **ConfigurationService**: Read system configs (AIWM_BASE_MCP_URL, AIWM_BASE_API_URL, etc.)
 - **AgentProducer**: Emit BullMQ events (agent.created, agent.updated, agent.deleted)
 - **Instruction model**: Build instruction object for agent
 - **Tool model**: Get allowed tools whitelist
 
-## 9. Queue Events
+## 11. Queue Events
 
 Producer: `AgentProducer` → `agents.queue`
 - `agent.created` — full agent data
@@ -144,14 +166,14 @@ Producer: `AgentProducer` → `agents.queue`
 
 **Note**: No AgentProcessor exists yet. Events are produced but not consumed.
 
-## 10. Related Modules
+## 12. Related Modules
 
-- **Node module** (`src/modules/node/`): Node management + WebSocket gateway. Agent commands sent via `NodeGateway.sendCommandToNode()`.
-- **Chat module** (`src/modules/chat/`): Real-time chat. Agent auto-joins conversation on WS connect. Presence tracked in Redis.
+- **Node module** (`src/modules/node/`): Node management + WebSocket gateway. Agent commands sent via `NodeGateway.sendCommandToNode()` (cross-instance via Redis adapter + rooms).
+- **Chat module** (`src/modules/chat/`): Real-time chat. Agent auto-joins conversation on WS connect. Presence tracked in Redis. `RedisIoAdapter` defined here, applied globally.
 - **Tool module** (`src/modules/tool/`): Agent references tools via `allowedToolIds`. Tools fetched via `getAllowedTools()`.
 - **Instruction module** (`src/modules/instruction/`): Agent references instruction via `instructionId`. Built via `buildInstructionObjectForAgent()`.
 
-## 11. Existing Documentation
+## 13. Existing Documentation
 
 - `docs/aiwm/agents/README.md` — Client integration overview
 - `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md` — Full client integration guide
