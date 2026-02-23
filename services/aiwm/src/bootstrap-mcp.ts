@@ -313,8 +313,13 @@ export async function bootstrapMcpServer() {
 
         logger.log(`📦 Registering ${builtinTools.length} builtin tools from category: ${tool.name}`);
 
-        // Register each sub-tool
+        // Register each sub-tool (skip if already registered by another agent)
         for (const builtinTool of builtinTools) {
+          if (registeredToolNames.has(builtinTool.name)) {
+            logger.debug(`  ⏭️  Tool already registered, skipping: ${builtinTool.name}`);
+            continue;
+          }
+
           mcpServer.registerTool(
             builtinTool.name,
             {
@@ -370,6 +375,7 @@ export async function bootstrapMcpServer() {
             }
           );
 
+          registeredToolNames.add(builtinTool.name);
           logger.log(`  ✅ Registered: ${builtinTool.name}`);
         }
 
@@ -378,6 +384,12 @@ export async function bootstrapMcpServer() {
       }
 
       // Handle non-builtin tools (api, mcp, custom)
+      // Skip if already registered by another agent
+      if (registeredToolNames.has(tool.name)) {
+        logger.debug(`⏭️  Tool already registered, skipping: ${tool.name}`);
+        continue;
+      }
+
       const inputSchema = tool.schema?.inputSchema || {};
 
       // Convert JSON Schema to Zod schema (simplified)
@@ -447,6 +459,7 @@ export async function bootstrapMcpServer() {
         }
       );
 
+      registeredToolNames.add(tool.name);
       logger.log(`✅ Registered tool: ${tool.name} (${tool.type})`);
     }
 
@@ -494,6 +507,9 @@ export async function bootstrapMcpServer() {
 
   // Track which agents have registered tools (register once per agent)
   const registeredAgents = new Set<string>();
+
+  // Track which tool names have been registered on the singleton MCP server
+  const registeredToolNames = new Set<string>();
 
   // Track transports by session ID for session persistence
   const sessions = new Map<string, StreamableHTTPServerTransport>();
