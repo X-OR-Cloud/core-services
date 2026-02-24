@@ -1,6 +1,5 @@
-import { Matches, IsNotEmpty, IsObject, IsArray, IsEnum, IsOptional, IsString, ArrayNotEmpty, ValidateNested } from "class-validator";
+import { Matches, IsNotEmpty, IsObject, IsArray, IsEnum, IsOptional, IsString } from "class-validator";
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import { UsernameRegex, InvalidUsernameMessage, PasswordRegex, InvalidPasswordMessage, EmailRegex } from "../../core/const/iam.const";
 import { UserStatuses } from "../../core/enums/user.enum";
 import { UserMetadata } from "./user.schema";
@@ -33,13 +32,12 @@ export class CreateUserData {
   password = '';
 
   @ApiProperty({
-    description: 'User roles (scope.role format)',
-    example: ['universe.owner'],
-    type: [String],
+    description: 'User role (scope.role format)',
+    example: 'organization.owner',
   })
-  @IsArray()
+  @IsString()
   @IsNotEmpty()
-  roles: string[];
+  role: string;
 
   @ApiProperty({
     description: 'User status',

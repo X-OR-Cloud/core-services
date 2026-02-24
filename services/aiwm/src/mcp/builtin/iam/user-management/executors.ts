@@ -33,7 +33,7 @@ export async function executeListUsers(
     discordUserId?: string;
     telegramUserId?: string;
     status?: string;
-    roles?: string;
+    role?: string;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -66,8 +66,8 @@ export async function executeListUsers(
   if (args.status) {
     queryParams['filter[status]'] = args.status;
   }
-  if (args.roles) {
-    queryParams['filter[roles]'] = args.roles;
+  if (args.role) {
+    queryParams['filter[role]'] = args.role;
   }
 
   const queryString = buildQueryString(queryParams);

@@ -33,8 +33,8 @@ export class User extends BaseSchema {
     ref?: string;
   };
 
-  @Prop({required: true, type: Array})
-  roles: string[];
+  @Prop({ required: true })
+  role: string;
 
   @Prop({ type: String, enum: Object.values(UserStatuses), default: UserStatuses.Active })
   status: UserStatuses;

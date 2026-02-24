@@ -13,7 +13,7 @@ export const UserManagementTools: ToolDefinition[] = [
   {
     name: 'ListUsers',
     description:
-      'List users with pagination and filters (username, fullname, phonenumbers, discordUserId, telegramUserId, status, roles)',
+      'List users with pagination and filters (username, fullname, phonenumbers, discordUserId, telegramUserId, status, role)',
     type: 'builtin',
     category: 'UserManagement',
     executor: executeListUsers,

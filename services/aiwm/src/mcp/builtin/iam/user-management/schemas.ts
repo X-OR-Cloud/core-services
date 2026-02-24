@@ -7,8 +7,8 @@ import * as z from 'zod';
 // User status enum
 const UserStatusEnum = z.enum(['active', 'inactive', 'blocked']);
 
-// User roles enum
-const UserRolesEnum = z.enum([
+// User role enum
+const UserRoleEnum = z.enum([
   'organization.owner',
   'organization.editor',
   'organization.viewer',
@@ -54,5 +54,5 @@ export const ListUsersSchema = z.object({
     .optional()
     .describe('Optional: Filter by Telegram user ID (metadata.telegramUserId)'),
   status: UserStatusEnum.optional().describe('Optional: Filter by status (active, inactive, blocked)'),
-  roles: UserRolesEnum.optional().describe('Optional: Filter by role (organization.owner, organization.editor, organization.viewer)'),
+  role: UserRoleEnum.optional().describe('Optional: Filter by role (organization.owner, organization.editor, organization.viewer)'),
 });

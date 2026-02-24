@@ -17,6 +17,19 @@ export class UsersService extends BaseService<User> {
     super(userModel);
   }
 
+  /**
+   * Check if caller (organization-level) is trying to act on a universe-level user.
+   * Throws ForbiddenException if so.
+   */
+  private assertNotEscalatingPrivilege(callerRoles: string[], targetRole: string): void {
+    const callerIsOrgLevel = callerRoles?.some(r => r.startsWith('organization.'));
+    const targetIsUniverseLevel = targetRole?.startsWith('universe.');
+
+    if (callerIsOrgLevel && !callerRoles?.some(r => r.startsWith('universe.')) && targetIsUniverseLevel) {
+      throw new ForbiddenException('Organization-level users cannot modify universe-level users');
+    }
+  }
+
    /**
    * Override findAll to handle statistics aggregation
    */
@@ -82,12 +95,31 @@ export class UsersService extends BaseService<User> {
       agentId: '',
       appId: '',
     };
-    user.roles = data.roles || [];
+    user.role = data.role;
     return await super.create(user, context);
   }
 
   /**
-   * Override softDelete to prevent self-deletion and protect last org owner
+   * Override update to prevent org-level users from modifying universe-level users
+   */
+  async update(
+    id: ObjectId,
+    data: Partial<User>,
+    context: RequestContext
+  ): Promise<User | null> {
+    const targetUser = await this.model.findById(id).exec();
+    if (!targetUser) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    this.assertNotEscalatingPrivilege(context.roles, targetUser.role);
+
+    return super.update(id, data, context);
+  }
+
+  /**
+   * Override softDelete to prevent self-deletion, protect last org owner,
+   * and prevent org-level users from deleting universe-level users
    */
   async softDelete(
     id: ObjectId,
@@ -106,13 +138,19 @@ export class UsersService extends BaseService<User> {
       throw new ForbiddenException('Self-deletion is not allowed for security reasons');
     }
 
-    // Find the target user to check if they are an organization owner
+    // Find the target user
     const targetUser = await this.model.findById(id).exec();
-    if (targetUser && targetUser.roles?.includes('organization.owner')) {
+
+    if (targetUser) {
+      // Prevent org-level from acting on universe-level
+      this.assertNotEscalatingPrivilege(context.roles, targetUser.role);
+    }
+
+    if (targetUser && targetUser.role === 'organization.owner') {
       // Count how many organization owners exist in this org
       const orgOwnerCount = await this.model.countDocuments({
         'owner.orgId': context.orgId,
-        roles: 'organization.owner',
+        role: 'organization.owner',
         isDeleted: false,
       }).exec();
 
@@ -155,6 +193,9 @@ export class UsersService extends BaseService<User> {
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
+
+    // Prevent org-level from acting on universe-level
+    this.assertNotEscalatingPrivilege(context.roles, user.role);
 
     // Check if target user belongs to the same organization
     if (user.owner.orgId !== context.orgId) {
