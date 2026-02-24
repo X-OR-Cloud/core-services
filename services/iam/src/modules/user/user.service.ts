@@ -9,7 +9,7 @@ import {
   encodeBase64,
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
-import { CreateUserData, ChangePasswordDto } from './user.dto';
+import { CreateUserData, ChangePasswordDto, ChangeRoleDto } from './user.dto';
 @Injectable()
 export class UsersService extends BaseService<User> {
 
@@ -168,6 +168,46 @@ export class UsersService extends BaseService<User> {
 
     // Call parent softDelete method
     return super.softDelete(id, context);
+  }
+
+  /**
+   * Change role for a specific user
+   * Only organization.owner or universe.owner can change roles
+   * organization.owner can only change organization-level users in their org
+   */
+  async changeRole(
+    userId: ObjectId,
+    changeRoleDto: ChangeRoleDto,
+    context: RequestContext
+  ): Promise<User> {
+    // Check caller is organization.owner or universe.owner
+    const hasOwnerRole = context.roles?.some(role =>
+      role === 'organization.owner' || role === 'universe.owner'
+    );
+    if (!hasOwnerRole) {
+      throw new ForbiddenException('Only organization owner can change user roles');
+    }
+
+    const user = await this.model.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Prevent org-level from acting on universe-level
+    this.assertNotEscalatingPrivilege(context.roles, user.role);
+
+    // Check same organization
+    if (user.owner.orgId !== context.orgId) {
+      throw new ForbiddenException('You can only change roles for users in your organization');
+    }
+
+    // Prevent changing own role
+    if (userId.toString() === context.userId) {
+      throw new ForbiddenException('You cannot change your own role');
+    }
+
+    user.role = changeRoleDto.role;
+    return user.save();
   }
 
   /**

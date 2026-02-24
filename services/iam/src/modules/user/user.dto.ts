@@ -155,6 +155,19 @@ export class UpdateUserData {
   metadata?: UserMetadata;
 }
 
+export class ChangeRoleDto {
+  @ApiProperty({
+    description: 'New role (organization-level only: organization.owner, organization.editor, organization.viewer)',
+    example: 'organization.editor',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^organization\.(owner|editor|viewer)$/, {
+    message: 'Role must be one of: organization.owner, organization.editor, organization.viewer',
+  })
+  role: string;
+}
+
 export class ChangePasswordDto {
   @ApiProperty({
     description: 'New password (8-15 chars, uppercase, lowercase, number, special char)',

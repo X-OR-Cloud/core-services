@@ -7,7 +7,7 @@
 ```
 services/iam/src/modules/user/
 ├── user.schema.ts      # MongoDB schema (extends BaseSchema)
-├── user.dto.ts         # DTOs: CreateUserData, UpdateUserData, ChangePasswordDto
+├── user.dto.ts         # DTOs: CreateUserData, UpdateUserData, ChangeRoleDto, ChangePasswordDto
 ├── user.service.ts     # Business logic (extends BaseService)
 ├── user.controller.ts  # REST API endpoints
 └── user.module.ts      # NestJS module (standalone, no external imports)
@@ -53,6 +53,7 @@ User extends BaseSchema:
 | GET | `/users/:id` | JWT | Get single user |
 | PUT | `/users/:id` | JWT | Update user (status, fullname, phonenumbers, address, metadata) |
 | DELETE | `/users/:id` | JWT | Soft delete user (with safety checks) |
+| PATCH | `/users/:id/change-role` | JWT | Change role (org.owner only, org-level targets only) |
 | PATCH | `/users/:id/change-password` | JWT | Change password (org.owner only) |
 
 ## 5. DTOs
@@ -79,6 +80,13 @@ metadata?: UserMetadata
 ```
 
 > **Lưu ý**: Update **không** cho phép thay đổi `username`, `password`, hoặc `role`.
+
+### ChangeRoleDto
+```
+role: string (required, regex: ^organization\.(owner|editor|viewer)$)
+```
+
+> Chỉ cho phép gán role organization-level. Không thể gán role `universe.*` qua endpoint này.
 
 ### ChangePasswordDto
 ```
@@ -117,7 +125,7 @@ User.create()
 
 ### Privilege Escalation Guard
 
-Helper `assertNotEscalatingPrivilege()` áp dụng cho update, softDelete, changePassword:
+Helper `assertNotEscalatingPrivilege()` áp dụng cho update, softDelete, changeRole, changePassword:
 
 > Caller có role `organization.*` (và **không** có `universe.*`) → không được tác động user có role `universe.*`.
 
@@ -148,6 +156,22 @@ softDelete(id, context)
     → Count org owners in same org (owner.orgId, role: 'organization.owner', isDeleted: false)
     → If count <= 1 → block deletion
   → super.softDelete()
+```
+
+### Change Role (changeRole)
+
+Chỉ `organization.owner` hoặc `universe.owner` có thể đổi role cho user khác:
+
+```
+changeRole(userId, dto, context)
+  → Check: context.roles includes 'organization.owner' or 'universe.owner'
+  → Find target user by ID
+  → assertNotEscalatingPrivilege(context.roles, target.role)
+  → Check: target user.owner.orgId === context.orgId (same org)
+  → Check: userId !== context.userId (cannot change own role)
+  → DTO validates: role must match organization.(owner|editor|viewer)
+  → Update user.role
+  → Save
 ```
 
 ### Change Password (changePassword)

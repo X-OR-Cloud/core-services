@@ -32,7 +32,7 @@ import { RequestContext, LicenseType } from '@hydrabyte/shared';
 import { Types, ObjectId } from 'mongoose';
 import { UsersService } from './user.service';
 import { User } from './user.schema';
-import { CreateUserData, UpdateUserData, ChangePasswordDto } from './user.dto';
+import { CreateUserData, UpdateUserData, ChangeRoleDto, ChangePasswordDto } from './user.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('JWT-auth')
@@ -109,6 +109,29 @@ export class UsersController {
   ) {
     await this.userService.softDelete(new Types.ObjectId(id) as unknown as ObjectId, context);
     return { message: 'User deleted successfully' };
+  }
+
+  @Patch(':id/change-role')
+  @ApiOperation({
+    summary: 'Change user role',
+    description: 'Change role for a specific user. Only organization.owner can change organization-level users in their org.'
+  })
+  @ApiResponse({ status: 200, description: 'Role changed successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient permissions' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async changeRole(
+    @Param('id') id: string,
+    @Body() changeRoleDto: ChangeRoleDto,
+    @CurrentUser() context: RequestContext
+  ): Promise<{ message: string }> {
+    await this.userService.changeRole(
+      new Types.ObjectId(id) as unknown as ObjectId,
+      changeRoleDto,
+      context
+    );
+    return { message: 'Role changed successfully' };
   }
 
   @Patch(':id/change-password')

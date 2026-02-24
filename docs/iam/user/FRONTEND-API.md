@@ -191,7 +191,33 @@ GET /users?filter[status]=active&filter[role]=organization.owner
 
 ---
 
-### 2.6 Đổi mật khẩu user
+### 2.6 Đổi role user
+
+| | |
+|---|---|
+| **Method** | `PATCH` |
+| **Path** | `/users/:id/change-role` |
+| **Auth** | User JWT (`organization.owner` hoặc `universe.owner`) |
+
+**Input (body):**
+
+| Trường | Kiểu | Bắt buộc | Mô tả |
+|--------|------|----------|-------|
+| `role` | string | ✅ | Role mới (chỉ `organization.owner`, `organization.editor`, `organization.viewer`) |
+
+> Chỉ có thể gán role organization-level. Không thể gán `universe.*`.
+
+**Output:** `{ "message": "Role changed successfully" }`
+
+**Error 403:**
+- Caller không phải `organization.owner` hoặc `universe.owner`
+- Caller là `organization.*`, target là `universe.*`
+- Target user không cùng organization
+- User tự đổi role cho chính mình
+
+---
+
+### 2.7 Đổi mật khẩu user
 
 | | |
 |---|---|
@@ -241,7 +267,7 @@ Tất cả error trả về dạng:
 
 ## 4. Ghi chú cho Frontend
 
-1. **Role là bất biến**: Gán `role` khi tạo user, không thể thay đổi sau đó. Form update không cần field `role`.
+1. **Role thay đổi qua endpoint riêng**: Không gửi `role` trong form update. Dùng `PATCH /users/:id/change-role` với dropdown chọn role mới. Chỉ hiển thị nút đổi role khi caller là `organization.owner` hoặc `universe.owner`.
 
 2. **Password policy**: 8-15 ký tự, bắt buộc chữ hoa + chữ thường + số + ký tự đặc biệt (`@ . # $ ! % * ? & _ -`). Hiển thị validation realtime trên form.
 
@@ -255,6 +281,6 @@ Tất cả error trả về dạng:
 
 6. **Metadata social accounts**: Hiển thị icon Discord/Telegram nếu `metadata.discordUsername` hoặc `metadata.telegramUsername` có giá trị.
 
-7. **Phân quyền hiển thị nút**: Ẩn nút Edit/Delete/Change Password nếu target user có role `universe.*` và caller chỉ có role `organization.*`.
+7. **Phân quyền hiển thị nút**: Ẩn nút Edit/Delete/Change Role/Change Password nếu target user có role `universe.*` và caller chỉ có role `organization.*`.
 
 8. **License gate**: Nút "Tạo user" chỉ hiển thị khi org có license IAM `type: full`. Kiểm tra từ JWT payload `licenses.iam`.
