@@ -91,6 +91,22 @@ export class AgentController {
     return { message: 'Agent deleted successfully' };
   }
 
+  @Get(':id/instruction')
+  @ApiOperation({
+    summary: 'Get agent instruction (latest, with context injection)',
+    description: 'Returns the resolved instruction for the agent, including injected @project and @document context. Use this to refresh instruction without reconnecting. Accepts both agent JWT and user JWT.'
+  })
+  @ApiResponse({ status: 200, description: 'Instruction retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async getInstruction(
+    @Param('id') id: string,
+    @Req() req: any,
+  ) {
+    const token = req.headers?.authorization?.replace('Bearer ', '') || '';
+    return this.agentService.getAgentInstruction(id, token);
+  }
+
   @Get(':id/config')
   @ApiOperation({
     summary: 'Get agent configuration (for autonomous agents)',

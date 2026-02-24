@@ -1,6 +1,6 @@
 # Agent Module - Technical Overview
 
-> Last updated: 2026-02-24 (P0 + P1 + P1.5 completed)
+> Last updated: 2026-02-24 (P0 + P1 + P1.5 + P2 completed)
 
 ## 1. File Structure
 
@@ -91,6 +91,7 @@ Agent extends BaseSchema:
 | PUT | `/agents/:id` | User JWT | Update agent. Managed → send `agent.update` via WS to node |
 | DELETE | `/agents/:id` | User JWT | Soft delete. Managed → send `agent.delete` via WS to node |
 | GET | `/agents/:id/config` | User JWT | Config for autonomous agent (deployment, mcpServers, instruction) |
+| GET | `/agents/:id/instruction` | Agent/User JWT | Get latest instruction with resolved `@project`/`@document` context |
 | POST | `/agents/:id/connect` | Public (secret) | Auth for both types → returns JWT + config + tools, sets status=idle |
 | POST | `/agents/:id/heartbeat` | Agent/User JWT | Heartbeat - update status (idle/busy) + lastHeartbeatAt. Rejects if suspended |
 | POST | `/agents/:id/disconnect` | Agent/User JWT | Disconnect - set status=inactive |
@@ -147,17 +148,51 @@ Giải quyết vấn đề khi chạy nhiều WS instance phía sau load balance
 - Chỉ `connect()` dùng `.select('+secret')` để verify — không bao giờ trả secret trong response
 - `regenerateCredentials()` trả plaintext secret **1 lần duy nhất** cho user copy
 
-## 10. Dependencies
+## 10. Context Injection (`@project` & `@document`)
+
+Instruction `systemPrompt` hỗ trợ reference pattern `@project:<id>` và `@document:<id>`. Khi build instruction (connect, getConfig, getInstruction), hệ thống:
+
+1. Regex scan: `/@(project|document):([a-f0-9]{24})/g`
+2. HTTP GET to CBM service: `/projects/:id` hoặc `/documents/:id`
+3. Append resolved context block cuối systemPrompt
+
+**Injected format:**
+```
+{systemPrompt gốc}
+
+---
+## Injected Context (auto-resolved)
+
+### Project: {name}
+- **Status**: {status}
+- **Timeline**: {startDate} → {endDate}
+- **Description**: {description}
+- **Tags**: {tags}
+
+### Document: {summary}
+- **Type**: {type}
+- **Status**: {status}
+- **Labels**: {labels}
+- **Content**: {content (truncate 2000 chars)}
+---
+```
+
+**Cross-service access**: HTTP API calls via `HttpService` + `firstValueFrom` with agent/user access token. CBM base URL from `CBM_BASE_API_URL` config.
+
+**Instruction status check**: Nếu `instruction.status !== 'active'` → log warning + trả fallback instruction (empty systemPrompt + guidelines).
+
+## 11. Dependencies
 
 - **NodeGateway**: Send agent lifecycle commands to nodes via WebSocket (cross-instance via Redis adapter)
 - **NodeService**: Validate nodeId exists, status online, heartbeat within 10min
 - **DeploymentService**: Build endpoint info for LLM deployment
 - **ConfigurationService**: Read system configs (AIWM_BASE_MCP_URL, AIWM_BASE_API_URL, etc.)
+- **HttpService**: HTTP calls to CBM service for context injection (`@project`, `@document`)
 - **AgentProducer**: Emit BullMQ events (agent.created, agent.updated, agent.deleted)
 - **Instruction model**: Build instruction object for agent
 - **Tool model**: Get allowed tools whitelist
 
-## 11. Queue Events
+## 12. Queue Events
 
 Producer: `AgentProducer` → `agents.queue`
 - `agent.created` — full agent data
@@ -166,14 +201,14 @@ Producer: `AgentProducer` → `agents.queue`
 
 **Note**: No AgentProcessor exists yet. Events are produced but not consumed.
 
-## 12. Related Modules
+## 13. Related Modules
 
 - **Node module** (`src/modules/node/`): Node management + WebSocket gateway. Agent commands sent via `NodeGateway.sendCommandToNode()` (cross-instance via Redis adapter + rooms).
 - **Chat module** (`src/modules/chat/`): Real-time chat. Agent auto-joins conversation on WS connect. Presence tracked in Redis. `RedisIoAdapter` defined here, applied globally.
 - **Tool module** (`src/modules/tool/`): Agent references tools via `allowedToolIds`. Tools fetched via `getAllowedTools()`.
 - **Instruction module** (`src/modules/instruction/`): Agent references instruction via `instructionId`. Built via `buildInstructionObjectForAgent()`.
 
-## 13. Existing Documentation
+## 14. Existing Documentation
 
 - `docs/aiwm/agents/README.md` — Client integration overview
 - `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md` — Full client integration guide

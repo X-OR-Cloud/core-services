@@ -1,7 +1,7 @@
 # Agent Module - v1.0 Roadmap
 
 > Last updated: 2026-02-24
-> Status: P0 + P1 + P1.5 completed — P2 next
+> Status: P0 + P1 + P1.5 + P2 completed — P3 next
 
 ## Decisions Made
 
@@ -135,61 +135,41 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] `updateAgent()` explicit delete `secret` từ response trước khi return
 - [x] Schema `select: false` đã đảm bảo GET endpoints không trả secret
 
-### P2 — Context Injection (Next)
+### P2 — Context Injection ✅ COMPLETED
 
-#### P2-1: Instruction Context Injection — `@project` & `@document`
+#### P2-1: Instruction Context Injection — `@project` & `@document` ✅
 
-**Concept**: Scan `systemPrompt` cho pattern `@project:<id>` và `@document:<id>`, resolve từ DB, append context block cuối systemPrompt. Instruction gốc giữ nguyên trong DB.
+**Concept**: Scan `systemPrompt` cho pattern `@project:<id>` và `@document:<id>`, resolve via HTTP API to CBM service, append context block cuối systemPrompt. Instruction gốc giữ nguyên trong DB.
 
 **Strategy**: Append cuối systemPrompt (không inline replace)
 
 **Supported references:**
-- `@project:<id>` → query CBM Project (cross-service via MongoDB direct)
-- `@document:<id>` → query CBM Document (cross-service via MongoDB direct)
+- `@project:<id>` → HTTP GET `/projects/:id` from CBM service
+- `@document:<id>` → HTTP GET `/documents/:id` from CBM service
 
-**Implementation steps:**
-- [ ] Thêm method `resolveContextReferences(systemPrompt)` trong `AgentService`
-- [ ] Regex scan: `/@(project|document):([a-f0-9]{24})/g`
-- [ ] Query Project từ CBM DB: inject `name`, `description`, `status`, `startDate`, `endDate`, `tags`
-- [ ] Query Document từ CBM DB: inject `summary`, `content` (truncate nếu quá dài), `type`, `status`, `labels`
-- [ ] Append block `--- Injected Context (auto-resolved) ---` cuối systemPrompt
-- [ ] Gọi `resolveContextReferences()` trong `buildInstructionObjectForAgent()` trước khi return
-- [ ] Log warning nếu reference không tìm thấy (không throw error)
-- [ ] Build + test
+**Implementation:**
+- [x] Thêm method `resolveContextReferences(systemPrompt, accessToken, orgId)` trong `AgentService`
+- [x] Regex scan: `/@(project|document):([a-f0-9]{24})/g`
+- [x] HTTP GET to CBM service using `HttpService` + `firstValueFrom` with agent's access token
+- [x] Query Project từ CBM: inject `name`, `description`, `status`, `startDate`, `endDate`, `tags`
+- [x] Query Document từ CBM: inject `summary`, `content` (truncate 2000 chars), `type`, `status`, `labels`
+- [x] Append block `--- Injected Context (auto-resolved) ---` cuối systemPrompt
+- [x] Gọi `resolveContextReferences()` trong `buildInstructionObjectForAgent()` trước khi return
+- [x] Log warning nếu reference không tìm thấy (không throw error)
+- [x] `HttpModule` added to `AgentModule` imports
+- [x] Build thành công
 
-**Injected format:**
-```
-{systemPrompt gốc}
+**Cross-service access**: HTTP API calls to CBM service (via `CBM_BASE_API_URL` config), sử dụng access token của agent/user khi gọi API. Pattern: `HttpService` + `firstValueFrom` + `Bearer ${accessToken}`.
 
----
-## Injected Context (auto-resolved)
+#### P2-2: Instruction Status Check ✅
+- [x] `buildInstructionObjectForAgent()` thêm check `instruction.status === 'active'`
+- [x] Nếu `inactive` → log warning + trả fallback instruction
 
-### Project: {name}
-- **ID**: {id}
-- **Status**: {status}
-- **Timeline**: {startDate} → {endDate}
-- **Description**: {description}
-- **Tags**: {tags.join(', ')}
-
-### Document: {summary}
-- **ID**: {id}
-- **Type**: {type}
-- **Status**: {status}
-- **Labels**: {labels.join(', ')}
-- **Content**:
-{content}
----
-```
-
-**Data sources (CBM service schemas):**
-- Project: `name`, `description`, `status` (draft/active/on_hold/completed/archived), `startDate`, `endDate`, `tags`, `members`
-- Document: `summary`, `content`, `type` (html/text/markdown/json), `status` (draft/published/archived), `labels`, `projectId`
-
-**Cross-service access**: AIWM và CBM dùng chung MongoDB instance → query trực tiếp collection qua `this.agentModel.db.collection('projects')` (pattern đã dùng trong `getAgentConfig()` cho deployments/models)
-
-#### P2-2: Instruction Status Check
-- [ ] `buildInstructionObjectForAgent()` thêm check `instruction.status === 'active'`
-- [ ] Nếu `inactive` → log warning + trả fallback instruction
+#### P2-3: GET /agents/:id/instruction Endpoint ✅
+- [x] New endpoint `GET /agents/:id/instruction` for on-demand instruction refresh
+- [x] Uses agent/user access token for context injection resolution
+- [x] Returns `{ id, systemPrompt, guidelines[] }` with resolved `@project`/`@document` references
+- [x] Ensures agents always get latest instruction without needing to reconnect
 
 ### P3 — Planned (Needs Coordination)
 

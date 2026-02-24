@@ -250,6 +250,25 @@ export class AgentService extends BaseService<Agent> {
   }
 
   /**
+   * Get latest instruction for agent (with context injection)
+   * Used by agent to refresh instruction without reconnecting
+   */
+  async getAgentInstruction(
+    agentId: string,
+    accessToken: string,
+  ): Promise<{ id: string; systemPrompt: string; guidelines: string[] }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    return this.buildInstructionObjectForAgent(agent, accessToken);
+  }
+
+  /**
    * Get agent configuration for autonomous agents
    * Requires user authentication, returns config without issuing new JWT
    */
