@@ -1,6 +1,8 @@
 import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -42,6 +44,7 @@ export class AgentService extends BaseService<Agent> {
     private readonly deploymentService: DeploymentService,
     private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
+    private readonly httpService: HttpService,
   ) {
     super(agentModel as any);
   }
@@ -252,7 +255,8 @@ export class AgentService extends BaseService<Agent> {
    */
   async getAgentConfig(
     agentId: string,
-    context: RequestContext
+    context: RequestContext,
+    accessToken?: string,
   ): Promise<AgentConnectResponseDto> {
     // Find agent
     const agent = await this.agentModel
@@ -268,8 +272,8 @@ export class AgentService extends BaseService<Agent> {
       throw new UnauthorizedException('Not authorized to access this agent');
     }
 
-    // Build instruction object (new format)
-    const instruction = await this.buildInstructionObjectForAgent(agent);
+    // Build instruction object (with context injection using user token)
+    const instruction = await this.buildInstructionObjectForAgent(agent, accessToken);
 
     // Get allowed tools
     const tools = await this.getAllowedTools(agent);
@@ -420,8 +424,8 @@ export class AgentService extends BaseService<Agent> {
     // Calculate expiresIn seconds (24 hours)
     const expiresInSeconds = 24 * 60 * 60;
 
-    // Build instruction object (new format)
-    const instruction = await this.buildInstructionObjectForAgent(agent);
+    // Build instruction object (with context injection using agent token)
+    const instruction = await this.buildInstructionObjectForAgent(agent, token);
 
     // Get allowed tools
     const tools = await this.getAllowedTools(agent);
@@ -524,7 +528,10 @@ export class AgentService extends BaseService<Agent> {
    * Build instruction object for agent (new format)
    * Returns structured instruction with id, systemPrompt, and guidelines
    */
-  private async buildInstructionObjectForAgent(agent: Agent): Promise<{
+  private async buildInstructionObjectForAgent(
+    agent: Agent,
+    accessToken?: string,
+  ): Promise<{
     id: string;
     systemPrompt: string;
     guidelines: string[];
@@ -553,11 +560,127 @@ export class AgentService extends BaseService<Agent> {
       };
     }
 
+    // Check instruction status
+    if (instruction.status !== 'active') {
+      this.logger.warn('Instruction is inactive for agent', {
+        agentId: (agent as any)._id,
+        instructionId: agent.instructionId,
+        instructionStatus: instruction.status,
+      });
+      return {
+        id: (instruction as any)._id.toString(),
+        systemPrompt: 'Instruction is currently inactive.',
+        guidelines: []
+      };
+    }
+
+    // Resolve @project:<id> and @document:<id> references if token available
+    let resolvedPrompt = instruction.systemPrompt;
+    if (accessToken) {
+      resolvedPrompt = await this.resolveContextReferences(
+        instruction.systemPrompt,
+        accessToken,
+        agent.owner.orgId,
+      );
+    }
+
     return {
       id: (instruction as any)._id.toString(),
-      systemPrompt: instruction.systemPrompt,
+      systemPrompt: resolvedPrompt,
       guidelines: instruction.guidelines || []
     };
+  }
+
+  /**
+   * Resolve @project:<id> and @document:<id> references in systemPrompt
+   * Fetches data from CBM service via HTTP API and appends context block
+   */
+  private async resolveContextReferences(
+    systemPrompt: string,
+    accessToken: string,
+    orgId: string,
+  ): Promise<string> {
+    // Scan for @project:<id> and @document:<id> patterns
+    const refPattern = /@(project|document):([a-f0-9]{24})/g;
+    const matches = [...systemPrompt.matchAll(refPattern)];
+
+    if (matches.length === 0) {
+      return systemPrompt;
+    }
+
+    // Get CBM base URL from configuration
+    let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
+    try {
+      const cbmConfig = await this.configurationService.findByKey(
+        ConfigKey.CBM_BASE_API_URL as any,
+        { orgId } as RequestContext,
+      );
+      if (cbmConfig?.value) {
+        cbmBaseUrl = cbmConfig.value;
+      }
+    } catch {
+      // Fallback to default
+    }
+
+    const contextBlocks: string[] = [];
+
+    for (const match of matches) {
+      const [, refType, refId] = match;
+      try {
+        const response = await firstValueFrom(
+          this.httpService.get(`${cbmBaseUrl}/${refType}s/${refId}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        );
+        const data = (response as any).data;
+
+        if (refType === 'project') {
+          const startDate = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : 'N/A';
+          const endDate = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : 'N/A';
+          contextBlocks.push(
+            `### Project: ${data.name}\n` +
+            `- **ID**: ${refId}\n` +
+            `- **Status**: ${data.status || 'N/A'}\n` +
+            `- **Timeline**: ${startDate} → ${endDate}\n` +
+            `- **Description**: ${data.description || 'N/A'}\n` +
+            `- **Tags**: ${(data.tags || []).join(', ') || 'N/A'}`,
+          );
+        } else if (refType === 'document') {
+          const content = data.content?.length > 2000
+            ? data.content.substring(0, 2000) + '\n...(truncated)'
+            : data.content || '';
+          contextBlocks.push(
+            `### Document: ${data.summary}\n` +
+            `- **ID**: ${refId}\n` +
+            `- **Type**: ${data.type || 'N/A'}\n` +
+            `- **Status**: ${data.status || 'N/A'}\n` +
+            `- **Labels**: ${(data.labels || []).join(', ') || 'N/A'}\n` +
+            `- **Content**:\n${content}`,
+          );
+        }
+
+        this.logger.debug(`Resolved @${refType}:${refId} successfully`);
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to resolve @${refType}:${refId}: ${error.message}`,
+        );
+        contextBlocks.push(
+          `### ${refType === 'project' ? 'Project' : 'Document'}: ${refId}\n` +
+          `- **Error**: Could not resolve reference (${error.response?.status || error.message})`,
+        );
+      }
+    }
+
+    if (contextBlocks.length === 0) {
+      return systemPrompt;
+    }
+
+    return (
+      systemPrompt +
+      '\n\n---\n## Injected Context (auto-resolved)\n\n' +
+      contextBlocks.join('\n\n') +
+      '\n---'
+    );
   }
 
   /**

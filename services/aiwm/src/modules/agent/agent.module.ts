@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
+import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AgentController } from './agent.controller';
 import { AgentService } from './agent.service';
@@ -28,6 +29,7 @@ import { NodeModule } from '../node/node.module';
         signOptions: { expiresIn: '24h' },
       }),
     }),
+    HttpModule.register({ timeout: 10000, maxRedirects: 3 }),
     QueueModule,
     ConfigurationModule,
     DeploymentModule, // Import to access DeploymentService

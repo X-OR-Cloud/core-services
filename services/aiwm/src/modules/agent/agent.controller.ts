@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, Req, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -107,8 +107,10 @@ export class AgentController {
   async getConfig(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
+    @Req() req: any,
   ): Promise<AgentConnectResponseDto> {
-    return this.agentService.getAgentConfig(id, context);
+    const token = req.headers?.authorization?.replace('Bearer ', '') || '';
+    return this.agentService.getAgentConfig(id, context, token);
   }
 
   @Post(':id/connect')

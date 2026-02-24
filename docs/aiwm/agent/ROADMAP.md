@@ -135,29 +135,85 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] `updateAgent()` explicit delete `secret` từ response trước khi return
 - [x] Schema `select: false` đã đảm bảo GET endpoints không trả secret
 
-### P2 — Planned (Needs Coordination)
+### P2 — Context Injection (Next)
 
-#### P2-1: Heartbeat Response — Work + ScheduledJob
+#### P2-1: Instruction Context Injection — `@project` & `@document`
+
+**Concept**: Scan `systemPrompt` cho pattern `@project:<id>` và `@document:<id>`, resolve từ DB, append context block cuối systemPrompt. Instruction gốc giữ nguyên trong DB.
+
+**Strategy**: Append cuối systemPrompt (không inline replace)
+
+**Supported references:**
+- `@project:<id>` → query CBM Project (cross-service via MongoDB direct)
+- `@document:<id>` → query CBM Document (cross-service via MongoDB direct)
+
+**Implementation steps:**
+- [ ] Thêm method `resolveContextReferences(systemPrompt)` trong `AgentService`
+- [ ] Regex scan: `/@(project|document):([a-f0-9]{24})/g`
+- [ ] Query Project từ CBM DB: inject `name`, `description`, `status`, `startDate`, `endDate`, `tags`
+- [ ] Query Document từ CBM DB: inject `summary`, `content` (truncate nếu quá dài), `type`, `status`, `labels`
+- [ ] Append block `--- Injected Context (auto-resolved) ---` cuối systemPrompt
+- [ ] Gọi `resolveContextReferences()` trong `buildInstructionObjectForAgent()` trước khi return
+- [ ] Log warning nếu reference không tìm thấy (không throw error)
+- [ ] Build + test
+
+**Injected format:**
+```
+{systemPrompt gốc}
+
+---
+## Injected Context (auto-resolved)
+
+### Project: {name}
+- **ID**: {id}
+- **Status**: {status}
+- **Timeline**: {startDate} → {endDate}
+- **Description**: {description}
+- **Tags**: {tags.join(', ')}
+
+### Document: {summary}
+- **ID**: {id}
+- **Type**: {type}
+- **Status**: {status}
+- **Labels**: {labels.join(', ')}
+- **Content**:
+{content}
+---
+```
+
+**Data sources (CBM service schemas):**
+- Project: `name`, `description`, `status` (draft/active/on_hold/completed/archived), `startDate`, `endDate`, `tags`, `members`
+- Document: `summary`, `content`, `type` (html/text/markdown/json), `status` (draft/published/archived), `labels`, `projectId`
+
+**Cross-service access**: AIWM và CBM dùng chung MongoDB instance → query trực tiếp collection qua `this.agentModel.db.collection('projects')` (pattern đã dùng trong `getAgentConfig()` cho deployments/models)
+
+#### P2-2: Instruction Status Check
+- [ ] `buildInstructionObjectForAgent()` thêm check `instruction.status === 'active'`
+- [ ] Nếu `inactive` → log warning + trả fallback instruction
+
+### P3 — Planned (Needs Coordination)
+
+#### P3-1: Heartbeat Response — Work + ScheduledJob
 - [ ] When agent reports `idle`, query pending work for this agent
 - [ ] Return `work` object (from Work module's priority function)
 - [ ] Return `scheduledJob` object (from SHD service)
 - **Dependency**: SHD service must be deployed and tested first
 - **Status**: Noted for later implementation
 
-#### P2-2: Skills
+#### P3-2: Skills
 - [ ] Design Skill concept (relationship to Tools, how agents discover skills)
 - [ ] Define Skill schema and API
 - [ ] Add `skills` to connect/config response
 - **Status**: Needs design discussion
 
-### P3 — Future
+### P4 — Future
 
-#### P3-1: AgentProcessor + NOTI Integration
+#### P4-1: AgentProcessor + NOTI Integration
 - [ ] Create `AgentProcessor` to consume events from `agents.queue`
 - [ ] Bridge to NOTI service for agent lifecycle notifications
 - **Dependency**: NOTI service must be tested first
 
-#### P3-2: Instruction Merging
+#### P4-2: Instruction Merging
 - [ ] Implement global (org-level) + agent-specific + context instruction merging
 - **Status**: After v1.0 upgrades complete
 
