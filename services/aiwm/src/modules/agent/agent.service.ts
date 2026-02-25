@@ -355,6 +355,7 @@ export class AgentService extends BaseService<Agent> {
       mcpServers,
       instruction,
       tools,
+      allowedFunctions: agent.allowedFunctions || [],
       settings: agent.settings || {},
     };
 
@@ -537,6 +538,7 @@ export class AgentService extends BaseService<Agent> {
       mcpServers, // MCP server configurations
       instruction,
       tools,
+      allowedFunctions: agent.allowedFunctions || [],
       settings: agent.settings || {},
     };
 

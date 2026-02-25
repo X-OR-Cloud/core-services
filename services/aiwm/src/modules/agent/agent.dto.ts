@@ -80,11 +80,22 @@ export class CreateAgentDto {
   @IsString()
   secret?: string;
 
-  @ApiPropertyOptional({ description: 'Allowed tool IDs (whitelist)', required: false, type: [String] })
+  @ApiPropertyOptional({ description: 'Allowed tool IDs - MCP tool sets (whitelist)', required: false, type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   allowedToolIds?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Allowed runtime function names agent can call. Empty = all allowed.',
+    required: false,
+    type: [String],
+    example: ['Bash', 'Read', 'Write', 'mcp__cbm__create_document']
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedFunctions?: string[];
 
   @ApiPropertyOptional({
     description: 'Runtime configuration with flat structure using prefixes (auth_, claude_, discord_, telegram_)',
@@ -179,11 +190,22 @@ export class UpdateAgentDto {
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiPropertyOptional({ description: 'Allowed tool IDs (whitelist)', required: false, type: [String] })
+  @ApiPropertyOptional({ description: 'Allowed tool IDs - MCP tool sets (whitelist)', required: false, type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   allowedToolIds?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Allowed runtime function names agent can call. Empty = all allowed.',
+    required: false,
+    type: [String],
+    example: ['Bash', 'Read', 'Write', 'mcp__cbm__create_document']
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedFunctions?: string[];
 
   @ApiPropertyOptional({
     description: 'Runtime configuration with flat structure using prefixes (auth_, claude_, discord_, telegram_)',
@@ -264,6 +286,9 @@ export class AgentConnectResponseDto {
 
   @ApiProperty({ description: 'Allowed tools for this agent', type: [Object] })
   tools: Tool[];
+
+  @ApiProperty({ description: 'Allowed runtime function names. Empty = all allowed.', type: [String], example: ['Bash', 'Read'] })
+  allowedFunctions: string[];
 
   @ApiProperty({ description: 'Agent runtime settings/configuration' })
   settings: Record<string, unknown>;

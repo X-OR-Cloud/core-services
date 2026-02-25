@@ -61,7 +61,10 @@ export class Agent extends BaseSchema {
   secret?: string; // Hashed secret for agent authentication
 
   @Prop({ type: [String], ref: 'Tool', default: [] })
-  allowedToolIds: string[]; // Whitelist of tool IDs this agent can use
+  allowedToolIds: string[]; // Whitelist of tool IDs (MCP tool sets) this agent can use
+
+  @Prop({ type: [String], default: [] })
+  allowedFunctions: string[]; // Whitelist of runtime function names agent can call (e.g. 'Bash', 'Read', 'mcp__cbm__create_document'). Empty = all allowed.
 
   /**
    * Runtime configuration with flat structure using prefixes
