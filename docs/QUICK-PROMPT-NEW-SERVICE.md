@@ -38,7 +38,7 @@ Tạo microservice mới với tên "[SERVICE_NAME]" trong monorepo hydra-servic
 ✅ BaseSchema cho tất cả schemas
 ✅ Modern controller pattern (@CurrentUser, không dùng BaseController)
 ✅ Swagger error decorators (@ApiCreateErrors, etc.)
-✅ PaginationQueryDto
+✅ parseQueryString utility cho list endpoints (hỗ trợ filter operators: in, regex, gt, lt,...)
 ✅ Full CRUD với soft delete
 ✅ README với curl examples
 
