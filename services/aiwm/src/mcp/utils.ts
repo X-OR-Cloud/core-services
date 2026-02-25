@@ -26,12 +26,12 @@ export async function makeServiceRequest(
   };
   const maskedHeaders = {
     ...headers,
-    // Authorization: `Bearer ${headers.Authorization?.substring(0, 7)}****`,
-    Authorization: `Bearer ${headers.Authorization}`,
+    Authorization: `Bearer ${headers.Authorization?.substring(0, 7)}****`,
+    //Authorization: `Bearer ${headers.Authorization}`,
   };
 
   logger.log(`📡 Making request: ${fetchOptions.method || 'GET'} ${url}`, {
-    headers: maskedHeaders,
+    headers: headers,
     query: (url.split('?')[1] || '').split('&').reduce((acc, pair) => {
       const [key, value] = pair.split('=');
       if (key) acc[key] = value;
