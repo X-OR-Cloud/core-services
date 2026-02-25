@@ -1,10 +1,90 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, ToolInUseException } from '@hydrabyte/shared';
 import { Tool } from './tool.schema';
 import { Agent } from '../agent/agent.schema';
+import { LookupToolFunctionsDto, ToolFunctionsResponseDto } from './tool.dto';
+
+/**
+ * Hardcoded framework functions by agent framework
+ */
+const FRAMEWORK_FUNCTIONS: Record<string, string[]> = {
+  'claude-agent-sdk': [
+    'Task',
+    'Bash',
+    'Glob',
+    'Grep',
+    'ExitPlanMode',
+    'Read',
+    'Edit',
+    'MultiEdit',
+    'Write',
+    'NotebookEdit',
+    'WebFetch',
+    'TodoWrite',
+    'WebSearch',
+    'BashOutput',
+    'KillShell',
+  ],
+};
+
+/**
+ * Hardcoded builtin tool functions by category name
+ */
+const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
+  DocumentManagement: [
+    'mcp__Builtin__CreateDocument',
+    'mcp__Builtin__ListDocuments',
+    'mcp__Builtin__GetDocument',
+    'mcp__Builtin__GetDocumentContent',
+    'mcp__Builtin__UpdateDocument',
+    'mcp__Builtin__UpdateDocumentContent',
+    'mcp__Builtin__DeleteDocument',
+    'mcp__Builtin__ReplaceDocumentContent',
+    'mcp__Builtin__SearchAndReplaceTextInDocument',
+    'mcp__Builtin__SearchAndReplaceRegexInDocument',
+    'mcp__Builtin__ReplaceMarkdownSectionInDocument',
+    'mcp__Builtin__AppendToDocument',
+    'mcp__Builtin__AppendAfterTextInDocument',
+    'mcp__Builtin__AppendToMarkdownSectionInDocument',
+  ],
+  WorkManagement: [
+    'mcp__Builtin__CreateWork',
+    'mcp__Builtin__ListWorks',
+    'mcp__Builtin__GetWork',
+    'mcp__Builtin__UpdateWork',
+    'mcp__Builtin__DeleteWork',
+    'mcp__Builtin__StartWork',
+    'mcp__Builtin__BlockWork',
+    'mcp__Builtin__UnblockWork',
+    'mcp__Builtin__RequestReviewForWork',
+    'mcp__Builtin__CompleteWork',
+    'mcp__Builtin__ReopenWork',
+    'mcp__Builtin__CancelWork',
+    'mcp__Builtin__AssignAndTodoWork',
+    'mcp__Builtin__RejectReviewForWork',
+  ],
+  ProjectManagement: [
+    'mcp__Builtin__CreateProject',
+    'mcp__Builtin__ListProjects',
+    'mcp__Builtin__GetProject',
+    'mcp__Builtin__UpdateProject',
+    'mcp__Builtin__DeleteProject',
+    'mcp__Builtin__ActivateProject',
+    'mcp__Builtin__HoldProject',
+    'mcp__Builtin__ResumeProject',
+    'mcp__Builtin__CompleteProject',
+    'mcp__Builtin__ArchiveProject',
+  ],
+  AgentManagement: [
+    'mcp__Builtin__ListAgents',
+  ],
+  UserManagement: [
+    'mcp__Builtin__ListUsers',
+  ],
+};
 
 /**
  * ToolService
@@ -124,5 +204,45 @@ export class ToolService extends BaseService<Tool> {
 
     findResult.statistics = statistics;
     return findResult;
+  }
+
+  /**
+   * Lookup available functions by agent framework and tool IDs
+   * Returns framework functions + builtin tool functions
+   */
+  async lookupFunctions(
+    dto: LookupToolFunctionsDto,
+    context: RequestContext
+  ): Promise<ToolFunctionsResponseDto[]> {
+    const result: ToolFunctionsResponseDto[] = [];
+
+    // 1. Add framework functions
+    const frameworkFunctions = FRAMEWORK_FUNCTIONS[dto.framework];
+    if (frameworkFunctions) {
+      result.push({ tool: 'Framework', functions: frameworkFunctions });
+    }
+
+    // 2. Lookup builtin tool functions from toolIds
+    if (dto.toolIds.length > 0) {
+      const objectIds = dto.toolIds.map((id) => new Types.ObjectId(id));
+      const tools = await this.toolModel
+        .find({
+          _id: { $in: objectIds },
+          type: 'builtin',
+          isDeleted: false,
+        })
+        .select('name')
+        .lean()
+        .exec();
+
+      for (const tool of tools) {
+        const functions = BUILTIN_TOOL_FUNCTIONS[tool.name];
+        if (functions) {
+          result.push({ tool: tool.name, functions });
+        }
+      }
+    }
+
+    return result;
   }
 }

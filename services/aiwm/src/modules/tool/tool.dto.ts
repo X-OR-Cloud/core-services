@@ -5,12 +5,14 @@ import {
   IsOptional,
   IsObject,
   IsNumber,
+  IsArray,
   MinLength,
   MaxLength,
   Min,
   Max,
   ValidateNested,
   ValidateIf,
+  ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -269,4 +271,46 @@ export class UpdateToolDto {
   @IsOptional()
   @IsEnum(['public', 'org', 'private'])
   scope?: string;
+}
+
+/**
+ * DTO for looking up available functions by agent framework and tool IDs
+ */
+export class LookupToolFunctionsDto {
+  @ApiProperty({
+    description: 'Agent framework identifier',
+    enum: ['claude-agent-sdk'],
+    example: 'claude-agent-sdk',
+  })
+  @IsString()
+  @IsEnum(['claude-agent-sdk'])
+  framework!: string;
+
+  @ApiProperty({
+    description: 'List of Tool document IDs to lookup functions for',
+    example: ['6740a1b2c3d4e5f6a7b8c9d0'],
+    type: [String],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(0)
+  toolIds!: string[];
+}
+
+/**
+ * Response item for tool functions lookup
+ */
+export class ToolFunctionsResponseDto {
+  @ApiProperty({
+    description: 'Tool category name',
+    example: 'Framework',
+  })
+  tool!: string;
+
+  @ApiProperty({
+    description: 'List of available function names',
+    example: ['Task', 'Bash', 'Read'],
+    type: [String],
+  })
+  functions!: string[];
 }

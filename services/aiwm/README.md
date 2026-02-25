@@ -221,13 +221,29 @@ Quản lý tools và functions mà agents có thể sử dụng.
 - Function definitions và parameters
 - Tool execution tracking
 - Integration với external APIs
+- Lookup available functions by agent framework và tool IDs
 
 **Schema chính:**
-- `name`: Tên tool
+- `name`: Tên tool (category name cho builtin, e.g., "DocumentManagement")
 - `description`: Mô tả
-- `type`: Loại tool
-- `config`: Cấu hình tool
-- `status`: Trạng thái
+- `type`: Loại tool (mcp, builtin, custom, api)
+- `category`: Phân loại (productivity, data, system, communication)
+- `schema`: Input/output JSON Schema definitions
+- `status`: Trạng thái (active, inactive, error)
+- `scope`: Access control (public, org, private)
+
+**Builtin Tool Categories:**
+- `DocumentManagement`: 14 functions (CRUD + content operations)
+- `WorkManagement`: 14 functions (CRUD + workflow transitions)
+- `ProjectManagement`: 10 functions (CRUD + lifecycle actions)
+- `AgentManagement`: 1 function (ListAgents)
+- `UserManagement`: 1 function (ListUsers)
+
+**Functions Lookup API:**
+```bash
+GET /tools/functions?framework=claude-agent-sdk&toolIds=id1,id2,id3
+```
+Returns available functions grouped by tool category, including framework-native functions and builtin tool functions.
 
 **API Documentation:** [`docs/aiwm/API-TOOL.md`](../../docs/aiwm/API-TOOL.md)
 
@@ -648,6 +664,9 @@ Similar patterns for:
 - `/executions`
 - `/reports`
 - `/configurations`
+
+### Tool Functions Lookup
+- `GET /tools/functions?framework=claude-agent-sdk&toolIds=id1,id2` - Lookup available functions by framework and tool IDs
 
 ### MCP-Specific Endpoints
 - `POST /mcp/agents/:agentId/tools/list` - List tools cho agent

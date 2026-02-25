@@ -24,7 +24,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { ToolService } from './tool.service';
-import { CreateToolDto, UpdateToolDto } from './tool.dto';
+import { CreateToolDto, UpdateToolDto, LookupToolFunctionsDto } from './tool.dto';
 
 @ApiTags('Tools')
 @ApiBearerAuth()
@@ -42,6 +42,22 @@ export class ToolController {
     @CurrentUser() context: RequestContext
   ) {
     return this.toolService.create(createToolDto, context);
+  }
+
+  @Get('functions')
+  @ApiOperation({ summary: 'Lookup available functions by framework and tool IDs' })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async lookupFunctions(
+    @Query('framework') framework: string,
+    @Query('toolIds') toolIds: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    const dto: LookupToolFunctionsDto = {
+      framework,
+      toolIds: toolIds ? toolIds.split(',') : [],
+    };
+    return this.toolService.lookupFunctions(dto, context);
   }
 
   @Get()
