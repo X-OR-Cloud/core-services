@@ -4,9 +4,13 @@ import {
   IsEnum,
   IsOptional,
   IsArray,
+  IsNumber,
+  Min,
+  Max,
   MinLength,
   MaxLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaginationQueryDto } from '@hydrabyte/base';
 
 /**
@@ -221,4 +225,23 @@ export class UpdateContentDto {
   @IsOptional()
   @IsString()
   sectionContent?: string;
+}
+
+/**
+ * DTO for creating a share link
+ */
+export class CreateShareLinkDto {
+  @ApiPropertyOptional({
+    description: 'Time-to-live in seconds (default: 3600 = 1 hour)',
+    example: 3600,
+    default: 3600,
+    minimum: 60,
+    maximum: 86400,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(60)
+  @Max(86400)
+  @Type(() => Number)
+  ttl?: number;
 }

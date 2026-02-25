@@ -82,6 +82,20 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
+   * Find document by ID for public share access (no ownership check)
+   * Only returns non-deleted documents with full content
+   */
+  async findByIdForShare(id: ObjectId): Promise<Document | null> {
+    return this.documentModel
+      .findOne({
+        _id: id,
+        isDeleted: false,
+      })
+      .lean()
+      .exec() as Promise<Document | null>;
+  }
+
+  /**
    * Override findAll to handle statistics aggregation and optimize response
    * Aggregates by type and status
    * Excludes 'content' field to reduce response size (using projection for performance)
