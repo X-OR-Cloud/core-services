@@ -656,13 +656,42 @@ export class AgentService extends BaseService<Agent> {
         if (refType === 'project') {
           const startDate = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : 'N/A';
           const endDate = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : 'N/A';
+
+          // Fetch related documents (draft + published) for this project
+          let documentsBlock = '';
+          try {
+            const filter = JSON.stringify({
+              projectId: refId,
+              status: { $in: ['draft', 'published'] },
+            });
+            const docsResponse = await firstValueFrom(
+              this.httpService.get(`${cbmBaseUrl}/documents`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                params: { filter, limit: 100 },
+              }),
+            );
+            const docsData = (docsResponse as any).data;
+            const docs = docsData?.data || docsData?.items || [];
+            if (docs.length > 0) {
+              const docsList = docs
+                .map((doc: any) => `  - \`${doc._id || doc.id}\`: ${doc.summary || 'Untitled'}`)
+                .join('\n');
+              documentsBlock = `\n- **Documents** (${docs.length}):\n${docsList}`;
+            }
+          } catch (docError: any) {
+            this.logger.warn(
+              `Failed to fetch documents for project ${refId}: ${docError.message}`,
+            );
+          }
+
           contextBlocks.push(
             `### Project: ${data.name}\n` +
             `- **ID**: ${refId}\n` +
             `- **Status**: ${data.status || 'N/A'}\n` +
             `- **Timeline**: ${startDate} → ${endDate}\n` +
             `- **Description**: ${data.description || 'N/A'}\n` +
-            `- **Tags**: ${(data.tags || []).join(', ') || 'N/A'}`,
+            `- **Tags**: ${(data.tags || []).join(', ') || 'N/A'}` +
+            documentsBlock,
           );
         } else if (refType === 'document') {
           const content = data.content?.length > 2000

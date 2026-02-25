@@ -152,6 +152,7 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] Regex scan: `/@(project|document):([a-f0-9]{24})/g`
 - [x] HTTP GET to CBM service using `HttpService` + `firstValueFrom` with agent's access token
 - [x] Query Project từ CBM: inject `name`, `description`, `status`, `startDate`, `endDate`, `tags`
+- [x] Auto-fetch documents thuộc project (status `draft`/`published`), inject list `{ id, summary }` vào project block
 - [x] Query Document từ CBM: inject `summary`, `content` (truncate 2000 chars), `type`, `status`, `labels`
 - [x] Append block `--- Injected Context (auto-resolved) ---` cuối systemPrompt
 - [x] Gọi `resolveContextReferences()` trong `buildInstructionObjectForAgent()` trước khi return

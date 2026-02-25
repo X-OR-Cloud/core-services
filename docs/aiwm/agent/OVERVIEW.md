@@ -168,6 +168,10 @@ Instruction `systemPrompt` hỗ trợ reference pattern `@project:<id>` và `@do
 - **Timeline**: {startDate} → {endDate}
 - **Description**: {description}
 - **Tags**: {tags}
+- **Documents** ({count}):
+  - `{docId}`: {summary}
+  - `{docId}`: {summary}
+  ...
 
 ### Document: {summary}
 - **Type**: {type}
