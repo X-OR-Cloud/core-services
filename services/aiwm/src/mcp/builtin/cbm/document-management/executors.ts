@@ -44,6 +44,7 @@ export async function executeCreateDocument(
     type: 'html' | 'text' | 'markdown' | 'json';
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
+    projectId?: string;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {

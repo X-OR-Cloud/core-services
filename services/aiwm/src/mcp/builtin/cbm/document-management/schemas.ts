@@ -38,6 +38,10 @@ export const CreateDocumentSchema = z.object({
   status: DocumentStatusEnum.optional().describe(
     'Document status (default: draft)'
   ),
+  projectId: z
+    .string()
+    .optional()
+    .describe('Project ID to associate this document with'),
 });
 
 /**

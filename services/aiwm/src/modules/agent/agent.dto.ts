@@ -66,6 +66,15 @@ export class CreateAgentDto {
   @IsString({ each: true })
   tags?: string[];
 
+  @ApiPropertyOptional({
+    description: 'RBAC role for agent to access MCP tools',
+    enum: ['organization.editor', 'organization.viewer'],
+    required: false
+  })
+  @IsOptional()
+  @IsEnum(['organization.editor', 'organization.viewer'])
+  role?: string;
+
   @ApiPropertyOptional({ description: 'Secret for agent authentication (will be hashed)', required: false })
   @IsOptional()
   @IsString()
@@ -157,11 +166,11 @@ export class UpdateAgentDto {
 
   @ApiPropertyOptional({
     description: 'RBAC role for agent to access MCP tools',
-    enum: ['organization.owner', 'organization.editor', 'organization.viewer'],
+    enum: ['organization.editor', 'organization.viewer'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['organization.owner', 'organization.editor', 'organization.viewer'])
+  @IsEnum(['organization.editor', 'organization.viewer'])
   role?: string;
 
   @ApiPropertyOptional({ description: 'Agent tags', required: false, type: [String] })

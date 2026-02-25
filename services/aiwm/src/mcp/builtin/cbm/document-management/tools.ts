@@ -43,7 +43,7 @@ export const DocumentManagementTools: ToolDefinition[] = [
   {
     name: 'CreateDocument',
     description:
-      'Create a new document with summary, content, type, and optional labels/status',
+      'Create a new document with summary, content, type, and optional labels/status/projectId',
     type: 'builtin',
     category: 'DocumentManagement',
     executor: executeCreateDocument,

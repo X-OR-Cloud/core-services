@@ -48,7 +48,7 @@ export class Agent extends BaseSchema {
 
   @Prop({
     type: String,
-    enum: ['organization.owner', 'organization.editor', 'organization.viewer'],
+    enum: ['organization.editor', 'organization.viewer'],
     default: 'organization.viewer'
   })
   role: string; // RBAC role for agent to access MCP tools
