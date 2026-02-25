@@ -93,8 +93,8 @@ export class AgentController {
 
   @Get(':id/instruction')
   @ApiOperation({
-    summary: 'Get agent instruction (latest, with context injection)',
-    description: 'Returns the resolved instruction for the agent, including injected @project and @document context. Use this to refresh instruction without reconnecting. Accepts both agent JWT and user JWT.'
+    summary: 'Preview agent instruction (for users)',
+    description: 'Returns the resolved instruction for the specified agent, including injected @project and @document context. For users to verify how the instruction will be built.'
   })
   @ApiResponse({ status: 200, description: 'Instruction retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Agent not found' })

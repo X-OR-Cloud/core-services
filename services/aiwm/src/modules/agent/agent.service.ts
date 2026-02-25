@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
@@ -44,7 +49,7 @@ export class AgentService extends BaseService<Agent> {
     private readonly deploymentService: DeploymentService,
     private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
-    private readonly httpService: HttpService,
+    private readonly httpService: HttpService
   ) {
     super(agentModel as any);
   }
@@ -78,12 +83,18 @@ export class AgentService extends BaseService<Agent> {
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Agent>> {
-    if(options.filter) {
+    if (options.filter) {
       if (options.filter['name']) {
-        options.filter['name'] = { $regex: options.filter['name'], $options: 'i' };
+        options.filter['name'] = {
+          $regex: options.filter['name'],
+          $options: 'i',
+        };
       }
       if (options.filter['description']) {
-        options.filter['description'] = { $regex: options.filter['description'], $options: 'i' };
+        options.filter['description'] = {
+          $regex: options.filter['description'],
+          $options: 'i',
+        };
       }
     }
     const findResult = await super.findAll(options, context);
@@ -181,16 +192,22 @@ export class AgentService extends BaseService<Agent> {
 
       const node = await this.nodeService.findByObjectId(createAgentDto.nodeId);
       if (!node) {
-        throw new BadRequestException(`Node with ID ${createAgentDto.nodeId} not found`);
+        throw new BadRequestException(
+          `Node with ID ${createAgentDto.nodeId} not found`
+        );
       }
       if (node.status !== 'online') {
-        throw new BadRequestException(`Node ${createAgentDto.nodeId} is not online (current status: ${node.status})`);
+        throw new BadRequestException(
+          `Node ${createAgentDto.nodeId} is not online (current status: ${node.status})`
+        );
       }
 
       // Check lastHeartbeat within 10 minutes
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
       if (!node.lastHeartbeat || node.lastHeartbeat < tenMinutesAgo) {
-        throw new BadRequestException(`Node ${createAgentDto.nodeId} has not sent a heartbeat in the last 10 minutes`);
+        throw new BadRequestException(
+          `Node ${createAgentDto.nodeId} has not sent a heartbeat in the last 10 minutes`
+        );
       }
     }
 
@@ -234,11 +251,17 @@ export class AgentService extends BaseService<Agent> {
             guardrailId: saved.guardrailId,
             deploymentId: saved.deploymentId,
             settings: saved.settings,
-          },
+          }
         );
-        this.logger.log(`agent.start sent to node ${saved.nodeId} for agent ${(saved as any)._id}`);
+        this.logger.log(
+          `agent.start sent to node ${saved.nodeId} for agent ${
+            (saved as any)._id
+          }`
+        );
       } catch (error) {
-        this.logger.warn(`Could not send agent.start to node ${saved.nodeId}: ${error.message}`);
+        this.logger.warn(
+          `Could not send agent.start to node ${saved.nodeId}: ${error.message}`
+        );
       }
     }
 
@@ -255,7 +278,7 @@ export class AgentService extends BaseService<Agent> {
    */
   async getAgentInstruction(
     agentId: string,
-    accessToken: string,
+    accessToken: string
   ): Promise<{ id: string; systemPrompt: string; guidelines: string[] }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
@@ -275,7 +298,7 @@ export class AgentService extends BaseService<Agent> {
   async getAgentConfig(
     agentId: string,
     context: RequestContext,
-    accessToken?: string,
+    accessToken?: string
   ): Promise<AgentConnectResponseDto> {
     // Find agent
     const agent = await this.agentModel
@@ -292,7 +315,10 @@ export class AgentService extends BaseService<Agent> {
     }
 
     // Build instruction object (with context injection using user token)
-    const instruction = await this.buildInstructionObjectForAgent(agent, accessToken);
+    const instruction = await this.buildInstructionObjectForAgent(
+      agent,
+      accessToken
+    );
 
     // Get allowed tools
     const tools = await this.getAllowedTools(agent);
@@ -302,12 +328,15 @@ export class AgentService extends BaseService<Agent> {
       ConfigKey.AIWM_BASE_MCP_URL as any,
       context
     );
-    const mcpBaseUrl = aiwmBaseUrlConfig?.value || process.env.AIWM_BASE_URL || 'http://localhost:3306';
+    const mcpBaseUrl =
+      aiwmBaseUrlConfig?.value ||
+      process.env.AIWM_BASE_URL ||
+      'http://localhost:3306';
 
     // Build MCP server configuration (use user's token for MCP calls)
     // Note: Frontend will need to include user's JWT token when calling MCP
     const mcpServers = {
-      'Builtin': {
+      Builtin: {
         type: 'http',
         url: mcpBaseUrl,
         headers: {
@@ -339,13 +368,15 @@ export class AgentService extends BaseService<Agent> {
         );
 
         // Get deployment and model for provider info
-        const deployment = await this.agentModel.db.collection('deployments').findOne({
-          _id: new Types.ObjectId(agent.deploymentId)
-        });
+        const deployment = await this.agentModel.db
+          .collection('deployments')
+          .findOne({
+            _id: new Types.ObjectId(agent.deploymentId),
+          });
 
         if (deployment && deployment.modelId) {
           const model = await this.agentModel.db.collection('models').findOne({
-            _id: new Types.ObjectId(deployment.modelId)
+            _id: new Types.ObjectId(deployment.modelId),
           });
 
           if (model && model.deploymentType === 'api-based') {
@@ -354,7 +385,8 @@ export class AgentService extends BaseService<Agent> {
               ConfigKey.AIWM_BASE_API_URL as any,
               context
             );
-            const baseApiUrl = baseApiUrlConfig?.value || 'http://localhost:3003';
+            const baseApiUrl =
+              baseApiUrlConfig?.value || 'http://localhost:3003';
             const baseAPIEndpoint = `${baseApiUrl}/deployments/${agent.deploymentId}/inference`;
 
             response.deployment = {
@@ -367,7 +399,9 @@ export class AgentService extends BaseService<Agent> {
           }
         }
       } catch (error) {
-        this.logger.warn('Failed to populate deployment info', { error: error.message });
+        this.logger.warn('Failed to populate deployment info', {
+          error: error.message,
+        });
         // Continue without deployment info - non-critical
       }
     }
@@ -413,32 +447,38 @@ export class AgentService extends BaseService<Agent> {
     }
 
     // Extract roles from agent.role field or settings (backward compatibility)
-    const agentRoles = agent.role ? [agent.role] : ((agent.settings as any).auth_roles || ['organization.viewer']);
+    const agentRoles = agent.role
+      ? [agent.role]
+      : (agent.settings as any).auth_roles || ['organization.viewer'];
 
     // Generate JWT token with IAM-compatible payload
     const payload = {
-      sub: agentId,                          // Agent ID as userId
-      username: `agent:${agentId}`,          // Format: agent:<agentId>
-      status: agent.status,                  // Agent status
-      roles: agentRoles,                     // From agent.role or settings.auth_roles
-      orgId: agent.owner.orgId,              // Owner organization ID
-      groupId: '',                           // Empty for agents
-      agentId: agentId,                      // Same as sub
-      userId: '',                            // Empty as requested
-      type: 'agent',                         // Marker for agent token
+      sub: agentId, // Agent ID as userId
+      username: `agent:${agentId}`, // Format: agent:<agentId>
+      status: agent.status, // Agent status
+      roles: agentRoles, // From agent.role or settings.auth_roles
+      orgId: agent.owner.orgId, // Owner organization ID
+      groupId: '', // Empty for agents
+      agentId: agentId, // Same as sub
+      userId: '', // Empty as requested
+      type: 'agent', // Marker for agent token
     };
 
     this.logger.debug('Signing JWT token with payload', {
       agentId,
       username: payload.username,
       roles: payload.roles,
-      orgId: payload.orgId
+      orgId: payload.orgId,
     });
 
     const token = this.jwtService.sign(payload); // expiresIn: '24h' set in JwtModule config
 
     // Log first/last chars of token for debugging (never log full token)
-    this.logger.debug(`Token generated: ${token.substring(0, 20)}...${token.substring(token.length - 20)}`)
+    this.logger.debug(
+      `Token generated: ${token.substring(0, 20)}...${token.substring(
+        token.length - 20
+      )}`
+    );
 
     // Calculate expiresIn seconds (24 hours)
     const expiresInSeconds = 24 * 60 * 60;
@@ -471,11 +511,14 @@ export class AgentService extends BaseService<Agent> {
       ConfigKey.AIWM_BASE_MCP_URL as any,
       { orgId: agent.owner.orgId } as RequestContext
     );
-    const mcpBaseUrl = aiwmBaseUrlConfig?.value || process.env.AIWM_BASE_URL || 'http://localhost:3306';
+    const mcpBaseUrl =
+      aiwmBaseUrlConfig?.value ||
+      process.env.AIWM_BASE_URL ||
+      'http://localhost:3306';
 
     // Build MCP server configuration (HTTP transport format)
     const mcpServers = {
-      'Builtin': {
+      Builtin: {
         type: 'http',
         url: mcpBaseUrl,
         headers: {
@@ -488,10 +531,10 @@ export class AgentService extends BaseService<Agent> {
     const response: AgentConnectResponseDto = {
       accessToken: token,
       expiresIn: expiresInSeconds,
-      refreshToken: null,                    // Not implemented for agents
+      refreshToken: null, // Not implemented for agents
       refreshExpiresIn: 0,
       tokenType: 'bearer',
-      mcpServers,                            // MCP server configurations
+      mcpServers, // MCP server configurations
       instruction,
       tools,
       settings: agent.settings || {},
@@ -507,13 +550,15 @@ export class AgentService extends BaseService<Agent> {
         );
 
         // Get deployment and model for provider info
-        const deployment = await this.agentModel.db.collection('deployments').findOne({
-          _id: new Types.ObjectId(agent.deploymentId)
-        });
+        const deployment = await this.agentModel.db
+          .collection('deployments')
+          .findOne({
+            _id: new Types.ObjectId(agent.deploymentId),
+          });
 
         if (deployment && deployment.modelId) {
           const model = await this.agentModel.db.collection('models').findOne({
-            _id: new Types.ObjectId(deployment.modelId)
+            _id: new Types.ObjectId(deployment.modelId),
           });
 
           if (model && model.deploymentType === 'api-based') {
@@ -522,7 +567,8 @@ export class AgentService extends BaseService<Agent> {
               ConfigKey.AIWM_BASE_API_URL as any,
               { orgId: agent.owner.orgId } as RequestContext
             );
-            const baseApiUrl = baseApiUrlConfig?.value || 'http://localhost:3003';
+            const baseApiUrl =
+              baseApiUrlConfig?.value || 'http://localhost:3003';
             const baseAPIEndpoint = `${baseApiUrl}/deployments/${agent.deploymentId}/inference`;
 
             response.deployment = {
@@ -535,7 +581,9 @@ export class AgentService extends BaseService<Agent> {
           }
         }
       } catch (error) {
-        this.logger.warn('Failed to populate deployment info', { error: error.message });
+        this.logger.warn('Failed to populate deployment info', {
+          error: error.message,
+        });
         // Continue without deployment info - non-critical
       }
     }
@@ -549,7 +597,7 @@ export class AgentService extends BaseService<Agent> {
    */
   private async buildInstructionObjectForAgent(
     agent: Agent,
-    accessToken?: string,
+    accessToken?: string
   ): Promise<{
     id: string;
     systemPrompt: string;
@@ -559,7 +607,7 @@ export class AgentService extends BaseService<Agent> {
       return {
         id: '',
         systemPrompt: 'No instruction configured for this agent.',
-        guidelines: []
+        guidelines: [],
       };
     }
 
@@ -575,7 +623,7 @@ export class AgentService extends BaseService<Agent> {
       return {
         id: '',
         systemPrompt: 'Instruction not found.',
-        guidelines: []
+        guidelines: [],
       };
     }
 
@@ -589,7 +637,7 @@ export class AgentService extends BaseService<Agent> {
       return {
         id: (instruction as any)._id.toString(),
         systemPrompt: 'Instruction is currently inactive.',
-        guidelines: []
+        guidelines: [],
       };
     }
 
@@ -599,14 +647,14 @@ export class AgentService extends BaseService<Agent> {
       resolvedPrompt = await this.resolveContextReferences(
         instruction.systemPrompt,
         accessToken,
-        agent.owner.orgId,
+        agent.owner.orgId
       );
     }
 
     return {
       id: (instruction as any)._id.toString(),
       systemPrompt: resolvedPrompt,
-      guidelines: instruction.guidelines || []
+      guidelines: instruction.guidelines || [],
     };
   }
 
@@ -617,7 +665,7 @@ export class AgentService extends BaseService<Agent> {
   private async resolveContextReferences(
     systemPrompt: string,
     accessToken: string,
-    orgId: string,
+    orgId: string
   ): Promise<string> {
     // Scan for @project:<id> and @document:<id> patterns
     const refPattern = /@(project|document):([a-f0-9]{24})/g;
@@ -632,7 +680,7 @@ export class AgentService extends BaseService<Agent> {
     try {
       const cbmConfig = await this.configurationService.findByKey(
         ConfigKey.CBM_BASE_API_URL as any,
-        { orgId } as RequestContext,
+        { orgId } as RequestContext
       );
       if (cbmConfig?.value) {
         cbmBaseUrl = cbmConfig.value;
@@ -649,72 +697,79 @@ export class AgentService extends BaseService<Agent> {
         const response = await firstValueFrom(
           this.httpService.get(`${cbmBaseUrl}/${refType}s/${refId}`, {
             headers: { Authorization: `Bearer ${accessToken}` },
-          }),
+          })
         );
         const data = (response as any).data;
 
         if (refType === 'project') {
-          const startDate = data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : 'N/A';
-          const endDate = data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : 'N/A';
+          const startDate = data.startDate
+            ? new Date(data.startDate).toISOString().split('T')[0]
+            : 'N/A';
+          const endDate = data.endDate
+            ? new Date(data.endDate).toISOString().split('T')[0]
+            : 'N/A';
 
           // Fetch related documents (draft + published) for this project
           let documentsBlock = '';
           try {
-            const filter = JSON.stringify({
-              projectId: refId,
-              status: { $in: ['draft', 'published'] },
-            });
+            const docsUrl = `${cbmBaseUrl}/documents?projectId=${refId}&limit=100`;
+            this.logger.debug(`Fetching documents for project ${refId} from ${docsUrl}`);
             const docsResponse = await firstValueFrom(
-              this.httpService.get(`${cbmBaseUrl}/documents`, {
+              this.httpService.get(docsUrl, {
                 headers: { Authorization: `Bearer ${accessToken}` },
-                params: { filter, limit: 100 },
-              }),
+              })
             );
             const docsData = (docsResponse as any).data;
             const docs = docsData?.data || docsData?.items || [];
             if (docs.length > 0) {
               const docsList = docs
-                .map((doc: any) => `  - \`${doc._id || doc.id}\`: ${doc.summary || 'Untitled'}`)
+                .map(
+                  (doc: any) =>
+                    `  - \`${doc._id || doc.id}\`: ${doc.summary || 'Untitled'}`
+                )
                 .join('\n');
-              documentsBlock = `\n- **Documents** (${docs.length}):\n${docsList}`;
+              documentsBlock = `\n-Documents** (${docs.length}):\n${docsList}`;
             }
           } catch (docError: any) {
             this.logger.warn(
-              `Failed to fetch documents for project ${refId}: ${docError.message}`,
+              `Failed to fetch documents for project ${refId}: ${docError.message}`
             );
           }
 
           contextBlocks.push(
-            `### Project: ${data.name}\n` +
-            `- **ID**: ${refId}\n` +
-            `- **Status**: ${data.status || 'N/A'}\n` +
-            `- **Timeline**: ${startDate} → ${endDate}\n` +
-            `- **Description**: ${data.description || 'N/A'}\n` +
-            `- **Tags**: ${(data.tags || []).join(', ') || 'N/A'}` +
-            documentsBlock,
+            `Project: ${data.name}\n` +
+              `-ID: ${refId}\n` +
+              `-Status: ${data.status || 'N/A'}\n` +
+              `-Timeline: ${startDate} → ${endDate}\n` +
+              `-Description: ${data.description || 'N/A'}\n` +
+              `-Tags: ${(data.tags || []).join(', ') || 'N/A'}` +
+              documentsBlock
           );
         } else if (refType === 'document') {
-          const content = data.content?.length > 2000
-            ? data.content.substring(0, 2000) + '\n...(truncated)'
-            : data.content || '';
+          const content =
+            data.content?.length > 2000
+              ? data.content.substring(0, 2000) + '\n...(truncated)'
+              : data.content || '';
           contextBlocks.push(
-            `### Document: ${data.summary}\n` +
-            `- **ID**: ${refId}\n` +
-            `- **Type**: ${data.type || 'N/A'}\n` +
-            `- **Status**: ${data.status || 'N/A'}\n` +
-            `- **Labels**: ${(data.labels || []).join(', ') || 'N/A'}\n` +
-            `- **Content**:\n${content}`,
+            `Document: ${data.summary}\n` +
+              `- ID: ${refId}\n` +
+              `- Type: ${data.type || 'N/A'}\n` +
+              `- Status: ${data.status || 'N/A'}\n` +
+              `- Labels: ${(data.labels || []).join(', ') || 'N/A'}\n` +
+              `- Content:\n${content}`
           );
         }
 
         this.logger.debug(`Resolved @${refType}:${refId} successfully`);
       } catch (error: any) {
         this.logger.warn(
-          `Failed to resolve @${refType}:${refId}: ${error.message}`,
+          `Failed to resolve @${refType}:${refId}: ${error.message}`
         );
         contextBlocks.push(
-          `### ${refType === 'project' ? 'Project' : 'Document'}: ${refId}\n` +
-          `- **Error**: Could not resolve reference (${error.response?.status || error.message})`,
+          `${refType === 'project' ? 'Project' : 'Document'}: ${refId}\n` +
+            `-Error: Could not resolve reference (${
+              error.response?.status || error.message
+            })`
         );
       }
     }
@@ -725,7 +780,7 @@ export class AgentService extends BaseService<Agent> {
 
     return (
       systemPrompt +
-      '\n\n---\n## Injected Context (auto-resolved)\n\n' +
+      '\n\n---\nInjected Context (auto-resolved)\n\n' +
       contextBlocks.join('\n\n') +
       '\n---'
     );
@@ -875,11 +930,15 @@ export class AgentService extends BaseService<Agent> {
             guardrailId: agent.guardrailId,
             deploymentId: agent.deploymentId,
             settings: agent.settings,
-          },
+          }
         );
-        this.logger.log(`agent.update sent to node ${agent.nodeId} after credential regeneration for agent ${agentId}`);
+        this.logger.log(
+          `agent.update sent to node ${agent.nodeId} after credential regeneration for agent ${agentId}`
+        );
       } catch (error: any) {
-        this.logger.warn(`Could not send agent.update to node ${agent.nodeId}: ${error.message}`);
+        this.logger.warn(
+          `Could not send agent.update to node ${agent.nodeId}: ${error.message}`
+        );
       }
     }
 
@@ -887,7 +946,11 @@ export class AgentService extends BaseService<Agent> {
     const envConfig = this.buildEnvConfig(agentId, newSecret, agent);
 
     // Build install script (async now)
-    const installScript = await this.buildInstallScript(agentId, newSecret, agent);
+    const installScript = await this.buildInstallScript(
+      agentId,
+      newSecret,
+      agent
+    );
 
     return {
       agentId,
@@ -905,14 +968,25 @@ export class AgentService extends BaseService<Agent> {
     secret: string,
     agent: Agent
   ): string {
-    const baseUrl = process.env.AIWM_PUBLIC_URL || 'https://api.x-or.cloud/dev/aiwm';
+    const baseUrl =
+      process.env.AIWM_PUBLIC_URL || 'https://api.x-or.cloud/dev/aiwm';
     const settings = agent.settings || {};
 
     // Extract common settings with defaults (flat fields with backward compatibility)
-    const claudeModel = (settings as any).claude_model || (settings as any).claudeModel || 'claude-3-5-haiku-latest';
-    const maxTurns = (settings as any).claude_maxTurns || (settings as any).maxTurns || 100;
-    const permissionMode = (settings as any).claude_permissionMode || (settings as any).permissionMode || 'bypassPermissions';
-    const resume = (settings as any).claude_resume !== undefined ? (settings as any).claude_resume : ((settings as any).resume !== false); // default true
+    const claudeModel =
+      (settings as any).claude_model ||
+      (settings as any).claudeModel ||
+      'claude-3-5-haiku-latest';
+    const maxTurns =
+      (settings as any).claude_maxTurns || (settings as any).maxTurns || 100;
+    const permissionMode =
+      (settings as any).claude_permissionMode ||
+      (settings as any).permissionMode ||
+      'bypassPermissions';
+    const resume =
+      (settings as any).claude_resume !== undefined
+        ? (settings as any).claude_resume
+        : (settings as any).resume !== false; // default true
 
     let envConfig = `# ===== AIWM Integration =====
 AIWM_ENABLED=true
@@ -932,7 +1006,8 @@ CLAUDE_RESUME=${resume}
 `;
 
     // Add OAuth token if present (flat field with backward compatibility)
-    const claudeOAuthToken = (settings as any).claude_oauthToken || (settings as any).claudeOAuthToken;
+    const claudeOAuthToken =
+      (settings as any).claude_oauthToken || (settings as any).claudeOAuthToken;
     if (claudeOAuthToken) {
       envConfig += `CLAUDE_CODE_OAUTH_TOKEN=${claudeOAuthToken}\n`;
     }
@@ -944,27 +1019,47 @@ CLAUDE_RESUME=${resume}
 `;
 
     // Discord settings (flat fields with backward compatibility)
-    const discordToken = (settings as any).discord_token || (settings as any).discord?.token;
-    const discordChannelIds = (settings as any).discord_channelIds || (settings as any).discord?.channelIds;
-    const discordBotId = (settings as any).discord_botId || (settings as any).discord?.botId;
+    const discordToken =
+      (settings as any).discord_token || (settings as any).discord?.token;
+    const discordChannelIds =
+      (settings as any).discord_channelIds ||
+      (settings as any).discord?.channelIds;
+    const discordBotId =
+      (settings as any).discord_botId || (settings as any).discord?.botId;
 
     if (discordToken || discordChannelIds || discordBotId) {
       if (discordToken) envConfig += `DISCORD_TOKEN=${discordToken}\n`;
-      if (discordChannelIds) envConfig += `DISCORD_CHANNEL_ID=${Array.isArray(discordChannelIds) ? discordChannelIds.join(',') : discordChannelIds}\n`;
+      if (discordChannelIds)
+        envConfig += `DISCORD_CHANNEL_ID=${
+          Array.isArray(discordChannelIds)
+            ? discordChannelIds.join(',')
+            : discordChannelIds
+        }\n`;
       if (discordBotId) envConfig += `DISCORD_BOT_ID=${discordBotId}\n`;
     } else {
       envConfig += `# DISCORD_TOKEN=your_discord_token\n# DISCORD_CHANNEL_ID=your_channel_id\n`;
     }
 
     // Telegram settings (flat fields with backward compatibility)
-    const telegramToken = (settings as any).telegram_token || (settings as any).telegram?.token;
-    const telegramGroupIds = (settings as any).telegram_groupIds || (settings as any).telegram?.groupIds;
-    const telegramBotUsername = (settings as any).telegram_botUsername || (settings as any).telegram?.botUsername;
+    const telegramToken =
+      (settings as any).telegram_token || (settings as any).telegram?.token;
+    const telegramGroupIds =
+      (settings as any).telegram_groupIds ||
+      (settings as any).telegram?.groupIds;
+    const telegramBotUsername =
+      (settings as any).telegram_botUsername ||
+      (settings as any).telegram?.botUsername;
 
     if (telegramToken || telegramGroupIds || telegramBotUsername) {
       if (telegramToken) envConfig += `TELEGRAM_BOT_TOKEN=${telegramToken}\n`;
-      if (telegramGroupIds) envConfig += `TELEGRAM_GROUP_ID=${Array.isArray(telegramGroupIds) ? telegramGroupIds.join(',') : telegramGroupIds}\n`;
-      if (telegramBotUsername) envConfig += `TELEGRAM_BOT_USERNAME=${telegramBotUsername}\n`;
+      if (telegramGroupIds)
+        envConfig += `TELEGRAM_GROUP_ID=${
+          Array.isArray(telegramGroupIds)
+            ? telegramGroupIds.join(',')
+            : telegramGroupIds
+        }\n`;
+      if (telegramBotUsername)
+        envConfig += `TELEGRAM_BOT_USERNAME=${telegramBotUsername}\n`;
     } else {
       envConfig += `# TELEGRAM_BOT_TOKEN=your_telegram_token\n# TELEGRAM_GROUP_ID=your_group_id\n`;
     }
@@ -981,7 +1076,8 @@ CLAUDE_RESUME=${resume}
     secret: string,
     agent: Agent
   ): Promise<string> {
-    const baseUrl = process.env.AIWM_PUBLIC_URL || 'https://api.x-or.cloud/dev/aiwm';
+    const baseUrl =
+      process.env.AIWM_PUBLIC_URL || 'https://api.x-or.cloud/dev/aiwm';
 
     // Get download URL from configuration
     let downloadBaseUrl = 'https://cdn.x-or.cloud/agents'; // default
@@ -989,12 +1085,12 @@ CLAUDE_RESUME=${resume}
       const downloadConfig = await this.configurationService.findByKey(
         'agent.download.base_url' as any, // ConfigKey enum might not be built yet
         {
-          orgId: agent.owner.orgId || agent.owner as any,
+          orgId: agent.owner.orgId || (agent.owner as any),
           userId: agent.createdBy as any,
           agentId: '',
           groupId: '',
           appId: '',
-          roles: []
+          roles: [],
         } as any
       );
       if (downloadConfig?.value) {
@@ -1002,7 +1098,10 @@ CLAUDE_RESUME=${resume}
       }
     } catch (error) {
       // Fallback to default if config not found
-      this.logger.warn('Failed to load AGENT_DOWNLOAD_BASE_URL config, using default', error);
+      this.logger.warn(
+        'Failed to load AGENT_DOWNLOAD_BASE_URL config, using default',
+        error
+      );
     }
     const downloadUrl = `${downloadBaseUrl}/xora-cc-agent-latest.tar.gz`;
 
@@ -1248,7 +1347,7 @@ echo "Installation script placeholder - implement actual logic"
       if (existingAgent && existingAgent.type !== updateAgentDto.type) {
         throw new BadRequestException(
           `Cannot change agent type from '${existingAgent.type}' to '${updateAgentDto.type}'. ` +
-          'Please delete and recreate the agent with the desired type.'
+            'Please delete and recreate the agent with the desired type.'
         );
       }
     }
@@ -1294,11 +1393,17 @@ echo "Installation script placeholder - implement actual logic"
               guardrailId: updated.guardrailId,
               deploymentId: updated.deploymentId,
               settings: updated.settings,
-            },
+            }
           );
-          this.logger.log(`agent.update sent to node ${updated.nodeId} for agent ${(updated as any)._id}`);
+          this.logger.log(
+            `agent.update sent to node ${updated.nodeId} for agent ${
+              (updated as any)._id
+            }`
+          );
         } catch (error: any) {
-          this.logger.warn(`Could not send agent.update to node ${updated.nodeId}: ${error.message}`);
+          this.logger.warn(
+            `Could not send agent.update to node ${updated.nodeId}: ${error.message}`
+          );
         }
       }
     }
@@ -1314,7 +1419,10 @@ echo "Installation script placeholder - implement actual logic"
 
   async remove(id: string, context: RequestContext): Promise<void> {
     // Read agent before deleting to get type and nodeId for WebSocket notification
-    const agent = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false });
+    const agent = await this.model.findOne({
+      _id: new Types.ObjectId(id),
+      isDeleted: false,
+    });
 
     // BaseService handles soft delete, permissions, and generic logging
     const result = await super.softDelete(
@@ -1342,11 +1450,15 @@ echo "Installation script placeholder - implement actual logic"
             {
               agentId: id,
               name: agent.name,
-            },
+            }
           );
-          this.logger.log(`agent.delete sent to node ${agent.nodeId} for agent ${id}`);
+          this.logger.log(
+            `agent.delete sent to node ${agent.nodeId} for agent ${id}`
+          );
         } catch (error: any) {
-          this.logger.warn(`Could not send agent.delete to node ${agent.nodeId}: ${error.message}`);
+          this.logger.warn(
+            `Could not send agent.delete to node ${agent.nodeId}: ${error.message}`
+          );
         }
       }
     }

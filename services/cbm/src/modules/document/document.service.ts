@@ -92,34 +92,23 @@ export class DocumentService extends BaseService<Document> {
     context: RequestContext
   ): Promise<FindManyResult<Document>> {
 
-    // Handle search parameter - convert to MongoDB filter
-    const searchQuery = options.search || (options.filter as any)?.search;
+    // Handle search parameter - convert to MongoDB $or filter
+    const searchQuery = options.search;
     if (searchQuery && typeof searchQuery === 'string') {
       const searchRegex = new RegExp(searchQuery, 'i');
 
-      // Build search conditions
       const searchConditions = [
         { summary: searchRegex },
         { content: searchRegex },
-        { labels: searchQuery }, // Exact match for labels array
+        { labels: searchQuery },
       ];
 
-      // Get existing filter fields (excluding search)
-      const existingFilter: any = {};
-      if (options) {
-        Object.keys(options).forEach(key => {
-          if (key !== 'search') {
-            existingFilter[key] = (options as any)[key];
-          }
-        });
+      // Merge $or into existing filter
+      if (!options.filter) {
+        options.filter = {};
       }
+      (options.filter as any).$or = searchConditions;
 
-      options = {
-        ...existingFilter,
-        $or: searchConditions,
-      };
-
-      // Clean up search parameter
       delete options.search;
     }
 

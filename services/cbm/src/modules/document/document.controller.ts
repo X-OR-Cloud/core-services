@@ -19,12 +19,13 @@ import {
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
+  parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { Response } from 'express';
 import { DocumentService } from './document.service';
-import { CreateDocumentDto, UpdateDocumentDto, DocumentQueryDto, UpdateContentDto } from './document.dto';
+import { CreateDocumentDto, UpdateDocumentDto, UpdateContentDto } from './document.dto';
 
 @ApiTags('Documents')
 @ApiBearerAuth()
@@ -48,10 +49,12 @@ export class DocumentController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: DocumentQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
   ) {
-    return this.documentService.findAll(query, context);
+    const { search, ...rest } = query;
+    const options = parseQueryString(rest);
+    return this.documentService.findAll({ ...options, search }, context);
   }
 
   @Get(':id/content')

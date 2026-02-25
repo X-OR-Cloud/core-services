@@ -10,13 +10,9 @@ import {
 import { BaseService, FindManyResult, FindManyOptions } from './base.service';
 import { Types, ObjectId } from 'mongoose';
 import { PredefinedRole, RequestContext } from '@hydrabyte/shared';
+import { parseQueryString, QueryStringParams } from '../utils/query-string.util';
 
-export type FindAllQuery = {
-  page?: number;
-  limit?: number;
-  sort?: string;
-  [key: string]: string | number | boolean | undefined;
-};
+export type FindAllQuery = QueryStringParams;
 
 /**
  * Base abstract controller providing common CRUD operations.
@@ -81,86 +77,7 @@ export abstract class BaseController<Entity> {
    * - Pagination: ?page=1&limit=20
    */
   protected handleQueryStringForFindMany(query: FindAllQuery): FindManyOptions {
-    const findManyOptions: FindManyOptions = {
-      filter: {},
-      sort: {
-        createdAt: -1,
-      },
-      page: query.page ? parseInt(String(query.page), 10) : 1,
-      limit: query.limit ? parseInt(String(query.limit), 10) : 10,
-    };
-
-    // Ensure filter is initialized
-    if (!findManyOptions.filter) {
-      findManyOptions.filter = {};
-    }
-    for (const key in query) {
-      if (Object.prototype.hasOwnProperty.call(query, key)) {
-        const value = query[key]?.toString() || '';
-        if (key !== 'page' && key !== 'limit' && key !== 'sort') {
-          const fields = key.split(':').map((f) => f.trim());
-          if (fields.length === 2) {
-            const operator = fields[1];
-            switch (operator) {
-              case 'gt':
-                findManyOptions.filter[fields[0]] = { $gt: value };
-                break;
-              case 'gte':
-                findManyOptions.filter[fields[0]] = { $gte: value };
-                break;
-              case 'lt':
-                findManyOptions.filter[fields[0]] = { $lt: value };
-                break;
-              case 'lte':
-                findManyOptions.filter[fields[0]] = { $lte: value };
-                break;
-              case 'ne':
-                findManyOptions.filter[fields[0]] = { $ne: value };
-                break;
-              case 'in':
-                findManyOptions.filter[fields[0]] = { $in: value.split(',') };
-                break;
-              case 'nin':
-                findManyOptions.filter[fields[0]] = { $nin: value.split(',') };
-                break;
-              case 'regex':
-                findManyOptions.filter[fields[0]] = {
-                  $regex: value.trim(),
-                  $options: 'i',
-                };
-                break;
-              default:
-                // Invalid operator, ignore this filter
-                break;
-            }
-            continue;
-          }
-          findManyOptions.filter[key] = value;
-        }
-      }
-    }
-    if (query.sort) {
-      // Ensure sort is initialized
-      if (!findManyOptions.sort) {
-        findManyOptions.sort = {};
-      }
-      const sortFields = query.sort.split(',').map((f: string) => f.trim());
-      sortFields.forEach((field: string) => {
-        const fieldValues = field.split(':').map((f: string) => f.trim());
-        if (
-          fieldValues.length === 2 &&
-          (fieldValues[1] === 'asc' || fieldValues[1] === 'desc')
-        ) {
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          findManyOptions.sort![fieldValues[0]] =
-            fieldValues[1] === 'asc' ? 1 : -1;
-          return;
-        }
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        findManyOptions.sort![field] = 1;
-      });
-    }
-    return findManyOptions;
+    return parseQueryString(query);
   }
 
   private convertToObjectId(id: string): ObjectId {

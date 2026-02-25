@@ -11,3 +11,4 @@ export * from './dto';
 export * from './lib/filters';
 export * from './lib/middleware';
 export * from './utils/query-parser.util';
+export * from './utils/query-string.util';
