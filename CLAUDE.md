@@ -218,7 +218,7 @@ export class MyEntityService extends BaseService<MyEntity> {
 
 **Controller Pattern (Modern - NO BaseController):**
 ```typescript
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto,
+import { JwtAuthGuard, CurrentUser, parseQueryString,
          ApiCreateErrors, ApiReadErrors } from '@hydrabyte/base';
 
 @Controller('my-entities')
@@ -229,12 +229,32 @@ export class MyEntityController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
   ) {
-    return this.service.findAll(query, context);
+    const options = parseQueryString(query);
+    return this.service.findAll(options, context);
   }
 }
+```
+
+**Query String Filtering (via `parseQueryString` utility):**
+
+`parseQueryString` from `@hydrabyte/base` parses query string into `FindManyOptions` with MongoDB operator support. Use this in modern controllers instead of `BaseController.handleQueryStringForFindMany`.
+
+Supported operators:
+```
+?field=value              → { field: "value" }           # Exact match
+?field:gt=18              → { field: { $gt: "18" } }     # Greater than
+?field:gte=18             → { field: { $gte: "18" } }    # Greater than or equal
+?field:lt=65              → { field: { $lt: "65" } }     # Less than
+?field:lte=65             → { field: { $lte: "65" } }    # Less than or equal
+?field:ne=inactive        → { field: { $ne: "inactive" } } # Not equal
+?field:in=a,b,c           → { field: { $in: ["a","b","c"] } } # In array
+?field:nin=a,b             → { field: { $nin: ["a","b"] } }   # Not in array
+?field:regex=john          → { field: { $regex: "john", $options: "i" } } # Regex
+?sort=createdAt:desc,name:asc  # Sorting
+?page=1&limit=20               # Pagination
 ```
 
 ### Port Allocation
