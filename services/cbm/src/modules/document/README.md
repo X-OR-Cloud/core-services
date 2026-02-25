@@ -31,6 +31,7 @@ Document module cho phép quản lý tài liệu được tạo bởi AI Agent h
 - ✅ Label indexing for fast filtering
 - ✅ Soft delete
 - ✅ Swagger documentation
+- ✅ Share link (stateless JWT, expiry, markdown/HTML render)
 
 ## API Endpoints
 
@@ -166,6 +167,35 @@ curl -X PATCH "http://localhost:3001/documents/507f1f77bcf86cd799439011" \
 ```bash
 curl -X DELETE "http://localhost:3001/documents/507f1f77bcf86cd799439011" \
   -H "Authorization: Bearer $TOKEN"
+```
+
+### 7. Create Share Link
+
+```bash
+# Tạo share link (mặc định 1 giờ)
+curl -X POST "http://localhost:3004/documents/$DOCUMENT_ID/share" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ttl": 3600}'
+```
+
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "url": "http://localhost:3004/documents/shared/eyJhbGciOiJIUzI1NiIs...",
+  "expiresAt": "2026-02-25T13:00:00.000Z"
+}
+```
+
+### 8. View Shared Document (Public, No Auth)
+
+```bash
+# Xem raw content
+curl "http://localhost:3004/documents/shared/<share-token>"
+
+# Xem rendered HTML (markdown/HTML → trang web)
+curl "http://localhost:3004/documents/shared/<share-token>?render=true"
 ```
 
 ## Example Use Cases

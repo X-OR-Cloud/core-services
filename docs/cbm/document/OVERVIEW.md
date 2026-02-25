@@ -46,6 +46,13 @@ Document extends BaseSchema:
 | PATCH | `/documents/:id/content` | User JWT | Advanced content operations (7 loại) |
 | DELETE | `/documents/:id` | User JWT | Soft delete |
 
+### Share Link
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/documents/:id/share` | User JWT | Tạo share link (JWT token, mặc định 1h) |
+| GET | `/documents/shared/:token` | Không | Xem content qua share token. `?render=true` để render HTML |
+
 ### Content Operations (PATCH `/documents/:id/content`)
 
 | Operation | Mô tả | Fields cần |
@@ -114,6 +121,9 @@ Document extends BaseSchema:
 - `section` (optional): markdown heading (e.g., `## API Spec`)
 - `sectionContent` (optional): nội dung mới cho section
 
+### CreateShareLinkDto
+- `ttl` (optional): number — thời gian sống tính bằng giây (min 60, max 86400, default 3600)
+
 ## 8. Key Design Decisions
 
 ### Content tách biệt khỏi metadata
@@ -125,10 +135,22 @@ Document extends BaseSchema:
 - Mọi query đều filter theo `owner.orgId` từ JWT context
 - Đảm bảo tenant isolation
 
+### Share Link (stateless JWT)
+- Tạo share link bằng JWT signed token, không lưu DB
+- Token chứa `{ documentId, purpose: 'document-share' }`, dùng chung `JWT_SECRET`
+- JwtAuthGuard không accept token này vì thiếu field `sub`
+- Endpoint shared không có `@UseGuards(JwtAuthGuard)` → public
+- `findByIdForShare()` bypass ownership check → ai có token đều xem được
+- Hỗ trợ render markdown/HTML thành trang web hoàn chỉnh (dùng `marked` library)
+- Token hết hạn → 410 Gone
+- Env `CBM_BASE_URL` để set base URL cho share link theo môi trường
+
 ## 9. Dependencies
 
 - **MongooseModule**: Document schema registration
+- **JwtModule** (`@nestjs/jwt`): Sign/verify share link tokens
 - **BaseService** (`@hydrabyte/base`): CRUD operations, pagination, aggregation, RBAC
+- **marked**: Markdown to HTML rendering (cho share link render)
 
 **Exports**: `DocumentService`, `MongooseModule`
 

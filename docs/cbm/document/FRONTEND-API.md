@@ -213,7 +213,69 @@ GET /documents?search=guide&filter={"projectId":"507f1f77bcf86cd799439011"}
 
 ---
 
-### 2.7 Xóa document (soft delete)
+### 2.7 Tạo share link
+
+| | |
+|---|---|
+| **Method** | `POST` |
+| **Path** | `/documents/:id/share` |
+| **Auth** | User JWT |
+
+**Input (body):**
+
+| Trường | Kiểu | Bắt buộc | Mô tả |
+|--------|------|----------|-------|
+| `ttl` | number | ❌ | Thời gian sống (giây). Min 60, max 86400, default 3600 (1 giờ) |
+
+**Output:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "url": "http://localhost:3004/documents/shared/eyJhbGciOiJIUzI1NiIs...",
+  "expiresAt": "2026-02-25T13:00:00.000Z"
+}
+```
+
+> URL sẵn sàng share cho người khác. Không cần đăng nhập để xem.
+
+---
+
+### 2.8 Xem document qua share link (public)
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/documents/shared/:token` |
+| **Auth** | Không cần |
+
+**Query params:**
+
+| Param | Kiểu | Mô tả |
+|-------|------|-------|
+| `render` | string | `true` để render markdown/HTML thành trang web |
+
+**Ví dụ:**
+```
+GET /documents/shared/<token>              → raw content (MIME type theo document type)
+GET /documents/shared/<token>?render=true  → rendered HTML page
+```
+
+**Render behavior:**
+- `markdown` + `render=true` → Markdown rendered thành HTML page hoàn chỉnh
+- `html` + `render=true` → HTML wrapped trong page template
+- `text/json` + `render=true` → Hiển thị trong `<pre>` tag
+- Không có `render` → Raw content với MIME type header phù hợp
+
+**Error responses:**
+| Status | Trường hợp |
+|--------|-----------|
+| 400 | Token không hợp lệ |
+| 404 | Document không tồn tại hoặc đã bị xóa |
+| 410 | Share link đã hết hạn |
+
+---
+
+### 2.9 Xóa document (soft delete)
 
 | | |
 |---|---|
@@ -239,9 +301,10 @@ Tất cả error trả về dạng:
 
 | Status | Trường hợp |
 |--------|-----------|
-| 400 | Validation lỗi, operation không hợp lệ, text/section không tìm thấy, regex pattern sai |
+| 400 | Validation lỗi, operation không hợp lệ, text/section không tìm thấy, regex pattern sai, share token không hợp lệ |
 | 401 | JWT không hợp lệ hoặc thiếu |
 | 404 | Document không tồn tại |
+| 410 | Share link đã hết hạn |
 | 422 | Validation lỗi chi tiết (array of messages) |
 
 ---
@@ -271,3 +334,5 @@ Tất cả error trả về dạng:
 9. **projectId**: Optional — document có thể tồn tại độc lập hoặc thuộc project. Dùng `filter={"projectId":"..."}` để lấy documents của một project cụ thể.
 
 10. **Form tạo document**: Không cần field `status` — hệ thống tự đặt `draft`.
+
+11. **Share link**: Gọi `POST /documents/:id/share` để tạo link. Response có sẵn `url` — copy và share trực tiếp. Link hết hạn sau TTL (mặc định 1h). Dùng `?render=true` để xem rendered HTML (markdown/HTML). Không cần auth để mở link.
