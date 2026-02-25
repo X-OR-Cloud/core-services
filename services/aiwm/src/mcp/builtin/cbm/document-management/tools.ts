@@ -18,6 +18,7 @@ import {
   executeAppendToDocument,
   executeAppendAfterTextInDocument,
   executeAppendToMarkdownSectionInDocument,
+  executeShareDocument,
 } from './executors';
 import {
   CreateDocumentSchema,
@@ -34,6 +35,7 @@ import {
   AppendToDocumentSchema,
   AppendAfterTextInDocumentSchema,
   AppendToMarkdownSectionInDocumentSchema,
+  ShareDocumentSchema,
 } from './schemas';
 
 /**
@@ -154,5 +156,14 @@ export const DocumentManagementTools: ToolDefinition[] = [
     category: 'DocumentManagement',
     executor: executeAppendToMarkdownSectionInDocument,
     inputSchema: AppendToMarkdownSectionInDocumentSchema,
+  },
+  {
+    name: 'ShareDocument',
+    description:
+      'Create a temporary share link for a document. The link allows viewing without authentication. TTL defaults to 1 hour.',
+    type: 'builtin',
+    category: 'DocumentManagement',
+    executor: executeShareDocument,
+    inputSchema: ShareDocumentSchema,
   },
 ];

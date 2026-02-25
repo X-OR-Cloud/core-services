@@ -767,3 +767,40 @@ export async function executeAppendToMarkdownSectionInDocument(
     };
   }
 }
+
+/**
+ * Execute create share link for document
+ */
+export async function executeShareDocument(
+  args: { id: string; ttl?: number },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const { id, ttl } = args;
+    const body: Record<string, any> = {};
+    if (ttl !== undefined) body.ttl = ttl;
+
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/documents/${id}/share`,
+      {
+        method: 'POST',
+        context,
+        body: JSON.stringify(body),
+      }
+    );
+
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error creating share link:', error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error creating share link: ${error.message}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}

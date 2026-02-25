@@ -198,3 +198,18 @@ export const AppendToMarkdownSectionInDocumentSchema = z.object({
   section: z.string().describe('Markdown section heading (e.g., "## API Specification")'),
   content: z.string().describe('Content to append to end of the section'),
 });
+
+/**
+ * Schema for creating a share link for a document
+ */
+export const ShareDocumentSchema = z.object({
+  id: z.string().describe('Document ID'),
+  ttl: z
+    .number()
+    .int()
+    .min(60)
+    .max(86400)
+    .optional()
+    .default(3600)
+    .describe('Time to live in seconds (min 60, max 86400, default 3600 = 1 hour)'),
+});
