@@ -26,23 +26,19 @@ export async function makeServiceRequest(
   };
   const maskedHeaders = {
     ...headers,
-    Authorization: `Bearer ${headers.Authorization?.substring(0, 7)}****`,
+    // Authorization: `Bearer ${headers.Authorization?.substring(0, 7)}****`,
+    Authorization: `Bearer ${headers.Authorization}`,
   };
 
   logger.log(`📡 Making request: ${fetchOptions.method || 'GET'} ${url}`, {
     headers: maskedHeaders,
+    query: (url.split('?')[1] || '').split('&').reduce((acc, pair) => {
+      const [key, value] = pair.split('=');
+      if (key) acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>),
     body: fetchOptions.body,
   });
-
-  // Debug: Log request body if present
-  if (fetchOptions.body) {
-    try {
-      const bodyObj = JSON.parse(fetchOptions.body as string);
-      logger.debug(`📤 Request body:`, JSON.stringify(bodyObj, null, 2));
-    } catch {
-      logger.debug(`📤 Request body (raw):`, fetchOptions.body);
-    }
-  }
 
   const response = await fetch(url, {
     ...fetchOptions,
@@ -50,7 +46,10 @@ export async function makeServiceRequest(
   });
 
   logger.log(
-    `✅ Response received: ${response.status} ${response.statusText}`
+    `✅ Response received: ${response.status} ${response.statusText}`,
+    {
+      body: fetchOptions.body,
+    }
   );
 
   // Debug: Log response body
