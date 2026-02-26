@@ -64,6 +64,24 @@ export class WorkController {
     return this.workService.findAll(query, context);
   }
 
+  @Get('next-work')
+  @ApiOperation({
+    summary: 'Get next work for user/agent',
+    description: 'Returns the next work item based on priority rules. See docs/cbm/NEXT-WORK-PRIORITY-LOGIC.md'
+  })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getNextWork(
+    @Query() query: GetNextWorkQueryDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.workService.getNextWork(
+      query.assigneeType,
+      query.assigneeId,
+      context
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get work by ID' })
   @ApiReadErrors()
@@ -259,24 +277,6 @@ export class WorkController {
   ) {
     return this.workService.recalculateEpicStatus(
       new Types.ObjectId(id) as any,
-      context
-    );
-  }
-
-  @Get('next-work')
-  @ApiOperation({
-    summary: 'Get next work for user/agent',
-    description: 'Returns the next work item based on priority rules. See docs/cbm/NEXT-WORK-PRIORITY-LOGIC.md'
-  })
-  @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
-  async getNextWork(
-    @Query() query: GetNextWorkQueryDto,
-    @CurrentUser() context: RequestContext
-  ) {
-    return this.workService.getNextWork(
-      query.assigneeType,
-      query.assigneeId,
       context
     );
   }
