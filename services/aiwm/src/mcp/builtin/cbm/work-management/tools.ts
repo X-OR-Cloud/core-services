@@ -18,6 +18,8 @@ import {
   executeCancelWork,
   executeAssignAndTodoWork,
   executeRejectReviewForWork,
+  executeGetNextWork,
+  executeRecalculateEpicStatus,
 } from './executors';
 import {
   CreateWorkSchema,
@@ -34,6 +36,8 @@ import {
   CancelWorkSchema,
   AssignAndTodoWorkSchema,
   RejectReviewForWorkSchema,
+  GetNextWorkSchema,
+  RecalculateEpicStatusSchema,
 } from './schemas';
 
 /**
@@ -43,7 +47,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   {
     name: 'CreateWork',
     description:
-      'Create a new work item (epic/task/subtask) with title, description, type, reporter, assignee, and other metadata',
+      'Create a new work item (epic/task/subtask) with title, description, type, reporter, assignee, projectId, recurrence config, and other metadata',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeCreateWork,
@@ -69,7 +73,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   {
     name: 'UpdateWork',
     description:
-      'Update work metadata (title, description, assignee, etc.). Cannot update status - use workflow action tools instead',
+      'Update work metadata (title, description, assignee, projectId, recurrence, etc.). Cannot update type or status - use workflow action tools instead',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeUpdateWork,
@@ -102,7 +106,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   },
   {
     name: 'UnblockWork',
-    description: 'Unblock work - transition from blocked to in_progress status',
+    description: 'Unblock work - transition from blocked to todo status',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeUnblockWork,
@@ -157,5 +161,23 @@ export const WorkManagementTools: ToolDefinition[] = [
     category: 'WorkManagement',
     executor: executeRejectReviewForWork,
     inputSchema: RejectReviewForWorkSchema,
+  },
+  {
+    name: 'GetNextWork',
+    description:
+      'Get the next highest-priority work for a user/agent. Returns work with priority metadata. Priority: 1=Recurring scheduled task, 2=Subtask, 3=Task, 4=Blocked (reported), 5=Review (reported), 0=No work',
+    type: 'builtin',
+    category: 'WorkManagement',
+    executor: executeGetNextWork,
+    inputSchema: GetNextWorkSchema,
+  },
+  {
+    name: 'RecalculateEpicStatus',
+    description:
+      'Recalculate epic status based on child task statuses. Only applies to work items of type=epic',
+    type: 'builtin',
+    category: 'WorkManagement',
+    executor: executeRecalculateEpicStatus,
+    inputSchema: RecalculateEpicStatusSchema,
   },
 ];

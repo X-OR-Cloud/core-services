@@ -10,6 +10,11 @@ import { LookupToolFunctionsDto, ToolFunctionsResponseDto } from './tool.dto';
 /**
  * Hardcoded framework functions by agent framework
  */
+const BUILTIN_FUNCTIONS: Record<string, string[]> = {
+  'builtin': [
+    'mcp__OfficeParser__ParseOfficeFile',
+  ],
+}
 const FRAMEWORK_FUNCTIONS: Record<string, string[]> = {
   'claude-agent-sdk': [
     'Task',
@@ -65,6 +70,9 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__CancelWork',
     'mcp__Builtin__AssignAndTodoWork',
     'mcp__Builtin__RejectReviewForWork',
+    'mcp__Builtin__GetNextWork',
+    'mcp__Builtin__CanTriggerAgent',
+    'mcp__Builtin__RecalculateEpicStatus'
   ],
   ProjectManagement: [
     'mcp__Builtin__CreateProject',

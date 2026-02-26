@@ -67,6 +67,14 @@ export async function executeCreateWork(
     dependencies?: string[];
     parentId?: string;
     documents?: string[];
+    recurrence?: {
+      type: 'interval' | 'daily' | 'weekly' | 'monthly';
+      intervalMinutes?: number;
+      timesOfDay?: string[];
+      daysOfWeek?: number[];
+      daysOfMonth?: number[];
+      timezone?: string;
+    };
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -158,7 +166,31 @@ export async function executeListWorks(
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
-    const queryString = buildQueryString(args);
+
+    // Build filter object from individual filter params
+    const filter: Record<string, any> = {};
+    if (args.type) filter.type = args.type;
+    if (args.status) filter.status = args.status;
+    if (args.projectId) filter.projectId = args.projectId;
+    if (args.reporter) {
+      const parsed = parseReporterAssignee(args.reporter);
+      filter['reporter.type'] = parsed.type;
+      filter['reporter.id'] = parsed.id;
+    }
+    if (args.assignee) {
+      const parsed = parseReporterAssignee(args.assignee);
+      filter['assignee.type'] = parsed.type;
+      filter['assignee.id'] = parsed.id;
+    }
+
+    // Build query params: page, limit, search, filter (JSON object)
+    const queryParams: Record<string, any> = {};
+    if (args.page) queryParams.page = args.page;
+    if (args.limit) queryParams.limit = args.limit;
+    if (args.search) queryParams.search = args.search;
+    if (Object.keys(filter).length > 0) queryParams.filter = JSON.stringify(filter);
+
+    const queryString = buildQueryString(queryParams);
     const response = await makeServiceRequest(`${cbmBaseUrl}/works${queryString}`, {
       method: 'GET',
       context,
@@ -257,6 +289,14 @@ export async function executeUpdateWork(
     dependencies?: string[];
     parentId?: string;
     documents?: string[];
+    recurrence?: {
+      type: 'interval' | 'daily' | 'weekly' | 'monthly';
+      intervalMinutes?: number;
+      timesOfDay?: string[];
+      daysOfWeek?: number[];
+      daysOfMonth?: number[];
+      timezone?: string;
+    } | null;
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -747,6 +787,106 @@ export async function executeRejectReviewForWork(
         {
           type: 'text',
           text: `Error rejecting review for work: ${error.message}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute get next work (priority-based)
+ */
+export async function executeGetNextWork(
+  args: { assigneeType: 'user' | 'agent'; assigneeId: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const queryString = buildQueryString({
+      assigneeType: args.assigneeType,
+      assigneeId: args.assigneeId,
+    });
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/works/next-work${queryString}`,
+      {
+        method: 'GET',
+        context,
+      }
+    );
+
+    // Sanitize response to optimize token usage
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.includes('application/json')) {
+      const json = await response.json();
+      if (json.work) {
+        json.work = sanitizeWork(json.work);
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(json, null, 2),
+          },
+        ],
+      };
+    }
+
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error getting next work:', error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error getting next work: ${error.message}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute recalculate epic status
+ */
+export async function executeRecalculateEpicStatus(
+  args: { id: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/works/${args.id}/recalculate-status`,
+      {
+        method: 'POST',
+        context,
+      }
+    );
+
+    // Sanitize response to optimize token usage
+    const contentType = response.headers.get('content-type') || '';
+    if (response.ok && contentType.includes('application/json')) {
+      const json = await response.json();
+      const sanitized = sanitizeWork(json);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(sanitized, null, 2),
+          },
+        ],
+      };
+    }
+
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error recalculating epic status:', error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error recalculating epic status: ${error.message}`,
         },
       ],
       isError: true,

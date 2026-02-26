@@ -18,6 +18,37 @@ const WorkStatusEnum = z.enum([
   'done',
 ]);
 
+// Recurrence type enum
+const RecurrenceTypeEnum = z.enum(['interval', 'daily', 'weekly', 'monthly']);
+
+// Recurrence config schema
+const RecurrenceConfigSchema = z.object({
+  type: RecurrenceTypeEnum.describe('Recurrence type: interval, daily, weekly, or monthly'),
+  intervalMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(525600)
+    .optional()
+    .describe('Minutes between each recurrence (required when type=interval, 1-525600)'),
+  timesOfDay: z
+    .array(z.string())
+    .optional()
+    .describe('Times of day in "HH:mm" format (required for daily/weekly/monthly, e.g., ["09:00", "14:00"])'),
+  daysOfWeek: z
+    .array(z.number().int().min(0).max(6))
+    .optional()
+    .describe('Days of week (required for weekly): 0=Sun, 1=Mon, ..., 6=Sat (e.g., [1, 3])'),
+  daysOfMonth: z
+    .array(z.number().int().min(1).max(31))
+    .optional()
+    .describe('Days of month (required for monthly): 1-31 (e.g., [1, 15])'),
+  timezone: z
+    .string()
+    .optional()
+    .describe('IANA timezone (default: "UTC", e.g., "Asia/Ho_Chi_Minh")'),
+});
+
 /**
  * Schema for creating a new work
  */
@@ -33,7 +64,7 @@ export const CreateWorkSchema = z.object({
     .optional()
     .describe('Optional: Detailed description in markdown (max 10000 characters)'),
   type: WorkTypeEnum.describe('Work type: epic, task, or subtask'),
-  projectId: z.string().optional().describe('Optional: Project ID'),
+  projectId: z.string().optional().describe('Optional: Project ID to associate with'),
   reporter: z
     .string()
     .optional()
@@ -58,6 +89,9 @@ export const CreateWorkSchema = z.object({
     .describe('Optional: Array of Work IDs that this work depends on'),
   parentId: z.string().optional().describe('Optional: Parent Work ID (for subtasks)'),
   documents: z.array(z.string()).optional().describe('Optional: Array of document IDs'),
+  recurrence: RecurrenceConfigSchema.optional().describe(
+    'Optional: Recurrence config (only for type=task). Auto-sets isRecurring=true and calculates startAt if not provided'
+  ),
 });
 
 /**
@@ -137,6 +171,9 @@ export const UpdateWorkSchema = z.object({
     .describe('Optional: Updated array of Work IDs'),
   parentId: z.string().optional().describe('Optional: Updated parent Work ID'),
   documents: z.array(z.string()).optional().describe('Optional: Updated array of document IDs'),
+  recurrence: RecurrenceConfigSchema.nullable().optional().describe(
+    'Optional: Updated recurrence config (only for type=task). Set to null to remove recurrence'
+  ),
 });
 
 /**
@@ -220,4 +257,21 @@ export const RejectReviewForWorkSchema = z.object({
     .min(1)
     .max(2000)
     .describe('Feedback explaining why the work was rejected (required, max 2000 characters)'),
+});
+
+/**
+ * Schema for getting next work (priority-based)
+ */
+export const GetNextWorkSchema = z.object({
+  assigneeType: z
+    .enum(['user', 'agent'])
+    .describe('Assignee type: "user" or "agent"'),
+  assigneeId: z.string().describe('Assignee ID (user ID or agent ID)'),
+});
+
+/**
+ * Schema for recalculating epic status
+ */
+export const RecalculateEpicStatusSchema = z.object({
+  id: z.string().describe('Epic Work ID to recalculate status for (must be type=epic)'),
 });

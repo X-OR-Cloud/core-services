@@ -122,18 +122,27 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 |-------|------|-------|
 | `page` | number | Trang (default: 1) |
 | `limit` | number | Số items/trang (default: 10) |
-| `sort` | string | Sắp xếp (vd: `-createdAt`) |
-| `filter[status]` | string | Lọc theo status |
-| `filter[type]` | string | Lọc theo type |
-| `filter[projectId]` | string | Lọc theo project |
-| `filter[parentId]` | string | Lọc theo parent (children of epic/task) |
+| `search` | string | Tìm kiếm trong title, description |
+| `filter` | JSON string | Lọc theo các trường (xem bên dưới) |
+
+**Filter format:** Truyền dưới dạng JSON string trong query parameter:
+
+```
+?filter={"status":"todo","type":"task","projectId":"abc123"}
+```
+
+Các trường hỗ trợ filter:
+- `status` — Lọc theo status
+- `type` — Lọc theo type
+- `projectId` — Lọc theo project
+- `parentId` — Lọc theo parent (children of epic/task)
 
 **Output:**
 
 ```
 {
   data: Work[],              // Không có trường `description`
-  pagination: { page, limit, total, totalPages },
+  pagination: { page, limit, total },
   statistics: {
     total: number,
     byStatus: { backlog: N, todo: N, in_progress: N, blocked: N, review: N, done: N, cancelled: N },
