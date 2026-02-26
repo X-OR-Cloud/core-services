@@ -6,12 +6,17 @@ import {
   IsArray,
   IsDate,
   IsObject,
+  IsInt,
+  IsBoolean,
   ValidateNested,
   MinLength,
   MaxLength,
+  Min,
+  Max,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ReporterAssignee } from './work.schema';
+import { ReporterAssignee, RecurrenceConfig } from './work.schema';
 
 /**
  * DTO for reporter/assignee entity reference
@@ -31,6 +36,76 @@ export class ReporterAssigneeDto implements ReporterAssignee {
   })
   @IsString()
   id!: string;
+}
+
+/**
+ * DTO for recurrence configuration
+ * Only applicable to type=task
+ */
+export class RecurrenceConfigDto implements RecurrenceConfig {
+  @ApiProperty({
+    description: 'Recurrence pattern type',
+    enum: ['interval', 'daily', 'weekly', 'monthly'],
+    example: 'daily',
+  })
+  @IsEnum(['interval', 'daily', 'weekly', 'monthly'])
+  type!: 'interval' | 'daily' | 'weekly' | 'monthly';
+
+  @ApiPropertyOptional({
+    description: 'Interval in minutes (required when type=interval)',
+    example: 30,
+    minimum: 1,
+    maximum: 525600,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(525600)
+  intervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: 'Times of day in HH:mm 24-hour format (required when type=daily/weekly/monthly)',
+    example: ['09:00', '14:00'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { each: true, message: 'Each time must be in HH:mm format' })
+  timesOfDay?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Days of the week: 0=Sunday, 6=Saturday (required when type=weekly)',
+    example: [1, 3],
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  daysOfWeek?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Days of the month: 1-31 (required when type=monthly)',
+    example: [1, 15],
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(31, { each: true })
+  daysOfMonth?: number[];
+
+  @ApiPropertyOptional({
+    description: 'IANA timezone string',
+    example: 'Asia/Ho_Chi_Minh',
+    default: 'UTC',
+  })
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 }
 
 /**
@@ -150,6 +225,16 @@ export class CreateWorkDto {
   @IsArray()
   @IsString({ each: true })
   documents?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Recurrence configuration (only for type=task)',
+    type: RecurrenceConfigDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => RecurrenceConfigDto)
+  recurrence?: RecurrenceConfigDto;
 }
 
 /**
@@ -254,6 +339,16 @@ export class UpdateWorkDto {
   @IsArray()
   @IsString({ each: true })
   documents?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Recurrence configuration (only for type=task). Set to null to remove recurrence.',
+    type: RecurrenceConfigDto,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RecurrenceConfigDto)
+  recurrence?: RecurrenceConfigDto | null;
 }
 
 /**

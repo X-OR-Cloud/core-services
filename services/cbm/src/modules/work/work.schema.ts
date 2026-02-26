@@ -14,6 +14,25 @@ export interface ReporterAssignee {
 }
 
 /**
+ * RecurrenceConfig - Structured recurrence definition for recurring tasks
+ * Only applicable to type=task
+ */
+export interface RecurrenceConfig {
+  /** Recurrence pattern type */
+  type: 'interval' | 'daily' | 'weekly' | 'monthly';
+  /** Interval in minutes. Required when type='interval'. Min: 1, Max: 525600 */
+  intervalMinutes?: number;
+  /** Times of day in "HH:mm" 24-hour format. Required when type='daily'|'weekly'|'monthly' */
+  timesOfDay?: string[];
+  /** Days of the week (0=Sunday, 6=Saturday). Required when type='weekly' */
+  daysOfWeek?: number[];
+  /** Days of the month (1-31). Required when type='monthly'. Clamped to last day of month */
+  daysOfMonth?: number[];
+  /** IANA timezone string. Default: 'UTC' */
+  timezone?: string;
+}
+
+/**
  * Work - Work/task management entity
  * Supports 3 types: epic, task, subtask
  * Uses MongoDB _id as the primary identifier
@@ -66,6 +85,12 @@ export class Work extends BaseSchema {
   @Prop({ type: [String], default: [] })
   documents!: string[]; // Array of document IDs
 
+  @Prop({ type: Object })
+  recurrence?: RecurrenceConfig; // Recurrence configuration (only for type=task)
+
+  @Prop({ type: Boolean, default: false })
+  isRecurring!: boolean; // Convenience flag: true when recurrence is set and active
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
 }
@@ -81,3 +106,4 @@ WorkSchema.index({ 'assignee.id': 1 });
 WorkSchema.index({ parentId: 1 });
 WorkSchema.index({ createdAt: -1 });
 WorkSchema.index({ title: 'text', description: 'text' }); // Full-text search
+WorkSchema.index({ isRecurring: 1, status: 1, startAt: 1, 'assignee.id': 1 }); // Recurring work queries

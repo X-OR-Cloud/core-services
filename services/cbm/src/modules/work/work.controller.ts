@@ -169,7 +169,7 @@ export class WorkController {
   @Post(':id/complete')
   @ApiOperation({
     summary: 'Complete work',
-    description: 'Transition work from review to done status'
+    description: 'Transition work from review to done status. For recurring tasks: resets status to todo and calculates next startAt automatically.'
   })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
@@ -183,7 +183,7 @@ export class WorkController {
   @Post(':id/reopen')
   @ApiOperation({
     summary: 'Reopen work',
-    description: 'Transition work from done to in_progress status'
+    description: 'Transition work from done or cancelled to in_progress status. For works with recurrence config: restores isRecurring and recalculates startAt.'
   })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
@@ -197,7 +197,7 @@ export class WorkController {
   @Post(':id/cancel')
   @ApiOperation({
     summary: 'Cancel work',
-    description: 'Transition work from any status to cancelled'
+    description: 'Transition work from any status to cancelled. For recurring works: deactivates recurrence (preserves config for potential reopen).'
   })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)

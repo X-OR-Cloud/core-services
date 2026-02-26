@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Work } from './work.schema';
+import { Work, RecurrenceConfig } from './work.schema';
 import { CreateWorkDto } from './work.dto';
 import { NotificationService } from '../notification/notification.service';
 
@@ -39,6 +39,16 @@ export class WorkService extends BaseService<Work> {
 
     // Validate and enforce parentId rules based on type
     await this.validateAndSetParentId(data, context);
+
+    // Validate recurrence config if provided
+    if (data.recurrence) {
+      this.validateRecurrenceConfig(data);
+      (data as any).isRecurring = true;
+      // Calculate initial startAt if not provided
+      if (!data.startAt) {
+        data.startAt = this.calculateNextStartAt(data.recurrence, new Date());
+      }
+    }
 
     data.status = 'backlog'; // New work always starts with 'backlog' status
     const work = await super.create(data as CreateWorkDto, context) as Work;
@@ -103,6 +113,26 @@ export class WorkService extends BaseService<Work> {
 
       // Apply the validated parentId back to data
       data.parentId = tempData.parentId;
+    }
+
+    // Validate recurrence if being updated
+    if (data.recurrence !== undefined) {
+      if (data.recurrence === null) {
+        // Removing recurrence
+        data.isRecurring = false;
+        data.recurrence = null;
+      } else {
+        const work = await this.findById(id, context);
+        if (!work) {
+          throw new BadRequestException('Work not found');
+        }
+        this.validateRecurrenceConfig({ type: work.type, recurrence: data.recurrence });
+        data.isRecurring = true;
+        // Recalculate startAt if no explicit startAt provided
+        if (data.startAt === undefined) {
+          data.startAt = this.calculateNextStartAt(data.recurrence, new Date());
+        }
+      }
     }
 
     return super.update(id, data, context);
@@ -391,6 +421,7 @@ export class WorkService extends BaseService<Work> {
   /**
    * Action: Complete work
    * Transition: review → done
+   * For recurring tasks: resets status to todo and calculates next startAt
    */
   async completeWork(
     id: ObjectId,
@@ -407,6 +438,39 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
+    // For recurring works: reset to todo with next startAt
+    if (work.isRecurring && work.recurrence) {
+      const nextStartAt = this.calculateNextStartAt(work.recurrence, new Date());
+
+      const updated = await this.workModel.findByIdAndUpdate(
+        id,
+        {
+          status: 'todo',
+          startAt: nextStartAt,
+          reason: null,
+          feedback: null,
+          updatedBy: context,
+        },
+        { new: true }
+      ).exec() as Work;
+
+      // Emit notification with recurring metadata
+      await this.notificationService.notify({
+        type: 'work.completed',
+        workId: (updated as any)._id.toString(),
+        work: updated,
+        actor: context,
+        metadata: {
+          isRecurring: true,
+          nextStartAt: nextStartAt.toISOString(),
+        },
+      });
+
+      await this.triggerParentEpicRecalculation(updated, context);
+      return updated;
+    }
+
+    // Non-recurring: existing behavior
     const updated = await this.update(
       id,
       { status: 'done' } as any,
@@ -429,7 +493,8 @@ export class WorkService extends BaseService<Work> {
 
   /**
    * Action: Reopen work
-   * Transition: done → in_progress
+   * Transition: done → in_progress, cancelled → in_progress
+   * For recurring works with recurrence config: restores isRecurring and recalculates startAt
    */
   async reopenWork(
     id: ObjectId,
@@ -440,15 +505,23 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Work not found');
     }
 
-    if (work.status !== 'done') {
+    if (work.status !== 'done' && work.status !== 'cancelled') {
       throw new BadRequestException(
-        `Cannot reopen work with status: ${work.status}. Only done works can be reopened.`
+        `Cannot reopen work with status: ${work.status}. Only done or cancelled works can be reopened.`
       );
+    }
+
+    const updateData: any = { status: 'in_progress' };
+
+    // Restore recurrence if config exists
+    if (work.recurrence) {
+      updateData.isRecurring = true;
+      updateData.startAt = this.calculateNextStartAt(work.recurrence, new Date());
     }
 
     const updated = await this.update(
       id,
-      { status: 'in_progress' } as any,
+      updateData,
       context
     ) as Work;
 
@@ -461,6 +534,7 @@ export class WorkService extends BaseService<Work> {
   /**
    * Action: Cancel work
    * Transition: any → cancelled
+   * For recurring works: deactivates recurrence (preserves config for potential reopen)
    */
   async cancelWork(
     id: ObjectId,
@@ -475,9 +549,16 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Work is already cancelled');
     }
 
+    const updateData: any = { status: 'cancelled' };
+
+    // Deactivate recurrence (preserve config for potential reopen)
+    if (work.isRecurring) {
+      updateData.isRecurring = false;
+    }
+
     const updated = await this.update(
       id,
-      { status: 'cancelled' } as any,
+      updateData,
       context
     ) as Work;
 
@@ -751,7 +832,40 @@ export class WorkService extends BaseService<Work> {
       matchedCriteria: string[];
     };
   }> {
-    // Priority 1: Assigned subtasks in todo
+    const now = new Date();
+
+    // Priority 1: Recurring tasks with startAt reached
+    const recurringTasks = await this.workModel.find({
+      type: 'task',
+      isRecurring: true,
+      'assignee.type': assigneeType,
+      'assignee.id': assigneeId,
+      status: 'todo',
+      startAt: { $lte: now },
+      isDeleted: false,
+    }).sort({ startAt: 1 }); // Most overdue first
+
+    for (const task of recurringTasks) {
+      const hasSubtasks = await this.workModel.exists({
+        type: 'subtask',
+        parentId: task._id.toString(),
+        isDeleted: false,
+      });
+      if (hasSubtasks) continue;
+
+      if (await this.validateDependencies(task)) {
+        return {
+          work: task,
+          metadata: {
+            priorityLevel: 1,
+            priorityDescription: 'Recurring task with scheduled time reached',
+            matchedCriteria: ['assigned_to_me', 'task', 'recurring', 'status_todo', 'startAt_reached', 'no_subtasks', 'dependencies_met']
+          }
+        };
+      }
+    }
+
+    // Priority 2: Assigned subtasks in todo
     const subtasks = await this.workModel.find({
       type: 'subtask',
       'assignee.type': assigneeType,
@@ -765,7 +879,7 @@ export class WorkService extends BaseService<Work> {
         return {
           work: subtask,
           metadata: {
-            priorityLevel: 1,
+            priorityLevel: 2,
             priorityDescription: 'Assigned subtask in todo status',
             matchedCriteria: ['assigned_to_me', 'subtask', 'status_todo', 'dependencies_met']
           }
@@ -773,7 +887,7 @@ export class WorkService extends BaseService<Work> {
       }
     }
 
-    // Priority 2: Assigned tasks without subtasks in todo
+    // Priority 3: Assigned tasks without subtasks in todo
     const tasks = await this.workModel.find({
       type: 'task',
       'assignee.type': assigneeType,
@@ -797,7 +911,7 @@ export class WorkService extends BaseService<Work> {
         return {
           work: task,
           metadata: {
-            priorityLevel: 2,
+            priorityLevel: 3,
             priorityDescription: 'Assigned task without subtasks in todo status',
             matchedCriteria: ['assigned_to_me', 'task', 'status_todo', 'no_subtasks', 'dependencies_met']
           }
@@ -805,7 +919,7 @@ export class WorkService extends BaseService<Work> {
       }
     }
 
-    // Priority 3: Reported works in blocked status
+    // Priority 4: Reported works in blocked status
     const blockedWork = await this.workModel.findOne({
       type: { $in: ['task', 'subtask'] },
       'reporter.type': assigneeType,
@@ -818,14 +932,14 @@ export class WorkService extends BaseService<Work> {
       return {
         work: blockedWork,
         metadata: {
-          priorityLevel: 3,
+          priorityLevel: 4,
           priorityDescription: 'Reported work in blocked status requiring resolution',
           matchedCriteria: ['reported_by_me', 'status_blocked']
         }
       };
     }
 
-    // Priority 4: Reported works in review status
+    // Priority 5: Reported works in review status
     const reviewWork = await this.workModel.findOne({
       type: { $in: ['task', 'subtask'] },
       'reporter.type': assigneeType,
@@ -838,7 +952,7 @@ export class WorkService extends BaseService<Work> {
       return {
         work: reviewWork,
         metadata: {
-          priorityLevel: 4,
+          priorityLevel: 5,
           priorityDescription: 'Reported work in review status awaiting approval',
           matchedCriteria: ['reported_by_me', 'status_review']
         }
@@ -879,8 +993,40 @@ export class WorkService extends BaseService<Work> {
     };
   }> {
     const orgFilter = { 'owner.orgId': orgId, isDeleted: false };
+    const now = new Date();
 
-    // Priority 1: Assigned subtasks in todo
+    // Priority 1: Recurring tasks with startAt reached
+    const recurringTasks = await this.workModel.find({
+      ...orgFilter,
+      type: 'task',
+      isRecurring: true,
+      'assignee.type': assigneeType,
+      'assignee.id': assigneeId,
+      status: 'todo',
+      startAt: { $lte: now },
+    }).sort({ startAt: 1 });
+
+    for (const task of recurringTasks) {
+      const hasSubtasks = await this.workModel.exists({
+        type: 'subtask',
+        parentId: task._id.toString(),
+        isDeleted: false,
+      });
+      if (hasSubtasks) continue;
+
+      if (await this.validateDependencies(task)) {
+        return {
+          work: task,
+          metadata: {
+            priorityLevel: 1,
+            priorityDescription: 'Recurring task with scheduled time reached',
+            matchedCriteria: ['assigned_to_me', 'task', 'recurring', 'status_todo', 'startAt_reached', 'no_subtasks', 'dependencies_met']
+          }
+        };
+      }
+    }
+
+    // Priority 2: Assigned subtasks in todo
     const subtasks = await this.workModel.find({
       ...orgFilter,
       type: 'subtask',
@@ -894,7 +1040,7 @@ export class WorkService extends BaseService<Work> {
         return {
           work: subtask,
           metadata: {
-            priorityLevel: 1,
+            priorityLevel: 2,
             priorityDescription: 'Assigned subtask in todo status',
             matchedCriteria: ['assigned_to_me', 'subtask', 'status_todo', 'dependencies_met']
           }
@@ -902,7 +1048,7 @@ export class WorkService extends BaseService<Work> {
       }
     }
 
-    // Priority 2: Assigned tasks without subtasks in todo
+    // Priority 3: Assigned tasks without subtasks in todo
     const tasks = await this.workModel.find({
       ...orgFilter,
       type: 'task',
@@ -926,7 +1072,7 @@ export class WorkService extends BaseService<Work> {
         return {
           work: task,
           metadata: {
-            priorityLevel: 2,
+            priorityLevel: 3,
             priorityDescription: 'Assigned task without subtasks in todo status',
             matchedCriteria: ['assigned_to_me', 'task', 'status_todo', 'no_subtasks', 'dependencies_met']
           }
@@ -934,7 +1080,7 @@ export class WorkService extends BaseService<Work> {
       }
     }
 
-    // Priority 3: Reported works in blocked status
+    // Priority 4: Reported works in blocked status
     const blockedWork = await this.workModel.findOne({
       ...orgFilter,
       type: { $in: ['task', 'subtask'] },
@@ -947,14 +1093,14 @@ export class WorkService extends BaseService<Work> {
       return {
         work: blockedWork,
         metadata: {
-          priorityLevel: 3,
+          priorityLevel: 4,
           priorityDescription: 'Reported work in blocked status requiring resolution',
           matchedCriteria: ['reported_by_me', 'status_blocked']
         }
       };
     }
 
-    // Priority 4: Reported works in review status
+    // Priority 5: Reported works in review status
     const reviewWork = await this.workModel.findOne({
       ...orgFilter,
       type: { $in: ['task', 'subtask'] },
@@ -967,7 +1113,7 @@ export class WorkService extends BaseService<Work> {
       return {
         work: reviewWork,
         metadata: {
-          priorityLevel: 4,
+          priorityLevel: 5,
           priorityDescription: 'Reported work in review status awaiting approval',
           matchedCriteria: ['reported_by_me', 'status_review']
         }
@@ -1067,5 +1213,249 @@ export class WorkService extends BaseService<Work> {
       reason: 'All conditions met: assigned to agent, startAt time reached, status is ready, no dependencies',
       work,
     };
+  }
+
+  // =============== Recurrence Logic ===============
+
+  /**
+   * Validate recurrence configuration
+   * Only type=task can have recurrence. Validates required fields per recurrence type.
+   */
+  private validateRecurrenceConfig(data: { type?: string; recurrence?: RecurrenceConfig }): void {
+    if (data.type !== 'task') {
+      throw new BadRequestException(
+        'Recurrence is only allowed for type=task. Epic and subtask cannot be recurring.'
+      );
+    }
+
+    const config = data.recurrence!;
+
+    switch (config.type) {
+      case 'interval':
+        if (!config.intervalMinutes || config.intervalMinutes < 1) {
+          throw new BadRequestException(
+            'intervalMinutes is required and must be >= 1 when recurrence type is interval'
+          );
+        }
+        break;
+
+      case 'daily':
+        if (!config.timesOfDay || config.timesOfDay.length === 0) {
+          throw new BadRequestException(
+            'timesOfDay is required and must have at least 1 entry when recurrence type is daily'
+          );
+        }
+        break;
+
+      case 'weekly':
+        if (!config.daysOfWeek || config.daysOfWeek.length === 0) {
+          throw new BadRequestException(
+            'daysOfWeek is required when recurrence type is weekly'
+          );
+        }
+        if (!config.timesOfDay || config.timesOfDay.length === 0) {
+          throw new BadRequestException(
+            'timesOfDay is required when recurrence type is weekly'
+          );
+        }
+        break;
+
+      case 'monthly':
+        if (!config.daysOfMonth || config.daysOfMonth.length === 0) {
+          throw new BadRequestException(
+            'daysOfMonth is required when recurrence type is monthly'
+          );
+        }
+        if (!config.timesOfDay || config.timesOfDay.length === 0) {
+          throw new BadRequestException(
+            'timesOfDay is required when recurrence type is monthly'
+          );
+        }
+        break;
+    }
+
+    if (config.timezone) {
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: config.timezone });
+      } catch {
+        throw new BadRequestException(`Invalid timezone: ${config.timezone}`);
+      }
+    }
+  }
+
+  /**
+   * Calculate the next startAt date based on recurrence config
+   * @param config - RecurrenceConfig
+   * @param fromDate - Reference date (usually current time when completing)
+   * @returns Next scheduled Date (UTC)
+   */
+  calculateNextStartAt(config: RecurrenceConfig, fromDate: Date): Date {
+    switch (config.type) {
+      case 'interval':
+        return new Date(fromDate.getTime() + config.intervalMinutes! * 60 * 1000);
+
+      case 'daily':
+        return this.findNextDailyOccurrence(config.timesOfDay!, config.timezone || 'UTC', fromDate);
+
+      case 'weekly':
+        return this.findNextWeeklyOccurrence(
+          config.daysOfWeek!, config.timesOfDay!, config.timezone || 'UTC', fromDate
+        );
+
+      case 'monthly':
+        return this.findNextMonthlyOccurrence(
+          config.daysOfMonth!, config.timesOfDay!, config.timezone || 'UTC', fromDate
+        );
+    }
+  }
+
+  /**
+   * Find next daily occurrence from sorted timesOfDay after fromDate
+   */
+  private findNextDailyOccurrence(timesOfDay: string[], tz: string, from: Date): Date {
+    const sortedTimes = [...timesOfDay].sort();
+
+    // Check up to 2 days (today + tomorrow)
+    for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+      for (const time of sortedTimes) {
+        const candidate = this.buildDateInTimezone(from, dayOffset, time, tz);
+        if (candidate > from) {
+          return candidate;
+        }
+      }
+    }
+
+    // Fallback: first time tomorrow (should not reach here)
+    return this.buildDateInTimezone(from, 1, sortedTimes[0], tz);
+  }
+
+  /**
+   * Find next weekly occurrence on specified daysOfWeek at specified times
+   */
+  private findNextWeeklyOccurrence(
+    daysOfWeek: number[], timesOfDay: string[], tz: string, from: Date
+  ): Date {
+    const sortedDays = [...daysOfWeek].sort((a, b) => a - b);
+    const sortedTimes = [...timesOfDay].sort();
+
+    // Scan up to 8 days forward (covers full week + today)
+    for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+      const candidateDate = new Date(from.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      const dayOfWeek = this.getDayOfWeekInTimezone(candidateDate, tz);
+
+      if (sortedDays.includes(dayOfWeek)) {
+        for (const time of sortedTimes) {
+          const candidate = this.buildDateInTimezone(from, dayOffset, time, tz);
+          if (candidate > from) {
+            return candidate;
+          }
+        }
+      }
+    }
+
+    // Fallback: first matching day next week
+    return this.buildDateInTimezone(from, 7, sortedTimes[0], tz);
+  }
+
+  /**
+   * Find next monthly occurrence on specified daysOfMonth at specified times
+   */
+  private findNextMonthlyOccurrence(
+    daysOfMonth: number[], timesOfDay: string[], tz: string, from: Date
+  ): Date {
+    const sortedDays = [...daysOfMonth].sort((a, b) => a - b);
+    const sortedTimes = [...timesOfDay].sort();
+
+    // Check current month and next month
+    for (let monthOffset = 0; monthOffset <= 1; monthOffset++) {
+      const refDate = new Date(from);
+      refDate.setMonth(refDate.getMonth() + monthOffset);
+
+      const year = this.getYearInTimezone(monthOffset === 0 ? from : refDate, tz);
+      const month = this.getMonthInTimezone(monthOffset === 0 ? from : refDate, tz);
+      const lastDay = new Date(year, month + 1, 0).getDate();
+
+      for (const day of sortedDays) {
+        const actualDay = Math.min(day, lastDay); // Clamp to last day of month
+
+        for (const time of sortedTimes) {
+          const candidate = this.buildDateFromParts(year, month, actualDay, time, tz);
+          if (candidate > from) {
+            return candidate;
+          }
+        }
+      }
+    }
+
+    // Fallback: first configured day, 2 months ahead
+    const fallbackDate = new Date(from);
+    fallbackDate.setMonth(fallbackDate.getMonth() + 2);
+    const year = this.getYearInTimezone(fallbackDate, tz);
+    const month = this.getMonthInTimezone(fallbackDate, tz);
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const actualDay = Math.min(sortedDays[0], lastDay);
+    return this.buildDateFromParts(year, month, actualDay, sortedTimes[0], tz);
+  }
+
+  /**
+   * Build a UTC Date from a reference date + day offset + time string in the given timezone
+   */
+  private buildDateInTimezone(refDate: Date, dayOffset: number, time: string, tz: string): Date {
+    const offsetDate = new Date(refDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+    const year = this.getYearInTimezone(offsetDate, tz);
+    const month = this.getMonthInTimezone(offsetDate, tz);
+    const day = this.getDayInTimezone(offsetDate, tz);
+    return this.buildDateFromParts(year, month, day, time, tz);
+  }
+
+  /**
+   * Build a UTC Date from explicit year/month/day + time string in a timezone
+   */
+  private buildDateFromParts(year: number, month: number, day: number, time: string, tz: string): Date {
+    const [hours, minutes] = time.split(':').map(Number);
+
+    // Create a date string in the target timezone and convert to UTC
+    // Use a temporary date to find the UTC offset for the target timezone
+    const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${time}:00`;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+
+    // Binary search approach: create UTC date and adjust by timezone offset
+    const utcGuess = new Date(`${localDateStr}Z`);
+    const parts = formatter.formatToParts(utcGuess);
+    const tzHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const tzMinute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    const tzDay = parseInt(parts.find(p => p.type === 'day')?.value || '0');
+
+    // Calculate offset: what UTC time gives us the desired local time
+    const offsetMs = (
+      (tzHour - hours) * 60 * 60 * 1000 +
+      (tzMinute - minutes) * 60 * 1000 +
+      (tzDay - day) * 24 * 60 * 60 * 1000
+    );
+
+    return new Date(utcGuess.getTime() - offsetMs);
+  }
+
+  private getYearInTimezone(date: Date, tz: string): number {
+    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(date));
+  }
+
+  private getMonthInTimezone(date: Date, tz: string): number {
+    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'numeric' }).format(date)) - 1;
+  }
+
+  private getDayInTimezone(date: Date, tz: string): number {
+    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz, day: 'numeric' }).format(date));
+  }
+
+  private getDayOfWeekInTimezone(date: Date, tz: string): number {
+    const dayName = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(date);
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return dayMap[dayName] ?? 0;
   }
 }

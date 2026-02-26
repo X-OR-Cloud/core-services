@@ -1,13 +1,13 @@
 # Work Module - Technical Overview
 
-> Last updated: 2026-02-24
+> Last updated: 2026-02-26
 
 ## 1. File Structure
 
 ```
 services/cbm/src/modules/work/
 ├── work.schema.ts      # MongoDB schema (extends BaseSchema)
-├── work.dto.ts         # DTOs: Create, Update, Block, AssignAndTodo, RejectReview, Unblock, GetNextWork, InternalGetNextWork
+├── work.dto.ts         # DTOs: Create, Update, Block, AssignAndTodo, RejectReview, Unblock, GetNextWork, InternalGetNextWork, RecurrenceConfig
 ├── work.service.ts     # Business logic (extends BaseService) — state machine, epic management, next-work priority
 ├── work.controller.ts  # REST API endpoints (16 endpoints: CRUD + 9 actions + next-work + can-trigger + internal)
 └── work.module.ts      # NestJS module (imports NotificationModule)
@@ -15,7 +15,7 @@ services/cbm/src/modules/work/
 
 ## 2. Mục đích
 
-Work module quản lý work items (epics, tasks, subtasks) với state machine 7 trạng thái và 9 action endpoints. Hỗ trợ hierarchy (epic → task → subtask), dependency management, epic auto-status, agent triggering, và next-work priority logic.
+Work module quản lý work items (epics, tasks, subtasks) với state machine 7 trạng thái và 9 action endpoints. Hỗ trợ hierarchy (epic → task → subtask), dependency management, epic auto-status, agent triggering, next-work priority logic, và **recurring tasks** (lặp lại theo lịch: interval/daily/weekly/monthly).
 
 ## 3. Schema Fields
 
@@ -35,12 +35,16 @@ Work extends BaseSchema:
   feedback?: string (max 2000)                         // Feedback khi reject review / unblock
   parentId?: string                                    // Parent Work ID (hierarchy)
   documents: string[] (default: [])                    // Array of document IDs (planned for removal)
+  recurrence?: RecurrenceConfig                         // Cấu hình lặp lại (chỉ cho task)
+  isRecurring: boolean (default: false)                 // Flag recurring đang active
   // Inherited from BaseSchema: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
 ```
 
 **ReporterAssignee**: `{ type: 'agent' | 'user', id: string }`
 
-**Indexes**: `{ status: 1 }`, `{ type: 1 }`, `{ projectId: 1 }`, `{ 'reporter.id': 1 }`, `{ 'assignee.id': 1 }`, `{ parentId: 1 }`, `{ createdAt: -1 }`, `{ title: 'text', description: 'text' }`
+**RecurrenceConfig**: `{ type: 'interval'|'daily'|'weekly'|'monthly', intervalMinutes?, timesOfDay?, daysOfWeek?, daysOfMonth?, timezone? }`
+
+**Indexes**: `{ status: 1 }`, `{ type: 1 }`, `{ projectId: 1 }`, `{ 'reporter.id': 1 }`, `{ 'assignee.id': 1 }`, `{ parentId: 1 }`, `{ createdAt: -1 }`, `{ title: 'text', description: 'text' }`, `{ isRecurring: 1, status: 1, startAt: 1, 'assignee.id': 1 }`
 
 ## 4. Work Hierarchy
 
@@ -76,9 +80,9 @@ any → cancelled (cancel)
 | `block` | in_progress | blocked | `{ reason }` |
 | `unblock` | blocked | todo | `{ feedback? }` |
 | `request-review` | in_progress | review | — |
-| `complete` | review | done | — |
+| `complete` | review | done (hoặc todo nếu recurring) | — |
 | `reject-review` | review | todo | `{ feedback }` |
-| `reopen` | done | in_progress | — |
+| `reopen` | done/cancelled | in_progress | — |
 | `cancel` | any (trừ cancelled) | cancelled | — |
 
 ## 6. API Endpoints
@@ -144,10 +148,11 @@ Tự động trigger khi child task thay đổi status (start, complete, reopen,
 ## 9. Next-Work Priority Logic
 
 Priority (cao → thấp):
-1. Subtask assigned to me, status `todo`, dependencies met
-2. Task assigned to me (không có subtasks), status `todo`, dependencies met
-3. Work reported by me, status `blocked`
-4. Work reported by me, status `review`
+1. **Recurring task** assigned to me, `isRecurring=true`, status `todo`, `startAt` <= now, no subtasks, dependencies met
+2. Subtask assigned to me, status `todo`, dependencies met
+3. Task assigned to me (không có subtasks), status `todo`, dependencies met
+4. Work reported by me, status `blocked`
+5. Work reported by me, status `review`
 
 ## 10. Agent Triggering
 
@@ -180,10 +185,12 @@ Các trường không thể update qua PATCH:
 - `dependencies` (optional): string[]
 - `parentId` (optional): string
 - `documents` (optional): string[]
+- `recurrence` (optional): `RecurrenceConfigDto` — chỉ cho type=task
 
 ### UpdateWorkDto
 - All fields optional (trừ `type`, `status`, `reason` — không cho update)
 - Same validations as CreateWorkDto
+- `recurrence`: set `null` để remove recurrence
 
 ### Action DTOs
 - `BlockWorkDto`: `{ reason: string }` (required, max 1000)
@@ -195,7 +202,28 @@ Các trường không thể update qua PATCH:
 - `GetNextWorkQueryDto`: `{ assigneeType: 'user' | 'agent', assigneeId: string }`
 - `InternalGetNextWorkDto`: `{ assigneeType, assigneeId, orgId }` (for service-to-service)
 
-## 13. Key Design Decisions
+## 13. Recurring Tasks
+
+Chỉ `type=task` hỗ trợ recurring. Cơ chế reuse work cũ (không tạo work mới).
+
+**Recurrence Types:**
+- `interval`: Lặp mỗi X phút (VD: mỗi 30 phút)
+- `daily`: Giờ cụ thể trong ngày (VD: 09:00, 14:00)
+- `weekly`: Ngày trong tuần + giờ (VD: Thứ 2, Thứ 4 lúc 09:00)
+- `monthly`: Ngày trong tháng + giờ (VD: ngày 1, 15 lúc 09:00)
+
+**Luồng hoạt động:**
+1. Tạo task với `recurrence` config → `isRecurring=true`, `startAt` tự động tính
+2. `assign-and-todo` → status `todo`
+3. Agent heartbeat → AIWM gọi `getNextWork` → trả recurring task có `startAt` đến hạn (Priority 1)
+4. Agent thực thi → `start` → `request-review` → `complete`
+5. `completeWork()` → tự động reset status về `todo` + tính `startAt` mới cho chu kỳ tiếp
+
+**Cancel/Reopen:**
+- `cancel`: Set `isRecurring=false`, giữ `recurrence` config
+- `reopen`: Khôi phục `isRecurring=true` + tính lại `startAt`
+
+## 14. Key Design Decisions
 
 ### Description tách biệt khỏi list
 - `findAll()` excludes `description` → giảm response size
@@ -214,7 +242,7 @@ Các trường không thể update qua PATCH:
 ### Notifications
 - Service emit events qua `NotificationService` cho: work.created, work.blocked, work.review_requested, work.completed, work.assigned
 
-## 14. Dependencies
+## 15. Dependencies
 
 - **MongooseModule**: Work schema registration
 - **NotificationModule**: Event notification handling
@@ -222,7 +250,7 @@ Các trường không thể update qua PATCH:
 
 **Exports**: `WorkService`, `MongooseModule`
 
-## 15. Existing Documentation
+## 16. Existing Documentation
 
 - `docs/cbm/work/FRONTEND-API.md` — Frontend API integration guide
 - `docs/cbm/work/ROADMAP.md` — Planned improvements
