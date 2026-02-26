@@ -1,6 +1,6 @@
 # Work API — Frontend Integration
 
-> Last updated: 2026-02-24
+> Last updated: 2026-02-27
 > Base URL: `https://api.x-or.cloud/dev/cbm`
 
 ---
@@ -28,6 +28,8 @@ Work là đơn vị công việc hỗ trợ 3 loại (epic, task, subtask) với
 | `feedback` | string | auto | Feedback reject review / unblock resolution |
 | `parentId` | string | ❌ | Parent Work ID (hierarchy) |
 | `documents` | string[] | ❌ | Array document IDs (default: `[]`) |
+| `recurrence` | object | ❌ | Cấu hình lặp lại (chỉ cho task). Xem mục 7 |
+| `isRecurring` | boolean | auto | `true` khi recurrence active (default: `false`) |
 | `owner` | object | auto | `{ orgId, userId }` — từ BaseSchema |
 | `createdBy` | string | auto | User ID tạo work |
 | `updatedBy` | string | auto | User/Agent ID cập nhật cuối |
@@ -92,8 +94,10 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 | `dependencies` | string[] | ❌ | Array Work IDs phụ thuộc |
 | `parentId` | string | ❌ | Parent Work ID |
 | `documents` | string[] | ❌ | Array document IDs |
+| `recurrence` | object | ❌ | Cấu hình lặp lại (chỉ cho type=task). Xem mục 7 |
 
 > Không cần truyền `status` — hệ thống tự đặt `backlog`.
+> Nếu có `recurrence`, hệ thống tự set `isRecurring=true` và tính `startAt` nếu chưa truyền.
 
 **Output:** Work object (full entity, status = `backlog`).
 
@@ -176,6 +180,7 @@ Tất cả endpoints yêu cầu header `Authorization: Bearer <token>`.
 | `dependencies` | string[] | Dependencies mới |
 | `parentId` | string | Parent ID mới |
 | `documents` | string[] | Document IDs mới |
+| `recurrence` | object \| null | Cấu hình lặp mới. Set `null` để xóa recurrence |
 
 > **Không thể update**: `type` (immutable), `status` (dùng action endpoints), `reason` (managed by block/unblock).
 
@@ -278,9 +283,11 @@ Tất cả action endpoints dùng method `POST`.
 |---|---|
 | **Method** | `POST` |
 | **Path** | `/works/:id/complete` |
-| **Transition** | `review` → `done` |
+| **Transition** | `review` → `done` (hoặc `todo` nếu recurring) |
 
 **Input:** Không cần body.
+
+> **Recurring task**: Khi complete, hệ thống tự reset status về `todo` và tính `startAt` mới cho chu kỳ tiếp theo. Work sẵn sàng cho lần chạy kế tiếp.
 
 ---
 
@@ -305,9 +312,11 @@ Tất cả action endpoints dùng method `POST`.
 |---|---|
 | **Method** | `POST` |
 | **Path** | `/works/:id/reopen` |
-| **Transition** | `done` → `in_progress` |
+| **Transition** | `done`/`cancelled` → `in_progress` |
 
 **Input:** Không cần body.
+
+> **Recurring task**: Nếu work có `recurrence` config, reopen sẽ khôi phục `isRecurring=true` và tính lại `startAt`.
 
 ---
 
@@ -320,6 +329,8 @@ Tất cả action endpoints dùng method `POST`.
 | **Transition** | any (trừ `cancelled`) → `cancelled` |
 
 **Input:** Không cần body.
+
+> **Recurring task**: Cancel sẽ tắt recurrence (`isRecurring=false`) nhưng giữ `recurrence` config. Dùng Reopen để kích hoạt lại.
 
 ---
 
@@ -359,7 +370,7 @@ Tất cả action endpoints dùng method `POST`.
 {
   work: Work | null,
   metadata: {
-    priorityLevel: number,       // 0-4 (0 = no work)
+    priorityLevel: number,       // 0-5 (0 = no work)
     priorityDescription: string,
     matchedCriteria: string[]
   }
@@ -367,10 +378,11 @@ Tất cả action endpoints dùng method `POST`.
 ```
 
 **Priority levels:**
-1. Subtask assigned to me, status `todo`, dependencies met
-2. Task assigned to me (không có subtasks), status `todo`, dependencies met
-3. Work reported by me, status `blocked`
-4. Work reported by me, status `review`
+1. **Recurring task** assigned to me, `isRecurring=true`, status `todo`, `startAt` <= now, no subtasks, dependencies met
+2. Subtask assigned to me, status `todo`, dependencies met
+3. Task assigned to me (không có subtasks), status `todo`, dependencies met
+4. Work reported by me, status `blocked`
+5. Work reported by me, status `review`
 0. Không có work available
 
 ---
@@ -457,3 +469,84 @@ Tất cả error trả về dạng:
 12. **Epic auto-status**: Epic status tự động tính khi child task thay đổi. Không cần manual update. Dùng `recalculate-status` nếu cần force recalculate.
 
 13. **Form tạo work**: Không cần field `status` — hệ thống tự đặt `backlog`.
+
+14. **Recurring tasks**: Chỉ task mới hỗ trợ recurring. Hiển thị badge "Recurring" cho work có `isRecurring=true`. Xem mục 7 cho chi tiết.
+
+---
+
+## 7. Recurring Tasks (Lặp lại)
+
+Chỉ `type=task` hỗ trợ recurring. Work được reuse (không tạo work mới mỗi lần lặp).
+
+### 7.1 RecurrenceConfig
+
+| Trường | Kiểu | Bắt buộc | Mô tả |
+|--------|------|----------|-------|
+| `type` | enum | ✅ | `'interval'` \| `'daily'` \| `'weekly'` \| `'monthly'` |
+| `intervalMinutes` | number | khi type=interval | Số phút giữa mỗi lần lặp (1–525600) |
+| `timesOfDay` | string[] | khi type=daily/weekly/monthly | Giờ trong ngày, format `"HH:mm"` (VD: `["09:00", "14:00"]`) |
+| `daysOfWeek` | number[] | khi type=weekly | Ngày trong tuần: 0=CN, 1=T2, ..., 6=T7 (VD: `[1, 3]`) |
+| `daysOfMonth` | number[] | khi type=monthly | Ngày trong tháng: 1–31 (VD: `[1, 15]`) |
+| `timezone` | string | ❌ | IANA timezone (VD: `"Asia/Ho_Chi_Minh"`). Default: `"UTC"` |
+
+### 7.2 Ví dụ tạo recurring task
+
+**Mỗi 30 phút:**
+```json
+{
+  "title": "Check system health",
+  "type": "task",
+  "reporter": { "type": "user", "id": "..." },
+  "recurrence": { "type": "interval", "intervalMinutes": 30 }
+}
+```
+
+**Hàng ngày lúc 9h và 14h (giờ VN):**
+```json
+{
+  "title": "Daily standup",
+  "type": "task",
+  "reporter": { "type": "user", "id": "..." },
+  "recurrence": { "type": "daily", "timesOfDay": ["09:00", "14:00"], "timezone": "Asia/Ho_Chi_Minh" }
+}
+```
+
+**Thứ 2 và Thứ 4 hàng tuần lúc 9h:**
+```json
+{
+  "title": "Weekly sync",
+  "type": "task",
+  "reporter": { "type": "user", "id": "..." },
+  "recurrence": { "type": "weekly", "daysOfWeek": [1, 3], "timesOfDay": ["09:00"], "timezone": "Asia/Ho_Chi_Minh" }
+}
+```
+
+**Ngày 1 và 15 hàng tháng lúc 10h:**
+```json
+{
+  "title": "Monthly report",
+  "type": "task",
+  "reporter": { "type": "user", "id": "..." },
+  "recurrence": { "type": "monthly", "daysOfMonth": [1, 15], "timesOfDay": ["10:00"], "timezone": "Asia/Ho_Chi_Minh" }
+}
+```
+
+### 7.3 Luồng hoạt động
+
+```
+Tạo task + recurrence → backlog (isRecurring=true, startAt auto)
+  → assign-and-todo → todo
+  → agent/user thực thi → start → request-review → complete
+  → TỰ ĐỘNG: status reset về todo + startAt mới
+  → Chờ đến startAt → getNextWork trả về (Priority 1)
+  → Lặp lại...
+```
+
+### 7.4 Ghi chú cho Frontend
+
+- **Badge**: Hiển thị badge/icon "Recurring" cho work có `isRecurring=true`
+- **Complete khác biệt**: Khi complete recurring task, response trả status `todo` (không phải `done`)
+- **Xóa recurrence**: PATCH `/works/:id` với `{ "recurrence": null }` để tắt recurring
+- **Cancel**: Tắt recurring nhưng giữ config. Reopen để kích hoạt lại
+- **Form**: Chỉ hiển thị recurrence config khi `type=task`. Ẩn cho epic/subtask
+- **Ngày 31**: Tháng ngắn (28, 29, 30 ngày) sẽ tự động dùng ngày cuối tháng
