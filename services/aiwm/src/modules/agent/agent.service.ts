@@ -474,13 +474,6 @@ export class AgentService extends BaseService<Agent> {
 
     const token = this.jwtService.sign(payload); // expiresIn: '24h' set in JwtModule config
 
-    // Log first/last chars of token for debugging (never log full token)
-    this.logger.debug(
-      `Token generated: ${token.substring(0, 20)}...${token.substring(
-        token.length - 20
-      )}`
-    );
-
     // Calculate expiresIn seconds (24 hours)
     const expiresInSeconds = 24 * 60 * 60;
 
@@ -505,6 +498,12 @@ export class AgentService extends BaseService<Agent> {
       username: payload.username,
       roles: payload.roles,
       connectionCount: agent.connectionCount + 1,
+      connectedAt: new Date(),
+      expiredAt: new Date(Date.now() + expiresInSeconds * 1000),
+      maskedToken: `${token.substring(0, 20)}...${token.substring(
+        token.length - 20
+      )}`,
+      token: token,
     });
 
     // Get AIWM base URL from configuration
