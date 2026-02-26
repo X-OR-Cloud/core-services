@@ -5,6 +5,8 @@
 import { ToolDefinition } from '../../../types';
 import {
   executeCreateWork,
+  executeScheduleWork,
+  executeCreateRecurringWork,
   executeListWorks,
   executeGetWork,
   executeUpdateWork,
@@ -23,6 +25,8 @@ import {
 } from './executors';
 import {
   CreateWorkSchema,
+  ScheduleWorkSchema,
+  CreateRecurringWorkSchema,
   ListWorksSchema,
   GetWorkSchema,
   UpdateWorkSchema,
@@ -47,11 +51,29 @@ export const WorkManagementTools: ToolDefinition[] = [
   {
     name: 'CreateWork',
     description:
-      `Create a new Work item with recurrence config (optional). recurrence (optional): Configure automatic repeating execution, type: 'onetime' | 'interval' | 'daily' | 'weekly' | 'monthly', Other fields depend on type (see parameters), startAt (optional): For single scheduled execution (ISO 8601). Note: Use EITHER startAt OR recurrence, not both`,
+      'Create a new work item (epic, task, or subtask). For scheduled or recurring tasks, use ScheduleWork or CreateRecurringWork instead',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeCreateWork,
     inputSchema: CreateWorkSchema,
+  },
+  {
+    name: 'ScheduleWork',
+    description:
+      'Schedule a one-time task for an agent to execute at a specific time. The task runs once at startAt and then completes. Requires assignee (agent) and startAt',
+    type: 'builtin',
+    category: 'WorkManagement',
+    executor: executeScheduleWork,
+    inputSchema: ScheduleWorkSchema,
+  },
+  {
+    name: 'CreateRecurringWork',
+    description:
+      'Create a recurring task that repeats automatically on a schedule (interval, daily, weekly, or monthly). After completion, the task resets to todo with next startAt calculated. Requires assignee and recurrence config',
+    type: 'builtin',
+    category: 'WorkManagement',
+    executor: executeCreateRecurringWork,
+    inputSchema: CreateRecurringWorkSchema,
   },
   {
     name: 'ListWorks',

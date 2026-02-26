@@ -52,65 +52,32 @@ function parseReporterAssignee(value: string): { type: 'user' | 'agent'; id: str
 }
 
 /**
- * Execute create work
+ * Helper: resolve reporter from args or context
  */
-export async function executeCreateWork(
-  args: {
-    title: string;
-    description?: string;
-    type: 'epic' | 'task' | 'subtask';
-    projectId?: string;
-    reporter?: string;
-    assignee?: string;
-    dueDate?: string;
-    startAt?: string;
-    dependencies?: string[];
-    parentId?: string;
-    documents?: string[];
-    recurrence?: {
-      type: 'interval' | 'daily' | 'weekly' | 'monthly';
-      intervalMinutes?: number;
-      timesOfDay?: string[];
-      daysOfWeek?: number[];
-      daysOfMonth?: number[];
-      timezone?: string;
-    };
-  },
+function resolveReporter(
+  reporter: string | undefined,
   context: ExecutionContext
+): { type: 'user' | 'agent'; id: string } {
+  if (reporter) {
+    return parseReporterAssignee(reporter);
+  } else if (context.agentId) {
+    return { type: 'agent', id: context.agentId };
+  } else if (context.userId) {
+    return { type: 'user', id: context.userId };
+  }
+  throw new Error('Reporter must be provided or execution context must have agentId/userId');
+}
+
+/**
+ * Helper: create work via CBM API and return sanitized response
+ */
+async function createWorkRequest(
+  requestBody: any,
+  context: ExecutionContext,
+  errorLabel: string
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
-
-    // Parse reporter - if not provided, use current agent
-    let parsedReporter: { type: 'user' | 'agent'; id: string };
-    if (args.reporter) {
-      parsedReporter = parseReporterAssignee(args.reporter);
-    } else if (context.agentId) {
-      // Default to current agent if no reporter provided
-      parsedReporter = {
-        type: 'agent',
-        id: context.agentId,
-      };
-    } else if (context.userId) {
-      // Fallback to current user if no agent
-      parsedReporter = {
-        type: 'user',
-        id: context.userId,
-      };
-    } else {
-      throw new Error('Reporter must be provided or execution context must have agentId/userId');
-    }
-
-    const parsedAssignee = args.assignee
-      ? parseReporterAssignee(args.assignee)
-      : undefined;
-
-    // Build request body
-    const requestBody = {
-      ...args,
-      reporter: parsedReporter,
-      assignee: parsedAssignee,
-    };
 
     const response = await makeServiceRequest(`${cbmBaseUrl}/works`, {
       method: 'POST',
@@ -118,7 +85,6 @@ export async function executeCreateWork(
       body: JSON.stringify(requestBody),
     });
 
-    // Sanitize response to optimize token usage
     const contentType = response.headers.get('content-type') || '';
     if (response.ok && contentType.includes('application/json')) {
       const json = await response.json();
@@ -135,17 +101,124 @@ export async function executeCreateWork(
 
     return formatToolResponse(response);
   } catch (error: any) {
-    logger.error('Error creating work:', error);
+    logger.error(`Error ${errorLabel}:`, error);
     return {
       content: [
         {
           type: 'text',
-          text: `Error creating work: ${error.message}`,
+          text: `Error ${errorLabel}: ${error.message}`,
         },
       ],
       isError: true,
     };
   }
+}
+
+/**
+ * Execute create work (regular, non-scheduled)
+ */
+export async function executeCreateWork(
+  args: {
+    title: string;
+    description?: string;
+    type: 'epic' | 'task' | 'subtask';
+    projectId?: string;
+    reporter?: string;
+    assignee?: string;
+    dueDate?: string;
+    dependencies?: string[];
+    parentId?: string;
+    documents?: string[];
+  },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  const parsedReporter = resolveReporter(args.reporter, context);
+  const parsedAssignee = args.assignee ? parseReporterAssignee(args.assignee) : undefined;
+
+  const requestBody = {
+    ...args,
+    reporter: parsedReporter,
+    assignee: parsedAssignee,
+  };
+
+  return createWorkRequest(requestBody, context, 'creating work');
+}
+
+/**
+ * Execute schedule work (one-time scheduled task)
+ * Automatically sets type=task and recurrence={ type: 'onetime' }
+ */
+export async function executeScheduleWork(
+  args: {
+    title: string;
+    description?: string;
+    assignee: string;
+    startAt: string;
+    projectId?: string;
+    reporter?: string;
+    dueDate?: string;
+    dependencies?: string[];
+    parentId?: string;
+    documents?: string[];
+  },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  const parsedReporter = resolveReporter(args.reporter, context);
+  const parsedAssignee = parseReporterAssignee(args.assignee);
+
+  const { assignee, reporter, ...otherArgs } = args;
+
+  const requestBody = {
+    ...otherArgs,
+    type: 'task',
+    reporter: parsedReporter,
+    assignee: parsedAssignee,
+    recurrence: { type: 'onetime' },
+  };
+
+  return createWorkRequest(requestBody, context, 'scheduling work');
+}
+
+/**
+ * Execute create recurring work (repeating task)
+ * Automatically sets type=task
+ */
+export async function executeCreateRecurringWork(
+  args: {
+    title: string;
+    description?: string;
+    assignee: string;
+    recurrence: {
+      type: 'interval' | 'daily' | 'weekly' | 'monthly';
+      intervalMinutes?: number;
+      timesOfDay?: string[];
+      daysOfWeek?: number[];
+      daysOfMonth?: number[];
+      timezone?: string;
+    };
+    startAt?: string;
+    projectId?: string;
+    reporter?: string;
+    dueDate?: string;
+    dependencies?: string[];
+    parentId?: string;
+    documents?: string[];
+  },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  const parsedReporter = resolveReporter(args.reporter, context);
+  const parsedAssignee = parseReporterAssignee(args.assignee);
+
+  const { assignee, reporter, ...otherArgs } = args;
+
+  const requestBody = {
+    ...otherArgs,
+    type: 'task',
+    reporter: parsedReporter,
+    assignee: parsedAssignee,
+  };
+
+  return createWorkRequest(requestBody, context, 'creating recurring work');
 }
 
 /**

@@ -50,7 +50,7 @@ const RecurrenceConfigSchema = z.object({
 });
 
 /**
- * Schema for creating a new work
+ * Schema for creating a new work (regular, non-scheduled)
  */
 export const CreateWorkSchema = z.object({
   title: z
@@ -77,21 +77,90 @@ export const CreateWorkSchema = z.object({
     .string()
     .optional()
     .describe('Optional: Due date in ISO 8601 format (e.g., "2025-03-31T23:59:59.000Z")'),
-  startAt: z
-    .string()
-    .optional()
-    .describe(
-      'Optional: Start time for agent scheduled execution in ISO 8601 format (e.g., "2025-01-15T09:00:00.000Z")'
-    ),
   dependencies: z
     .array(z.string())
     .optional()
     .describe('Optional: Array of Work IDs that this work depends on'),
   parentId: z.string().optional().describe('Optional: Parent Work ID (for subtasks)'),
   documents: z.array(z.string()).optional().describe('Optional: Array of document IDs'),
-  recurrence: RecurrenceConfigSchema.optional().describe(
-    'Optional: Recurrence config (only for type=task). Auto-sets isRecurring=true and calculates startAt if not provided. With recurrence.type=onetime, creates a scheduled task that only executes once at the specified startAt time (recurrence config is still required but other fields are ignored). Note: Cannot use both startAt and recurrence for scheduling - if startAt is provided, it will be used as the next execution time and recurrence will determine subsequent executions. If startAt is not provided, next execution time will be calculated based on recurrence config.'
+});
+
+/**
+ * Schema for scheduling a one-time task for an agent to execute at a specific time
+ */
+export const ScheduleWorkSchema = z.object({
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe('Task title (max 200 characters)'),
+  description: z
+    .string()
+    .max(10000)
+    .optional()
+    .describe('Optional: Detailed description in markdown (max 10000 characters)'),
+  assignee: z
+    .string()
+    .describe('Agent to execute this task - format: "agent:<agentId>"'),
+  startAt: z
+    .string()
+    .describe('When to execute this task in ISO 8601 format (e.g., "2026-02-28T14:00:00+07:00")'),
+  projectId: z.string().optional().describe('Optional: Project ID to associate with'),
+  reporter: z
+    .string()
+    .optional()
+    .describe('Optional: Reporter - format: "user:<userId>" or "agent:<agentId>". Defaults to current agent'),
+  dueDate: z
+    .string()
+    .optional()
+    .describe('Optional: Due date in ISO 8601 format'),
+  dependencies: z
+    .array(z.string())
+    .optional()
+    .describe('Optional: Array of Work IDs that this task depends on'),
+  parentId: z.string().optional().describe('Optional: Parent Work ID'),
+  documents: z.array(z.string()).optional().describe('Optional: Array of document IDs'),
+});
+
+/**
+ * Schema for creating a recurring task that repeats on a schedule
+ */
+export const CreateRecurringWorkSchema = z.object({
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe('Task title (max 200 characters)'),
+  description: z
+    .string()
+    .max(10000)
+    .optional()
+    .describe('Optional: Detailed description in markdown (max 10000 characters)'),
+  assignee: z
+    .string()
+    .describe('Agent/user to execute this task - format: "agent:<agentId>" or "user:<userId>"'),
+  recurrence: RecurrenceConfigSchema.describe(
+    'Recurrence schedule configuration'
   ),
+  startAt: z
+    .string()
+    .optional()
+    .describe('Optional: First execution time in ISO 8601 format. If not provided, calculated from recurrence config'),
+  projectId: z.string().optional().describe('Optional: Project ID to associate with'),
+  reporter: z
+    .string()
+    .optional()
+    .describe('Optional: Reporter - format: "user:<userId>" or "agent:<agentId>". Defaults to current agent'),
+  dueDate: z
+    .string()
+    .optional()
+    .describe('Optional: Due date in ISO 8601 format'),
+  dependencies: z
+    .array(z.string())
+    .optional()
+    .describe('Optional: Array of Work IDs that this task depends on'),
+  parentId: z.string().optional().describe('Optional: Parent Work ID'),
+  documents: z.array(z.string()).optional().describe('Optional: Array of document IDs'),
 });
 
 /**

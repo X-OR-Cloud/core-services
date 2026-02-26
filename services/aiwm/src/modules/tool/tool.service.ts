@@ -57,6 +57,8 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   ],
   WorkManagement: [
     'mcp__Builtin__CreateWork',
+    'mcp__Builtin__ScheduleWork',
+    'mcp__Builtin__CreateRecurringWork',
     'mcp__Builtin__ListWorks',
     'mcp__Builtin__GetWork',
     'mcp__Builtin__UpdateWork',
