@@ -483,7 +483,11 @@ export class WorkService extends BaseService<Work> {
 
     // For recurring works: reset to todo with next startAt
     if (work.isRecurring && work.recurrence) {
-      const nextStartAt = this.calculateNextStartAt(work.recurrence, new Date());
+      // Calculate next occurrence after the LATER of current startAt or now.
+      // This ensures we always advance past the current cycle.
+      const now = new Date();
+      const baseDate = work.startAt && work.startAt >= now ? work.startAt : now;
+      const nextStartAt = this.calculateNextStartAt(work.recurrence, baseDate);
 
       const updated = await this.workModel.findByIdAndUpdate(
         id,
