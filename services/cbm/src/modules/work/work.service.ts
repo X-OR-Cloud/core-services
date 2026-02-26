@@ -296,7 +296,7 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       { status: 'in_progress' } as any,
       context
@@ -333,7 +333,7 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Reason is required when blocking work');
     }
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       { status: 'blocked', reason } as any,
       context
@@ -371,7 +371,7 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
-    return this.update(
+    return super.update(
       id,
       {
         status: 'todo',  // CHANGED: was 'in_progress'
@@ -401,7 +401,7 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       { status: 'review' } as any,
       context
@@ -471,7 +471,7 @@ export class WorkService extends BaseService<Work> {
     }
 
     // Non-recurring: existing behavior
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       { status: 'done' } as any,
       context
@@ -519,7 +519,7 @@ export class WorkService extends BaseService<Work> {
       updateData.startAt = this.calculateNextStartAt(work.recurrence, new Date());
     }
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       updateData,
       context
@@ -556,7 +556,7 @@ export class WorkService extends BaseService<Work> {
       updateData.isRecurring = false;
     }
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       updateData,
       context
@@ -592,7 +592,7 @@ export class WorkService extends BaseService<Work> {
     // Validate assignee exists
     await this.validateEntityExists(assignee.type, assignee.id);
 
-    const updated = await this.update(
+    const updated = await super.update(
       id,
       {
         assignee,
@@ -637,7 +637,7 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Feedback is required when rejecting review');
     }
 
-    return this.update(
+    return super.update(
       id,
       {
         status: 'todo',
