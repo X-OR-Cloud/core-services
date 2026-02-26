@@ -917,13 +917,21 @@ export class AgentService extends BaseService<Agent> {
 
     let systemMessage: string;
 
+    // Check if reporter and assignee are the same agent (self-assigned)
+    const isSelfAssigned =
+      work.reporter?.type === 'agent' &&
+      work.assignee?.type === 'agent' &&
+      work.reporter?.id === work.assignee?.id;
+
     if (priorityLevel <= 3) {
-      // Assignee = agent, work in todo → need to execute
+      // Assignee = agent, work in todo → execute immediately
+      const completionStep = isSelfAssigned
+        ? `- Gọi mcp__Builtin__RequestReviewForWork rồi ngay sau đó gọi mcp__Builtin__CompleteWork để hoàn tất (bạn vừa là người thực hiện vừa là người review)`
+        : `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất để chờ người review duyệt`;
       systemMessage =
-        `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện.\n` +
-        `- Gọi mcp__Builtin__GetWork để xem chi tiết công việc\n` +
+        `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện ngay không cần hỏi lại.\n` +
         `- Gọi mcp__Builtin__StartWork để bắt đầu công việc\n` +
-        `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất\n` +
+        `${completionStep}\n` +
         `- Gọi mcp__Builtin__BlockWork nếu gặp vướng mắc sau 3 lần cố gắng xử lý (kèm reason)`;
     } else if (priorityLevel === 4) {
       // Reporter = agent, work blocked → need to help resolve
