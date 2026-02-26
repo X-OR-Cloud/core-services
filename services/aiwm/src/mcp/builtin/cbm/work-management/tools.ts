@@ -47,7 +47,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   {
     name: 'CreateWork',
     description:
-      'Create a new work item (epic/task/subtask) with title, description, type, reporter, assignee, projectId, recurrence config, and other metadata',
+      `Create a new Work item with recurrence config (optional). recurrence (optional): Configure automatic repeating execution, type: 'interval' | 'daily' | 'weekly' | 'monthly', Other fields depend on type (see parameters), startAt (optional): For single scheduled execution (ISO 8601). Note: Use EITHER startAt OR recurrence, not both`,
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeCreateWork,
