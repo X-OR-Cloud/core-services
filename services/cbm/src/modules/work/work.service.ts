@@ -45,6 +45,13 @@ export class WorkService extends BaseService<Work> {
       this.validateRecurrenceConfig(data);
       (data as any).isRecurring = true;
 
+      // Recurrence requires assignee
+      if (!data.assignee) {
+        throw new BadRequestException(
+          'assignee is required when recurrence is set'
+        );
+      }
+
       if (data.recurrence.type === 'onetime') {
         // Onetime requires startAt to be provided explicitly
         if (!data.startAt) {
@@ -60,7 +67,8 @@ export class WorkService extends BaseService<Work> {
       }
     }
 
-    data.status = 'backlog'; // New work always starts with 'backlog' status
+    // Recurrence works skip backlog, go directly to todo
+    data.status = data.recurrence ? 'todo' : 'backlog';
     const work = await super.create(data as CreateWorkDto, context) as Work;
 
     // Emit notification
