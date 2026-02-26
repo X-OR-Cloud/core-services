@@ -42,7 +42,7 @@ Work extends BaseSchema:
 
 **ReporterAssignee**: `{ type: 'agent' | 'user', id: string }`
 
-**RecurrenceConfig**: `{ type: 'interval'|'daily'|'weekly'|'monthly', intervalMinutes?, timesOfDay?, daysOfWeek?, daysOfMonth?, timezone? }`
+**RecurrenceConfig**: `{ type: 'onetime'|'interval'|'daily'|'weekly'|'monthly', intervalMinutes?, timesOfDay?, daysOfWeek?, daysOfMonth?, timezone? }`
 
 **Indexes**: `{ status: 1 }`, `{ type: 1 }`, `{ projectId: 1 }`, `{ 'reporter.id': 1 }`, `{ 'assignee.id': 1 }`, `{ parentId: 1 }`, `{ createdAt: -1 }`, `{ title: 'text', description: 'text' }`, `{ isRecurring: 1, status: 1, startAt: 1, 'assignee.id': 1 }`
 
@@ -207,17 +207,25 @@ Các trường không thể update qua PATCH:
 Chỉ `type=task` hỗ trợ recurring. Cơ chế reuse work cũ (không tạo work mới).
 
 **Recurrence Types:**
+- `onetime`: Đặt lịch chạy 1 lần (bắt buộc truyền `startAt`). Complete → `done` + `isRecurring=false`
 - `interval`: Lặp mỗi X phút (VD: mỗi 30 phút)
 - `daily`: Giờ cụ thể trong ngày (VD: 09:00, 14:00)
 - `weekly`: Ngày trong tuần + giờ (VD: Thứ 2, Thứ 4 lúc 09:00)
 - `monthly`: Ngày trong tháng + giờ (VD: ngày 1, 15 lúc 09:00)
 
-**Luồng hoạt động:**
+**Luồng hoạt động (recurring):**
 1. Tạo task với `recurrence` config → `isRecurring=true`, `startAt` tự động tính
 2. `assign-and-todo` → status `todo`
 3. Agent heartbeat → AIWM gọi `getNextWork` → trả recurring task có `startAt` đến hạn (Priority 1)
 4. Agent thực thi → `start` → `request-review` → `complete`
 5. `completeWork()` → tự động reset status về `todo` + tính `startAt` mới cho chu kỳ tiếp
+
+**Luồng hoạt động (onetime):**
+1. Tạo task với `recurrence: { type: 'onetime' }` + `startAt` → `isRecurring=true`
+2. `assign-and-todo` → status `todo`
+3. `getNextWork` trả về khi `startAt` đến hạn (Priority 1)
+4. Agent thực thi → `start` → `request-review` → `complete`
+5. `completeWork()` → status `done` + `isRecurring=false` (kết thúc, không lặp)
 
 **Cancel/Reopen:**
 - `cancel`: Set `isRecurring=false`, giữ `recurrence` config

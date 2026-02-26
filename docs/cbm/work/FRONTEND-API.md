@@ -491,14 +491,25 @@ Chỉ `type=task` hỗ trợ recurring. Work được reuse (không tạo work m
 
 | Trường | Kiểu | Bắt buộc | Mô tả |
 |--------|------|----------|-------|
-| `type` | enum | ✅ | `'interval'` \| `'daily'` \| `'weekly'` \| `'monthly'` |
+| `type` | enum | ✅ | `'onetime'` \| `'interval'` \| `'daily'` \| `'weekly'` \| `'monthly'` |
 | `intervalMinutes` | number | khi type=interval | Số phút giữa mỗi lần lặp (1–525600) |
 | `timesOfDay` | string[] | khi type=daily/weekly/monthly | Giờ trong ngày, format `"HH:mm"` (VD: `["09:00", "14:00"]`) |
 | `daysOfWeek` | number[] | khi type=weekly | Ngày trong tuần: 0=CN, 1=T2, ..., 6=T7 (VD: `[1, 3]`) |
 | `daysOfMonth` | number[] | khi type=monthly | Ngày trong tháng: 1–31 (VD: `[1, 15]`) |
 | `timezone` | string | ❌ | IANA timezone (VD: `"Asia/Ho_Chi_Minh"`). Default: `"UTC"` |
 
-### 7.2 Ví dụ tạo recurring task
+### 7.2 Ví dụ tạo scheduled/recurring task
+
+**Đặt lịch chạy 1 lần (onetime):**
+```json
+{
+  "title": "Deploy v2.0 to production",
+  "type": "task",
+  "reporter": { "type": "user", "id": "..." },
+  "startAt": "2026-02-28T14:00:00+07:00",
+  "recurrence": { "type": "onetime" }
+}
+```
 
 **Mỗi 30 phút:**
 ```json
@@ -542,6 +553,16 @@ Chỉ `type=task` hỗ trợ recurring. Work được reuse (không tạo work m
 
 ### 7.3 Luồng hoạt động
 
+**Onetime (chạy 1 lần):**
+```
+Tạo task + recurrence onetime + startAt → backlog (isRecurring=true)
+  → assign-and-todo → todo
+  → Chờ đến startAt → getNextWork trả về (Priority 1)
+  → agent/user thực thi → start → request-review → complete
+  → status = done, isRecurring = false (KẾT THÚC)
+```
+
+**Recurring (lặp lại):**
 ```
 Tạo task + recurrence → backlog (isRecurring=true, startAt auto)
   → assign-and-todo → todo
@@ -553,8 +574,9 @@ Tạo task + recurrence → backlog (isRecurring=true, startAt auto)
 
 ### 7.4 Ghi chú cho Frontend
 
-- **Badge**: Hiển thị badge/icon "Recurring" cho work có `isRecurring=true`
-- **Complete khác biệt**: Khi complete recurring task, response trả status `todo` (không phải `done`)
+- **Badge**: Hiển thị badge/icon "Recurring" cho work có `isRecurring=true`. Phân biệt "Scheduled" (onetime) vs "Recurring" (interval/daily/weekly/monthly)
+- **Complete khác biệt**: Recurring → response trả status `todo`. Onetime → response trả status `done`
+- **Onetime cần `startAt`**: Khi chọn `recurrence.type = 'onetime'`, bắt buộc truyền `startAt`
 - **Xóa recurrence**: PATCH `/works/:id` với `{ "recurrence": null }` để tắt recurring
 - **Cancel**: Tắt recurring nhưng giữ config. Reopen để kích hoạt lại
 - **Form**: Chỉ hiển thị recurrence config khi `type=task`. Ẩn cho epic/subtask

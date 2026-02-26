@@ -44,9 +44,19 @@ export class WorkService extends BaseService<Work> {
     if (data.recurrence) {
       this.validateRecurrenceConfig(data);
       (data as any).isRecurring = true;
-      // Calculate initial startAt if not provided
-      if (!data.startAt) {
-        data.startAt = this.calculateNextStartAt(data.recurrence, new Date());
+
+      if (data.recurrence.type === 'onetime') {
+        // Onetime requires startAt to be provided explicitly
+        if (!data.startAt) {
+          throw new BadRequestException(
+            'startAt is required when recurrence type is onetime'
+          );
+        }
+      } else {
+        // Calculate initial startAt if not provided for recurring types
+        if (!data.startAt) {
+          data.startAt = this.calculateNextStartAt(data.recurrence, new Date());
+        }
       }
     }
 
@@ -128,8 +138,8 @@ export class WorkService extends BaseService<Work> {
         }
         this.validateRecurrenceConfig({ type: work.type, recurrence: data.recurrence });
         data.isRecurring = true;
-        // Recalculate startAt if no explicit startAt provided
-        if (data.startAt === undefined) {
+        // Recalculate startAt if no explicit startAt provided (not for onetime)
+        if (data.startAt === undefined && data.recurrence.type !== 'onetime') {
           data.startAt = this.calculateNextStartAt(data.recurrence, new Date());
         }
       }
@@ -436,6 +446,31 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException(
         `Cannot complete work with status: ${work.status}. Only review works can be completed.`
       );
+    }
+
+    // For onetime scheduled works: complete normally + deactivate isRecurring
+    if (work.isRecurring && work.recurrence && work.recurrence.type === 'onetime') {
+      const updated = await this.workModel.findByIdAndUpdate(
+        id,
+        {
+          status: 'done',
+          isRecurring: false,
+          reason: null,
+          feedback: null,
+          updatedBy: context,
+        },
+        { new: true }
+      ).exec() as Work;
+
+      await this.notificationService.notify({
+        type: 'work.completed',
+        workId: (updated as any)._id.toString(),
+        work: updated,
+        actor: context,
+      });
+
+      await this.triggerParentEpicRecalculation(updated, context);
+      return updated;
     }
 
     // For recurring works: reset to todo with next startAt
@@ -1231,6 +1266,10 @@ export class WorkService extends BaseService<Work> {
     const config = data.recurrence!;
 
     switch (config.type) {
+      case 'onetime':
+        // No additional fields required — startAt is validated in create()
+        break;
+
       case 'interval':
         if (!config.intervalMinutes || config.intervalMinutes < 1) {
           throw new BadRequestException(
@@ -1291,6 +1330,10 @@ export class WorkService extends BaseService<Work> {
    */
   calculateNextStartAt(config: RecurrenceConfig, fromDate: Date): Date {
     switch (config.type) {
+      case 'onetime':
+        // Onetime does not calculate next startAt — return fromDate as fallback
+        return fromDate;
+
       case 'interval':
         return new Date(fromDate.getTime() + config.intervalMinutes! * 60 * 1000);
 

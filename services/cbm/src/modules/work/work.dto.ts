@@ -44,12 +44,12 @@ export class ReporterAssigneeDto implements ReporterAssignee {
  */
 export class RecurrenceConfigDto implements RecurrenceConfig {
   @ApiProperty({
-    description: 'Recurrence pattern type',
-    enum: ['interval', 'daily', 'weekly', 'monthly'],
+    description: 'Recurrence pattern type. Use "onetime" for scheduled-once tasks (requires startAt on Work)',
+    enum: ['onetime', 'interval', 'daily', 'weekly', 'monthly'],
     example: 'daily',
   })
-  @IsEnum(['interval', 'daily', 'weekly', 'monthly'])
-  type!: 'interval' | 'daily' | 'weekly' | 'monthly';
+  @IsEnum(['onetime', 'interval', 'daily', 'weekly', 'monthly'])
+  type!: 'onetime' | 'interval' | 'daily' | 'weekly' | 'monthly';
 
   @ApiPropertyOptional({
     description: 'Interval in minutes (required when type=interval)',

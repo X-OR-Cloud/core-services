@@ -34,11 +34,11 @@ GET /works/next-work?assigneeType={user|agent}&assigneeId={id}
 
 The system evaluates work items in strict priority order. Once a work item is found at a given priority level, lower priorities are not evaluated.
 
-### Priority 1: Recurring Tasks with Scheduled Time Reached
+### Priority 1: Scheduled/Recurring Tasks with Scheduled Time Reached
 
 **Criteria:**
 - Work type: `task`
-- `isRecurring`: `true`
+- `isRecurring`: `true` (includes both `onetime` and recurring types)
 - Assignee: Matches requesting user/agent
 - Status: `todo`
 - `startAt`: <= current time
@@ -47,7 +47,7 @@ The system evaluates work items in strict priority order. Once a work item is fo
 - Dependencies: All dependency works must be in `done` or `cancelled` status
 - Ordering: Oldest `startAt` first (most overdue first)
 
-**Rationale:** Recurring tasks that have reached their scheduled time are the highest priority, as they represent time-sensitive work that must be executed on schedule.
+**Rationale:** Scheduled and recurring tasks that have reached their scheduled time are the highest priority, as they represent time-sensitive work that must be executed on schedule. This includes onetime scheduled tasks (`recurrence.type = 'onetime'`) and recurring tasks.
 
 **Query Logic:**
 ```javascript

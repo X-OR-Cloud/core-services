@@ -18,8 +18,8 @@ export interface ReporterAssignee {
  * Only applicable to type=task
  */
 export interface RecurrenceConfig {
-  /** Recurrence pattern type */
-  type: 'interval' | 'daily' | 'weekly' | 'monthly';
+  /** Recurrence pattern type. 'onetime' = scheduled once (requires startAt on Work) */
+  type: 'onetime' | 'interval' | 'daily' | 'weekly' | 'monthly';
   /** Interval in minutes. Required when type='interval'. Min: 1, Max: 525600 */
   intervalMinutes?: number;
   /** Times of day in "HH:mm" 24-hour format. Required when type='daily'|'weekly'|'monthly' */
