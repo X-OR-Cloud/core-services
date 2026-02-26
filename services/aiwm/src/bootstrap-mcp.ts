@@ -445,8 +445,8 @@ export async function bootstrapMcpServer() {
 
   // Host header validation
   const allowedHosts = process.env.MCP_ALLOWED_HOSTS
-    ? process.env.MCP_ALLOWED_HOSTS.split(',')
-    : ['localhost', '127.0.0.1', '[::1]', 'test.local', 'api.x-or.cloud'];
+    ? process.env.MCP_ALLOWED_HOSTS.split(',').map(h => h.trim())
+    : ['localhost', '127.0.0.1', '[::1]', 'xsai-mcp.x-or.cloud', 'api.x-or.cloud'];
 
   const expressApp = process.env.ALLOW_ALL_HOSTS === 'true'
     ? createMcpExpressApp()
