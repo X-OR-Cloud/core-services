@@ -23,7 +23,7 @@ const RecurrenceTypeEnum = z.enum(['interval', 'daily', 'weekly', 'monthly']);
 
 // Recurrence config schema
 const RecurrenceConfigSchema = z.object({
-  type: RecurrenceTypeEnum.describe('Recurrence type: interval, daily, weekly, or monthly'),
+  type: RecurrenceTypeEnum.describe('Recurrence type: onetime, interval, daily, weekly, or monthly'),
   intervalMinutes: z
     .number()
     .int()
@@ -90,7 +90,7 @@ export const CreateWorkSchema = z.object({
   parentId: z.string().optional().describe('Optional: Parent Work ID (for subtasks)'),
   documents: z.array(z.string()).optional().describe('Optional: Array of document IDs'),
   recurrence: RecurrenceConfigSchema.optional().describe(
-    'Optional: Recurrence config (only for type=task). Auto-sets isRecurring=true and calculates startAt if not provided'
+    'Optional: Recurrence config (only for type=task). Auto-sets isRecurring=true and calculates startAt if not provided. With recurrence.type=onetime, creates a scheduled task that only executes once at the specified startAt time (recurrence config is still required but other fields are ignored). Note: Cannot use both startAt and recurrence for scheduling - if startAt is provided, it will be used as the next execution time and recurrence will determine subsequent executions. If startAt is not provided, next execution time will be calculated based on recurrence config.'
   ),
 });
 
