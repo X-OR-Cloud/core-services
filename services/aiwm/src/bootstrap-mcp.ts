@@ -2,10 +2,12 @@
  * MCP Server Bootstrap
  * Standalone MCP protocol server for AI agent integration
  *
- * Step-by-step implementation:
- * 1. NestJS Standalone with DB/Cache connection logging
- * 2. Basic MCP Server with SDK
- * 3. Tool registration and handler logic
+ * Architecture: McpServer per-session
+ * - Each client session gets its own McpServer + Transport instance
+ * - Tools are registered per-session based on the agent's token
+ * - Token is always fresh (from the current request, not cached)
+ * - Multiple clients can connect simultaneously without conflicts
+ * - Scale-friendly: no shared state between instances
  */
 
 import { Logger } from '@nestjs/common';
@@ -28,7 +30,19 @@ import { getBuiltInToolsByCategory } from './mcp/builtin';
 import { ExecutionContext as BuiltInExecutionContext } from './mcp/types';
 
 const logger = new Logger('McpBootstrap');
-const MCP_PORT = parseInt(process.env.MCP_PORT || '3355', 10);
+const MCP_PORT = parseInt(process.env.PORT || process.env.MCP_PORT || '3355', 10);
+
+/**
+ * Session data — each client connection gets its own isolated session
+ */
+interface SessionData {
+  mcpServer: McpServer;
+  transport: StreamableHTTPServerTransport;
+  agentId: string;
+  orgId: string;
+  bearerToken: string;
+  createdAt: number;
+}
 
 export async function bootstrapMcpServer() {
   logger.log('=== Step 1: Starting NestJS Application Context ===');
@@ -49,26 +63,18 @@ export async function bootstrapMcpServer() {
   logger.log(`📊 Redis: ${redisHost}:${redisPort}`);
   logger.log(`✅ Step 1 completed - NestJS context running`);
 
-  // Step 2: Create MCP Server
-  logger.log('=== Step 2: Creating MCP Server with SDK ===');
-
-  const mcpServer = new McpServer({
-    name: 'aiwm-mcp-server',
-    version: '1.0.0',
-    description: 'AIWM MCP Server for AI agent integration',
-    websiteUrl: 'https://x-or.cloud',
-  });
-
-  logger.log('✅ MCP Server instance created');
-
-  // Step 2.1: Get services from NestJS context
+  // Get services from NestJS context
   const jwtService = app.get(JwtService);
   const toolService = app.get(ToolService);
   const agentService = app.get(AgentService);
   const configService = app.get(ConfigurationService);
   logger.log('✅ Services injected from NestJS context');
 
-  // Step 3: Helper function to validate bearer token
+  // ====== Helper Functions ======
+
+  /**
+   * Validate bearer token and return decoded payload
+   */
   const validateBearerToken = async (
     authHeader: string | undefined
   ): Promise<any> => {
@@ -81,12 +87,13 @@ export async function bootstrapMcpServer() {
       return decoded;
     } catch (error) {
       logger.error('JWT verification failed:', error.message);
-      // Don't log token for security reasons
       throw new Error(`Invalid or expired token: ${error.message}`);
     }
   };
 
-  // Step 3.0: Helper function to execute API tools
+  /**
+   * Execute API tools (non-builtin tools with execution config)
+   */
   const executeApiTool = async (tool: any, args: any, tokenPayload: any) => {
     const execution = tool.execution;
     if (!execution) {
@@ -110,16 +117,11 @@ export async function bootstrapMcpServer() {
       );
     }
 
-    // Build full URL
     const url = `${baseUrl}${finalPath}`;
-
-    // Prepare headers
     const requestHeaders: Record<string, string> = { ...headers };
 
     // Add JWT token if required
     if (authRequired && tokenPayload) {
-      // Generate a new JWT token for the agent to call the service
-      const jwtService = app.get(JwtService);
       const serviceToken = await jwtService.signAsync({
         sub: tokenPayload.sub,
         username: tokenPayload.username,
@@ -136,14 +138,6 @@ export async function bootstrapMcpServer() {
 
     logger.log(`📡 Calling API: ${method} ${url}`);
 
-    // Log headers without exposing token
-    const sanitizedHeaders = { ...requestHeaders };
-    if (sanitizedHeaders['Authorization']) {
-      sanitizedHeaders['Authorization'] = 'Bearer ***';
-    }
-    logger.debug(`Headers:`, sanitizedHeaders);
-
-    // Make HTTP request
     const response = await fetch(url, {
       method,
       headers: requestHeaders,
@@ -156,7 +150,6 @@ export async function bootstrapMcpServer() {
       );
     }
 
-    // Get response content
     const contentType = response.headers.get('content-type') || '';
     let content: string;
 
@@ -181,74 +174,78 @@ export async function bootstrapMcpServer() {
     };
   };
 
-  // Helper function to fetch service URLs from configuration
+  /**
+   * Fetch service URLs from configuration
+   */
   const fetchServiceUrls = async (orgId: string, context: RequestContext) => {
-    let cbmBaseUrl = 'http://localhost:3001'; // Default fallback
-    let iamBaseUrl = 'http://localhost:3000'; // Default fallback
-    let aiwmBaseUrl = 'http://localhost:3003'; // Default fallback
+    let cbmBaseUrl = 'http://localhost:3001';
+    let iamBaseUrl = 'http://localhost:3000';
+    let aiwmBaseUrl = 'http://localhost:3003';
 
     // Fetch CBM Base URL
     try {
-      logger.debug(`🔍 Fetching config key: ${ConfigKeyEnum.CBM_BASE_API_URL} for org: ${orgId}`);
       const cbmConfig = await configService.findByKey(ConfigKeyEnum.CBM_BASE_API_URL as any, context);
-
-      logger.debug(`🔍 Config result:`, cbmConfig);
-
       if (cbmConfig && cbmConfig.value) {
         cbmBaseUrl = cbmConfig.value;
         logger.log(`📍 CBM Base URL from config: ${cbmBaseUrl}`);
       } else {
-        logger.warn(`⚠️  No config found for key: ${ConfigKeyEnum.CBM_BASE_API_URL}, using default: ${cbmBaseUrl}`);
+        logger.warn(`⚠️  No config for ${ConfigKeyEnum.CBM_BASE_API_URL}, using default: ${cbmBaseUrl}`);
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error(`❌ Error fetching CBM base URL from config:`, errorMsg);
-      logger.warn(`⚠️  Using default CBM Base URL: ${cbmBaseUrl}`);
+      logger.error(`❌ Error fetching CBM base URL:`, errorMsg);
     }
 
     // Fetch IAM Base URL
     try {
-      logger.debug(`🔍 Fetching config key: ${ConfigKeyEnum.IAM_BASE_API_URL} for org: ${orgId}`);
       const iamConfig = await configService.findByKey(ConfigKeyEnum.IAM_BASE_API_URL as any, context);
-
       if (iamConfig && iamConfig.value) {
         iamBaseUrl = iamConfig.value;
         logger.log(`📍 IAM Base URL from config: ${iamBaseUrl}`);
       } else {
-        logger.warn(`⚠️  No config found for key: ${ConfigKeyEnum.IAM_BASE_API_URL}, using default: ${iamBaseUrl}`);
+        logger.warn(`⚠️  No config for ${ConfigKeyEnum.IAM_BASE_API_URL}, using default: ${iamBaseUrl}`);
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error(`❌ Error fetching IAM base URL from config:`, errorMsg);
-      logger.warn(`⚠️  Using default IAM Base URL: ${iamBaseUrl}`);
+      logger.error(`❌ Error fetching IAM base URL:`, errorMsg);
     }
 
     // Fetch AIWM Base URL
     try {
-      logger.debug(`🔍 Fetching config key: ${ConfigKeyEnum.AIWM_BASE_API_URL} for org: ${orgId}`);
       const aiwmConfig = await configService.findByKey(ConfigKeyEnum.AIWM_BASE_API_URL as any, context);
-
       if (aiwmConfig && aiwmConfig.value) {
         aiwmBaseUrl = aiwmConfig.value;
         logger.log(`📍 AIWM Base URL from config: ${aiwmBaseUrl}`);
       } else {
-        logger.warn(`⚠️  No config found for key: ${ConfigKeyEnum.AIWM_BASE_API_URL}, using default: ${aiwmBaseUrl}`);
+        logger.warn(`⚠️  No config for ${ConfigKeyEnum.AIWM_BASE_API_URL}, using default: ${aiwmBaseUrl}`);
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error(`❌ Error fetching AIWM base URL from config:`, errorMsg);
-      logger.warn(`⚠️  Using default AIWM Base URL: ${aiwmBaseUrl}`);
+      logger.error(`❌ Error fetching AIWM base URL:`, errorMsg);
     }
 
     return { cbmBaseUrl, iamBaseUrl, aiwmBaseUrl };
   };
 
-  // Step 3.1: Function to load and register tools for agent
-  // Returns true if tools were registered, false if skipped (agent not found or no tools)
-  const registerToolsForAgent = async (tokenPayload: any, bearerToken: string): Promise<boolean> => {
+  /**
+   * Create a new McpServer instance and register tools for a specific agent session.
+   * Each session gets its own isolated McpServer with tools based on the agent's permissions.
+   */
+  const createSessionMcpServer = async (
+    tokenPayload: any,
+    bearerToken: string
+  ): Promise<McpServer> => {
     const { orgId, agentId, userId, roles, groupId } = tokenPayload;
 
-    logger.log(`📋 Loading tools for agent: ${agentId} (org: ${orgId})`);
+    // Create a fresh McpServer for this session
+    const sessionMcpServer = new McpServer({
+      name: 'aiwm-mcp-server',
+      version: '1.0.0',
+      description: 'AIWM MCP Server for AI agent integration',
+      websiteUrl: 'https://x-or.cloud',
+    });
+
+    logger.log(`📋 Creating session McpServer for agent: ${agentId} (org: ${orgId})`);
 
     // Build request context from token payload
     const context: RequestContext = {
@@ -260,30 +257,25 @@ export async function bootstrapMcpServer() {
       roles: roles || [],
     };
 
-    // Step 1: Fetch agent to get allowedToolIds
+    // Fetch agent to get allowedToolIds
     const agent = await agentService.findById(agentId, context);
     if (!agent) {
-      logger.warn(`Agent not found: ${agentId}`);
-      return false;
+      logger.warn(`Agent not found: ${agentId}, returning empty McpServer`);
+      return sessionMcpServer;
     }
 
     logger.log(
-      `✅ Agent found: ${agent.name}, allowedToolIds: ${
-        agent.allowedToolIds?.length || 0
-      }`
+      `✅ Agent found: ${agent.name}, allowedToolIds: ${agent.allowedToolIds?.length || 0}`
     );
 
-    // Step 2: If no allowed tools, skip registration (do NOT cache — agent may get tools later)
+    // If no allowed tools, return empty server
     if (!agent.allowedToolIds || agent.allowedToolIds.length === 0) {
-      logger.log(`⚠️  Agent has no allowed tools, skipping registration`);
-      return false;
+      logger.log(`⚠️  Agent has no allowed tools`);
+      return sessionMcpServer;
     }
 
-    // Step 3: Convert string IDs to ObjectId for MongoDB query
+    // Fetch active tools from allowedToolIds whitelist
     const toolObjectIds = agent.allowedToolIds.map(id => new Types.ObjectId(id));
-
-    // Step 4: Fetch active tools from allowedToolIds whitelist
-    // BaseService automatically applies owner.orgId (from context) and isDeleted: false
     const findToolResult = await toolService.findAll(
       {
         filter: {
@@ -295,15 +287,12 @@ export async function bootstrapMcpServer() {
       context
     );
     const tools: Tool[] = findToolResult?.data ?? [];
-    logger.log(
-      `✅ Found ${tools.length} active tools from allowedToolIds: ${agent.allowedToolIds.join(', ')}`
-    );
+    logger.log(`✅ Found ${tools.length} active tools for agent ${agentId}`);
 
-    // Register each tool with MCP server
+    // Register each tool on this session's McpServer
     for (const tool of tools) {
-      // Handle builtin tools differently - register all sub-tools from category
+      // Handle builtin tools — register all sub-tools from category
       if (tool.type === 'builtin') {
-        // Get all builtin tools in this category (e.g., DocumentManagement)
         const builtinTools = getBuiltInToolsByCategory(tool.name);
 
         if (builtinTools.length === 0) {
@@ -313,14 +302,8 @@ export async function bootstrapMcpServer() {
 
         logger.log(`📦 Registering ${builtinTools.length} builtin tools from category: ${tool.name}`);
 
-        // Register each sub-tool (skip if already registered by another agent)
         for (const builtinTool of builtinTools) {
-          if (registeredToolNames.has(builtinTool.name)) {
-            logger.debug(`  ⏭️  Tool already registered, skipping: ${builtinTool.name}`);
-            continue;
-          }
-
-          mcpServer.registerTool(
+          sessionMcpServer.registerTool(
             builtinTool.name,
             {
               title: builtinTool.name,
@@ -333,7 +316,7 @@ export async function bootstrapMcpServer() {
 
               try {
                 // Fetch service URLs dynamically on each execution
-                const context: RequestContext = {
+                const execContext: RequestContext = {
                   userId: tokenPayload.userId || tokenPayload.sub || '',
                   orgId: tokenPayload.orgId || '',
                   agentId: tokenPayload.agentId || '',
@@ -342,10 +325,9 @@ export async function bootstrapMcpServer() {
                   roles: tokenPayload.roles || [],
                 };
 
-                const serviceUrls = await fetchServiceUrls(tokenPayload.orgId, context);
-                logger.debug(`🔍 Service URLs fetched for execution:`, serviceUrls);
+                const serviceUrls = await fetchServiceUrls(tokenPayload.orgId, execContext);
 
-                // Build execution context from token payload
+                // Build execution context with session's token
                 const executionContext: BuiltInExecutionContext = {
                   token: bearerToken,
                   userId: tokenPayload.userId || tokenPayload.sub,
@@ -353,7 +335,7 @@ export async function bootstrapMcpServer() {
                   agentId: tokenPayload.agentId,
                   groupId: tokenPayload.groupId,
                   roles: tokenPayload.roles,
-                  cbmBaseUrl: serviceUrls.cbmBaseUrl, // Service URLs from configuration
+                  cbmBaseUrl: serviceUrls.cbmBaseUrl,
                   iamBaseUrl: serviceUrls.iamBaseUrl,
                   aiwmBaseUrl: serviceUrls.aiwmBaseUrl,
                 };
@@ -375,21 +357,13 @@ export async function bootstrapMcpServer() {
             }
           );
 
-          registeredToolNames.add(builtinTool.name);
           logger.log(`  ✅ Registered: ${builtinTool.name}`);
         }
 
-        logger.log(`✅ All builtin tools registered for category: ${tool.name}`);
         continue;
       }
 
       // Handle non-builtin tools (api, mcp, custom)
-      // Skip if already registered by another agent
-      if (registeredToolNames.has(tool.name)) {
-        logger.debug(`⏭️  Tool already registered, skipping: ${tool.name}`);
-        continue;
-      }
-
       const inputSchema = tool.schema?.inputSchema || {};
 
       // Convert JSON Schema to Zod schema (simplified)
@@ -407,7 +381,7 @@ export async function bootstrapMcpServer() {
         }
       }
 
-      mcpServer.registerTool(
+      sessionMcpServer.registerTool(
         tool.name,
         {
           title: tool.name,
@@ -420,7 +394,6 @@ export async function bootstrapMcpServer() {
           logger.debug(`Tool args:`, args);
 
           try {
-            // Handle different tool types
             if (tool.type === 'api') {
               return await executeApiTool(tool, args, tokenPayload);
             } else if (tool.type === 'mcp') {
@@ -459,23 +432,22 @@ export async function bootstrapMcpServer() {
         }
       );
 
-      registeredToolNames.add(tool.name);
       logger.log(`✅ Registered tool: ${tool.name} (${tool.type})`);
     }
 
-    logger.log(`✅ All tools registered for org: ${orgId}`);
-    return true;
+    logger.log(`✅ Session McpServer ready for agent: ${agentId} with ${tools.length} tool categories`);
+    return sessionMcpServer;
   };
 
-  // Step 2.2: Setup Express app with Streamable HTTP transport
-  // Host header validation - allow localhost, 127.0.0.1, and any custom domains
-  // Get allowed hosts from environment variable or use permissive defaults
+  // ====== Express App Setup ======
+
+  logger.log('=== Step 2: Setting up Express with Streamable HTTP transport ===');
+
+  // Host header validation
   const allowedHosts = process.env.MCP_ALLOWED_HOSTS
     ? process.env.MCP_ALLOWED_HOSTS.split(',')
-    : ['localhost', '127.0.0.1', '[::1]', 'test.local', 'api.x-or.cloud']; // Default: localhost + test.local
+    : ['localhost', '127.0.0.1', '[::1]', 'test.local', 'api.x-or.cloud'];
 
-  // Create Express app with host validation
-  // If ALLOW_ALL_HOSTS is set, don't pass allowedHosts to disable validation
   const expressApp = process.env.ALLOW_ALL_HOSTS === 'true'
     ? createMcpExpressApp()
     : createMcpExpressApp({ allowedHosts });
@@ -489,10 +461,10 @@ export async function bootstrapMcpServer() {
   // Trust proxy - required when behind nginx/load balancer
   expressApp.set('trust proxy', true);
 
-  // Enable CORS for MCP Inspector direct mode
+  // Enable CORS
   expressApp.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',
       'Content-Type, Authorization, mcp-session-id, mcp-protocol-version'
@@ -505,27 +477,28 @@ export async function bootstrapMcpServer() {
     next();
   });
 
-  // Track which agents have registered tools (register once per agent)
-  const registeredAgents = new Set<string>();
+  // ====== Session Management ======
 
-  // Track which tool names have been registered on the singleton MCP server
-  const registeredToolNames = new Set<string>();
-
-  // Track transports by session ID for session persistence
-  const sessions = new Map<string, StreamableHTTPServerTransport>();
+  // Track sessions: sessionId -> SessionData
+  const sessions = new Map<string, SessionData>();
 
   // Cleanup sessions after 30 minutes of inactivity
   const SESSION_TIMEOUT = 30 * 60 * 1000;
   const sessionTimers = new Map<string, NodeJS.Timeout>();
 
   const cleanupSession = async (sessionId: string) => {
-    const transport = sessions.get(sessionId);
-    if (transport) {
-      logger.log(`🧹 Cleaning up session: ${sessionId}`);
+    const session = sessions.get(sessionId);
+    if (session) {
+      logger.log(`🧹 Cleaning up session: ${sessionId} (agent: ${session.agentId})`);
       try {
-        await transport.close();
+        await session.transport.close();
       } catch (error) {
         logger.warn(`Error closing transport for session ${sessionId}:`, error);
+      }
+      try {
+        await session.mcpServer.close();
+      } catch (error) {
+        logger.warn(`Error closing McpServer for session ${sessionId}:`, error);
       }
       sessions.delete(sessionId);
     }
@@ -545,12 +518,14 @@ export async function bootstrapMcpServer() {
     sessionTimers.set(sessionId, timer);
   };
 
-  // Step 3.2: Handle MCP POST requests with authentication
+  // ====== Request Handlers ======
+
+  // POST — main MCP protocol handler
   expressApp.post('/', async (req, res) => {
     try {
       logger.debug(`Incoming request: ${req.body?.method || 'unknown'}`);
 
-      // Step 3.2.1: Validate bearer token
+      // Validate bearer token
       const authHeader = req.headers.authorization as string | undefined;
       let userContext: any;
 
@@ -570,65 +545,59 @@ export async function bootstrapMcpServer() {
         });
       }
 
-      // Step 3.2.2: Register tools for this agent once (if not already registered)
-      const agentKey = `${userContext.orgId}:${userContext.agentId}`;
-      const bearerToken = authHeader?.substring(7) || ''; // Extract token from "Bearer xxx"
+      const bearerToken = authHeader?.substring(7) || '';
 
-      if (!registeredAgents.has(agentKey)) {
+      // Get or create session
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      let session: SessionData;
+
+      if (sessionId && sessions.has(sessionId)) {
+        // Reuse existing session
+        session = sessions.get(sessionId)!;
+        logger.debug(`♻️  Reusing session: ${sessionId} (agent: ${session.agentId})`);
+        resetSessionTimeout(sessionId);
+      } else {
+        // Create new session with its own McpServer
+        const newSessionId = randomUUID();
+        logger.log(`🆕 Creating new session: ${newSessionId} for agent: ${userContext.agentId}`);
+
         try {
-          const registered = await registerToolsForAgent(userContext, bearerToken);
-          if (registered) {
-            registeredAgents.add(agentKey);
-          } else {
-            logger.warn(`⚠️  Tool registration skipped for agent: ${agentKey} — will retry on next request`);
-          }
+          // Create McpServer with tools for this agent
+          const sessionMcpServer = await createSessionMcpServer(userContext, bearerToken);
+
+          // Create transport
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => newSessionId,
+          });
+
+          // Connect transport to this session's McpServer
+          await sessionMcpServer.connect(transport);
+
+          session = {
+            mcpServer: sessionMcpServer,
+            transport,
+            agentId: userContext.agentId || userContext.sub,
+            orgId: userContext.orgId,
+            bearerToken,
+            createdAt: Date.now(),
+          };
+
+          sessions.set(newSessionId, session);
+          resetSessionTimeout(newSessionId);
+
+          logger.log(`✅ Session created: ${newSessionId}`);
         } catch (error) {
-          logger.error('Failed to register tools:', error);
+          logger.error('Failed to create session:', error);
           return res.status(500).json({
             jsonrpc: '2.0',
-            error: { code: -32603, message: 'Failed to load tools' },
+            error: { code: -32603, message: 'Failed to initialize session' },
             id: null,
           });
         }
-      } else {
-        logger.debug(`Tools already registered for agent: ${agentKey}`);
       }
 
-      // Step 3.2.3: Get or create transport for this session
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport: StreamableHTTPServerTransport;
-
-      if (sessionId && sessions.has(sessionId)) {
-        // Reuse existing transport for this session
-        const existingTransport = sessions.get(sessionId);
-        if (!existingTransport) {
-          throw new Error(`Session ${sessionId} not found in map`);
-        }
-        transport = existingTransport;
-        logger.debug(`♻️  Reusing existing session: ${sessionId}`);
-        resetSessionTimeout(sessionId);
-      } else {
-        // Create new transport for new session
-        const newSessionId = sessionId || randomUUID();
-        logger.log(`🆕 Creating new session: ${newSessionId}`);
-
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => newSessionId,
-        });
-
-        // Connect transport to MCP server
-        await mcpServer.connect(transport);
-        logger.debug('Transport connected to MCP server');
-
-        // Store transport for future requests
-        sessions.set(newSessionId, transport);
-        resetSessionTimeout(newSessionId);
-      }
-
-      // Handle the request - transport will persist session state
-      await transport.handleRequest(req, res, req.body);
-
-      // Don't close transport - keep it alive for future requests in this session
+      // Handle the request via the session's transport
+      await session.transport.handleRequest(req, res, req.body);
     } catch (error) {
       logger.error('Error handling MCP request:', error);
       if (!res.headersSent) {
@@ -641,14 +610,26 @@ export async function bootstrapMcpServer() {
     }
   });
 
+  // DELETE — session termination (MCP protocol spec)
+  expressApp.delete('/', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    if (sessionId && sessions.has(sessionId)) {
+      logger.log(`🗑️  Client requested session termination: ${sessionId}`);
+      await cleanupSession(sessionId);
+      res.status(200).json({ ok: true });
+    } else {
+      res.status(404).json({ error: 'Session not found' });
+    }
+  });
+
   logger.log('✅ Streamable HTTP transport configured');
 
-  // Step 2.3: Start HTTP server
+  // ====== Start HTTP Server ======
+
   const server = expressApp.listen(MCP_PORT, () => {
     logger.log(`🚀 MCP Server listening on: http://localhost:${MCP_PORT}`);
     logger.log(`📡 Protocol: Streamable HTTP (POST + SSE)`);
-    logger.log('✅ Step 2 completed - MCP Server ready');
-    logger.log('📝 Next: Register tools and handlers (Step 3)');
+    logger.log(`🔀 Architecture: McpServer per-session (multi-client ready)`);
     logger.log('💡 Press Ctrl+C to stop');
   });
 
@@ -656,8 +637,10 @@ export async function bootstrapMcpServer() {
   const shutdown = async () => {
     logger.log('Shutting down gracefully...');
 
-    // Close MCP server
-    await mcpServer.close();
+    // Close all sessions
+    for (const [sessionId] of sessions) {
+      await cleanupSession(sessionId);
+    }
 
     // Close HTTP server
     server.close(() => {
