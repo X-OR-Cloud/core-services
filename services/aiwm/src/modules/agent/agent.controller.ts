@@ -151,17 +151,18 @@ export class AgentController {
   @Post(':id/heartbeat')
   @ApiOperation({
     summary: 'Agent heartbeat',
-    description: 'Update agent last heartbeat timestamp. Requires agent JWT token.'
+    description: 'Update agent last heartbeat timestamp. When status is idle, returns next work assignment with system message if available.'
   })
-  @ApiResponse({ status: 200, description: 'Heartbeat received' })
+  @ApiResponse({ status: 200, description: 'Heartbeat received, optionally with work assignment' })
   @ApiResponse({ status: 404, description: 'Agent not found' })
   @UseGuards(JwtAuthGuard)
   async heartbeat(
     @Param('id') id: string,
     @Body() heartbeatDto: AgentHeartbeatDto,
-    @CurrentUser() context: RequestContext,
+    @Req() req: any,
   ) {
-    return this.agentService.heartbeat(id, heartbeatDto);
+    const token = req.headers?.authorization?.replace('Bearer ', '') || '';
+    return this.agentService.heartbeat(id, heartbeatDto, token);
   }
 
   @Post(':id/disconnect')

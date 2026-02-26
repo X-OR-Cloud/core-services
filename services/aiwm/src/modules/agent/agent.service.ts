@@ -810,11 +810,17 @@ export class AgentService extends BaseService<Agent> {
   /**
    * Agent heartbeat endpoint
    * Updates lastHeartbeatAt timestamp
+   * When idle, queries CBM for next work assignment
    */
   async heartbeat(
     agentId: string,
-    heartbeatDto: AgentHeartbeatDto
-  ): Promise<{ success: boolean }> {
+    heartbeatDto: AgentHeartbeatDto,
+    accessToken?: string,
+  ): Promise<{
+    success: boolean;
+    work?: { id: string; title: string; type: string; status: string; priorityLevel: number };
+    systemMessage?: string;
+  }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -841,7 +847,104 @@ export class AgentService extends BaseService<Agent> {
       metrics: heartbeatDto.metrics,
     });
 
+    // Query next work when agent is idle
+    if (heartbeatDto.status === 'idle' && accessToken) {
+      try {
+        const workResult = await this.getNextWorkForAgent(agentId, accessToken, agent.owner?.orgId);
+        if (workResult) {
+          return {
+            success: true,
+            work: workResult.work,
+            systemMessage: workResult.systemMessage,
+          };
+        }
+      } catch (error: any) {
+        this.logger.warn(`Failed to query next work for agent ${agentId}: ${error.message}`);
+      }
+    }
+
     return { success: true };
+  }
+
+  /**
+   * Query CBM next-work API and build system message for agent
+   */
+  private async getNextWorkForAgent(
+    agentId: string,
+    accessToken: string,
+    orgId?: string,
+  ): Promise<{
+    work: { id: string; title: string; type: string; status: string; priorityLevel: number };
+    systemMessage: string;
+  } | null> {
+    let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
+    try {
+      const cbmConfig = await this.configurationService.findByKey(
+        ConfigKey.CBM_BASE_API_URL as any,
+        { orgId } as RequestContext,
+      );
+      if (cbmConfig?.value) {
+        cbmBaseUrl = cbmConfig.value;
+      }
+    } catch {
+      // Fallback to default
+    }
+
+    const response = await firstValueFrom(
+      this.httpService.get(`${cbmBaseUrl}/works/next-work`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { assigneeType: 'agent', assigneeId: agentId },
+      }),
+    );
+
+    const data = (response as any).data;
+    if (!data?.work || data.metadata?.priorityLevel === 0) {
+      return null;
+    }
+
+    const work = data.work;
+    const priorityLevel = data.metadata.priorityLevel;
+    const workId = work._id || work.id;
+    const title = work.title || 'Untitled';
+
+    const workObj = {
+      id: workId,
+      title,
+      type: work.type,
+      status: work.status,
+      priorityLevel,
+    };
+
+    let systemMessage: string;
+
+    if (priorityLevel <= 3) {
+      // Assignee = agent, work in todo → need to execute
+      systemMessage =
+        `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện.\n` +
+        `- Gọi mcp__Builtin__GetWork để xem chi tiết công việc\n` +
+        `- Gọi mcp__Builtin__StartWork để bắt đầu công việc\n` +
+        `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất\n` +
+        `- Gọi mcp__Builtin__BlockWork nếu gặp vướng mắc sau 3 lần cố gắng xử lý (kèm reason)`;
+    } else if (priorityLevel === 4) {
+      // Reporter = agent, work blocked → need to help resolve
+      const reason = work.reason || 'Không rõ lý do';
+      systemMessage =
+        `Công việc (Work) @work:${workId} "${title}" đang bị block với lý do: "${reason}".\n` +
+        `- Hãy xem xét và hỗ trợ xử lý vướng mắc\n` +
+        `- Gọi mcp__Builtin__UnblockWork nếu đã giải quyết được (kèm feedback)\n` +
+        `- Gọi mcp__Builtin__CancelWork nếu không thể tiếp tục`;
+    } else {
+      // Priority 5: Reporter = agent, work in review → need to review
+      systemMessage =
+        `Công việc (Work) @work:${workId} "${title}" đang chờ review.\n` +
+        `- Hãy kiểm tra kết quả thực hiện\n` +
+        `- Gọi mcp__Builtin__CompleteWork nếu đạt yêu cầu\n` +
+        `- Gọi mcp__Builtin__RejectReviewForWork nếu cần làm lại (kèm feedback)`;
+    }
+
+    this.logger.debug('Next work found for agent', { agentId, workId, priorityLevel });
+
+    return { work: workObj, systemMessage };
   }
 
   /**

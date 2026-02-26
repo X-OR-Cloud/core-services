@@ -172,14 +172,26 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] Returns `{ id, systemPrompt, guidelines[] }` with resolved `@project`/`@document` references
 - [x] Ensures agents always get latest instruction without needing to reconnect
 
-### P3 — Planned (Needs Coordination)
+### P3 — Heartbeat Work Dispatch (In Progress)
 
-#### P3-1: Heartbeat Response — Work + ScheduledJob
-- [ ] When agent reports `idle`, query pending work for this agent
-- [ ] Return `work` object (from Work module's priority function)
-- [ ] Return `scheduledJob` object (from SHD service)
-- **Dependency**: SHD service must be deployed and tested first
-- **Status**: Noted for later implementation
+#### P3-1: Heartbeat Response — Work Assignment
+When agent heartbeat with `status: 'idle'`, query CBM `GET /works/next-work` and return work + systemMessage.
+
+**Response structure:** `{ success, work?, systemMessage? }`
+
+**SystemMessage by priority:**
+- Priority 1-3 (assignee=agent, todo): Instruction to StartWork, RequestReviewForWork, BlockWork
+- Priority 4 (reporter=agent, blocked): Instruction to UnblockWork or CancelWork (include reason)
+- Priority 5 (reporter=agent, review): Instruction to CompleteWork or RejectReviewForWork
+
+**Implementation:**
+- [ ] Update heartbeat response type: `{ success, work?, systemMessage? }`
+- [ ] Query CBM `GET /works/next-work?assigneeType=agent&assigneeId={agentId}` when idle
+- [ ] Build systemMessage based on priorityLevel
+- [ ] Include `reason` field for blocked work (priority 4)
+- [ ] Graceful fallback: if CBM unavailable, return `{ success: true }` only
+- [ ] Pass access token from controller to service
+- [ ] Build + test
 
 #### P3-2: Skills
 - [ ] Design Skill concept (relationship to Tools, how agents discover skills)
