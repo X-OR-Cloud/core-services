@@ -226,6 +226,8 @@ export class ToolService extends BaseService<Tool> {
   ): Promise<ToolFunctionsResponseDto[]> {
     const result: ToolFunctionsResponseDto[] = [];
 
+    result.push({ tool: 'Builtin', functions: BUILTIN_FUNCTIONS['builtin'] });
+
     // 1. Add framework functions
     const frameworkFunctions = FRAMEWORK_FUNCTIONS[dto.framework];
     if (frameworkFunctions) {
