@@ -1,7 +1,7 @@
 # Agent Module - v1.0 Roadmap
 
-> Last updated: 2026-02-24
-> Status: P0 + P1 + P1.5 + P2 completed — P3 next
+> Last updated: 2026-03-02
+> Status: P0 + P1 + P1.5 + P2 + P3-1 completed — P3-2 next
 
 ## Decisions Made
 
@@ -172,26 +172,34 @@ Handle CORS at Nginx proxy level (production). Remove/disable CORS config in gat
 - [x] Returns `{ id, systemPrompt, guidelines[] }` with resolved `@project`/`@document` references
 - [x] Ensures agents always get latest instruction without needing to reconnect
 
-### P3 — Heartbeat Work Dispatch (In Progress)
+### P3 — Heartbeat Work Dispatch ✅ P3-1 COMPLETED
 
-#### P3-1: Heartbeat Response — Work Assignment
+#### P3-1: Heartbeat Response — Work Assignment ✅
 When agent heartbeat with `status: 'idle'`, query CBM `GET /works/next-work` and return work + systemMessage.
 
 **Response structure:** `{ success, work?, systemMessage? }`
 
 **SystemMessage by priority:**
-- Priority 1-3 (assignee=agent, todo): Instruction to StartWork, RequestReviewForWork, BlockWork
-- Priority 4 (reporter=agent, blocked): Instruction to UnblockWork or CancelWork (include reason)
-- Priority 5 (reporter=agent, review): Instruction to CompleteWork or RejectReviewForWork
+- Priority 1 (recurring/scheduled, startAt reached): StartWork → CompleteWork (skip review)
+- Priority 2-3 (assignee=agent, todo): StartWork → RequestReviewForWork/CompleteWork → BlockWork
+- Priority 4 (reporter=agent, blocked): UnblockWork or CancelWork (include reason)
+- Priority 5 (reporter=agent, review): CompleteWork or RejectReviewForWork
+
+**Recurring task special handling:**
+- Recurring tasks (`isRecurring=true`) skip review: agent calls `CompleteWork` directly from `in_progress`
+- Self-assigned non-recurring: agent calls `RequestReviewForWork` then `CompleteWork`
+- Non-self-assigned: agent calls `RequestReviewForWork` only, waits for reviewer
 
 **Implementation:**
-- [ ] Update heartbeat response type: `{ success, work?, systemMessage? }`
-- [ ] Query CBM `GET /works/next-work?assigneeType=agent&assigneeId={agentId}` when idle
-- [ ] Build systemMessage based on priorityLevel
-- [ ] Include `reason` field for blocked work (priority 4)
-- [ ] Graceful fallback: if CBM unavailable, return `{ success: true }` only
-- [ ] Pass access token from controller to service
-- [ ] Build + test
+- [x] Update heartbeat response type: `{ success, work?, systemMessage? }`
+- [x] Query CBM `GET /works/next-work?assigneeType=agent&assigneeId={agentId}` when idle
+- [x] Build systemMessage based on priorityLevel
+- [x] Recurring tasks: skip review step, complete directly from in_progress
+- [x] Self-assigned detection: same agent as reporter and assignee
+- [x] Include `reason` field for blocked work (priority 4)
+- [x] Graceful fallback: if CBM unavailable, return `{ success: true }` only
+- [x] Pass access token from controller to service
+- [x] Build + test
 
 #### P3-2: Skills
 - [ ] Design Skill concept (relationship to Tools, how agents discover skills)

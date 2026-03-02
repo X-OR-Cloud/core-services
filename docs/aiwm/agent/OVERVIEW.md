@@ -1,6 +1,6 @@
 # Agent Module - Technical Overview
 
-> Last updated: 2026-02-24 (P0 + P1 + P1.5 + P2 completed)
+> Last updated: 2026-03-02 (P0 + P1 + P1.5 + P2 + P3-1 completed)
 
 ## 1. File Structure
 
@@ -185,7 +185,52 @@ Instruction `systemPrompt` hỗ trợ reference pattern `@project:<id>` và `@do
 
 **Instruction status check**: Nếu `instruction.status !== 'active'` → log warning + trả fallback instruction (empty systemPrompt + guidelines).
 
-## 11. Dependencies
+## 11. Heartbeat Work Dispatch (P3-1)
+
+Khi agent gửi heartbeat với `status: 'idle'`, hệ thống query CBM `GET /works/next-work` để tìm work cần làm và trả về kèm `systemMessage` hướng dẫn agent.
+
+### Response Structure
+
+```typescript
+{
+  success: true,
+  work?: {
+    id: string;
+    title: string;
+    type: string;
+    status: string;
+    priorityLevel: number;
+  },
+  systemMessage?: string
+}
+```
+
+### SystemMessage by Priority
+
+| Priority | Condition | SystemMessage |
+|----------|-----------|---------------|
+| 1 | Recurring/scheduled task, startAt reached | StartWork → CompleteWork (skip review) |
+| 2 | Assigned subtask, todo | StartWork → RequestReview/CompleteWork → BlockWork |
+| 3 | Assigned task, todo, no subtasks | StartWork → RequestReview/CompleteWork → BlockWork |
+| 4 | Reported work, blocked | UnblockWork hoặc CancelWork |
+| 5 | Reported work, review | CompleteWork hoặc RejectReviewForWork |
+
+### Recurring Task Behavior
+
+Recurring/scheduled tasks (`isRecurring=true`) được xử lý đặc biệt:
+
+- **Skip review**: Agent gọi `StartWork` → `CompleteWork` trực tiếp (không cần `RequestReviewForWork`)
+- **CBM completeWork()** chấp nhận status `in_progress` cho recurring tasks
+- **Auto-reset**: Sau complete, CBM tự reset status về `todo` + tính `startAt` mới cho chu kỳ tiếp
+- **Priority 1 only when due**: Recurring tasks chỉ xuất hiện ở Priority 1 khi `startAt <= now`. Không xuất hiện ở Priority 3 nếu `startAt` chưa đến
+- **Self-assigned non-recurring**: Agent gọi `RequestReviewForWork` → `CompleteWork` (vừa thực hiện vừa review)
+- **Non-self-assigned**: Agent gọi `RequestReviewForWork` → chờ người review duyệt
+
+### Graceful Fallback
+
+Nếu CBM service unavailable, heartbeat trả `{ success: true }` (không có work).
+
+## 12. Dependencies
 
 - **NodeGateway**: Send agent lifecycle commands to nodes via WebSocket (cross-instance via Redis adapter)
 - **NodeService**: Validate nodeId exists, status online, heartbeat within 10min
@@ -196,7 +241,7 @@ Instruction `systemPrompt` hỗ trợ reference pattern `@project:<id>` và `@do
 - **Instruction model**: Build instruction object for agent
 - **Tool model**: Get allowed tools whitelist
 
-## 12. Queue Events
+## 13. Queue Events
 
 Producer: `AgentProducer` → `agents.queue`
 - `agent.created` — full agent data
@@ -205,14 +250,14 @@ Producer: `AgentProducer` → `agents.queue`
 
 **Note**: No AgentProcessor exists yet. Events are produced but not consumed.
 
-## 13. Related Modules
+## 14. Related Modules
 
 - **Node module** (`src/modules/node/`): Node management + WebSocket gateway. Agent commands sent via `NodeGateway.sendCommandToNode()` (cross-instance via Redis adapter + rooms).
 - **Chat module** (`src/modules/chat/`): Real-time chat. Agent auto-joins conversation on WS connect. Presence tracked in Redis. `RedisIoAdapter` defined here, applied globally.
 - **Tool module** (`src/modules/tool/`): Agent references tools via `allowedToolIds`. Tools fetched via `getAllowedTools()`.
 - **Instruction module** (`src/modules/instruction/`): Agent references instruction via `instructionId`. Built via `buildInstructionObjectForAgent()`.
 
-## 14. Existing Documentation
+## 15. Existing Documentation
 
 - `docs/aiwm/agents/README.md` — Client integration overview
 - `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md` — Full client integration guide
