@@ -935,12 +935,18 @@ export class WorkService extends BaseService<Work> {
     }
 
     // Priority 3: Assigned tasks without subtasks in todo
+    // Exclude scheduled/recurring tasks whose startAt hasn't been reached yet
     const tasks = await this.workModel.find({
       type: 'task',
       'assignee.type': assigneeType,
       'assignee.id': assigneeId,
       status: 'todo',
       isDeleted: false,
+      $or: [
+        { startAt: { $exists: false } },
+        { startAt: null },
+        { startAt: { $lte: now } },
+      ],
     }).sort({ createdAt: 1 });
 
     for (const task of tasks) {
@@ -1096,12 +1102,18 @@ export class WorkService extends BaseService<Work> {
     }
 
     // Priority 3: Assigned tasks without subtasks in todo
+    // Exclude scheduled/recurring tasks whose startAt hasn't been reached yet
     const tasks = await this.workModel.find({
       ...orgFilter,
       type: 'task',
       'assignee.type': assigneeType,
       'assignee.id': assigneeId,
       status: 'todo',
+      $or: [
+        { startAt: { $exists: false } },
+        { startAt: null },
+        { startAt: { $lte: now } },
+      ],
     }).sort({ createdAt: 1 });
 
     for (const task of tasks) {
