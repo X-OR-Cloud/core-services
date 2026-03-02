@@ -925,9 +925,15 @@ export class AgentService extends BaseService<Agent> {
 
     if (priorityLevel <= 3) {
       // Assignee = agent, work in todo → execute immediately
-      const completionStep = isSelfAssigned
-        ? `- Gọi mcp__Builtin__RequestReviewForWork rồi ngay sau đó gọi mcp__Builtin__CompleteWork để hoàn tất (bạn vừa là người thực hiện vừa là người review)`
-        : `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất để chờ người review duyệt`;
+      let completionStep: string;
+      if (work.isRecurring) {
+        // Recurring/scheduled tasks: skip review, complete directly
+        completionStep = `- Gọi mcp__Builtin__CompleteWork để hoàn tất công việc (recurring task - không cần review)`;
+      } else if (isSelfAssigned) {
+        completionStep = `- Gọi mcp__Builtin__RequestReviewForWork rồi ngay sau đó gọi mcp__Builtin__CompleteWork để hoàn tất (bạn vừa là người thực hiện vừa là người review)`;
+      } else {
+        completionStep = `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất để chờ người review duyệt`;
+      }
       systemMessage =
         `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện ngay không cần hỏi lại.\n` +
         `- Gọi mcp__Builtin__StartWork để bắt đầu công việc\n` +

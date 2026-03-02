@@ -450,9 +450,15 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Work not found');
     }
 
-    if (work.status !== 'review') {
+    // Recurring/scheduled tasks can be completed from in_progress (skip review)
+    const allowedStatuses = work.isRecurring
+      ? ['in_progress', 'review']
+      : ['review'];
+
+    if (!allowedStatuses.includes(work.status)) {
+      const statusList = allowedStatuses.join(' or ');
       throw new BadRequestException(
-        `Cannot complete work with status: ${work.status}. Only review works can be completed.`
+        `Cannot complete work with status: ${work.status}. Only ${statusList} works can be completed.`
       );
     }
 
