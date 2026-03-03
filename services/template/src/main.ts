@@ -17,10 +17,6 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('query parser', customQueryParser);
 
-  // Global prefix
-  const globalPrefix = 'api';
-  app.setGlobalPrefix(globalPrefix);
-
   // Global exception filter for standardized error responses
   app.useGlobalFilters(new GlobalExceptionFilter());
 
