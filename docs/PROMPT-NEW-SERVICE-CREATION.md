@@ -107,8 +107,8 @@ Use Template Service as the blueprint:
 - [ ] Comprehensive README.md
 
 **Implementation Steps:**
-1. Create service structure with Nx generator
-2. Set up main.ts with all filters and pipes
+1. Copy `services/template/` → `services/[SERVICE_NAME]/`, rename project.json, .env, main.ts, app.module.ts
+2. Xoá modules mẫu (category, product, report) và queues/ nếu không cần
 3. Set up app.module.ts with all required modules
 4. Create schemas (extend BaseSchema)
 5. Create services (extend BaseService)
@@ -339,10 +339,55 @@ If Agent has questions, they should:
 
 ## Quick Reference Commands
 
-```bash
-# Create new service (manual)
-npx nx g @nx/nest:app [SERVICE_NAME]
+### Tạo service mới bằng cách copy từ Template
 
+Cách tạo service mới là **copy thư mục `services/template/`** rồi rename lại:
+
+```bash
+# 1. Copy thư mục template
+cp -r services/template services/[SERVICE_NAME]
+
+# 2. Rename trong project.json: đổi tên project
+#    "name": "template" → "name": "[SERVICE_NAME]"
+
+# 3. Rename trong .env: đổi port và database name
+#    PORT=3000 → PORT=[PORT]
+
+# 4. Rename trong main.ts: đổi title Swagger, description
+
+# 5. Rename trong app.module.ts:
+#    - dbName: 'core_template' → 'core_[SERVICE_NAME]'
+#    - envFilePath: 'services/template/.env' → 'services/[SERVICE_NAME]/.env'
+
+# 6. Xoá các module mẫu (category, product, report) trong src/modules/
+#    và tạo module mới theo entities của service
+
+# 7. Xoá queues/ nếu service không cần BullMQ
+
+# 8. Cập nhật README.md cho service mới
+
+# 9. Đăng ký service trong root tsconfig.base.json (nếu cần path alias)
+
+# 10. Build verify
+npx nx build [SERVICE_NAME]
+```
+
+### Các file cần rename/sửa sau khi copy
+
+| File | Sửa gì |
+|------|--------|
+| `project.json` | `name`, `sourceRoot`, `targets` paths |
+| `.env` | `PORT`, database config |
+| `src/main.ts` | Swagger title, description, tags, port |
+| `src/app/app.module.ts` | `dbName`, `envFilePath`, import modules mới |
+| `src/modules/*` | Xoá modules mẫu, tạo modules mới |
+| `src/queues/*` | Xoá nếu không cần, hoặc rename cho phù hợp |
+| `tsconfig.app.json` | Verify paths đúng |
+| `README.md` | Viết lại cho service mới |
+
+### Các lệnh thường dùng
+
+```bash
 # Build service
 npx nx build [SERVICE_NAME]
 

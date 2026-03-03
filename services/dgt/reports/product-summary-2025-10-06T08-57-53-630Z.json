@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2025-10-06T08:57:53.616Z",
+  "summary": {
+    "totalCategories": 3,
+    "totalProducts": 1,
+    "totalValue": 1998.9999999999998
+  },
+  "categoriesDetail": [
+    {
+      "categoryId": "68e2488e3426b64bde3abaaa",
+      "categoryName": "Electronics",
+      "productsCount": 0,
+      "totalStock": 0,
+      "totalValue": 0,
+      "products": []
+    },
+    {
+      "categoryId": "68e24a9a3426b64bde3abaae",
+      "categoryName": "Clothing",
+      "productsCount": 1,
+      "totalStock": 100,
+      "totalValue": 1998.9999999999998,
+      "products": [
+        {
+          "id": "68e24ad43426b64bde3abab0",
+          "name": "T-Shirt",
+          "price": 19.99,
+          "stock": 100,
+          "value": 1998.9999999999998
+        }
+      ]
+    },
+    {
+      "categoryId": "68e38484e05bb8cc523e5561",
+      "categoryName": "Books",
+      "productsCount": 0,
+      "totalStock": 0,
+      "totalValue": 0,
+      "products": []
+    }
+  ]
+}

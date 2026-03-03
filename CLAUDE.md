@@ -107,6 +107,14 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
   - Dashboard data collection
   - System health tracking
 
+- **AIVP** (AI Video Processing) - Port 3007
+  - AI-powered video processing and analysis
+  - See [`services/aivp/README.md`](services/aivp/README.md) for details
+
+- **DGT** (Digital Gold Trader) - Port 3008
+  - Digital gold trading and management
+  - See [`services/dgt/README.md`](services/dgt/README.md) for details
+
 **Libraries** (`/libs/`):
 - **base** - Shared base classes and utilities
   - Base DTOs, controllers, services, and schemas
@@ -272,8 +280,10 @@ Services are organized by priority: Template (reference) → Core services → B
 | **AIWM** | 3003 | Business | AI Workload Manager |
 | **CBM** | 3004 | Business | Core Business Management |
 | **MONA** | 3005 | Business | Monitoring & Analytics |
+| **AIVP** | 3007 | Business | AI Video Processing |
+| **DGT** | 3008 | Business | Digital Gold Trader |
 
-**Next available ports:** 3006, 3007, 3008, etc.
+**Next available ports:** 3009, 3010, etc.
 
 #### Production Ports (33XX-39XX)
 Each service gets 10 ports: 4 for API instances, 6 for MCP/WS/other modes
@@ -286,6 +296,8 @@ Each service gets 10 ports: 4 for API instances, 6 for MCP/WS/other modes
 | AIWM | 3330-3333 | 3334-3339 | 3330-3339 |
 | CBM | 3340-3343 | 3344-3349 | 3340-3349 |
 | MONA | 3350-3353 | 3354-3359 | 3350-3359 |
+| AIVP | 3370-3373 | 3374-3379 | 3370-3379 |
+| DGT | 3380-3383 | 3384-3389 | 3380-3389 |
 
 **Example - AIWM Production Deployment:**
 - API: 3330, 3331, 3332, 3333 (4 instances)

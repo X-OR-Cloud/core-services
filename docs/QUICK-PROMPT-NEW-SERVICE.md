@@ -42,9 +42,18 @@ Tạo microservice mới với tên "[SERVICE_NAME]" trong monorepo hydra-servic
 ✅ Full CRUD với soft delete
 ✅ README với curl examples
 
+**Cách tạo service:**
+Copy thư mục `services/template/` → `services/[SERVICE_NAME]/`, rename lại:
+- `project.json`: đổi name, sourceRoot
+- `.env`: đổi PORT
+- `main.ts`: đổi Swagger title/description
+- `app.module.ts`: đổi dbName, envFilePath
+- Xoá modules mẫu (category, product, report), tạo modules mới
+- Xoá queues/ nếu không cần
+
 **Thực hiện từng bước:**
-1. Tạo service structure
-2. Setup main.ts và app.module.ts
+1. Copy và rename service structure
+2. Sửa main.ts và app.module.ts
 3. Tạo từng entity (schema → service → controller → DTO)
 4. Build và verify không có errors
 5. Tạo README với examples
