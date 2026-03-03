@@ -25,7 +25,7 @@ import { PositionModule } from '../modules/position/position.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/dgt/.env',
+      envFilePath: '.env',
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
