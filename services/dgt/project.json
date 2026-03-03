@@ -59,6 +59,44 @@
           "buildTarget": "dgt:build:production"
         }
       }
+    },
+    "wrk:shd": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "dgt:build",
+        "runBuildTargetDependencies": false,
+        "args": ["shd"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "dgt:build:development"
+        },
+        "production": {
+          "buildTarget": "dgt:build:production"
+        }
+      }
+    },
+    "wrk:ing": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "dgt:build",
+        "runBuildTargetDependencies": false,
+        "args": ["ing"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "dgt:build:development"
+        },
+        "production": {
+          "buildTarget": "dgt:build:production"
+        }
+      }
     }
   },
   "tags": []

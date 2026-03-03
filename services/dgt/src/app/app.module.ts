@@ -6,6 +6,21 @@ import { HealthModule, JwtStrategy, CorrelationIdMiddleware } from '@hydrabyte/b
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+// Group 1: User & Account
+import { AccountModule } from '../modules/account/account.module';
+import { RiskProfileModule } from '../modules/risk-profile/risk-profile.module';
+
+// Group 2: Market Data (Shared)
+import { MarketPriceModule } from '../modules/market-price/market-price.module';
+import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
+import { MacroIndicatorModule } from '../modules/macro-indicator/macro-indicator.module';
+import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-signal.module';
+
+// Group 3: Trading (Paper)
+import { OrderModule } from '../modules/order/order.module';
+import { TradeModule } from '../modules/trade/trade.module';
+import { PositionModule } from '../modules/position/position.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -18,7 +33,21 @@ import { AppService } from './app.service';
     ),
     PassportModule,
     HealthModule,
-    // TODO: Import entity modules here
+
+    // Group 1: User & Account
+    AccountModule,
+    RiskProfileModule,
+
+    // Group 2: Market Data (Shared)
+    MarketPriceModule,
+    TechnicalIndicatorModule,
+    MacroIndicatorModule,
+    SentimentSignalModule,
+
+    // Group 3: Trading (Paper)
+    OrderModule,
+    TradeModule,
+    PositionModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
