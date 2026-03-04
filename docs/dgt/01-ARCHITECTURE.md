@@ -1,6 +1,6 @@
 # DGT Service - Architecture Design
 
-**Version:** 1.0 | **Date:** 03/03/2026 | **Status:** Draft
+**Version:** 1.1 | **Date:** 04/03/2026 | **Status:** Draft
 
 ---
 
@@ -8,7 +8,7 @@
 
 DGT (Digital Gold Trader) là service quản lý giao dịch vàng tự động, nằm trong monorepo hydra-services.
 
-- **Port:** 3007 (local) | 3370-3379 (production)
+- **Port:** 3008 (local) | 3380-3389 (production)
 - **Database:** MongoDB `core_dgt`
 - **Framework:** NestJS (theo Template Service pattern)
 - **Modes:** API, Worker (scheduler + data-ingestion)
@@ -24,7 +24,7 @@ DGT chạy ở 3 modes, mỗi mode là 1 process riêng biệt:
 │                      DGT Service                              │
 ├──────────────┬──────────────────┬────────────────────────────┤
 │  API Mode    │  Worker:Scheduler│  Worker:Data-Ingestion     │
-│  (Port 3007) │  (No port)       │  (No port)                 │
+│  (Port 3008) │  (No port)       │  (No port)                 │
 │              │                  │                             │
 │  REST API    │  Load schedules  │  Consume queue              │
 │  Swagger     │  from config     │  dgt-data-ingestion         │
@@ -42,7 +42,7 @@ DGT chạy ở 3 modes, mỗi mode là 1 process riêng biệt:
 ### Nx Targets
 
 ```bash
-nx run dgt:api          # REST API server
+nx run dgt:api          # REST API server (port 3008)
 nx run dgt:wrk:shd      # Worker mode: Scheduler
 nx run dgt:wrk:ing      # Worker mode: Data Ingestion
 ```
@@ -93,7 +93,16 @@ services/dgt/src/
 │   │── trade/
 │   │   └── ...
 │   │
-│   └── position/
+│   │── position/
+│   │   └── ...
+│   │
+│   │── portfolio-snapshot/          # Group 1: Daily portfolio value snapshot
+│   │   └── ...
+│   │
+│   │── dashboard/                   # Group 4: Frontend API (aggregation, no entity)
+│   │   └── ...
+│   │
+│   └── analytics/                   # Group 4: Frontend API (aggregation, no entity)
 │       └── ...
 │
 ├── shared/                          # Shared data service (no RBAC)
@@ -153,7 +162,14 @@ services/dgt/src/
 │  ┌──────────────────────▼──────────────────────────┐    │
 │  │ Group 3: Trading (paper trading)                 │    │
 │  │  Order ──► Trade                                 │    │
-│  │  Position                                        │    │
+│  │  Position ──► PortfolioSnapshot (daily job)      │    │
+│  └──────────────────────┬──────────────────────────┘    │
+│                         │                                │
+│  ┌──────────────────────▼──────────────────────────┐    │
+│  │ Group 4: Frontend API (aggregation, no entity)   │    │
+│  │  Dashboard ◄── Account + Position + MarketPrice  │    │
+│  │               + PortfolioSnapshot                │    │
+│  │  Analytics  ◄── Position + Trade                 │    │
 │  └─────────────────────────────────────────────────┘    │
 │                                                          │
 │  ┌─────────────────────────────────────────────────┐    │
@@ -184,6 +200,9 @@ services/dgt/src/
 | `order` | `account` |
 | `trade` | `order` |
 | `position` | `account`, `order` |
+| `portfolio-snapshot` | `account`, `position` |
+| `dashboard` | `account`, `position`, `market-price`, `portfolio-snapshot` |
+| `analytics` | `account`, `position`, `trade` |
 | `collectors` | `market-price`, `macro-indicator`, `sentiment-signal` |
 
 ---
@@ -251,10 +270,10 @@ ENCRYPTION_KEY=             # AES-256 key for ApiKey encryption
 ┌─────────────────────────────────────────────────┐
 │              Production (PM2)                    │
 │                                                  │
-│  core.dgt.api00    (3370)  ──┐                  │
-│  core.dgt.api01    (3371)  ──┤── Nginx LB       │
-│  core.dgt.api02    (3372)  ──┤                  │
-│  core.dgt.api03    (3373)  ──┘                  │
+│  core.dgt.api00    (3380)  ──┐                  │
+│  core.dgt.api01    (3381)  ──┤── Nginx LB       │
+│  core.dgt.api02    (3382)  ──┤                  │
+│  core.dgt.api03    (3383)  ──┘                  │
 │                                                  │
 │  core.dgt.shd00            ── MODE=shd            │
 │  core.dgt.ing00            ── MODE=ing            │
@@ -262,10 +281,10 @@ ENCRYPTION_KEY=             # AES-256 key for ApiKey encryption
 └─────────────────────────────────────────────────┘
 ```
 
-- **API**: 4 instances (3370-3373), load balanced
+- **API**: 4 instances (3380-3383), load balanced
 - **Scheduler (shd)**: 1 instance (singleton, emit jobs)
 - **Data Ingestion (ing)**: 1-2 instances (consume jobs, scale theo load)
 
 ---
 
-*Tài liệu tiếp theo: [02-ENTITY-DESIGN.md](02-ENTITY-DESIGN.md) - Thiết kế entity chi tiết*
+*Tài liệu liên quan: [02-ENTITY-DESIGN.md](02-ENTITY-DESIGN.md) | [04-FRONTEND-API.md](04-FRONTEND-API.md)*

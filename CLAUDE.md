@@ -5,6 +5,13 @@ This file provides guidance to AI Agent when working with code in this repositor
 ## Agent Info
 1. **Agent Name**: `backend-dev`
 
+## Project IDs
+Projects sử dụng `mcp__Builtin_CreateDocument` để tạo tài liệu:
+
+| Project ID | Services |
+|------------|----------|
+| `69a10fc73f11383f63de96e6` | dgt, iam |
+
 ## Development Workflow Principles
 
 ### Handling Change Requests

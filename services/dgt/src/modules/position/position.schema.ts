@@ -68,6 +68,9 @@ export class Position extends BaseSchema {
   closedAt: Date;
 
   @Prop()
+  exitPrice: number;
+
+  @Prop()
   realizedPnl: number;
 
   @Prop({ enum: CloseReason })

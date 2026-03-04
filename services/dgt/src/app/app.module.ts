@@ -21,6 +21,11 @@ import { OrderModule } from '../modules/order/order.module';
 import { TradeModule } from '../modules/trade/trade.module';
 import { PositionModule } from '../modules/position/position.module';
 
+// Group 4: Frontend API
+import { PortfolioSnapshotModule } from '../modules/portfolio-snapshot/portfolio-snapshot.module';
+import { DashboardModule } from '../modules/dashboard/dashboard.module';
+import { AnalyticsModule } from '../modules/analytics/analytics.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -48,6 +53,11 @@ import { PositionModule } from '../modules/position/position.module';
     OrderModule,
     TradeModule,
     PositionModule,
+
+    // Group 4: Frontend API
+    PortfolioSnapshotModule,
+    DashboardModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

@@ -88,6 +88,14 @@ export const DATASOURCE_SCHEDULES: DatasourceSchedule[] = [
     enabled: true,
   },
 
+  // === Daily Portfolio Snapshot (00:05 UTC = 5 min after midnight) ===
+  {
+    type: 'snapshot_portfolio',
+    name: 'Portfolio Snapshot - Daily',
+    intervalMs: 86_400_000,
+    enabled: true,
+  },
+
   // === Technical Indicator Computation (every 5 minutes) ===
   {
     type: 'compute_indicators',

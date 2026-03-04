@@ -1,12 +1,12 @@
 # DGT Service - Entity Design (MVP)
 
-**Version:** 1.1 | **Date:** 03/03/2026 | **Status:** Draft
+**Version:** 1.2 | **Date:** 04/03/2026 | **Status:** Draft
 
 ---
 
-## Phạm vi MVP
+## Phạm vi
 
-Phiên bản MVP gồm **9 entities** đủ cho data pipeline + paper trading:
+### MVP v1.0 — 9 entities (đã triển khai)
 
 | Group | Entities | Mục đích |
 |-------|----------|---------|
@@ -14,16 +14,26 @@ Phiên bản MVP gồm **9 entities** đủ cho data pipeline + paper trading:
 | Market Data | MarketPrice, TechnicalIndicator, MacroIndicator, SentimentSignal | Thu thập & lưu trữ data |
 | Trading | Order, Trade, Position | Paper trading core |
 
-**Entities chưa triển khai (thêm sau):**
+### P1 — Frontend API v1.0 (thêm vào)
+
+| Entity/Module | Loại | Mục đích |
+|--------------|------|---------|
+| `PortfolioSnapshot` | Entity (mới) | Snapshot portfolio value hàng ngày cho Dashboard chart |
+| `Dashboard` | Aggregation module (không có entity) | API tổng hợp cho Dashboard page |
+| `Analytics` | Aggregation module (không có entity) | API tổng hợp cho Analytics page |
+
+**Schema change:** Thêm field `exitPrice: number` vào `Position` entity.
+
+### Entities chưa triển khai (thêm sau)
 
 | Entity | Khi nào thêm | Thay thế tạm |
 |--------|-------------|--------------|
 | ApiKey | Live trading (Binance API) | Chưa cần |
 | TradingSignal | AI engine (phase 3) | Manual / rule-based |
+| Bot | AI bot management (phase 2) | Chưa cần |
 | OrderExecution | Live trading audit | Field `executionLog` trong Order |
 | RiskMetric | Đủ data lịch sử | Tính on-the-fly từ Trade/Position |
 | RiskAlert | Risk monitoring loop | Log + console |
-| Report | Accumulate đủ data | API aggregate trực tiếp |
 | AuditLog | Compliance phase | BaseSchema `createdBy/updatedBy` |
 | Notification | Push/email channels | Console log |
 
@@ -261,12 +271,37 @@ Vị thế đang mở.
 | `status` | enum: `open`, `closed` | Yes | `open` | Trạng thái |
 | `openedAt` | Date | Yes | - | Thời điểm mở |
 | `closedAt` | Date | No | - | Thời điểm đóng |
+| `exitPrice` | number | No | - | Giá đóng vị thế *(thêm ở P1)* |
 | `realizedPnl` | number | No | - | P&L khi đóng |
 | `closeReason` | enum: `manual`, `stop_loss`, `take_profit` | No | - | Lý do đóng |
 
 **Indexes:**
 - `{ accountId: 1, status: 1 }` (query vị thế đang mở)
 - `{ accountId: 1, closedAt: -1 }` (lịch sử)
+
+---
+
+## Group 1 (P1): PortfolioSnapshot
+
+Snapshot giá trị portfolio hàng ngày. Dùng cho Dashboard portfolio history chart.
+
+| Field | Type | Required | Default | Mô tả |
+|-------|------|----------|---------|-------|
+| `accountId` | ObjectId (ref Account) | Yes | - | Tài khoản |
+| `date` | Date | Yes | - | Ngày snapshot (truncated to 00:00:00 UTC) |
+| `totalValueUsd` | number | Yes | - | Tổng giá trị portfolio |
+| `cashBalanceUsd` | number | Yes | - | Số dư tiền mặt |
+| `positionsValueUsd` | number | Yes | - | Giá trị các vị thế đang mở |
+| `realizedPnlUsd` | number | Yes | - | Tổng realized PnL tích lũy đến ngày này |
+| `unrealizedPnlUsd` | number | Yes | - | Unrealized PnL tại thời điểm snapshot |
+
+**Indexes:** `{ accountId: 1, date: -1 }` (unique per account per day)
+
+**Snapshot job:**
+- Chạy trong **Worker mode: shd** (scheduler)
+- Schedule: Hàng ngày lúc **00:05 UTC**
+- Job name: `snapshot_portfolio`
+- Logic: Lấy tất cả active accounts → mỗi account → tính portfolio value → upsert PortfolioSnapshot
 
 ---
 
@@ -277,7 +312,9 @@ Account (1) ──── (1) RiskProfile
    │
    ├──── (*) Order ──── (*) Trade
    │
-   └──── (*) Position
+   ├──── (*) Position
+   │
+   └──── (*) PortfolioSnapshot (daily)
 
 Shared (no user ownership):
    MarketPrice

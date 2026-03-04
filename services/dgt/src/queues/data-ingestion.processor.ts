@@ -12,6 +12,7 @@ import { YahooFinanceCollector } from '../collectors/yahoo-finance.collector';
 import { BytetreeCollector } from '../collectors/bytetree.collector';
 import { NewsapiCollector } from '../collectors/newsapi.collector';
 import { IndicatorComputationService } from '../indicators/indicator-computation.service';
+import { PortfolioSnapshotCollector } from '../collectors/portfolio-snapshot.collector';
 
 @Processor(QUEUE_NAMES.DATA_INGESTION)
 export class DataIngestionProcessor extends WorkerHost {
@@ -28,6 +29,7 @@ export class DataIngestionProcessor extends WorkerHost {
     private readonly bytetreeCollector: BytetreeCollector,
     private readonly newsapiCollector: NewsapiCollector,
     private readonly indicatorComputation: IndicatorComputationService,
+    private readonly portfolioSnapshotCollector: PortfolioSnapshotCollector,
   ) {
     super();
   }
@@ -67,6 +69,9 @@ export class DataIngestionProcessor extends WorkerHost {
           break;
         case 'compute_indicators':
           await this.computeIndicators(params);
+          break;
+        case 'snapshot_portfolio':
+          await this.portfolioSnapshotCollector.collect();
           break;
         default:
           throw new Error(`Unknown datasource type: ${type}`);
