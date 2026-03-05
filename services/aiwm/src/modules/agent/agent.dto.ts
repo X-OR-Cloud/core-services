@@ -1,7 +1,61 @@
-import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty } from 'class-validator';
+import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
 import { Instruction } from '../instruction/instruction.schema';
+
+/**
+ * DTO for a single channel configuration entry.
+ * Each entry represents one Discord channel or Telegram group.
+ */
+export class ChannelConfigDto {
+  @ApiProperty({ description: 'Platform', enum: ['discord', 'telegram'] })
+  @IsEnum(['discord', 'telegram'])
+  platform: 'discord' | 'telegram';
+
+  @ApiPropertyOptional({ description: 'Human-readable label, e.g. "VTV Support Discord"', required: false })
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @ApiProperty({ description: 'Enable or disable this channel', example: true })
+  @IsBoolean()
+  enabled: boolean;
+
+  @ApiProperty({ description: 'Bot token for the platform' })
+  @IsString()
+  token: string;
+
+  @ApiPropertyOptional({
+    description: 'Discord: bot user ID (numeric string). Telegram: @botUsername. Used to verify mentions.',
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  botId?: string;
+
+  @ApiProperty({
+    description: 'Discord: channel ID. Telegram: group ID (negative number as string).',
+    example: '987654321012345678'
+  })
+  @IsString()
+  channelId: string;
+
+  @ApiProperty({ description: 'Only respond when the bot is @mentioned', example: false })
+  @IsBoolean()
+  requireMentions: boolean;
+
+  @ApiProperty({ description: 'Emit step-by-step action logs to the channel', example: false })
+  @IsBoolean()
+  verboseLogging: boolean;
+
+  @ApiProperty({
+    description: 'Where to send verbose logs: "channel" (same channel), "thread" (Discord thread / reply chain), or a specific channel ID',
+    example: 'channel'
+  })
+  @IsString()
+  verboseLoggingTarget: string;
+}
 
 /**
  * DTO for creating a new agent - MVP Minimal Version
@@ -98,20 +152,29 @@ export class CreateAgentDto {
   allowedFunctions?: string[];
 
   @ApiPropertyOptional({
-    description: 'Runtime configuration with flat structure using prefixes (auth_, claude_, discord_, telegram_)',
+    description: 'Runtime configuration with flat structure using prefixes (auth_, claude_). discord_* and telegram_* keys are deprecated — use channels[] instead.',
     required: false,
     example: {
       auth_roles: ['agent'],
       claude_model: 'claude-3-5-sonnet-latest',
       claude_maxTurns: 100,
       claude_permissionMode: 'bypassPermissions',
-      discord_token: 'xxx',
-      discord_channelIds: ['123', '456']
     }
   })
   @IsOptional()
   @IsObject()
   settings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Structured channel configurations (Discord / Telegram). Each entry = one channel with its own token, behavior flags, and logging config.',
+    required: false,
+    type: [ChannelConfigDto]
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChannelConfigDto)
+  channels?: ChannelConfigDto[];
 }
 
 /**
@@ -208,20 +271,29 @@ export class UpdateAgentDto {
   allowedFunctions?: string[];
 
   @ApiPropertyOptional({
-    description: 'Runtime configuration with flat structure using prefixes (auth_, claude_, discord_, telegram_)',
+    description: 'Runtime configuration with flat structure using prefixes (auth_, claude_). discord_* and telegram_* keys are deprecated — use channels[] instead.',
     required: false,
     example: {
       auth_roles: ['agent'],
       claude_model: 'claude-3-5-sonnet-latest',
       claude_maxTurns: 100,
       claude_permissionMode: 'bypassPermissions',
-      discord_token: 'xxx',
-      discord_channelIds: ['123', '456']
     }
   })
   @IsOptional()
   @IsObject()
   settings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Structured channel configurations (Discord / Telegram). Each entry = one channel with its own token, behavior flags, and logging config.',
+    required: false,
+    type: [ChannelConfigDto]
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChannelConfigDto)
+  channels?: ChannelConfigDto[];
 }
 
 /**
@@ -292,6 +364,9 @@ export class AgentConnectResponseDto {
 
   @ApiProperty({ description: 'Agent runtime settings/configuration' })
   settings: Record<string, unknown>;
+
+  @ApiProperty({ description: 'Structured channel configurations for Discord/Telegram', type: [ChannelConfigDto] })
+  channels: ChannelConfigDto[];
 
   @ApiPropertyOptional({
     description: 'Deployment configuration (for autonomous agents only)',

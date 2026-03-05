@@ -48,19 +48,33 @@ Quản lý AI agents - các thực thể thực thi tasks với instructions và
 
 **Chức năng:**
 - CRUD operations cho agents
-- Link agents với instructions và guardrails
-- Assign agents to nodes
-- Track agent status (active, inactive, busy)
-- Tagging và categorization
+- Link agents với instructions, guardrails, deployments
+- Assign agents to nodes (managed type)
+- Track agent status state machine: `inactive → idle → busy → suspended`
+- Multi-channel integration (Discord, Telegram) với per-channel config
+- JWT authentication cho agents (secret-based cho managed, user JWT cho autonomous)
+- Heartbeat + next-work dispatch từ CBM
+- Context injection (`@project:`, `@document:` references)
+- Env config generation cho agent deployment
 
 **Schema chính:**
-- `name`: Tên agent
-- `description`: Mô tả
-- `status`: Trạng thái (active, inactive, busy)
-- `instructionId`: Link đến instruction
-- `guardrailId`: Link đến guardrail
-- `nodeId`: Node chạy agent
-- `tags`: Tags để phân loại
+- `name`, `description`: Thông tin agent
+- `status`: `inactive | idle | busy | suspended`
+- `type`: `managed | autonomous`
+- `framework`: `claude-agent-sdk`
+- `instructionId`, `guardrailId`, `deploymentId`: References
+- `nodeId`: Node chạy agent (managed only)
+- `role`: RBAC role (`organization.editor | organization.viewer`)
+- `allowedToolIds`, `allowedFunctions`: Whitelist tools và functions
+- `channels[]`: Structured channel configs (Discord/Telegram) — thay thế `settings.discord_*`
+- `settings`: Runtime config (`auth_roles`, `claude_*`, legacy discord/telegram keys)
+- `secret`: Hashed secret cho agent authentication
+- `lastConnectedAt`, `lastHeartbeatAt`, `connectionCount`: Connection tracking
+
+**Channel Config (`channels[]`):**
+- Mỗi entry = 1 channel với `platform`, `token`, `channelId`, `botId`, `requireMentions`, `verboseLogging`, `verboseLoggingTarget`
+- Session isolation: mỗi channel có session riêng (`{agentId}:{platform}:{channelId}`)
+- Xem [`docs/aiwm/agents/AGENT-SETTINGS-STRUCTURE.md`](../../docs/aiwm/agents/AGENT-SETTINGS-STRUCTURE.md)
 
 **API Documentation:** [`docs/aiwm/API-AGENT.md`](../../docs/aiwm/API-AGENT.md)
 

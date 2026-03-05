@@ -2,6 +2,21 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { BaseSchema } from '@hydrabyte/base';
 
+export type ChannelPlatform = 'discord' | 'telegram';
+export type VerboseLoggingTarget = 'channel' | 'thread' | string;
+
+export interface ChannelConfig {
+  platform: ChannelPlatform;
+  label?: string;
+  enabled: boolean;
+  token: string;
+  botId?: string;
+  channelId: string;
+  requireMentions: boolean;
+  verboseLogging: boolean;
+  verboseLoggingTarget: VerboseLoggingTarget;
+}
+
 export type AgentDocument = Agent & Document;
 
 /**
@@ -76,12 +91,12 @@ export class Agent extends BaseSchema {
    * - claude_permissionMode: string - Permission mode (default: 'bypassPermissions')
    * - claude_resume: boolean - Resume capability (default: true)
    * - claude_oauthToken: string - Claude OAuth token (optional)
-   * - discord_token: string - Discord bot token
-   * - discord_channelIds: string[] - Discord channel IDs
-   * - discord_botId: string - Discord bot ID
-   * - telegram_token: string - Telegram bot token
-   * - telegram_groupIds: string[] - Telegram group IDs
-   * - telegram_botUsername: string - Telegram bot username
+   * - discord_token: string - Discord bot token (deprecated: use channels[])
+   * - discord_channelIds: string[] - Discord channel IDs (deprecated: use channels[])
+   * - discord_botId: string - Discord bot ID (deprecated: use channels[])
+   * - telegram_token: string - Telegram bot token (deprecated: use channels[])
+   * - telegram_groupIds: string[] - Telegram group IDs (deprecated: use channels[])
+   * - telegram_botUsername: string - Telegram bot username (deprecated: use channels[])
    *
    * Example:
    * {
@@ -94,6 +109,30 @@ export class Agent extends BaseSchema {
    */
   @Prop({ type: Object, default: {} })
   settings: Record<string, unknown>;
+
+  /**
+   * Structured channel configurations for Discord and Telegram.
+   * Each entry represents one channel with full config (token, channelId, behavior flags).
+   * Replaces the legacy settings.discord_* / settings.telegram_* flat keys.
+   * Session ID pattern per channel: {agentId}:{platform}:{channelId}
+   */
+  @Prop({
+    type: [
+      {
+        platform: { type: String, enum: ['discord', 'telegram'], required: true },
+        label: { type: String },
+        enabled: { type: Boolean, required: true, default: true },
+        token: { type: String, required: true },
+        botId: { type: String },
+        channelId: { type: String, required: true },
+        requireMentions: { type: Boolean, required: true, default: false },
+        verboseLogging: { type: Boolean, required: true, default: false },
+        verboseLoggingTarget: { type: String, required: true, default: 'channel' },
+      },
+    ],
+    default: [],
+  })
+  channels: ChannelConfig[];
 
   // Connection tracking
   @Prop()

@@ -57,54 +57,79 @@ Agent settings use a **flat structure with prefixes** to organize configuration 
 
 ---
 
-### 3. Discord Integration (`discord_`)
+### 3. Discord & Telegram Integration — `channels[]` (Recommended)
 
-**Purpose:** Configure Discord bot integration.
+> **Thay thế** cho `settings.discord_*` và `settings.telegram_*`. Dùng field `channels[]` trên Agent thay vì settings flat keys.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `discord_token` | `string` | `undefined` | Discord bot token |
-| `discord_channelIds` | `string[]` | `undefined` | Discord channel IDs to monitor |
-| `discord_botId` | `string` | `undefined` | Discord bot ID |
+**Purpose:** Cấu hình structured cho từng channel Discord hoặc Telegram. Mỗi phần tử = 1 channel riêng biệt với config và behavior flags của riêng nó.
 
-**Example:**
+**Session isolation:** Mỗi channel entry tạo 1 session riêng. Session ID pattern: `{agentId}:{platform}:{channelId}`
+
+#### Channel Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `platform` | `'discord' \| 'telegram'` | ✅ | Nền tảng |
+| `label` | `string` | ❌ | Tên gợi nhớ (chỉ hiển thị trong UI) |
+| `enabled` | `boolean` | ✅ | Bật/tắt channel này |
+| `token` | `string` | ✅ | Bot token của platform |
+| `botId` | `string` | ❌ | Discord: bot user ID (numeric). Telegram: @botUsername. Dùng để verify mention. |
+| `channelId` | `string` | ✅ | Discord: channel ID. Telegram: group ID (số âm). |
+| `requireMentions` | `boolean` | ✅ | `true` = chỉ respond khi @mention bot. `false` = respond mọi message. |
+| `verboseLogging` | `boolean` | ✅ | `true` = log step-by-step actions ra channel. |
+| `verboseLoggingTarget` | `'channel' \| 'thread' \| string` | ✅ | Nơi nhận log: `channel` (same channel), `thread` (Discord thread), hoặc channel ID cụ thể. |
+
+**Example — Create agent với channels:**
 ```json
 {
-  "discord_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
-  "discord_channelIds": ["123456789012345678", "987654321098765432"],
-  "discord_botId": "123456789012345678"
+  "name": "VTV Support Agent",
+  "type": "managed",
+  "channels": [
+    {
+      "platform": "discord",
+      "label": "VTV Support Discord",
+      "enabled": true,
+      "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
+      "botId": "123456789012345678",
+      "channelId": "987654321098765432",
+      "requireMentions": true,
+      "verboseLogging": true,
+      "verboseLoggingTarget": "thread"
+    },
+    {
+      "platform": "telegram",
+      "label": "VTV Telegram Group",
+      "enabled": true,
+      "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "botId": "@vtv_support_bot",
+      "channelId": "-1001234567890",
+      "requireMentions": false,
+      "verboseLogging": false,
+      "verboseLoggingTarget": "channel"
+    }
+  ]
 }
 ```
 
 **Notes:**
-- `discord_channelIds` can be array or comma-separated string
-- Bot token can be obtained from Discord Developer Portal
+- Agent có thể có nhiều channels trên cùng 1 platform (nhiều Discord channels, nhiều Telegram groups)
+- Mỗi channel có `enabled` riêng — có thể disable 1 channel mà không ảnh hưởng channels khác
+- `verboseLogging` hiện tại do agent framework xử lý; AIWM sẽ kiểm soát sau
 
 ---
 
-### 4. Telegram Integration (`telegram_`)
+### 4. Discord & Telegram — Legacy Settings Keys (Deprecated)
 
-**Purpose:** Configure Telegram bot integration.
+> ⚠️ **Deprecated.** Dùng `channels[]` thay thế. Các keys dưới đây vẫn được đọc để backward compat nhưng sẽ bị xóa trong tương lai.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `telegram_token` | `string` | `undefined` | Telegram bot token from BotFather |
-| `telegram_groupIds` | `string[]` | `undefined` | Telegram group IDs to monitor |
-| `telegram_botUsername` | `string` | `undefined` | Telegram bot username (e.g., `@mybot`) |
-
-**Example:**
-```json
-{
-  "telegram_token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
-  "telegram_groupIds": ["-123456789", "-987654321"],
-  "telegram_botUsername": "@my_support_bot"
-}
-```
-
-**Notes:**
-- `telegram_groupIds` can be array or comma-separated string
-- Group IDs are negative numbers for groups
-- Bot token obtained from @BotFather
+| Field | Type | Description |
+|-------|------|-------------|
+| `discord_token` | `string` | Discord bot token *(deprecated: dùng `channels[]`)* |
+| `discord_channelIds` | `string[]` | Discord channel IDs *(deprecated)* |
+| `discord_botId` | `string` | Discord bot ID *(deprecated)* |
+| `telegram_token` | `string` | Telegram bot token *(deprecated)* |
+| `telegram_groupIds` | `string[]` | Telegram group IDs *(deprecated)* |
+| `telegram_botUsername` | `string` | Telegram bot username *(deprecated)* |
 
 ---
 
@@ -117,12 +142,21 @@ Agent settings use a **flat structure with prefixes** to organize configuration 
     "claude_model": "claude-3-5-sonnet-latest",
     "claude_maxTurns": 150,
     "claude_permissionMode": "bypassPermissions",
-    "claude_resume": true,
-    "discord_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
-    "discord_channelIds": ["123456789012345678"],
-    "telegram_token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
-    "telegram_groupIds": ["-123456789"]
-  }
+    "claude_resume": true
+  },
+  "channels": [
+    {
+      "platform": "discord",
+      "label": "Main Support Channel",
+      "enabled": true,
+      "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
+      "botId": "123456789012345678",
+      "channelId": "987654321098765432",
+      "requireMentions": true,
+      "verboseLogging": false,
+      "verboseLoggingTarget": "channel"
+    }
+  ]
 }
 ```
 
@@ -174,7 +208,7 @@ const discordToken = settings.discord_token || settings.discord?.token;
 
 ## API Examples
 
-### Create Agent with Settings
+### Create Agent with Channels
 
 **Endpoint:** `POST /agents`
 
@@ -182,8 +216,7 @@ const discordToken = settings.discord_token || settings.discord?.token;
 ```json
 {
   "name": "Customer Support Agent",
-  "description": "AI agent for customer support on Discord",
-  "status": "active",
+  "description": "AI agent for customer support on Discord and Telegram",
   "type": "managed",
   "nodeId": "node-gpu-001",
   "instructionId": "instruction-customer-support",
@@ -191,29 +224,59 @@ const discordToken = settings.discord_token || settings.discord?.token;
   "settings": {
     "auth_roles": ["agent", "document.reader"],
     "claude_model": "claude-3-5-sonnet-latest",
-    "claude_maxTurns": 100,
-    "discord_token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
-    "discord_channelIds": ["123456789012345678"]
-  }
+    "claude_maxTurns": 100
+  },
+  "channels": [
+    {
+      "platform": "discord",
+      "label": "Support Channel",
+      "enabled": true,
+      "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
+      "botId": "123456789012345678",
+      "channelId": "987654321098765432",
+      "requireMentions": true,
+      "verboseLogging": false,
+      "verboseLoggingTarget": "channel"
+    }
+  ]
 }
 ```
 
-### Update Agent Settings
+### Update Agent Channels
 
 **Endpoint:** `PUT /agents/:id`
 
 **Request:**
 ```json
 {
-  "settings": {
-    "auth_roles": ["agent", "project.manager"],
-    "claude_model": "claude-3-5-opus-latest",
-    "telegram_token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-  }
+  "channels": [
+    {
+      "platform": "discord",
+      "label": "Support Channel",
+      "enabled": true,
+      "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY",
+      "botId": "123456789012345678",
+      "channelId": "987654321098765432",
+      "requireMentions": true,
+      "verboseLogging": true,
+      "verboseLoggingTarget": "thread"
+    },
+    {
+      "platform": "telegram",
+      "label": "Telegram Group",
+      "enabled": false,
+      "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "botId": "@support_bot",
+      "channelId": "-1001234567890",
+      "requireMentions": false,
+      "verboseLogging": false,
+      "verboseLoggingTarget": "channel"
+    }
+  ]
 }
 ```
 
-**Note:** Partial updates are supported - only specified fields are updated.
+**Note:** `channels[]` là replace toàn bộ array khi update.
 
 ---
 
@@ -221,7 +284,7 @@ const discordToken = settings.discord_token || settings.discord?.token;
 
 When agent connects or credentials are regenerated, AIWM generates `.env` configuration:
 
-**Generated `.env` file:**
+**Generated `.env` file (từ channels[]):**
 ```bash
 # ===== AIWM Integration =====
 AIWM_ENABLED=true
@@ -240,11 +303,21 @@ CLAUDE_RESUME=true
 
 # ===== Platform Configuration (Optional) =====
 DISCORD_TOKEN=MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.YYYYYYYYYY
-DISCORD_CHANNEL_ID=123456789012345678
+DISCORD_CHANNEL_ID=987654321098765432
+DISCORD_BOT_ID=123456789012345678
+DISCORD_REQUIRE_MENTIONS=true
+DISCORD_VERBOSE_LOGGING=false
+DISCORD_VERBOSE_LOGGING_TARGET=channel
 
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-TELEGRAM_GROUP_ID=-123456789
+TELEGRAM_GROUP_ID=-1001234567890
+TELEGRAM_BOT_USERNAME=@support_bot
+TELEGRAM_REQUIRE_MENTIONS=false
+TELEGRAM_VERBOSE_LOGGING=false
+TELEGRAM_VERBOSE_LOGGING_TARGET=channel
 ```
+
+> Nếu agent có nhiều channels cùng platform, AIWM dùng channel đầu tiên có `enabled: true` làm primary env vars. Tất cả channels được gộp thêm vào `DISCORD_CHANNELS` / `TELEGRAM_CHANNELS` dạng JSON array.
 
 ---
 
@@ -269,27 +342,32 @@ TELEGRAM_GROUP_ID=-123456789
 ```
 
 ### 3. Secure Token Storage
+
+Tokens được lưu trong `channels[].token` (encrypted at rest trong MongoDB). Không commit token vào git hoặc expose trong logs.
+
+### 4. Dùng `channels[]` thay vì settings flat keys
+
 ```json
-// ✅ Store tokens in settings (encrypted at rest in MongoDB)
+// ✅ Recommended — type-safe, per-channel config
 {
-  "discord_token": "actual-token",
-  "telegram_token": "actual-token"
+  "channels": [
+    { "platform": "discord", "channelId": "123", "enabled": true, ... }
+  ]
 }
 
-// ❌ Never commit tokens to git or expose in logs
+// ❌ Deprecated — không có per-channel granularity
+{
+  "settings": { "discord_token": "xxx", "discord_channelIds": ["123"] }
+}
 ```
 
-### 4. Use Arrays for Multiple Channels
-```json
-// ✅ Good - agent monitors multiple channels
-{
-  "discord_channelIds": ["channel1", "channel2", "channel3"]
-}
+### 5. Disable channel thay vì xóa
 
-// ⚠️ Works but less flexible
-{
-  "discord_channelIds": "channel1,channel2"
-}
+```json
+// ✅ Tạm thời tắt channel — giữ config, không mất data
+{ "enabled": false }
+
+// ❌ Đừng xóa channel khỏi array nếu có thể cần dùng lại
 ```
 
 ---
@@ -304,10 +382,11 @@ TELEGRAM_GROUP_ID=-123456789
 
 ### Issue: Discord bot not responding
 **Solution:**
-1. Verify `discord_token` is valid and not expired
-2. Check `discord_channelIds` matches actual channel IDs
-3. Ensure bot has permissions in Discord server
-4. Bot must be invited to channels before monitoring
+1. Verify `channels[].token` is valid and not expired
+2. Check `channels[].channelId` matches actual channel ID
+3. Check `channels[].enabled` is `true`
+4. Ensure bot has permissions in Discord server
+5. If `requireMentions: true`, bot chỉ respond khi được @mention
 
 ### Issue: Agent has wrong permissions in CBM
 **Solution:**
