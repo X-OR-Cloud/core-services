@@ -4,15 +4,70 @@ import {
   IsOptional,
   IsArray,
   IsDate,
+  IsEnum,
+  IsMongoId,
   MinLength,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationQueryDto } from '@hydrabyte/base';
 
+export class ProjectMemberDto {
+  @ApiProperty({ enum: ['user', 'agent'] })
+  @IsEnum(['user', 'agent'])
+  type!: 'user' | 'agent';
+
+  @ApiProperty({
+    description: 'User or Agent ObjectId',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsMongoId()
+  id!: string;
+
+  @ApiProperty({ enum: ['project.lead', 'project.member'] })
+  @IsEnum(['project.lead', 'project.member'])
+  role!: 'project.lead' | 'project.member';
+}
+
+export class ProjectLeadDto {
+  @ApiProperty({ enum: ['user', 'agent'], description: 'Type of the project lead' })
+  @IsEnum(['user', 'agent'])
+  type!: 'user' | 'agent';
+
+  @ApiProperty({
+    description: 'User or Agent ObjectId. For agent type: TODO cross-validate with AIWM service.',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsMongoId()
+  id!: string;
+}
+
+export class AddMemberDto {
+  @ApiProperty({ enum: ['user', 'agent'] })
+  @IsEnum(['user', 'agent'])
+  type!: 'user' | 'agent';
+
+  @ApiProperty({
+    description: 'User or Agent ObjectId. For agent type: TODO cross-validate with AIWM service.',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsMongoId()
+  id!: string;
+
+  @ApiProperty({ enum: ['project.lead', 'project.member'] })
+  @IsEnum(['project.lead', 'project.member'])
+  role!: 'project.lead' | 'project.member';
+}
+
+export class UpdateMemberRoleDto {
+  @ApiProperty({ enum: ['project.lead', 'project.member'] })
+  @IsEnum(['project.lead', 'project.member'])
+  role!: 'project.lead' | 'project.member';
+}
+
 /**
  * DTO for creating a new project
- * MongoDB _id will be used as the primary identifier
  */
 export class CreateProjectDto {
   @ApiProperty({
@@ -26,7 +81,17 @@ export class CreateProjectDto {
   name!: string;
 
   @ApiPropertyOptional({
-    description: 'Project description',
+    description: 'Public summary visible to all org members (non-members see only this)',
+    example: 'Launching new product features for Q1 2025',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  summary?: string;
+
+  @ApiPropertyOptional({
+    description: 'Private description visible to project members only',
     example: 'Launch new product features for Q1 2025',
     maxLength: 2000,
   })
@@ -36,14 +101,23 @@ export class CreateProjectDto {
   description?: string;
 
   @ApiPropertyOptional({
-    description: 'Array of member user IDs',
-    example: ['user123', 'user456'],
-    type: [String],
+    description: 'Project lead — will be added as first member with role project.lead',
+    type: ProjectLeadDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProjectLeadDto)
+  lead?: ProjectLeadDto;
+
+  @ApiPropertyOptional({
+    description: 'Initial project members',
+    type: [ProjectMemberDto],
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  members?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => ProjectMemberDto)
+  members?: ProjectMemberDto[];
 
   @ApiPropertyOptional({
     description: 'Project start date',
@@ -80,7 +154,7 @@ export class CreateProjectDto {
 
 /**
  * DTO for updating an existing project
- * All fields are optional
+ * All fields are optional. Members managed via /projects/:id/members endpoints.
  */
 export class UpdateProjectDto {
   @ApiPropertyOptional({
@@ -95,8 +169,16 @@ export class UpdateProjectDto {
   name?: string;
 
   @ApiPropertyOptional({
-    description: 'Project description',
-    example: 'Updated description...',
+    description: 'Public summary visible to all org members',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  summary?: string;
+
+  @ApiPropertyOptional({
+    description: 'Private description visible to project members only',
     maxLength: 2000,
   })
   @IsOptional()
@@ -104,29 +186,13 @@ export class UpdateProjectDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({
-    description: 'Array of member user IDs',
-    example: ['user123', 'user456', 'user789'],
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  members?: string[];
-
-  @ApiPropertyOptional({
-    description: 'Project start date',
-    type: Date,
-  })
+  @ApiPropertyOptional({ description: 'Project start date', type: Date })
   @IsOptional()
   @IsDate()
   @Type(() => Date)
   startDate?: Date;
 
-  @ApiPropertyOptional({
-    description: 'Project end date',
-    type: Date,
-  })
+  @ApiPropertyOptional({ description: 'Project end date', type: Date })
   @IsOptional()
   @IsDate()
   @Type(() => Date)
@@ -143,15 +209,15 @@ export class UpdateProjectDto {
   tags?: string[];
 
   // status changes only via action endpoints (activate, hold, resume, complete, archive)
+  // members managed via /projects/:id/members endpoints
 }
 
 /**
  * DTO for querying projects with search support
- * Extends PaginationQueryDto to include search functionality
  */
 export class ProjectQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
-    description: 'Search text - searches in name, description, and tags',
+    description: 'Search text - searches in name, summary, description, and tags',
     example: 'product launch',
   })
   @IsOptional()

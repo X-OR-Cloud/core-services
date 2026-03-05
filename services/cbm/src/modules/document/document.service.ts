@@ -9,6 +9,8 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Document } from './document.schema';
 import { UpdateContentDto } from './document.dto';
+import { ProjectService } from '../project/project.service';
+import { assertCanDeleteDocument } from '../project/project-access.helper';
 
 /**
  * DocumentService
@@ -18,7 +20,8 @@ import { UpdateContentDto } from './document.dto';
 @Injectable()
 export class DocumentService extends BaseService<Document> {
   constructor(
-    @InjectModel(Document.name) private documentModel: Model<Document>
+    @InjectModel(Document.name) private documentModel: Model<Document>,
+    private readonly projectService: ProjectService,
   ) {
     super(documentModel);
   }
@@ -32,173 +35,131 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
-   * Override findById to exclude content field and respect ownership
+   * Override findById to exclude content field and respect ownership.
+   * If the document belongs to a project, caller must be a project member.
    */
-  async findById(
-    id: ObjectId,
-    context: RequestContext
-  ): Promise<Document | null> {
-    // Build owner filter based on context
-    const ownerFilter: any = {
-      _id: id,
-      isDeleted: false,
-    };
+  async findById(id: ObjectId, context: RequestContext): Promise<Document | null> {
+    const ownerFilter: any = { _id: id, isDeleted: false };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
 
-    // Add ownership check
-    if (context.orgId) {
-      ownerFilter['owner.orgId'] = context.orgId;
+    const doc = await this.documentModel.findOne(ownerFilter).select('-content').lean().exec() as Document | null;
+    if (!doc) return null;
+
+    if ((doc as any).projectId) {
+      const memberIds = await this.projectService.getMemberProjectIds(context);
+      if (memberIds !== undefined && !memberIds.has((doc as any).projectId.toString())) {
+        return null;
+      }
     }
 
-    return this.documentModel
-      .findOne(ownerFilter)
-      .select('-content')
-      .lean()
-      .exec() as Promise<Document | null>;
+    return doc;
   }
 
   /**
    * Find document by ID with full content (for /content endpoint)
-   * Respects ownership - only returns documents owned by the requesting user/org
    */
-  async findByIdWithContent(
-    id: ObjectId,
-    context: RequestContext
-  ): Promise<Document | null> {
-    // Build owner filter based on context
-    const ownerFilter: any = {
-      _id: id,
-      isDeleted: false,
-    };
+  async findByIdWithContent(id: ObjectId, context: RequestContext): Promise<Document | null> {
+    const ownerFilter: any = { _id: id, isDeleted: false };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
 
-    // Add ownership check
-    if (context.orgId) {
-      ownerFilter['owner.orgId'] = context.orgId;
+    const doc = await this.documentModel.findOne(ownerFilter).lean().exec() as Document | null;
+    if (!doc) return null;
+
+    if ((doc as any).projectId) {
+      const memberIds = await this.projectService.getMemberProjectIds(context);
+      if (memberIds !== undefined && !memberIds.has((doc as any).projectId.toString())) {
+        return null;
+      }
     }
 
-    return this.documentModel
-      .findOne(ownerFilter)
-      .lean()
-      .exec() as Promise<Document | null>;
+    return doc;
   }
 
   /**
-   * Find document by ID for public share access (no ownership check)
-   * Only returns non-deleted documents with full content
+   * Find document by ID for public share access (no ownership or membership check)
    */
   async findByIdForShare(id: ObjectId): Promise<Document | null> {
-    return this.documentModel
-      .findOne({
-        _id: id,
-        isDeleted: false,
-      })
-      .lean()
-      .exec() as Promise<Document | null>;
+    return this.documentModel.findOne({ _id: id, isDeleted: false }).lean().exec() as Promise<Document | null>;
   }
 
   /**
-   * Override findAll to handle statistics aggregation and optimize response
-   * Aggregates by type and status
-   * Excludes 'content' field to reduce response size (using projection for performance)
-   * Supports search query for summary, content, and labels
+   * Build a MongoDB filter that excludes documents belonging to projects
+   * where the caller is not a member. Returns null if no filter is needed (super-admin).
+   */
+  private async buildMembershipFilter(context: RequestContext): Promise<any | null> {
+    const memberIds = await this.projectService.getMemberProjectIds(context);
+    if (memberIds === undefined) return null; // super-admin: no restriction
+
+    return {
+      $or: [
+        { projectId: { $exists: false } },
+        { projectId: null },
+        { projectId: { $in: Array.from(memberIds) } },
+      ],
+    };
+  }
+
+  /**
+   * Override findAll with membership filter.
+   * Documents belonging to projects the caller is not a member of are excluded globally.
    */
   async findAll(
     options: FindManyOptions & { search?: string },
     context: RequestContext
   ): Promise<FindManyResult<Document>> {
+    const andConditions: any[] = [];
 
-    // Handle search parameter - convert to MongoDB $or filter
+    // Handle search
     const searchQuery = options.search;
     if (searchQuery && typeof searchQuery === 'string') {
       const searchRegex = new RegExp(searchQuery, 'i');
-
-      const searchConditions = [
-        { summary: searchRegex },
-        { content: searchRegex },
-        { labels: searchQuery },
-      ];
-
-      // Merge $or into existing filter
-      if (!options.filter) {
-        options.filter = {};
-      }
-      (options.filter as any).$or = searchConditions;
-
+      andConditions.push({
+        $or: [
+          { summary: searchRegex },
+          { content: searchRegex },
+          { labels: searchQuery },
+        ],
+      });
       delete options.search;
+    }
+
+    // Handle membership filter
+    const membershipFilter = await this.buildMembershipFilter(context);
+    if (membershipFilter) andConditions.push(membershipFilter);
+
+    // Merge with existing filter
+    if (andConditions.length > 0) {
+      const existingFilter = options.filter ? { ...options.filter } : {};
+      options.filter = andConditions.length === 1 && Object.keys(existingFilter).length === 0
+        ? andConditions[0]
+        : { $and: [existingFilter, ...andConditions] } as any;
     }
 
     const findResult = await super.findAll(options, context);
 
-    // Exclude content field from results to reduce response size
+    // Exclude content field
     findResult.data = findResult.data.map((doc: any) => {
-      // Convert Mongoose document to plain object
       const plainDoc = doc.toObject ? doc.toObject() : doc;
       const { content, ...rest } = plainDoc;
       return rest as Document;
     });
 
-    // Build base match filter for aggregation (same as what BaseService uses)
-    const baseMatch: any = {
-      isDeleted: false,
-    };
+    // Aggregation
+    const baseMatch: any = { isDeleted: false };
+    if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
 
-    if (context.orgId) {
-      baseMatch['owner.orgId'] = context.orgId;
-    }
+    const matchFilter: any = options.filter && Object.keys(options.filter).length > 0
+      ? { $and: [baseMatch, options.filter] }
+      : baseMatch;
 
-    // Merge with search filters if any using $and to avoid conflicts
-    let matchFilter: any;
-    if (options.filter && Object.keys(options.filter).length > 0) {
-      matchFilter = {
-        $and: [baseMatch, options.filter]
-      };
-    } else {
-      matchFilter = baseMatch;
-    }
+    const [statusStats, typeStats] = await Promise.all([
+      super.aggregate([{ $match: matchFilter }, { $group: { _id: '$status', count: { $sum: 1 } } }], context),
+      super.aggregate([{ $match: matchFilter }, { $group: { _id: '$type', count: { $sum: 1 } } }], context),
+    ]);
 
-    // Aggregate statistics by status
-    const statusStats = await super.aggregate(
-      [
-        { $match: matchFilter },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Aggregate statistics by type
-    const typeStats = await super.aggregate(
-      [
-        { $match: matchFilter },
-        {
-          $group: {
-            _id: '$type',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Build statistics object
-    const statistics: any = {
-      total: findResult.pagination.total,
-      byStatus: {},
-      byType: {},
-    };
-
-    // Map status statistics
-    statusStats.forEach((stat: any) => {
-      statistics.byStatus[stat._id] = stat.count;
-    });
-
-    // Map type statistics
-    typeStats.forEach((stat: any) => {
-      statistics.byType[stat._id] = stat.count;
-    });
+    const statistics: any = { total: findResult.pagination.total, byStatus: {}, byType: {} };
+    statusStats.forEach((stat: any) => { statistics.byStatus[stat._id] = stat.count; });
+    typeStats.forEach((stat: any) => { statistics.byType[stat._id] = stat.count; });
 
     findResult.statistics = statistics;
     return findResult;
@@ -209,19 +170,11 @@ export class DocumentService extends BaseService<Document> {
    * Supports: replace, find-replace-text, find-replace-regex, find-replace-markdown,
    *           append, append-after-text, append-to-section
    */
-  async updateContent(
-    id: ObjectId,
-    updateDto: UpdateContentDto,
-    context: RequestContext
-  ): Promise<Document> {
-    // Get the document with full content
+  async updateContent(id: ObjectId, updateDto: UpdateContentDto, context: RequestContext): Promise<Document> {
     const document = await this.findByIdWithContent(id, context);
-    if (!document) {
-      throw new NotFoundException(`Document with ID ${id} not found`);
-    }
+    if (!document) throw new NotFoundException(`Document with ID ${id} not found`);
 
     let updatedContent: string;
-
     switch (updateDto.operation) {
       case 'replace':
         updatedContent = this.replaceAllContent(updateDto);
@@ -233,10 +186,7 @@ export class DocumentService extends BaseService<Document> {
         updatedContent = this.findReplaceRegex(document.content, updateDto);
         break;
       case 'find-replace-markdown':
-        updatedContent = this.findReplaceMarkdownSection(
-          document.content,
-          updateDto
-        );
+        updatedContent = this.findReplaceMarkdownSection(document.content, updateDto);
         break;
       case 'append':
         updatedContent = this.appendToEnd(document.content, updateDto);
@@ -248,236 +198,106 @@ export class DocumentService extends BaseService<Document> {
         updatedContent = this.appendToSection(document.content, updateDto);
         break;
       default:
-        throw new BadRequestException(
-          `Invalid operation: ${updateDto.operation}`
-        );
+        throw new BadRequestException(`Invalid operation: ${updateDto.operation}`);
     }
 
-    // Build owner filter for update
-    const ownerFilter: any = {
-      _id: id,
-      isDeleted: false,
-    };
+    const ownerFilter: any = { _id: id, isDeleted: false };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
 
-    if (context.orgId) {
-      ownerFilter['owner.orgId'] = context.orgId;
-    }
-
-    // Update the document with new content
     const updated = await this.documentModel
       .findOneAndUpdate(
         ownerFilter,
-        {
-          content: updatedContent,
-          updatedBy: context.agentId || context.userId,
-        },
+        { content: updatedContent, updatedBy: context.agentId || context.userId },
         { new: true }
       )
       .exec();
 
-    if (!updated) {
-      throw new NotFoundException(`Document with ID ${id} not found`);
-    }
-
+    if (!updated) throw new NotFoundException(`Document with ID ${id} not found`);
     return updated as Document;
   }
 
-  /**
-   * Replace all content
-   */
   private replaceAllContent(updateDto: UpdateContentDto): string {
-    if (!updateDto.content) {
-      throw new BadRequestException(
-        'content field is required for replace operation'
-      );
-    }
+    if (!updateDto.content) throw new BadRequestException('content field is required for replace operation');
     return updateDto.content;
   }
 
-  /**
-   * Find and replace text (case-insensitive by default)
-   */
-  private findReplaceText(
-    content: string,
-    updateDto: UpdateContentDto
-  ): string {
+  private findReplaceText(content: string, updateDto: UpdateContentDto): string {
     if (!updateDto.find || updateDto.replace === undefined) {
-      throw new BadRequestException(
-        'find and replace fields are required for find-replace-text operation'
-      );
+      throw new BadRequestException('find and replace fields are required for find-replace-text operation');
     }
-
-    // Escape special regex characters in the find text
     const escapedFind = updateDto.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedFind, 'g');
-
-    return content.replace(regex, updateDto.replace);
+    return content.replace(new RegExp(escapedFind, 'g'), updateDto.replace);
   }
 
-  /**
-   * Find and replace using regex pattern
-   */
-  private findReplaceRegex(
-    content: string,
-    updateDto: UpdateContentDto
-  ): string {
+  private findReplaceRegex(content: string, updateDto: UpdateContentDto): string {
     if (!updateDto.pattern || updateDto.replace === undefined) {
-      throw new BadRequestException(
-        'pattern and replace fields are required for find-replace-regex operation'
-      );
+      throw new BadRequestException('pattern and replace fields are required for find-replace-regex operation');
     }
-
     try {
-      const flags = updateDto.flags || 'g';
-      const regex = new RegExp(updateDto.pattern, flags);
-      return content.replace(regex, updateDto.replace);
+      return content.replace(new RegExp(updateDto.pattern, updateDto.flags || 'g'), updateDto.replace);
     } catch (error) {
       throw new BadRequestException(`Invalid regex pattern: ${error.message}`);
     }
   }
 
-  /**
-   * Find and replace markdown section
-   * Finds a markdown heading and replaces content until the next heading of same or higher level
-   */
-  private findReplaceMarkdownSection(
-    content: string,
-    updateDto: UpdateContentDto
-  ): string {
+  private findReplaceMarkdownSection(content: string, updateDto: UpdateContentDto): string {
     if (!updateDto.section || !updateDto.sectionContent) {
-      throw new BadRequestException(
-        'section and sectionContent fields are required for find-replace-markdown operation'
-      );
+      throw new BadRequestException('section and sectionContent fields are required for find-replace-markdown operation');
     }
-
-    // Extract heading level from the section (count # characters)
-    const sectionHeadingMatch = updateDto.section.match(/^(#{1,6})\s/);
-    if (!sectionHeadingMatch) {
-      throw new BadRequestException(
-        'section must be a valid markdown heading (e.g., "## API Spec")'
-      );
-    }
-
-    const headingLevel = sectionHeadingMatch[1].length;
-    const escapedSection = updateDto.section.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      '\\$&'
-    );
-
-    // Create regex to find the section and its content
-    // Matches from the section heading until:
-    // 1. Next heading of same or higher level (fewer or equal # characters)
-    // 2. End of content
-    const sectionRegex = new RegExp(
-      `${escapedSection}\\s*\\n` + // The section heading
-        `([\\s\\S]*?)` + // Content (captured)
-        `(?=\\n#{1,${headingLevel}}\\s|$)`, // Look ahead for same/higher level heading or end
-      'i'
-    );
-
-    const match = content.match(sectionRegex);
-    if (!match) {
-      throw new BadRequestException(
-        `Markdown section "${updateDto.section}" not found in document`
-      );
-    }
-
-    // Replace the matched section with new content
-    return content.replace(sectionRegex, updateDto.sectionContent + '\n');
+    const match = updateDto.section.match(/^(#{1,6})\s/);
+    if (!match) throw new BadRequestException('section must be a valid markdown heading (e.g., "## API Spec")');
+    const headingLevel = match[1].length;
+    const escaped = updateDto.section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`${escaped}\\s*\\n([\\s\\S]*?)(?=\\n#{1,${headingLevel}}\\s|$)`, 'i');
+    if (!content.match(regex)) throw new BadRequestException(`Markdown section "${updateDto.section}" not found in document`);
+    return content.replace(regex, updateDto.sectionContent + '\n');
   }
 
-  /**
-   * Append content to end of document
-   */
   private appendToEnd(content: string, updateDto: UpdateContentDto): string {
-    if (!updateDto.content) {
-      throw new BadRequestException(
-        'content field is required for append operation'
-      );
-    }
+    if (!updateDto.content) throw new BadRequestException('content field is required for append operation');
     return content + updateDto.content;
   }
 
-  /**
-   * Append content after a text match
-   */
-  private appendAfterText(
-    content: string,
-    updateDto: UpdateContentDto
-  ): string {
+  private appendAfterText(content: string, updateDto: UpdateContentDto): string {
     if (!updateDto.find || !updateDto.content) {
-      throw new BadRequestException(
-        'find and content fields are required for append-after-text operation'
-      );
+      throw new BadRequestException('find and content fields are required for append-after-text operation');
     }
-
     const index = content.indexOf(updateDto.find);
-    if (index === -1) {
-      throw new BadRequestException(
-        `Text "${updateDto.find}" not found in document`
-      );
-    }
+    if (index === -1) throw new BadRequestException(`Text "${updateDto.find}" not found in document`);
+    const pos = index + updateDto.find.length;
+    return content.slice(0, pos) + updateDto.content + content.slice(pos);
+  }
 
-    const insertPosition = index + updateDto.find.length;
-    return (
-      content.slice(0, insertPosition) +
-      updateDto.content +
-      content.slice(insertPosition)
-    );
+  private appendToSection(content: string, updateDto: UpdateContentDto): string {
+    if (!updateDto.section || !updateDto.content) {
+      throw new BadRequestException('section and content fields are required for append-to-section operation');
+    }
+    const match = updateDto.section.match(/^(#{1,6})\s/);
+    if (!match) throw new BadRequestException('section must be a valid markdown heading (e.g., "## API Spec")');
+    const headingLevel = match[1].length;
+    const escaped = updateDto.section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`${escaped}\\s*\\n([\\s\\S]*?)(?=\\n#{1,${headingLevel}}\\s|$)`, 'i');
+    const sectionMatch = content.match(regex);
+    if (!sectionMatch) throw new BadRequestException(`Markdown section "${updateDto.section}" not found in document`);
+    const insertPosition = content.search(regex) + sectionMatch[0].length;
+    return content.slice(0, insertPosition) + updateDto.content + content.slice(insertPosition);
   }
 
   /**
-   * Append content to a markdown section
-   * Appends at the end of the section, before the next same/higher level heading
+   * Override softDelete to restrict deletion to project.lead and super-admin.
+   * Project members cannot delete documents.
    */
-  private appendToSection(
-    content: string,
-    updateDto: UpdateContentDto
-  ): string {
-    if (!updateDto.section || !updateDto.content) {
-      throw new BadRequestException(
-        'section and content fields are required for append-to-section operation'
-      );
+  async softDelete(id: ObjectId, context: RequestContext): Promise<Document | null> {
+    const doc = await this.findById(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    if ((doc as any).projectId) {
+      const project = await this.projectService.getRawProjectById((doc as any).projectId.toString());
+      if (project) {
+        assertCanDeleteDocument(project, context);
+      }
     }
 
-    // Extract heading level from the section
-    const sectionHeadingMatch = updateDto.section.match(/^(#{1,6})\s/);
-    if (!sectionHeadingMatch) {
-      throw new BadRequestException(
-        'section must be a valid markdown heading (e.g., "## API Spec")'
-      );
-    }
-
-    const headingLevel = sectionHeadingMatch[1].length;
-    const escapedSection = updateDto.section.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      '\\$&'
-    );
-
-    // Create regex to find the section and its content
-    const sectionRegex = new RegExp(
-      `${escapedSection}\\s*\\n` + // The section heading
-        `([\\s\\S]*?)` + // Content (captured)
-        `(?=\\n#{1,${headingLevel}}\\s|$)`, // Look ahead for next heading or end
-      'i'
-    );
-
-    const match = content.match(sectionRegex);
-    if (!match) {
-      throw new BadRequestException(
-        `Markdown section "${updateDto.section}" not found in document`
-      );
-    }
-
-    // Find the position to insert (end of matched section)
-    const matchIndex = content.search(sectionRegex);
-    const matchLength = match[0].length;
-    const insertPosition = matchIndex + matchLength;
-
-    return (
-      content.slice(0, insertPosition) +
-      updateDto.content +
-      content.slice(insertPosition)
-    );
+    return super.softDelete(id, context);
   }
 }

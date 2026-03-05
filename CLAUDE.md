@@ -105,9 +105,10 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
   - See [`services/aiwm/README.md`](services/aiwm/README.md) for detailed documentation
 
 - **CBM** (Core Business Management) - Port 3004
-  - Business logic and workflows
-  - Document management
-  - Integration hub for business processes
+  - Project management with member-based access control (project.lead / project.member roles)
+  - Work item management (epic/task/subtask) with state machine, recurring schedules, and next-work priority
+  - Document management with advanced content operations and time-limited share links
+  - See [`services/cbm/CLAUDE.md`](services/cbm/CLAUDE.md) and [`docs/cbm/CBM-ENTITIES-AND-API.md`](docs/cbm/CBM-ENTITIES-AND-API.md) for details
 
 - **MONA** (Monitoring & Analytics) - Port 3005
   - Metrics aggregation and monitoring
@@ -138,7 +139,7 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
   - TypeScript types for auth and services
 
 ### Service Communication Pattern
-- Services are configured to run on different ports (IAM: 3000, CBM: 3001)
+- Services are configured to run on different ports (IAM: 3001, CBM: 3004)
 - Each service has its own MongoDB database with a common prefix pattern
 - Authentication is handled centrally through the IAM service
 - Shared libraries ensure consistent interfaces and utilities across services

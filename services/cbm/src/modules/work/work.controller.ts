@@ -15,12 +15,12 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagg
 import {
   JwtAuthGuard,
   CurrentUser,
-  PaginationQueryDto,
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
   ApiKeyGuard,
+  parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -58,10 +58,11 @@ export class WorkController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
   ) {
-    return this.workService.findAll(query, context);
+    const options = parseQueryString(query);
+    return this.workService.findAll(options, context);
   }
 
   @Get('next-work')

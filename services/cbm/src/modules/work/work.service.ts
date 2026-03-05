@@ -6,6 +6,8 @@ import { RequestContext } from '@hydrabyte/shared';
 import { Work, RecurrenceConfig } from './work.schema';
 import { CreateWorkDto } from './work.dto';
 import { NotificationService } from '../notification/notification.service';
+import { ProjectService } from '../project/project.service';
+import { assertCanManageWork } from '../project/project-access.helper';
 
 /**
  * WorkService
@@ -17,8 +19,21 @@ export class WorkService extends BaseService<Work> {
   constructor(
     @InjectModel(Work.name) private workModel: Model<Work>,
     private readonly notificationService: NotificationService,
+    private readonly projectService: ProjectService,
   ) {
     super(workModel);
+  }
+
+  /**
+   * Assert that the caller is a project lead or super-admin for work's project.
+   * No-op if work has no projectId.
+   */
+  private async assertWorkProjectAccess(projectId: string | undefined, context: RequestContext): Promise<void> {
+    if (!projectId) return;
+    const project = await this.projectService.getRawProjectById(projectId.toString());
+    if (project) {
+      assertCanManageWork(project, context);
+    }
   }
 
   /**
@@ -29,6 +44,8 @@ export class WorkService extends BaseService<Work> {
    * - subtask: must have parentId, and parent must be task
    */
   async create(data: CreateWorkDto, context: RequestContext): Promise<Work> {
+    // Check project lead access if work belongs to a project
+    await this.assertWorkProjectAccess((data as any).projectId, context);
     // Validate reporter exists and isDeleted = false
     await this.validateEntityExists(data.reporter.type, data.reporter.id);
 
@@ -90,6 +107,12 @@ export class WorkService extends BaseService<Work> {
    * - reason: Managed automatically by blockWork/unblockWork actions
    */
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Work | null> {
+    // Check project lead access
+    const existingWork = await super.findById(id, context);
+    if (existingWork) {
+      await this.assertWorkProjectAccess((existingWork as any).projectId, context);
+    }
+
     // Block fields that cannot be updated directly
     if (data.type !== undefined) {
       throw new BadRequestException('Cannot update work type. Type is immutable after creation.');
@@ -234,60 +257,46 @@ export class WorkService extends BaseService<Work> {
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Work>> {
+    // Build membership filter: exclude works from projects where caller is not a member
+    const memberIds = await this.projectService.getMemberProjectIds(context);
+    if (memberIds !== undefined) {
+      const membershipFilter = {
+        $or: [
+          { projectId: { $exists: false } },
+          { projectId: null },
+          { projectId: { $in: Array.from(memberIds) } },
+        ],
+      };
+      const existingFilter = options.filter ? { ...options.filter } : {};
+      options.filter = Object.keys(existingFilter).length > 0
+        ? { $and: [existingFilter, membershipFilter] } as any
+        : membershipFilter as any;
+    }
+
     const findResult = await super.findAll(options, context);
 
     // Exclude description field from results to reduce response size
     findResult.data = findResult.data.map((work: any) => {
-      // Convert Mongoose document to plain object
       const plainWork = work.toObject ? work.toObject() : work;
       const { description, ...rest } = plainWork;
       return rest as Work;
     });
 
-    // Aggregate statistics by status
-    const statusStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
+    // Aggregate statistics by status and type
+    const [statusStats, typeStats] = await Promise.all([
+      super.aggregate(
+        [{ $match: { ...options.filter } }, { $group: { _id: '$status', count: { $sum: 1 } } }],
+        context
+      ),
+      super.aggregate(
+        [{ $match: { ...options.filter } }, { $group: { _id: '$type', count: { $sum: 1 } } }],
+        context
+      ),
+    ]);
 
-    // Aggregate statistics by type
-    const typeStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$type',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Build statistics object
-    const statistics: any = {
-      total: findResult.pagination.total,
-      byStatus: {},
-      byType: {},
-    };
-
-    // Map status statistics
-    statusStats.forEach((stat: any) => {
-      statistics.byStatus[stat._id] = stat.count;
-    });
-
-    // Map type statistics
-    typeStats.forEach((stat: any) => {
-      statistics.byType[stat._id] = stat.count;
-    });
+    const statistics: any = { total: findResult.pagination.total, byStatus: {}, byType: {} };
+    statusStats.forEach((stat: any) => { statistics.byStatus[stat._id] = stat.count; });
+    typeStats.forEach((stat: any) => { statistics.byType[stat._id] = stat.count; });
 
     findResult.statistics = statistics;
     return findResult;
@@ -712,6 +721,9 @@ export class WorkService extends BaseService<Work> {
     if (!work) {
       throw new BadRequestException('Work not found');
     }
+
+    // Check project lead access
+    await this.assertWorkProjectAccess((work as any).projectId, context);
 
     if (!['done', 'cancelled'].includes(work.status)) {
       throw new BadRequestException(

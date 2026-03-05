@@ -17,11 +17,17 @@ import {
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
+  parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { ProjectService } from './project.service';
-import { CreateProjectDto, UpdateProjectDto, ProjectQueryDto } from './project.dto';
+import {
+  CreateProjectDto,
+  UpdateProjectDto,
+  AddMemberDto,
+  UpdateMemberRoleDto,
+} from './project.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -45,10 +51,12 @@ export class ProjectController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: ProjectQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
   ) {
-    return this.projectService.findAll(query, context);
+    const { search, ...rest } = query;
+    const options = parseQueryString(rest);
+    return this.projectService.findAll({ ...options, search }, context);
   }
 
   @Get(':id')
@@ -85,13 +93,69 @@ export class ProjectController {
     return this.projectService.softDelete(new Types.ObjectId(id) as any, context);
   }
 
-  // =============== Action Endpoints ===============
+  // =============== Member Management Endpoints ===============
+
+  @Get(':id/members')
+  @ApiOperation({ summary: 'List project members' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async listMembers(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.projectService.listMembers(id, context);
+  }
+
+  @Post(':id/members')
+  @ApiOperation({
+    summary: 'Add a member to project',
+    description: 'Requires project.lead or organization.owner role',
+  })
+  @ApiCreateErrors()
+  @UseGuards(JwtAuthGuard)
+  async addMember(
+    @Param('id') id: string,
+    @Body() dto: AddMemberDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.projectService.addMember(id, dto, context);
+  }
+
+  @Patch(':id/members/:memberId')
+  @ApiOperation({
+    summary: 'Update member role',
+    description: 'Requires project.lead or organization.owner role',
+  })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async updateMemberRole(
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberRoleDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.projectService.updateMemberRole(id, memberId, dto, context);
+  }
+
+  @Delete(':id/members/:memberId')
+  @ApiOperation({
+    summary: 'Remove a member from project',
+    description: 'Requires project.lead or organization.owner role',
+  })
+  @ApiDeleteErrors()
+  @UseGuards(JwtAuthGuard)
+  async removeMember(
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.projectService.removeMember(id, memberId, context);
+  }
+
+  // =============== State Transition Endpoints ===============
 
   @Post(':id/activate')
-  @ApiOperation({
-    summary: 'Activate project',
-    description: 'Transition project from draft to active status'
-  })
+  @ApiOperation({ summary: 'Activate project', description: 'Transition: draft → active' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async activate(
@@ -102,10 +166,7 @@ export class ProjectController {
   }
 
   @Post(':id/hold')
-  @ApiOperation({
-    summary: 'Put project on hold',
-    description: 'Transition project from active to on_hold status'
-  })
+  @ApiOperation({ summary: 'Put project on hold', description: 'Transition: active → on_hold' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async hold(
@@ -116,10 +177,7 @@ export class ProjectController {
   }
 
   @Post(':id/resume')
-  @ApiOperation({
-    summary: 'Resume project',
-    description: 'Transition project from on_hold to active status'
-  })
+  @ApiOperation({ summary: 'Resume project', description: 'Transition: on_hold → active' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async resume(
@@ -130,10 +188,7 @@ export class ProjectController {
   }
 
   @Post(':id/complete')
-  @ApiOperation({
-    summary: 'Complete project',
-    description: 'Transition project from active to completed status'
-  })
+  @ApiOperation({ summary: 'Complete project', description: 'Transition: active → completed' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async complete(
@@ -144,10 +199,7 @@ export class ProjectController {
   }
 
   @Post(':id/archive')
-  @ApiOperation({
-    summary: 'Archive project',
-    description: 'Transition project from completed to archived status'
-  })
+  @ApiOperation({ summary: 'Archive project', description: 'Transition: completed → archived' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async archive(

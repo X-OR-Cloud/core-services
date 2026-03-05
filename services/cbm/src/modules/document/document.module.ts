@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DocumentController } from './document.controller';
 import { DocumentService } from './document.service';
 import { Document, DocumentSchema } from './document.schema';
+import { ProjectModule } from '../project/project.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Document, DocumentSchema } from './document.schema';
         secret: configService.get<string>('JWT_SECRET') || 'R4md0m_S3cr3t',
       }),
     }),
+    ProjectModule,
   ],
   controllers: [DocumentController],
   providers: [DocumentService],
