@@ -1,81 +1,61 @@
 /**
- * Executors for AgentManagement tools
+ * Executors for InstructionManagement tools
  */
 
 import { Logger } from '@nestjs/common';
 import { ExecutionContext, ToolResponse } from '../../../types';
-import {
-  makeServiceRequest,
-  formatToolResponse,
-  buildQueryString,
-} from '../../../utils';
+import { makeServiceRequest, formatToolResponse, buildQueryString } from '../../../utils';
 
-const logger = new Logger('AgentManagementExecutors');
+const logger = new Logger('InstructionManagementExecutors');
 
-/**
- * Sanitize agent object by removing internal metadata fields
- */
-function sanitizeAgent(agent: any): any {
-  if (!agent) return agent;
-  const { owner, createdBy, updatedBy, __v, secret, ...sanitized } = agent;
+function sanitizeInstruction(instruction: any): any {
+  if (!instruction) return instruction;
+  const { owner, createdBy, updatedBy, __v, ...sanitized } = instruction;
   return sanitized;
 }
 
 /**
- * List agents with pagination and filters
+ * List instructions with pagination and filters
  */
-export async function executeListAgents(
-  args: {
-    page?: number;
-    limit?: number;
-    name?: string;
-    tags?: string;
-    description?: string;
-    status?: string;
-    type?: string;
-  },
+export async function executeListInstructions(
+  args: { page?: number; limit?: number; name?: string; tags?: string; status?: string },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
-  logger.debug(`ListAgents - URL: ${aiwmBaseUrl}`);
+  logger.debug(`ListInstructions - URL: ${aiwmBaseUrl}`);
 
-  const queryParams: Record<string, any> = {
-    page: args.page,
-    limit: args.limit,
-  };
-
+  const queryParams: Record<string, any> = { page: args.page, limit: args.limit };
   if (args.name) queryParams['name:regex'] = args.name;
   if (args.tags) queryParams['tags:in'] = args.tags;
-  if (args.description) queryParams['description:regex'] = args.description;
   if (args.status) queryParams['status'] = args.status;
-  if (args.type) queryParams['type'] = args.type;
 
   const queryString = buildQueryString(queryParams);
-  const url = `${aiwmBaseUrl}/agents${queryString}`;
-
-  const response = await makeServiceRequest(url, { method: 'GET', context });
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/instructions${queryString}`, {
+    method: 'GET',
+    context,
+  });
 
   if (!response.ok) return formatToolResponse(response);
 
   const data = await response.json();
   if (data.data && Array.isArray(data.data)) {
-    data.data = data.data.map(sanitizeAgent);
+    data.data = data.data.map(sanitizeInstruction);
   }
 
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 }
 
 /**
- * Create a new agent
+ * Create a new instruction
  */
-export async function executeCreateAgent(
+export async function executeCreateInstruction(
   args: Record<string, any>,
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
-  logger.debug(`CreateAgent - URL: ${aiwmBaseUrl}`);
+  logger.debug(`CreateInstruction - URL: ${aiwmBaseUrl}`);
 
-  const response = await makeServiceRequest(`${aiwmBaseUrl}/agents`, {
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/instructions`, {
     method: 'POST',
     context,
     body: JSON.stringify(args),
@@ -84,23 +64,23 @@ export async function executeCreateAgent(
   if (!response.ok) return formatToolResponse(response);
 
   const data = await response.json();
-  if (data.data) data.data = sanitizeAgent(data.data);
+  if (data.data) data.data = sanitizeInstruction(data.data);
 
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 }
 
 /**
- * Update an existing agent
+ * Update an existing instruction
  */
-export async function executeUpdateAgent(
+export async function executeUpdateInstruction(
   args: { id: string; [key: string]: any },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
   const { id, ...body } = args;
-  logger.debug(`UpdateAgent - id: ${id}`);
+  logger.debug(`UpdateInstruction - id: ${id}`);
 
-  const response = await makeServiceRequest(`${aiwmBaseUrl}/agents/${id}`, {
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/instructions/${id}`, {
     method: 'PUT',
     context,
     body: JSON.stringify(body),
@@ -109,22 +89,22 @@ export async function executeUpdateAgent(
   if (!response.ok) return formatToolResponse(response);
 
   const data = await response.json();
-  if (data.data) data.data = sanitizeAgent(data.data);
+  if (data.data) data.data = sanitizeInstruction(data.data);
 
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 }
 
 /**
- * Delete an agent (soft delete)
+ * Delete an instruction (soft delete)
  */
-export async function executeDeleteAgent(
+export async function executeDeleteInstruction(
   args: { id: string },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
-  logger.debug(`DeleteAgent - id: ${args.id}`);
+  logger.debug(`DeleteInstruction - id: ${args.id}`);
 
-  const response = await makeServiceRequest(`${aiwmBaseUrl}/agents/${args.id}`, {
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/instructions/${args.id}`, {
     method: 'DELETE',
     context,
   });

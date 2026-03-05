@@ -3,3 +3,4 @@
  */
 
 export * from './agent-management';
+export * from './instruction-management';
