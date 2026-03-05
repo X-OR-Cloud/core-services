@@ -22,6 +22,7 @@ import {
   executeRejectReviewForWork,
   executeGetNextWork,
   executeRecalculateEpicStatus,
+  executeCanTriggerWork,
 } from './executors';
 import {
   CreateWorkSchema,
@@ -42,6 +43,7 @@ import {
   RejectReviewForWorkSchema,
   GetNextWorkSchema,
   RecalculateEpicStatusSchema,
+  CanTriggerWorkSchema,
 } from './schemas';
 
 /**
@@ -152,7 +154,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   },
   {
     name: 'ReopenWork',
-    description: 'Reopen completed work - transition from done to in_progress status',
+    description: 'Reopen completed or cancelled work - transition from done or cancelled to in_progress status',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeReopenWork,
@@ -201,5 +203,14 @@ export const WorkManagementTools: ToolDefinition[] = [
     category: 'WorkManagement',
     executor: executeRecalculateEpicStatus,
     inputSchema: RecalculateEpicStatusSchema,
+  },
+  {
+    name: 'CanTriggerWork',
+    description:
+      'Check if a work item is ready to trigger agent execution. Returns true when work is assigned to an agent, startAt has been reached, status is ready, and not blocked.',
+    type: 'builtin',
+    category: 'WorkManagement',
+    executor: executeCanTriggerWork,
+    inputSchema: CanTriggerWorkSchema,
   },
 ];

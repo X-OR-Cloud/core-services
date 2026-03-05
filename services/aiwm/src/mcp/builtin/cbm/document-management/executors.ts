@@ -252,6 +252,8 @@ export async function executeUpdateDocument(
   args: {
     id: string;
     summary?: string;
+    content?: string;
+    type?: 'html' | 'text' | 'markdown' | 'json';
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
     projectId?: string;

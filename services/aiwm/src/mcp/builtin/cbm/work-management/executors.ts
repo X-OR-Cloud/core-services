@@ -545,14 +545,17 @@ export async function executeBlockWork(
  * Execute unblock work
  */
 export async function executeUnblockWork(
-  args: { id: string },
+  args: { id: string; feedback?: string },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const body: Record<string, any> = {};
+    if (args.feedback) body.feedback = args.feedback;
     const response = await makeServiceRequest(`${cbmBaseUrl}/works/${args.id}/unblock`, {
       method: 'POST',
       context,
+      body: JSON.stringify(body),
     });
 
     // Sanitize response to optimize token usage
@@ -915,6 +918,29 @@ export async function executeGetNextWork(
           text: `Error getting next work: ${error.message}`,
         },
       ],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute can trigger work check
+ */
+export async function executeCanTriggerWork(
+  args: { id: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/works/${args.id}/can-trigger`,
+      { method: 'GET', context }
+    );
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error checking can trigger work:', error);
+    return {
+      content: [{ type: 'text', text: `Error checking can trigger work: ${error.message}` }],
       isError: true,
     };
   }

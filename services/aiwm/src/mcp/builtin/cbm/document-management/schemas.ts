@@ -33,8 +33,7 @@ export const CreateDocumentSchema = z.object({
   type: DocumentTypeEnum.describe('Content type'),
   labels: z
     .array(z.string())
-    .optional()
-    .describe('Array of labels for categorization'),
+    .describe('Array of labels for categorization (required)'),
   status: DocumentStatusEnum.optional().describe(
     'Document status (default: draft)'
   ),
@@ -89,6 +88,8 @@ export const GetDocumentContentSchema = z.object({
 export const UpdateDocumentSchema = z.object({
   id: z.string().describe('Document ID'),
   summary: z.string().max(500).optional().describe('Updated summary'),
+  content: z.string().optional().describe('Updated document content'),
+  type: DocumentTypeEnum.optional().describe('Updated content type'),
   labels: z.array(z.string()).optional().describe('Updated labels'),
   status: DocumentStatusEnum.optional().describe('Updated status'),
   projectId: z.string().optional().describe('Updated project ID'),

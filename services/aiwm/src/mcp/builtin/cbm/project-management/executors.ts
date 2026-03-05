@@ -40,8 +40,10 @@ function sanitizeProjects(docs: any[]): any[] {
 export async function executeCreateProject(
   args: {
     name: string;
+    summary?: string;
     description?: string;
-    members?: string[];
+    lead?: { type: 'user' | 'agent'; id: string };
+    members?: { type: 'user' | 'agent'; id: string; role: 'project.lead' | 'project.member' }[];
     startDate?: string;
     endDate?: string;
     tags?: string[];
@@ -212,8 +214,8 @@ export async function executeUpdateProject(
   args: {
     id: string;
     name?: string;
+    summary?: string;
     description?: string;
-    members?: string[];
     startDate?: string;
     endDate?: string;
     tags?: string[];
@@ -341,6 +343,118 @@ export async function executeArchiveProject(
   context: ExecutionContext
 ): Promise<ToolResponse> {
   return executeProjectAction(args.id, 'archive', context);
+}
+
+/**
+ * Execute list project members
+ */
+export async function executeListProjectMembers(
+  args: { id: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/projects/${args.id}/members`,
+      { method: 'GET', context }
+    );
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error listing project members:', error);
+    return {
+      content: [{ type: 'text', text: `Error listing project members: ${error.message}` }],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute add project member
+ */
+export async function executeAddProjectMember(
+  args: {
+    id: string;
+    type: 'user' | 'agent';
+    memberId: string;
+    role: 'project.lead' | 'project.member';
+  },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const { id, type, memberId, role } = args;
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/projects/${id}/members`,
+      {
+        method: 'POST',
+        context,
+        body: JSON.stringify({ type, id: memberId, role }),
+      }
+    );
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error adding project member:', error);
+    return {
+      content: [{ type: 'text', text: `Error adding project member: ${error.message}` }],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute update project member role
+ */
+export async function executeUpdateProjectMember(
+  args: {
+    id: string;
+    memberId: string;
+    role: 'project.lead' | 'project.member';
+  },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const { id, memberId, role } = args;
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/projects/${id}/members/${memberId}`,
+      {
+        method: 'PATCH',
+        context,
+        body: JSON.stringify({ role }),
+      }
+    );
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error updating project member:', error);
+    return {
+      content: [{ type: 'text', text: `Error updating project member: ${error.message}` }],
+      isError: true,
+    };
+  }
+}
+
+/**
+ * Execute remove project member
+ */
+export async function executeRemoveProjectMember(
+  args: { id: string; memberId: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  try {
+    const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const { id, memberId } = args;
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/projects/${id}/members/${memberId}`,
+      { method: 'DELETE', context }
+    );
+    return formatToolResponse(response);
+  } catch (error: any) {
+    logger.error('Error removing project member:', error);
+    return {
+      content: [{ type: 'text', text: `Error removing project member: ${error.message}` }],
+      isError: true,
+    };
+  }
 }
 
 /**

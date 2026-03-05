@@ -14,6 +14,10 @@ import {
   executeResumeProject,
   executeCompleteProject,
   executeArchiveProject,
+  executeListProjectMembers,
+  executeAddProjectMember,
+  executeUpdateProjectMember,
+  executeRemoveProjectMember,
 } from './executors';
 import {
   CreateProjectSchema,
@@ -22,6 +26,10 @@ import {
   UpdateProjectSchema,
   DeleteProjectSchema,
   ProjectActionSchema,
+  ListProjectMembersSchema,
+  AddProjectMemberSchema,
+  UpdateProjectMemberSchema,
+  RemoveProjectMemberSchema,
 } from './schemas';
 
 /**
@@ -116,5 +124,40 @@ export const ProjectManagementTools: ToolDefinition[] = [
     category: 'ProjectManagement',
     executor: executeArchiveProject,
     inputSchema: ProjectActionSchema,
+  },
+  {
+    name: 'ListProjectMembers',
+    description: 'List all members of a project with their roles',
+    type: 'builtin',
+    category: 'ProjectManagement',
+    executor: executeListProjectMembers,
+    inputSchema: ListProjectMembersSchema,
+  },
+  {
+    name: 'AddProjectMember',
+    description:
+      'Add a user or agent as a member of a project with a specified role (project.lead or project.member). Requires project.lead access.',
+    type: 'builtin',
+    category: 'ProjectManagement',
+    executor: executeAddProjectMember,
+    inputSchema: AddProjectMemberSchema,
+  },
+  {
+    name: 'UpdateProjectMember',
+    description:
+      'Update a project member\'s role. Requires project.lead access.',
+    type: 'builtin',
+    category: 'ProjectManagement',
+    executor: executeUpdateProjectMember,
+    inputSchema: UpdateProjectMemberSchema,
+  },
+  {
+    name: 'RemoveProjectMember',
+    description:
+      'Remove a member from a project. Requires project.lead access.',
+    type: 'builtin',
+    category: 'ProjectManagement',
+    executor: executeRemoveProjectMember,
+    inputSchema: RemoveProjectMemberSchema,
   },
 ];

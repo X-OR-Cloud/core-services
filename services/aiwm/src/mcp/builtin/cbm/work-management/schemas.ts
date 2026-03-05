@@ -19,7 +19,7 @@ const WorkStatusEnum = z.enum([
 ]);
 
 // Recurrence type enum
-const RecurrenceTypeEnum = z.enum(['interval', 'daily', 'weekly', 'monthly']);
+const RecurrenceTypeEnum = z.enum(['onetime', 'interval', 'daily', 'weekly', 'monthly']);
 
 // Recurrence config schema
 const RecurrenceConfigSchema = z.object({
@@ -275,7 +275,12 @@ export const BlockWorkSchema = z.object({
  * Schema for unblocking work
  */
 export const UnblockWorkSchema = z.object({
-  id: z.string().describe('Work ID to unblock (transition from blocked to in_progress)'),
+  id: z.string().describe('Work ID to unblock (transition from blocked to todo)'),
+  feedback: z
+    .string()
+    .max(2000)
+    .optional()
+    .describe('Optional: Feedback explaining how the blocker was resolved (max 2000 characters)'),
 });
 
 /**
@@ -343,4 +348,11 @@ export const GetNextWorkSchema = z.object({
  */
 export const RecalculateEpicStatusSchema = z.object({
   id: z.string().describe('Epic Work ID to recalculate status for (must be type=epic)'),
+});
+
+/**
+ * Schema for checking if work can trigger agent execution
+ */
+export const CanTriggerWorkSchema = z.object({
+  id: z.string().describe('Work ID to check if it can trigger agent execution'),
 });
