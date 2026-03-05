@@ -90,6 +90,15 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   ],
   AgentManagement: [
     'mcp__Builtin__ListAgents',
+    'mcp__Builtin__CreateAgent',
+    'mcp__Builtin__UpdateAgent',
+    'mcp__Builtin__DeleteAgent',
+  ],
+  InstructionManagement: [
+    'mcp__Builtin__ListInstructions',
+    'mcp__Builtin__CreateInstruction',
+    'mcp__Builtin__UpdateInstruction',
+    'mcp__Builtin__DeleteInstruction',
   ],
   UserManagement: [
     'mcp__Builtin__ListUsers',
