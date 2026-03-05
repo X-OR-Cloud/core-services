@@ -87,6 +87,10 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__ResumeProject',
     'mcp__Builtin__CompleteProject',
     'mcp__Builtin__ArchiveProject',
+    'mcp__Builtin__ListProjectMembers',
+    'mcp__Builtin__AddProjectMember',
+    'mcp__Builtin__UpdateProjectMember',
+    'mcp__Builtin__RemoveProjectMember',
   ],
   AgentManagement: [
     'mcp__Builtin__ListAgents',
