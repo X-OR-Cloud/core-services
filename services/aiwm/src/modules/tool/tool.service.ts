@@ -44,6 +44,7 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__ListDocuments',
     'mcp__Builtin__GetDocument',
     'mcp__Builtin__GetDocumentContent',
+    'mcp__Builtin__ShareDocument',
     'mcp__Builtin__UpdateDocument',
     'mcp__Builtin__UpdateDocumentContent',
     'mcp__Builtin__DeleteDocument',
@@ -73,8 +74,7 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__AssignAndTodoWork',
     'mcp__Builtin__RejectReviewForWork',
     'mcp__Builtin__GetNextWork',
-    'mcp__Builtin__CanTriggerAgent',
-    'mcp__Builtin__RecalculateEpicStatus'
+    'mcp__Builtin__RecalculateEpicStatus',
   ],
   ProjectManagement: [
     'mcp__Builtin__CreateProject',
