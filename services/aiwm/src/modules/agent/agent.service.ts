@@ -356,6 +356,7 @@ export class AgentService extends BaseService<Agent> {
       instruction,
       tools,
       allowedFunctions: agent.allowedFunctions || [],
+      framework: agent.framework,
       settings: agent.settings || {},
       channels: agent.channels || [],
     };
@@ -539,6 +540,7 @@ export class AgentService extends BaseService<Agent> {
       instruction,
       tools,
       allowedFunctions: agent.allowedFunctions || [],
+      framework: agent.framework,
       settings: agent.settings || {},
       channels: agent.channels || [],
     };

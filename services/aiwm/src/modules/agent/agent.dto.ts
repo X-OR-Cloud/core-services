@@ -362,6 +362,13 @@ export class AgentConnectResponseDto {
   @ApiProperty({ description: 'Allowed runtime function names. Empty = all allowed.', type: [String], example: ['Bash', 'Read'] })
   allowedFunctions: string[];
 
+  @ApiProperty({
+    description: 'Agent framework (determines runtime engine)',
+    enum: ['claude-agent-sdk'],
+    example: 'claude-agent-sdk'
+  })
+  framework: string | undefined;
+
   @ApiProperty({ description: 'Agent runtime settings/configuration' })
   settings: Record<string, unknown>;
 
