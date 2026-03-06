@@ -482,8 +482,21 @@ export class AgentService extends BaseService<Agent> {
     // Build instruction object (with context injection using agent token)
     const instruction = await this.buildInstructionObjectForAgent(agent, token);
 
-    // Get allowed tools
-    const tools = await this.getAllowedTools(agent);
+    // Get allowed tools — MemoryManagement always injected
+    const tools = await this.getAllowedToolsWithMemory(agent);
+
+    // Build effective allowedFunctions: agent's list + memory functions (always included)
+    const memoryFunctions = [
+      'mcp__Builtin__SearchMemory',
+      'mcp__Builtin__UpsertMemory',
+      'mcp__Builtin__ListMemoryKeys',
+      'mcp__Builtin__DeleteMemory',
+    ];
+    const agentFunctions = agent.allowedFunctions || [];
+    // Empty agentFunctions means "all allowed" — memory functions are implicitly covered
+    const allowedFunctions = agentFunctions.length === 0
+      ? []
+      : [...new Set([...agentFunctions, ...memoryFunctions])];
 
     // Update connection tracking + set status to idle
     await this.agentModel.updateOne(
@@ -539,7 +552,7 @@ export class AgentService extends BaseService<Agent> {
       mcpServers, // MCP server configurations
       instruction,
       tools,
-      allowedFunctions: agent.allowedFunctions || [],
+      allowedFunctions,
       framework: agent.framework,
       settings: agent.settings || {},
       channels: agent.channels || [],
@@ -647,37 +660,46 @@ export class AgentService extends BaseService<Agent> {
     }
 
     // Resolve @project:<id> and @document:<id> references if token available
-    let resolvedPrompt = instruction.systemPrompt;
+    let contextBlocks: string[] = [];
     if (accessToken) {
-      resolvedPrompt = await this.resolveContextReferences(
+      contextBlocks = await this.resolveContextReferences(
         instruction.systemPrompt,
         accessToken,
         agent.owner.orgId
       );
     }
 
+    // Get allowed tools to inject conditional rule blocks
+    const tools = await this.getAllowedTools(agent);
+    const agentId = (agent as any)._id.toString();
+
     return {
-      id: (instruction as any)._id.toString(),
-      systemPrompt: resolvedPrompt,
+      id: agentId,
+      systemPrompt: this.buildFinalSystemPrompt(
+        instruction.systemPrompt,
+        contextBlocks,
+        tools,
+        agentId
+      ),
       guidelines: instruction.guidelines || [],
     };
   }
 
   /**
    * Resolve @project:<id> and @document:<id> references in systemPrompt
-   * Fetches data from CBM service via HTTP API and appends context block
+   * Returns context blocks as string[] — caller assembles the final prompt
    */
   private async resolveContextReferences(
     systemPrompt: string,
     accessToken: string,
     orgId: string
-  ): Promise<string> {
+  ): Promise<string[]> {
     // Scan for @project:<id> and @document:<id> patterns
     const refPattern = /@(project|document):([a-f0-9]{24})/g;
     const matches = [...systemPrompt.matchAll(refPattern)];
 
     if (matches.length === 0) {
-      return systemPrompt;
+      return [];
     }
 
     // Get CBM base URL from configuration
@@ -779,16 +801,67 @@ export class AgentService extends BaseService<Agent> {
       }
     }
 
-    if (contextBlocks.length === 0) {
-      return systemPrompt;
+    return contextBlocks;
+  }
+
+  /**
+   * Build final systemPrompt string with structured sections:
+   * <system>...</system>
+   * <context>...</context>   (only if context blocks exist)
+   * <runtime>...</runtime>
+   */
+  private buildFinalSystemPrompt(
+    corePrompt: string,
+    contextBlocks: string[],
+    tools: Tool[],
+    agentId: string
+  ): string {
+    const toolNames = new Set(tools.map((t) => t.name));
+
+    const ruleBlocks: string[] = [];
+
+    if (toolNames.has('MemoryManagement')) {
+      ruleBlocks.push(
+`MEMORY RULES:
+- Trước khi trả lời về quyết định đã đưa ra, preferences của ai đó, notes đặc biệt:
+  gọi mcp__Builtin__SearchMemory với category và keyword phù hợp trước
+- Sau cuộc trò chuyện có thông tin mới thuộc 1 trong 4 categories:
+  gọi mcp__Builtin__UpsertMemory để lưu lại ngay, không để quên
+- Nếu muốn biết đang lưu gì hoặc tránh duplicate key:
+  gọi mcp__Builtin__ListMemoryKeys
+
+MEMORY CATEGORIES:
+- user-preferences: cách làm việc, style giao tiếp, preferences của từng người
+- decisions: quyết định quan trọng đã được approve (ghi rõ ngày, người quyết định, lý do)
+- notes: thông tin team, ngữ cảnh dự án, thông tin không có trong tài liệu chính thức
+- lessons: bài học rút ra, điều cần tránh lặp lại`
+      );
     }
 
-    return (
-      systemPrompt +
-      '\n\n---\nInjected Context (auto-resolved)\n\n' +
-      contextBlocks.join('\n\n') +
-      '\n---'
+    if (toolNames.has('WorkManagement')) {
+      ruleBlocks.push(
+`SCHEDULING RULES:
+- Khi user yêu cầu báo cáo định kỳ, nhắc nhở, hoặc task lặp lại:
+  chủ động tạo scheduled/recurring task qua WorkManagement tool, không chờ user nhắc lại
+- Ví dụ triggers: "nhắc anh", "hàng tuần", "mỗi sáng thứ 2", "trước deadline 2 ngày"`
+      );
+    }
+
+    const systemContent = ruleBlocks.length > 0
+      ? `${corePrompt}\n\n${ruleBlocks.join('\n\n')}`
+      : corePrompt;
+
+    const parts: string[] = [`<system>\n${systemContent}\n</system>`];
+
+    if (contextBlocks.length > 0) {
+      parts.push(`<context>\n${contextBlocks.join('\n\n')}\n</context>`);
+    }
+
+    parts.push(
+      `<runtime>\nDatetime: ${new Date().toISOString()}\nAgent ID: ${agentId}\n</runtime>`
     );
+
+    return parts.join('\n\n---\n\n');
   }
 
   /**
@@ -807,6 +880,28 @@ export class AgentService extends BaseService<Agent> {
         status: 'active',
       })
       .exec();
+
+    return tools;
+  }
+
+  /**
+   * Get allowed tools and always inject MemoryManagement tool if not already present.
+   * MemoryManagement is a default builtin tool available to all agents.
+   */
+  private async getAllowedToolsWithMemory(agent: Agent): Promise<Tool[]> {
+    const tools = await this.getAllowedTools(agent);
+
+    const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
+    if (hasMemory) return tools;
+
+    // Fetch MemoryManagement tool from DB (must exist as a seeded builtin tool)
+    const memoryTool = await this.toolModel
+      .findOne({ name: 'MemoryManagement', type: 'builtin', isDeleted: false })
+      .exec();
+
+    if (memoryTool) {
+      return [...tools, memoryTool];
+    }
 
     return tools;
   }

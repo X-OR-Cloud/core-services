@@ -9,7 +9,7 @@ import {
   ProjectManagementTools,
 } from './cbm';
 import { UserManagementTools } from './iam';
-import { AgentManagementTools, InstructionManagementTools } from './aiwm';
+import { AgentManagementTools, InstructionManagementTools, MemoryManagementTools } from './aiwm';
 
 /**
  * All builtin tools from all services
@@ -21,6 +21,7 @@ export const BuiltInTools: ToolDefinition[] = [
   ...UserManagementTools,
   ...AgentManagementTools,
   ...InstructionManagementTools,
+  ...MemoryManagementTools,
 ];
 
 /**

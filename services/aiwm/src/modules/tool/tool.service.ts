@@ -107,6 +107,12 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   UserManagement: [
     'mcp__Builtin__ListUsers',
   ],
+  MemoryManagement: [
+    'mcp__Builtin__SearchMemory',
+    'mcp__Builtin__UpsertMemory',
+    'mcp__Builtin__ListMemoryKeys',
+    'mcp__Builtin__DeleteMemory',
+  ],
 };
 
 /**
