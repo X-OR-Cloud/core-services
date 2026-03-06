@@ -347,6 +347,8 @@ export class AgentService extends BaseService<Agent> {
 
     // Prepare response (no accessToken for autonomous agents - they use user's JWT)
     const response: AgentConnectResponseDto = {
+      id: agentId,
+      name: agent.name,
       accessToken: '', // Empty - autonomous agents use user's JWT token
       expiresIn: 0,
       refreshToken: null,
@@ -544,6 +546,8 @@ export class AgentService extends BaseService<Agent> {
 
     // Prepare response
     const response: AgentConnectResponseDto = {
+      id: agentId,
+      name: agent.name,
       accessToken: token,
       expiresIn: expiresInSeconds,
       refreshToken: null, // Not implemented for agents
