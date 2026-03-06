@@ -34,9 +34,6 @@ export const CreateDocumentSchema = z.object({
   labels: z
     .array(z.string())
     .describe('Array of labels for categorization (required)'),
-  status: DocumentStatusEnum.optional().describe(
-    'Document status (default: draft)'
-  ),
   projectId: z
     .string()
     .optional()
