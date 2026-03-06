@@ -669,8 +669,8 @@ export class AgentService extends BaseService<Agent> {
       );
     }
 
-    // Get allowed tools to inject conditional rule blocks
-    const tools = await this.getAllowedTools(agent);
+    // Get allowed tools to inject conditional rule blocks (always includes MemoryManagement)
+    const tools = await this.getAllowedToolsWithMemory(agent);
     const agentId = (agent as any)._id.toString();
 
     return {
