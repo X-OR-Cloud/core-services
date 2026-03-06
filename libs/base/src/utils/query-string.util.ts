@@ -24,7 +24,7 @@ export function parseQueryString(query: QueryStringParams): FindManyOptions {
     sort: {
       createdAt: -1,
     },
-    page: query.page ? parseInt(String(query.page), 10) : 1,
+    page: query.page ? Math.max(1, parseInt(String(query.page), 10)) : 1,
     limit: query.limit ? parseInt(String(query.limit), 10) : 10,
   };
 
