@@ -148,10 +148,28 @@ export class AgentController {
     return this.agentService.connect(id, connectDto);
   }
 
+  @Post('heartbeat')
+  @ApiOperation({
+    summary: 'Agent heartbeat (token-based)',
+    description: 'Update agent heartbeat using JWT token to identify agent. No agentId in URL needed.'
+  })
+  @ApiResponse({ status: 200, description: 'Heartbeat received, optionally with work assignment' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async heartbeatSelf(
+    @Body() heartbeatDto: AgentHeartbeatDto,
+    @CurrentUser() context: RequestContext,
+    @Req() req: any,
+  ) {
+    const agentId = context.agentId || context.userId;
+    const token = req.headers?.authorization?.replace('Bearer ', '') || '';
+    return this.agentService.heartbeat(agentId, heartbeatDto, token);
+  }
+
   @Post(':id/heartbeat')
   @ApiOperation({
-    summary: 'Agent heartbeat',
-    description: 'Update agent last heartbeat timestamp. When status is idle, returns next work assignment with system message if available.'
+    summary: 'Agent heartbeat (deprecated)',
+    description: '[Deprecated] Use POST /agents/heartbeat instead. Kept for backward compatibility until all agents are upgraded.'
   })
   @ApiResponse({ status: 200, description: 'Heartbeat received, optionally with work assignment' })
   @ApiResponse({ status: 404, description: 'Agent not found' })
@@ -165,10 +183,26 @@ export class AgentController {
     return this.agentService.heartbeat(id, heartbeatDto, token);
   }
 
+  @Post('disconnect')
+  @ApiOperation({
+    summary: 'Agent disconnect (token-based)',
+    description: 'Gracefully disconnect agent using JWT token to identify agent. No agentId in URL needed.'
+  })
+  @ApiResponse({ status: 200, description: 'Agent disconnected successfully' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async disconnectSelf(
+    @Body() disconnectDto: AgentDisconnectDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const agentId = context.agentId || context.userId;
+    return this.agentService.disconnect(agentId, disconnectDto);
+  }
+
   @Post(':id/disconnect')
   @ApiOperation({
-    summary: 'Agent disconnect',
-    description: 'Gracefully disconnect agent and log disconnect event. Requires agent JWT token.'
+    summary: 'Agent disconnect (deprecated)',
+    description: '[Deprecated] Use POST /agents/disconnect instead. Kept for backward compatibility until all agents are upgraded.'
   })
   @ApiResponse({ status: 200, description: 'Agent disconnected successfully' })
   @ApiResponse({ status: 404, description: 'Agent not found' })
