@@ -29,6 +29,7 @@ export class Project extends BaseSchema {
   @Prop({
     type: [
       {
+        _id: false,
         type: { type: String, enum: ['user', 'agent'], required: true },
         id: { type: String, required: true },
         role: { type: String, enum: ['project.lead', 'project.member'], required: true },

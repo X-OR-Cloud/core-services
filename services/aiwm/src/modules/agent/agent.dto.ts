@@ -311,6 +311,12 @@ export class AgentConnectDto {
  * Matches IAM TokenData structure with agent-specific additions
  */
 export class AgentConnectResponseDto {
+  @ApiProperty({ description: 'Agent ID', example: '507f1f77bcf86cd799439011' })
+  id: string;
+
+  @ApiProperty({ description: 'Agent Name', example: 'My Agent' })
+  name: string;
+
   @ApiProperty({ description: 'JWT access token (contains agentId, username, roles, orgId)', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
   accessToken: string;
 

@@ -48,12 +48,17 @@ export function getMemberRole(project: any, context: RequestContext): MemberRole
     return 'super-admin';
   }
 
+  const plain = project.toObject ? project.toObject() : project;
+  const members = plain.members as ProjectMember[];
+
+  if (context.agentId) {
+    const agentMember = members?.find((m) => m.type === 'agent' && m.id === context.agentId);
+    if (agentMember) return agentMember.role as MemberRole;
+  }
+
   if (!context.userId) return null;
 
-  const plain = project.toObject ? project.toObject() : project;
-  const member = (plain.members as ProjectMember[])?.find(
-    (m) => m.type === 'user' && m.id === context.userId,
-  );
+  const member = members?.find((m) => m.type === 'user' && m.id === context.userId);
 
   return (member?.role as MemberRole) ?? null;
 }

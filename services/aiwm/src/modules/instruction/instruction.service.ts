@@ -101,6 +101,11 @@ export class InstructionService extends BaseService<Instruction> {
       }
     }
     const findResult = await super.findAll(options, context);
+    findResult.data = findResult.data.map((item: any) => {
+      const obj = item.toObject ? item.toObject() : { ...item };
+      delete obj.content;
+      return obj;
+    });
 
     // Aggregate statistics by status
 
