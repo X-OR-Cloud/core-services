@@ -420,6 +420,24 @@ export class AgentHeartbeatDto {
 }
 
 /**
+ * DTO for system task returned in heartbeat response
+ */
+export class AgentSystemTaskDto {
+  @ApiProperty({
+    description: 'Type of system task',
+    enum: ['work', 'inbox', 'alert'],
+    example: 'work'
+  })
+  type!: 'work' | 'inbox' | 'alert';
+
+  @ApiPropertyOptional({ description: 'Task ID (e.g. work item ID)', example: '507f1f77bcf86cd799439011' })
+  id?: string;
+
+  @ApiPropertyOptional({ description: 'Task title', example: 'Implement login feature' })
+  title?: string;
+}
+
+/**
  * Response DTO for credentials regeneration
  */
 export class AgentCredentialsResponseDto {

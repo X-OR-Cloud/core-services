@@ -923,6 +923,7 @@ MEMORY CATEGORIES:
     success: boolean;
     work?: { id: string; title: string; type: string; status: string; priorityLevel: number };
     systemMessage?: string;
+    systemTask?: { type: 'work' | 'inbox' | 'alert'; id?: string; title?: string };
   }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
@@ -959,6 +960,7 @@ MEMORY CATEGORIES:
             success: true,
             work: workResult.work,
             systemMessage: workResult.systemMessage,
+            systemTask: workResult.systemTask,
           };
         }
       } catch (error: any) {
@@ -979,6 +981,7 @@ MEMORY CATEGORIES:
   ): Promise<{
     work: { id: string; title: string; type: string; status: string; priorityLevel: number };
     systemMessage: string;
+    systemTask: { type: 'work' | 'inbox' | 'alert'; id?: string; title?: string };
   } | null> {
     let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
     try {
@@ -1061,7 +1064,11 @@ MEMORY CATEGORIES:
 
     this.logger.debug('Next work found for agent', { agentId, workId, priorityLevel });
 
-    return { work: workObj, systemMessage };
+    return {
+      work: workObj,
+      systemMessage,
+      systemTask: { type: 'work', id: workId, title },
+    };
   }
 
   /**
