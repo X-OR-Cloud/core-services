@@ -31,7 +31,7 @@ export const InstructionManagementTools: ToolDefinition[] = [
   {
     name: 'CreateInstruction',
     description:
-      'Create a new instruction (system prompt + guidelines) to assign to agents. ' +
+      'Create a new instruction (system prompt) to assign to agents. ' +
       'systemPrompt supports @project:<id> and @document:<id> context references that are resolved at agent connect time.',
     type: 'builtin',
     category: 'InstructionManagement',
@@ -42,7 +42,7 @@ export const InstructionManagementTools: ToolDefinition[] = [
     name: 'UpdateInstruction',
     description:
       'Update an existing instruction by ID. Supports partial updates — only provided fields are changed. ' +
-      'guidelines[] and tags[] replace the entire array when provided.',
+      'tags[] replaces the entire array when provided.',
     type: 'builtin',
     category: 'InstructionManagement',
     executor: executeUpdateInstruction,

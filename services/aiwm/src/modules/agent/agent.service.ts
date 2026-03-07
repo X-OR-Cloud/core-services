@@ -279,7 +279,7 @@ export class AgentService extends BaseService<Agent> {
   async getAgentInstruction(
     agentId: string,
     accessToken: string
-  ): Promise<{ id: string; systemPrompt: string; guidelines: string[] }> {
+  ): Promise<{ id: string; systemPrompt: string }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -615,7 +615,7 @@ export class AgentService extends BaseService<Agent> {
 
   /**
    * Build instruction object for agent (new format)
-   * Returns structured instruction with id, systemPrompt, and guidelines
+   * Returns structured instruction with id and systemPrompt
    */
   private async buildInstructionObjectForAgent(
     agent: Agent,
@@ -623,13 +623,11 @@ export class AgentService extends BaseService<Agent> {
   ): Promise<{
     id: string;
     systemPrompt: string;
-    guidelines: string[];
   }> {
     if (!agent.instructionId) {
       return {
         id: '',
         systemPrompt: 'No instruction configured for this agent.',
-        guidelines: [],
       };
     }
 
@@ -645,7 +643,6 @@ export class AgentService extends BaseService<Agent> {
       return {
         id: '',
         systemPrompt: 'Instruction not found.',
-        guidelines: [],
       };
     }
 
@@ -659,7 +656,6 @@ export class AgentService extends BaseService<Agent> {
       return {
         id: (instruction as any)._id.toString(),
         systemPrompt: 'Instruction is currently inactive.',
-        guidelines: [],
       };
     }
 
@@ -685,7 +681,6 @@ export class AgentService extends BaseService<Agent> {
         tools,
         agentId
       ),
-      guidelines: instruction.guidelines || [],
     };
   }
 

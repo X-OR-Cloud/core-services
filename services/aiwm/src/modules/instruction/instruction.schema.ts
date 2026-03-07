@@ -21,9 +21,6 @@ export class Instruction extends BaseSchema {
   systemPrompt!: string; // Main system prompt for the agent
 
   @Prop({ type: [String], default: [] })
-  guidelines!: string[]; // Step-by-step rules/guidelines
-
-  @Prop({ type: [String], default: [] })
   tags!: string[]; // e.g., ['customer-service', 'polite', 'helpful']
 
   @Prop({ enum: ['active', 'inactive'], default: 'active' })

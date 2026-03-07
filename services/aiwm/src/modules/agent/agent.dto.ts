@@ -353,13 +353,11 @@ export class AgentConnectResponseDto {
     example: {
       id: '507f1f77bcf86cd799439011',
       systemPrompt: 'You are a helpful customer support agent...',
-      guidelines: ['Be polite and professional', 'Always verify customer identity']
     }
   })
   instruction: {
     id: string;
     systemPrompt: string;
-    guidelines: string[];
   };
 
   @ApiProperty({ description: 'Allowed tools for this agent', type: [Object] })

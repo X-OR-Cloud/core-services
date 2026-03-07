@@ -41,19 +41,6 @@ export class CreateInstructionDto {
   systemPrompt!: string;
 
   @ApiPropertyOptional({
-    description: 'Step-by-step guidelines for the agent',
-    example: [
-      'Always greet customers warmly',
-      'Listen carefully to understand the issue',
-      'Provide clear step-by-step solutions',
-    ],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  guidelines?: string[];
-
-  @ApiPropertyOptional({
     description: 'Tags for categorizing instructions',
     example: ['customer-service', 'support', 'polite'],
   })
@@ -105,15 +92,6 @@ export class UpdateInstructionDto {
   @IsString()
   @MinLength(10)
   systemPrompt?: string;
-
-  @ApiPropertyOptional({
-    description: 'Step-by-step guidelines for the agent',
-    example: ['New guideline 1', 'New guideline 2'],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  guidelines?: string[];
 
   @ApiPropertyOptional({
     description: 'Tags for categorizing instructions',

@@ -20,13 +20,12 @@ export const ListInstructionsSchema = z.object({
 /**
  * Schema for creating an instruction (system prompt for agents)
  *
- * An instruction defines how an agent behaves — its persona, goals, rules,
- * and step-by-step guidelines. Agents are assigned an instruction via instructionId.
+ * An instruction defines how an agent behaves — its persona, goals, and rules.
+ * Agents are assigned an instruction via instructionId.
  *
  * Tips for writing good system prompts:
  * - Define the agent's role and persona clearly
- * - List explicit rules and constraints
- * - Use guidelines[] for numbered step-by-step behaviors
+ * - List explicit rules and constraints directly in systemPrompt
  * - Reference @project:<id> or @document:<id> in systemPrompt to inject live context
  */
 export const CreateInstructionSchema = z.object({
@@ -37,10 +36,6 @@ export const CreateInstructionSchema = z.object({
     .describe(
       'Main system prompt content. Supports context references: @project:<id> and @document:<id> will be resolved and injected at agent connect time.',
     ),
-  guidelines: z
-    .array(z.string())
-    .optional()
-    .describe('Optional: Step-by-step behavioral rules, e.g. ["Always greet user by name", "Never reveal internal data"]'),
   tags: z.array(z.string()).optional().describe('Optional: Tags for categorization, e.g. ["customer-support", "vietnamese"]'),
   status: InstructionStatusEnum.optional().default('active').describe('Optional: Status (default: active)'),
 });
@@ -53,7 +48,6 @@ export const UpdateInstructionSchema = z.object({
   name: z.string().optional().describe('Optional: New name'),
   description: z.string().optional().describe('Optional: New description'),
   systemPrompt: z.string().optional().describe('Optional: New system prompt content'),
-  guidelines: z.array(z.string()).optional().describe('Optional: New guidelines list (replaces existing)'),
   tags: z.array(z.string()).optional().describe('Optional: New tags (replaces existing)'),
   status: InstructionStatusEnum.optional().describe('Optional: New status (active, inactive)'),
 });
