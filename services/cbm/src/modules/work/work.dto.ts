@@ -382,6 +382,31 @@ export class AssignAndTodoDto {
 }
 
 /**
+ * DTO for requesting review with optional result summary and document attachments
+ */
+export class RequestReviewDto {
+  @ApiPropertyOptional({
+    description: 'Work result summary submitted by agent when requesting review (markdown)',
+    example: 'Crawled 500 records, filtered 120 valid entries. Results stored in the attached documents.',
+    maxLength: 5000,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  result?: string;
+
+  @ApiPropertyOptional({
+    description: 'Document IDs to attach as work result artifacts (appended to existing documents)',
+    example: ['64f1a2b3c4d5e6f7a8b9c0d1'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  documentIds?: string[];
+}
+
+/**
  * DTO for rejecting work from review
  */
 export class RejectReviewDto {

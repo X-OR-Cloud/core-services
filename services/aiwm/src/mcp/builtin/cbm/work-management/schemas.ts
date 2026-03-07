@@ -288,6 +288,8 @@ export const UnblockWorkSchema = z.object({
  */
 export const RequestReviewForWorkSchema = z.object({
   id: z.string().describe('Work ID to request review (transition from in_progress to review)'),
+  result: z.string().max(5000).optional().describe('Work result summary (markdown). Use this to describe what was accomplished, findings, outputs, or any relevant details for the reviewer.'),
+  documentIds: z.array(z.string()).optional().describe('Document IDs to attach as result artifacts (e.g. reports, outputs generated during work). These are appended to the existing documents list.'),
 });
 
 /**

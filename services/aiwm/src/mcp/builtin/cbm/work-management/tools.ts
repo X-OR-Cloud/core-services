@@ -138,7 +138,7 @@ export const WorkManagementTools: ToolDefinition[] = [
   },
   {
     name: 'RequestReviewForWork',
-    description: 'Request review - transition from in_progress to review status',
+    description: 'Request review - transition work from in_progress to review status. Use result to summarize what was accomplished and documentIds to attach output artifacts for the reviewer.',
     type: 'builtin',
     category: 'WorkManagement',
     executor: executeRequestReviewForWork,

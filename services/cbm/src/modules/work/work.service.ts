@@ -415,6 +415,7 @@ export class WorkService extends BaseService<Work> {
    */
   async requestReview(
     id: ObjectId,
+    body: { result?: string; documentIds?: string[] },
     context: RequestContext
   ): Promise<Work> {
     const work = await this.findById(id, context);
@@ -428,9 +429,18 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
+    const updateData: Record<string, any> = { status: 'review' };
+    if (body.result !== undefined) {
+      updateData['result'] = body.result;
+    }
+    if (body.documentIds && body.documentIds.length > 0) {
+      const existing: string[] = (work as any).documents ?? [];
+      updateData['documents'] = [...new Set([...existing, ...body.documentIds])];
+    }
+
     const updated = await super.update(
       id,
-      { status: 'review' } as any,
+      updateData as any,
       context
     ) as Work;
 

@@ -32,6 +32,7 @@ import {
   AssignAndTodoDto,
   RejectReviewDto,
   UnblockWorkDto,
+  RequestReviewDto,
   GetNextWorkQueryDto,
   InternalGetNextWorkDto,
 } from './work.dto';
@@ -174,15 +175,16 @@ export class WorkController {
   @Post(':id/request-review')
   @ApiOperation({
     summary: 'Request review',
-    description: 'Transition work from in_progress to review status'
+    description: 'Transition work from in_progress to review status. Optionally attach a result summary and document IDs.'
   })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
   async requestReview(
     @Param('id') id: string,
+    @Body() body: RequestReviewDto,
     @CurrentUser() context: RequestContext
   ) {
-    return this.workService.requestReview(new Types.ObjectId(id) as any, context);
+    return this.workService.requestReview(new Types.ObjectId(id) as any, body, context);
   }
 
   @Post(':id/complete')

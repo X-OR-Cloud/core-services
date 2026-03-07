@@ -592,15 +592,19 @@ export async function executeUnblockWork(
  * Execute request review for work
  */
 export async function executeRequestReviewForWork(
-  args: { id: string },
+  args: { id: string; result?: string; documentIds?: string[] },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const bodyData: Record<string, any> = {};
+    if (args.result !== undefined) bodyData['result'] = args.result;
+    if (args.documentIds && args.documentIds.length > 0) bodyData['documentIds'] = args.documentIds;
     const response = await makeServiceRequest(
       `${cbmBaseUrl}/works/${args.id}/request-review`,
       {
         method: 'POST',
+        body: Object.keys(bodyData).length > 0 ? JSON.stringify(bodyData) : undefined,
         context,
       }
     );

@@ -76,6 +76,9 @@ export class Work extends BaseSchema {
   @Prop({ maxlength: 1000 })
   reason?: string; // Reason/explanation when work is blocked
 
+  @Prop({ maxlength: 5000 })
+  result?: string; // Work result summary submitted when requesting review (markdown)
+
   @Prop({ maxlength: 2000 })
   feedback?: string; // Feedback for review rejection or unblock resolution
 
