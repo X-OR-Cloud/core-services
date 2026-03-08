@@ -1064,8 +1064,19 @@ MEMORY CATEGORIES:
       } else {
         completionStep = `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất để chờ người review duyệt`;
       }
+
+      const hasDependencies =
+        Array.isArray(work.dependencies) && work.dependencies.length > 0;
+      const dependencyStep = hasDependencies
+        ? `- Công việc này có dependencies: ${work.dependencies.map((d: string) => `@work:${d}`).join(', ')}. Trước khi bắt đầu, hãy:\n` +
+          `  1. Gọi mcp__Builtin__GetWork cho từng dependency để đọc thông tin và trường "result"\n` +
+          `  2. Nếu dependency có "documentIds", gọi mcp__Builtin__GetDocumentContent cho từng document để đọc nội dung chi tiết\n` +
+          `  3. Tổng hợp kết quả từ các dependencies làm đầu vào cho công việc này\n`
+        : '';
+
       systemMessage =
         `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện ngay không cần hỏi lại.\n` +
+        `${dependencyStep}` +
         `- Gọi mcp__Builtin__StartWork để bắt đầu công việc\n` +
         `${completionStep}\n` +
         `- Gọi mcp__Builtin__BlockWork nếu gặp vướng mắc sau 3 lần cố gắng xử lý (kèm reason)`;
