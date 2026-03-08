@@ -496,9 +496,10 @@ export class AgentService extends BaseService<Agent> {
     ];
     const agentFunctions = agent.allowedFunctions || [];
     // Empty agentFunctions means "all allowed" — memory functions are implicitly covered
-    const allowedFunctions = agentFunctions.length === 0
-      ? []
-      : [...new Set([...agentFunctions, ...memoryFunctions])];
+    const allowedFunctions =
+      agentFunctions.length === 0
+        ? []
+        : [...new Set([...agentFunctions, ...memoryFunctions])];
 
     // Update connection tracking + set status to idle
     await this.agentModel.updateOne(
@@ -734,12 +735,13 @@ export class AgentService extends BaseService<Agent> {
           const endDate = data.endDate
             ? new Date(data.endDate).toISOString().split('T')[0]
             : 'N/A';
-
-          // Fetch related documents (draft + published) for this project
+          // Fetch related documents (published) for this project
           let documentsBlock = '';
           try {
-            const docsUrl = `${cbmBaseUrl}/documents?projectId=${refId}&limit=100`;
-            this.logger.debug(`Fetching documents for project ${refId} from ${docsUrl}`);
+            const docsUrl = `${cbmBaseUrl}/documents?projectId=${refId}&status=published&limit=100`;
+            this.logger.debug(
+              `Fetching documents for project ${refId} from ${docsUrl}`
+            );
             const docsResponse = await firstValueFrom(
               this.httpService.get(docsUrl, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -754,7 +756,7 @@ export class AgentService extends BaseService<Agent> {
                     `  - \`${doc._id || doc.id}\`: ${doc.summary || 'Untitled'}`
                 )
                 .join('\n');
-              documentsBlock = `\n-Documents** (${docs.length}):\n${docsList}`;
+              documentsBlock = `\n- Published Documents** (${docs.length}):\n${docsList}`;
             }
           } catch (docError: any) {
             this.logger.warn(
@@ -821,7 +823,7 @@ export class AgentService extends BaseService<Agent> {
 
     if (toolNames.has('MemoryManagement')) {
       ruleBlocks.push(
-`MEMORY RULES:
+        `MEMORY RULES:
 - Trước khi trả lời về quyết định đã đưa ra, preferences của ai đó, notes đặc biệt:
   gọi mcp__Builtin__SearchMemory với category và keyword phù hợp trước
 - Sau cuộc trò chuyện có thông tin mới thuộc 1 trong 4 categories:
@@ -839,16 +841,17 @@ MEMORY CATEGORIES:
 
     if (toolNames.has('WorkManagement')) {
       ruleBlocks.push(
-`SCHEDULING RULES:
+        `SCHEDULING RULES:
 - Khi user yêu cầu báo cáo định kỳ, nhắc nhở, hoặc task lặp lại:
   chủ động tạo scheduled/recurring task qua WorkManagement tool, không chờ user nhắc lại
 - Ví dụ triggers: "nhắc anh", "hàng tuần", "mỗi sáng thứ 2", "trước deadline 2 ngày"`
       );
     }
 
-    const systemContent = ruleBlocks.length > 0
-      ? `${corePrompt}\n\n${ruleBlocks.join('\n\n')}`
-      : corePrompt;
+    const systemContent =
+      ruleBlocks.length > 0
+        ? `${corePrompt}\n\n${ruleBlocks.join('\n\n')}`
+        : corePrompt;
 
     const parts: string[] = [`<system>\n${systemContent}\n</system>`];
 
@@ -913,12 +916,22 @@ MEMORY CATEGORIES:
   async heartbeat(
     agentId: string,
     heartbeatDto: AgentHeartbeatDto,
-    accessToken?: string,
+    accessToken?: string
   ): Promise<{
     success: boolean;
-    work?: { id: string; title: string; type: string; status: string; priorityLevel: number };
+    work?: {
+      id: string;
+      title: string;
+      type: string;
+      status: string;
+      priorityLevel: number;
+    };
     systemMessage?: string;
-    systemTask?: { type: 'work' | 'inbox' | 'alert'; id?: string; title?: string };
+    systemTask?: {
+      type: 'work' | 'inbox' | 'alert';
+      id?: string;
+      title?: string;
+    };
   }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
@@ -949,7 +962,11 @@ MEMORY CATEGORIES:
     // Query next work when agent is idle
     if (heartbeatDto.status === 'idle' && accessToken) {
       try {
-        const workResult = await this.getNextWorkForAgent(agentId, accessToken, agent.owner?.orgId);
+        const workResult = await this.getNextWorkForAgent(
+          agentId,
+          accessToken,
+          agent.owner?.orgId
+        );
         if (workResult) {
           return {
             success: true,
@@ -959,7 +976,9 @@ MEMORY CATEGORIES:
           };
         }
       } catch (error: any) {
-        this.logger.warn(`Failed to query next work for agent ${agentId}: ${error.message}`);
+        this.logger.warn(
+          `Failed to query next work for agent ${agentId}: ${error.message}`
+        );
       }
     }
 
@@ -972,17 +991,27 @@ MEMORY CATEGORIES:
   private async getNextWorkForAgent(
     agentId: string,
     accessToken: string,
-    orgId?: string,
+    orgId?: string
   ): Promise<{
-    work: { id: string; title: string; type: string; status: string; priorityLevel: number };
+    work: {
+      id: string;
+      title: string;
+      type: string;
+      status: string;
+      priorityLevel: number;
+    };
     systemMessage: string;
-    systemTask: { type: 'work' | 'inbox' | 'alert'; id?: string; title?: string };
+    systemTask: {
+      type: 'work' | 'inbox' | 'alert';
+      id?: string;
+      title?: string;
+    };
   } | null> {
     let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
     try {
       const cbmConfig = await this.configurationService.findByKey(
         ConfigKey.CBM_BASE_API_URL as any,
-        { orgId } as RequestContext,
+        { orgId } as RequestContext
       );
       if (cbmConfig?.value) {
         cbmBaseUrl = cbmConfig.value;
@@ -995,7 +1024,7 @@ MEMORY CATEGORIES:
       this.httpService.get(`${cbmBaseUrl}/works/next-work`, {
         headers: { Authorization: `Bearer ${accessToken}` },
         params: { assigneeType: 'agent', assigneeId: agentId },
-      }),
+      })
     );
 
     const data = (response as any).data;
@@ -1057,7 +1086,11 @@ MEMORY CATEGORIES:
         `- Gọi mcp__Builtin__RejectReviewForWork nếu cần làm lại (kèm feedback)`;
     }
 
-    this.logger.debug('Next work found for agent', { agentId, workId, priorityLevel });
+    this.logger.debug('Next work found for agent', {
+      agentId,
+      workId,
+      priorityLevel,
+    });
 
     return {
       work: workObj,
@@ -1245,8 +1278,12 @@ CLAUDE_RESUME=${resume}
 
     if (channels.length > 0) {
       // New structured channels[] format — emit one block per channel
-      const discordChannels = channels.filter(c => c.platform === 'discord' && c.enabled);
-      const telegramChannels = channels.filter(c => c.platform === 'telegram' && c.enabled);
+      const discordChannels = channels.filter(
+        (c) => c.platform === 'discord' && c.enabled
+      );
+      const telegramChannels = channels.filter(
+        (c) => c.platform === 'telegram' && c.enabled
+      );
 
       if (discordChannels.length > 0) {
         // Use the first enabled discord channel as primary env vars
@@ -1260,7 +1297,14 @@ CLAUDE_RESUME=${resume}
 
         // Additional discord channels listed as JSON (for multi-channel support in agent)
         if (discordChannels.length > 1) {
-          envConfig += `DISCORD_CHANNELS=${JSON.stringify(discordChannels.map(c => ({ channelId: c.channelId, requireMentions: c.requireMentions, verboseLogging: c.verboseLogging, verboseLoggingTarget: c.verboseLoggingTarget })))}\n`;
+          envConfig += `DISCORD_CHANNELS=${JSON.stringify(
+            discordChannels.map((c) => ({
+              channelId: c.channelId,
+              requireMentions: c.requireMentions,
+              verboseLogging: c.verboseLogging,
+              verboseLoggingTarget: c.verboseLoggingTarget,
+            }))
+          )}\n`;
         }
       } else {
         envConfig += `# DISCORD_TOKEN=your_discord_token\n# DISCORD_CHANNEL_ID=your_channel_id\n`;
@@ -1270,13 +1314,21 @@ CLAUDE_RESUME=${resume}
         const primary = telegramChannels[0];
         envConfig += `TELEGRAM_BOT_TOKEN=${primary.token}\n`;
         envConfig += `TELEGRAM_GROUP_ID=${primary.channelId}\n`;
-        if (primary.botId) envConfig += `TELEGRAM_BOT_USERNAME=${primary.botId}\n`;
+        if (primary.botId)
+          envConfig += `TELEGRAM_BOT_USERNAME=${primary.botId}\n`;
         envConfig += `TELEGRAM_REQUIRE_MENTIONS=${primary.requireMentions}\n`;
         envConfig += `TELEGRAM_VERBOSE_LOGGING=${primary.verboseLogging}\n`;
         envConfig += `TELEGRAM_VERBOSE_LOGGING_TARGET=${primary.verboseLoggingTarget}\n`;
 
         if (telegramChannels.length > 1) {
-          envConfig += `TELEGRAM_CHANNELS=${JSON.stringify(telegramChannels.map(c => ({ channelId: c.channelId, requireMentions: c.requireMentions, verboseLogging: c.verboseLogging, verboseLoggingTarget: c.verboseLoggingTarget })))}\n`;
+          envConfig += `TELEGRAM_CHANNELS=${JSON.stringify(
+            telegramChannels.map((c) => ({
+              channelId: c.channelId,
+              requireMentions: c.requireMentions,
+              verboseLogging: c.verboseLogging,
+              verboseLoggingTarget: c.verboseLoggingTarget,
+            }))
+          )}\n`;
         }
       } else {
         envConfig += `# TELEGRAM_BOT_TOKEN=your_telegram_token\n# TELEGRAM_GROUP_ID=your_group_id\n`;

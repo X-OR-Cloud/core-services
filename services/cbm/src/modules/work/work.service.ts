@@ -7,7 +7,7 @@ import { Work, RecurrenceConfig } from './work.schema';
 import { CreateWorkDto } from './work.dto';
 import { NotificationService } from '../notification/notification.service';
 import { ProjectService } from '../project/project.service';
-import { assertCanManageWork } from '../project/project-access.helper';
+import { assertCanManageWork, getWorkCallerRole } from '../project/project-access.helper';
 
 /**
  * WorkService
@@ -275,11 +275,27 @@ export class WorkService extends BaseService<Work> {
 
     const findResult = await super.findAll(options, context);
 
-    // Exclude description field from results to reduce response size
+    // Build project cache to avoid N+1 queries when computing myRole
+    const projectIds = [...new Set(
+      findResult.data
+        .map((w: any) => (w.toObject ? w.toObject() : w).projectId)
+        .filter(Boolean)
+    )];
+    const projectCache = new Map<string, any>();
+    await Promise.all(
+      projectIds.map(async (pid: any) => {
+        const p = await this.projectService.getRawProjectById(pid.toString());
+        if (p) projectCache.set(pid.toString(), p);
+      })
+    );
+
+    // Exclude description field from results and inject myRole
     findResult.data = findResult.data.map((work: any) => {
       const plainWork = work.toObject ? work.toObject() : work;
       const { description, ...rest } = plainWork;
-      return rest as Work;
+      const project = plainWork.projectId ? projectCache.get(plainWork.projectId.toString()) ?? null : null;
+      const myRole = getWorkCallerRole(plainWork, project, context);
+      return { ...rest, myRole } as Work;
     });
 
     // Aggregate statistics by status and type
@@ -300,6 +316,20 @@ export class WorkService extends BaseService<Work> {
 
     findResult.statistics = statistics;
     return findResult;
+  }
+
+  /**
+   * Override findById to inject myRole into the response.
+   */
+  async findById(id: ObjectId, context: RequestContext): Promise<any> {
+    const work = await super.findById(id, context);
+    if (!work) return null;
+    const plain = (work as any).toObject ? (work as any).toObject() : work;
+    const project = plain.projectId
+      ? await this.projectService.getRawProjectById(plain.projectId.toString())
+      : null;
+    const myRole = getWorkCallerRole(plain, project, context);
+    return { ...plain, myRole };
   }
 
   // =============== Action Methods ===============

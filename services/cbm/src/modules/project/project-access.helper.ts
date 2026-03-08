@@ -6,6 +6,78 @@ import { Project, ProjectMember } from './project.schema';
 export type MemberRole = 'project.lead' | 'project.member' | 'super-admin' | null;
 
 /**
+ * Get a human-readable caller role string for API responses.
+ * Returns the actual role string rather than the internal 'super-admin' alias.
+ *
+ * Returns:
+ *   'project.lead'        — caller is project lead (takes precedence over org roles)
+ *   'project.member'      — caller is project member
+ *   'universe.owner'      — universe-level super admin, not a project member
+ *   'organization.owner'  — org-level owner, not a project member
+ *   'none'                — org member with no project membership
+ */
+export function getCallerRole(project: any, context: RequestContext): string {
+  const plain = project.toObject ? project.toObject() : project;
+  const members = plain.members as ProjectMember[];
+
+  // Check project membership first (takes precedence)
+  const agentMember = context.agentId ? members?.find((m) => m.type === 'agent' && m.id === context.agentId) : undefined;
+  const userMember = context.userId ? members?.find((m) => m.type === 'user' && m.id === context.userId) : undefined;
+  const projectMember = agentMember ?? userMember;
+  if (projectMember) return projectMember.role;
+
+  // Not a project member — check org-level roles
+  const highestRole = getRole(context);
+  if (highestRole === PredefinedRole.UniverseOwner) return PredefinedRole.UniverseOwner;
+
+  const projectOrgId = project?.owner?.orgId?.toString?.() ?? project?.owner?.orgId;
+  if (highestRole === PredefinedRole.OrganizationOwner && projectOrgId === context.orgId) {
+    return PredefinedRole.OrganizationOwner;
+  }
+
+  return 'none';
+}
+
+/**
+ * Get myRole for a Work item response.
+ * Priority: reporter/assignee > project membership > org-level roles > 'none'
+ *
+ * work      — the Work document (plain object or Mongoose doc)
+ * project   — the raw project document (null if work has no projectId)
+ * context   — caller's RequestContext
+ *
+ * Returns one of: 'reporter' | 'assignee' | 'project.lead' | 'project.member'
+ *               | 'universe.owner' | 'organization.owner' | 'none'
+ */
+export function getWorkCallerRole(work: any, project: any | null, context: RequestContext): string {
+  const plain = work.toObject ? work.toObject() : work;
+  const callerId = context.agentId || context.userId;
+  const callerType = context.agentId ? 'agent' : 'user';
+
+  // Check reporter
+  if (plain.reporter?.type === callerType && plain.reporter?.id === callerId) {
+    return 'reporter';
+  }
+
+  // Check assignee
+  if (plain.assignee?.type === callerType && plain.assignee?.id === callerId) {
+    return 'assignee';
+  }
+
+  // Check project membership if work belongs to a project
+  if (project) {
+    return getCallerRole(project, context);
+  }
+
+  // No project — check org-level roles
+  const highestRole = getRole(context);
+  if (highestRole === PredefinedRole.UniverseOwner) return PredefinedRole.UniverseOwner;
+  if (highestRole === PredefinedRole.OrganizationOwner) return PredefinedRole.OrganizationOwner;
+
+  return 'none';
+}
+
+/**
  * Fields visible to non-members (public summary view)
  */
 const PUBLIC_FIELDS = ['_id', 'name', 'summary', 'startDate', 'endDate', 'members', 'status', 'tags', 'createdAt', 'updatedAt'] as const;
@@ -171,11 +243,14 @@ export function applyProjectAccess(project: any, context: RequestContext): any {
   }
 
   const role = getMemberRole(project, context);
+  const myRole = getCallerRole(project, context);
+
   if (role === null) {
-    return stripToPublicView(project);
+    return { ...stripToPublicView(project), myRole };
   }
 
-  return project.toObject ? project.toObject() : project;
+  const plain = project.toObject ? project.toObject() : project;
+  return { ...plain, myRole };
 }
 
 /**
@@ -188,7 +263,12 @@ export function applyProjectListAccess(projects: any[], context: RequestContext)
     .filter((p) => isSameOrg(p, context))
     .map((p) => {
       const role = getMemberRole(p, context);
-      return role === null ? stripToPublicView(p) : (p.toObject ? p.toObject() : p);
+      const myRole = getCallerRole(p, context);
+      if (role === null) {
+        return { ...stripToPublicView(p), myRole };
+      }
+      const plain = p.toObject ? p.toObject() : p;
+      return { ...plain, myRole };
     });
 }
 
