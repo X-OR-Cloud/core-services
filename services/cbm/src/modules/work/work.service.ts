@@ -335,6 +335,14 @@ export class WorkService extends BaseService<Work> {
   // =============== Action Methods ===============
 
   /**
+   * Returns next-step hint text based on whether the caller is an agent or user.
+   * agent → MCP tool names, user → REST endpoint paths
+   */
+  private hint(context: RequestContext, agentMsg: string, userMsg: string): string {
+    return context.agentId ? agentMsg : userMsg;
+  }
+
+  /**
    * Action: Start work
    * Transition: todo → in_progress
    */
@@ -348,8 +356,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'todo') {
+      const nextStep = this.hint(context,
+        `To move to todo first: use mcp__Builtin__AssignAndTodoWork (from backlog) or mcp__Builtin__UnblockWork (from blocked).`,
+        `To move to todo first: use POST /works/{id}/assign-and-todo (from backlog) or POST /works/{id}/unblock (from blocked).`
+      );
       throw new BadRequestException(
-        `Cannot start work with status: ${work.status}. Only todo works can be started.`
+        `Cannot start work with status: ${work.status}. Only todo works can be started. ${nextStep}`
       );
     }
 
@@ -381,8 +393,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'in_progress') {
+      const nextStep = this.hint(context,
+        `Work must be in_progress to block. Use mcp__Builtin__StartWork to start it first.`,
+        `Work must be in_progress to block. Use POST /works/{id}/start to start it first.`
+      );
       throw new BadRequestException(
-        `Cannot block work with status: ${work.status}. Only in_progress works can be blocked.`
+        `Cannot block work with status: ${work.status}. Only in_progress works can be blocked. ${nextStep}`
       );
     }
 
@@ -423,8 +439,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'blocked') {
+      const nextStep = this.hint(context,
+        `Work must be blocked first. Use mcp__Builtin__BlockWork to block it, or mcp__Builtin__StartWork if it's in todo.`,
+        `Work must be blocked first. Use POST /works/{id}/block to block it, or POST /works/{id}/start if it's in todo.`
+      );
       throw new BadRequestException(
-        `Cannot unblock work with status: ${work.status}. Only blocked works can be unblocked.`
+        `Cannot unblock work with status: ${work.status}. Only blocked works can be unblocked. ${nextStep}`
       );
     }
 
@@ -454,8 +474,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'in_progress') {
+      const nextStep = this.hint(context,
+        `Work must be in_progress first. Use mcp__Builtin__StartWork to start it (requires todo status).`,
+        `Work must be in_progress first. Use POST /works/{id}/start to start it (requires todo status).`
+      );
       throw new BadRequestException(
-        `Cannot request review for work with status: ${work.status}. Only in_progress works can request review.`
+        `Cannot request review for work with status: ${work.status}. Only in_progress works can request review. ${nextStep}`
       );
     }
 
@@ -506,8 +530,17 @@ export class WorkService extends BaseService<Work> {
 
     if (!allowedStatuses.includes(work.status)) {
       const statusList = allowedStatuses.join(' or ');
+      const nextStep = work.isRecurring
+        ? this.hint(context,
+            `Use mcp__Builtin__StartWork to move it to in_progress first.`,
+            `Use POST /works/{id}/start to move it to in_progress first.`
+          )
+        : this.hint(context,
+            `Use mcp__Builtin__RequestReviewForWork to submit for review first, then complete after review is approved.`,
+            `Use POST /works/{id}/request-review to submit for review first, then complete after review is approved.`
+          );
       throw new BadRequestException(
-        `Cannot complete work with status: ${work.status}. Only ${statusList} works can be completed.`
+        `Cannot complete work with status: ${work.status}. Only ${statusList} works can be completed. ${nextStep}`
       );
     }
 
@@ -608,8 +641,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'done' && work.status !== 'cancelled') {
+      const nextStep = this.hint(context,
+        `To finish work first: use mcp__Builtin__CompleteWork (from review/in_progress) or mcp__Builtin__CancelWork (from any status).`,
+        `To finish work first: use POST /works/{id}/complete (from review/in_progress) or POST /works/{id}/cancel (from any status).`
+      );
       throw new BadRequestException(
-        `Cannot reopen work with status: ${work.status}. Only done or cancelled works can be reopened.`
+        `Cannot reopen work with status: ${work.status}. Only done or cancelled works can be reopened. ${nextStep}`
       );
     }
 
@@ -648,7 +685,11 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status === 'cancelled') {
-      throw new BadRequestException('Work is already cancelled');
+      const nextStep = this.hint(context,
+        `If you want to restart it, use mcp__Builtin__ReopenWork instead.`,
+        `If you want to restart it, use POST /works/{id}/reopen instead.`
+      );
+      throw new BadRequestException(`Work is already cancelled. ${nextStep}`);
     }
 
     const updateData: any = { status: 'cancelled' };
@@ -686,8 +727,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'backlog') {
+      const nextStep = this.hint(context,
+        `Work is already past backlog (current: ${work.status}). To reassign, update the assignee directly. To unblock, use mcp__Builtin__UnblockWork.`,
+        `Work is already past backlog (current: ${work.status}). To reassign, use PATCH /works/{id}. To unblock, use POST /works/{id}/unblock.`
+      );
       throw new BadRequestException(
-        `Cannot assign-and-todo work with status: ${work.status}. Only backlog works can be moved to todo.`
+        `Cannot assign-and-todo work with status: ${work.status}. Only backlog works can be moved to todo. ${nextStep}`
       );
     }
 
@@ -730,8 +775,12 @@ export class WorkService extends BaseService<Work> {
     }
 
     if (work.status !== 'review') {
+      const nextStep = this.hint(context,
+        `Work must be in review status first. Use mcp__Builtin__RequestReviewForWork to submit it for review.`,
+        `Work must be in review status first. Use POST /works/{id}/request-review to submit it for review.`
+      );
       throw new BadRequestException(
-        `Cannot reject work with status: ${work.status}. Only review works can be rejected.`
+        `Cannot reject work with status: ${work.status}. Only review works can be rejected. ${nextStep}`
       );
     }
 
@@ -766,8 +815,12 @@ export class WorkService extends BaseService<Work> {
     await this.assertWorkProjectAccess((work as any).projectId, context);
 
     if (!['done', 'cancelled'].includes(work.status)) {
+      const nextStep = this.hint(context,
+        `Complete the work first with mcp__Builtin__CompleteWork, or cancel it with mcp__Builtin__CancelWork.`,
+        `Complete the work first with POST /works/{id}/complete, or cancel it with POST /works/{id}/cancel.`
+      );
       throw new BadRequestException(
-        `Cannot delete work with status: ${work.status}. Only done or cancelled works can be deleted.`
+        `Cannot delete work with status: ${work.status}. Only done or cancelled works can be deleted. ${nextStep}`
       );
     }
 
