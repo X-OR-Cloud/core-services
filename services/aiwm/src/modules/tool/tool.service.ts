@@ -101,6 +101,7 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   ],
   InstructionManagement: [
     'mcp__Builtin__ListInstructions',
+    'mcp__Builtin__GetInstruction',
     'mcp__Builtin__CreateInstruction',
     'mcp__Builtin__UpdateInstruction',
     'mcp__Builtin__DeleteInstruction',

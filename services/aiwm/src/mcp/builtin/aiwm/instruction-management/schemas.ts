@@ -53,6 +53,13 @@ export const UpdateInstructionSchema = z.object({
 });
 
 /**
+ * Schema for getting a single instruction by ID
+ */
+export const GetInstructionSchema = z.object({
+  id: z.string().describe('Instruction ID to retrieve'),
+});
+
+/**
  * Schema for deleting an instruction
  */
 export const DeleteInstructionSchema = z.object({

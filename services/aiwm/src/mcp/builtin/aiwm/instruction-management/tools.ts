@@ -4,12 +4,14 @@
 
 import { ToolDefinition } from '../../../types';
 import {
+  executeGetInstruction,
   executeListInstructions,
   executeCreateInstruction,
   executeUpdateInstruction,
   executeDeleteInstruction,
 } from './executors';
 import {
+  GetInstructionSchema,
   ListInstructionsSchema,
   CreateInstructionSchema,
   UpdateInstructionSchema,
@@ -20,6 +22,14 @@ import {
  * All InstructionManagement tools
  */
 export const InstructionManagementTools: ToolDefinition[] = [
+  {
+    name: 'GetInstruction',
+    description: 'Get a specific instruction (system prompt) by ID with full details.',
+    type: 'builtin',
+    category: 'InstructionManagement',
+    executor: executeGetInstruction,
+    inputSchema: GetInstructionSchema,
+  },
   {
     name: 'ListInstructions',
     description: 'List agent instructions (system prompts) with pagination and filters (name, tags, status)',

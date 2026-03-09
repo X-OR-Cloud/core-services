@@ -15,6 +15,29 @@ function sanitizeInstruction(instruction: any): any {
 }
 
 /**
+ * Get a single instruction by ID
+ */
+export async function executeGetInstruction(
+  args: { id: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
+  logger.debug(`GetInstruction - id: ${args.id}`);
+
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/instructions/${args.id}`, {
+    method: 'GET',
+    context,
+  });
+
+  if (!response.ok) return formatToolResponse(response);
+
+  const data = await response.json();
+  if (data.data) data.data = sanitizeInstruction(data.data);
+
+  return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+}
+
+/**
  * List instructions with pagination and filters
  */
 export async function executeListInstructions(
