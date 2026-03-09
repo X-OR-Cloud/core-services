@@ -70,7 +70,6 @@ export class CreateDocumentDto {
   @IsOptional()
   @IsEnum(['private', 'organization'])
   shareMode?: string;
-
   // status is forced to 'draft' by DocumentService.create() — not settable by client
 }
 
