@@ -4,12 +4,14 @@
 
 import { ToolDefinition } from '../../../types';
 import {
+  executeGetAgent,
   executeListAgents,
   executeCreateAgent,
   executeUpdateAgent,
   executeDeleteAgent,
 } from './executors';
 import {
+  GetAgentSchema,
   ListAgentsSchema,
   CreateAgentSchema,
   UpdateAgentSchema,
@@ -20,6 +22,14 @@ import {
  * All AgentManagement tools
  */
 export const AgentManagementTools: ToolDefinition[] = [
+  {
+    name: 'GetAgent',
+    description: 'Get a specific agent by ID with full details including settings, channels, and configuration.',
+    type: 'builtin',
+    category: 'AgentManagement',
+    executor: executeGetAgent,
+    inputSchema: GetAgentSchema,
+  },
   {
     name: 'ListAgents',
     description: 'List agents with pagination and filters (name, tags, description, status, type)',

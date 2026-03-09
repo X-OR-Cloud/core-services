@@ -114,6 +114,13 @@ export const UpdateAgentSchema = z.object({
 });
 
 /**
+ * Schema for getting a single agent by ID
+ */
+export const GetAgentSchema = z.object({
+  id: z.string().describe('Agent ID to retrieve'),
+});
+
+/**
  * Schema for deleting an agent
  */
 export const DeleteAgentSchema = z.object({

@@ -94,6 +94,7 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   ],
   AgentManagement: [
     'mcp__Builtin__ListAgents',
+    'mcp__Builtin__GetAgent',
     'mcp__Builtin__CreateAgent',
     'mcp__Builtin__UpdateAgent',
     'mcp__Builtin__DeleteAgent',

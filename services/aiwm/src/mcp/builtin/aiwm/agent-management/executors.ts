@@ -22,6 +22,29 @@ function sanitizeAgent(agent: any): any {
 }
 
 /**
+ * Get a single agent by ID
+ */
+export async function executeGetAgent(
+  args: { id: string },
+  context: ExecutionContext
+): Promise<ToolResponse> {
+  const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
+  logger.debug(`GetAgent - id: ${args.id}`);
+
+  const response = await makeServiceRequest(`${aiwmBaseUrl}/agents/${args.id}`, {
+    method: 'GET',
+    context,
+  });
+
+  if (!response.ok) return formatToolResponse(response);
+
+  const data = await response.json();
+  if (data.data) data.data = sanitizeAgent(data.data);
+
+  return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+}
+
+/**
  * List agents with pagination and filters
  */
 export async function executeListAgents(
