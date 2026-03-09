@@ -440,20 +440,22 @@ export class UnblockWorkDto {
  * DTO for getting next work for user/agent
  */
 export class GetNextWorkQueryDto {
-  @ApiProperty({
-    description: 'Assignee type',
+  @ApiPropertyOptional({
+    description: 'Assignee type. Defaults to caller type from JWT if omitted.',
     enum: ['user', 'agent'],
     example: 'user',
   })
+  @IsOptional()
   @IsEnum(['user', 'agent'])
-  assigneeType!: 'user' | 'agent';
+  assigneeType?: 'user' | 'agent';
 
-  @ApiProperty({
-    description: 'Assignee ID',
+  @ApiPropertyOptional({
+    description: 'Assignee ID. Defaults to caller ID from JWT if omitted.',
     example: '507f1f77bcf86cd799439011',
   })
+  @IsOptional()
   @IsString()
-  assigneeId!: string;
+  assigneeId?: string;
 }
 
 /**

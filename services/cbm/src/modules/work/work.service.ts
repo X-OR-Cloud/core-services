@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -16,6 +16,8 @@ import { assertCanManageWork, getWorkCallerRole } from '../project/project-acces
  */
 @Injectable()
 export class WorkService extends BaseService<Work> {
+  protected readonly logger = new Logger(WorkService.name);
+
   constructor(
     @InjectModel(Work.name) private workModel: Model<Work>,
     private readonly notificationService: NotificationService,
@@ -991,9 +993,10 @@ export class WorkService extends BaseService<Work> {
     };
   }> {
     const now = new Date();
+    this.logger.debug(`[getNextWork] assigneeType=${assigneeType} assigneeId=${assigneeId} now=${now.toISOString()}`);
 
     // Priority 1: Recurring tasks with startAt reached
-    const recurringTasks = await this.workModel.find({
+    const p1Filter = {
       type: 'task',
       isRecurring: true,
       'assignee.type': assigneeType,
@@ -1001,7 +1004,10 @@ export class WorkService extends BaseService<Work> {
       status: 'todo',
       startAt: { $lte: now },
       isDeleted: false,
-    }).sort({ startAt: 1 }); // Most overdue first
+    };
+    this.logger.debug(`[getNextWork] P1 filter: ${JSON.stringify(p1Filter)}`);
+    const recurringTasks = await this.workModel.find(p1Filter).sort({ startAt: 1 });
+    this.logger.debug(`[getNextWork] P1 candidates: ${recurringTasks.length}`);
 
     for (const task of recurringTasks) {
       const hasSubtasks = await this.workModel.exists({
@@ -1009,9 +1015,13 @@ export class WorkService extends BaseService<Work> {
         parentId: task._id.toString(),
         isDeleted: false,
       });
-      if (hasSubtasks) continue;
+      if (hasSubtasks) {
+        this.logger.debug(`[getNextWork] P1 skip ${task._id} (has subtasks)`);
+        continue;
+      }
 
       if (await this.validateDependencies(task)) {
+        this.logger.debug(`[getNextWork] P1 matched: ${task._id}`);
         return {
           work: task,
           metadata: {
@@ -1020,20 +1030,26 @@ export class WorkService extends BaseService<Work> {
             matchedCriteria: ['assigned_to_me', 'task', 'recurring', 'status_todo', 'startAt_reached', 'no_subtasks', 'dependencies_met']
           }
         };
+      } else {
+        this.logger.debug(`[getNextWork] P1 skip ${task._id} (dependencies not met)`);
       }
     }
 
     // Priority 2: Assigned subtasks in todo
-    const subtasks = await this.workModel.find({
+    const p2Filter = {
       type: 'subtask',
       'assignee.type': assigneeType,
       'assignee.id': assigneeId,
       status: 'todo',
       isDeleted: false,
-    }).sort({ createdAt: 1 });
+    };
+    this.logger.debug(`[getNextWork] P2 filter: ${JSON.stringify(p2Filter)}`);
+    const subtasks = await this.workModel.find(p2Filter).sort({ createdAt: 1 });
+    this.logger.debug(`[getNextWork] P2 candidates: ${subtasks.length}`);
 
     for (const subtask of subtasks) {
       if (await this.validateDependencies(subtask)) {
+        this.logger.debug(`[getNextWork] P2 matched: ${subtask._id}`);
         return {
           work: subtask,
           metadata: {
@@ -1042,12 +1058,14 @@ export class WorkService extends BaseService<Work> {
             matchedCriteria: ['assigned_to_me', 'subtask', 'status_todo', 'dependencies_met']
           }
         };
+      } else {
+        this.logger.debug(`[getNextWork] P2 skip ${subtask._id} (dependencies not met)`);
       }
     }
 
     // Priority 3: Assigned tasks without subtasks in todo
     // Exclude scheduled/recurring tasks whose startAt hasn't been reached yet
-    const tasks = await this.workModel.find({
+    const p3Filter = {
       type: 'task',
       'assignee.type': assigneeType,
       'assignee.id': assigneeId,
@@ -1058,7 +1076,10 @@ export class WorkService extends BaseService<Work> {
         { startAt: null },
         { startAt: { $lte: now } },
       ],
-    }).sort({ createdAt: 1 });
+    };
+    this.logger.debug(`[getNextWork] P3 filter: ${JSON.stringify(p3Filter)}`);
+    const tasks = await this.workModel.find(p3Filter).sort({ createdAt: 1 });
+    this.logger.debug(`[getNextWork] P3 candidates: ${tasks.length}`);
 
     for (const task of tasks) {
       // Check if task has subtasks
@@ -1068,10 +1089,14 @@ export class WorkService extends BaseService<Work> {
         isDeleted: false
       });
 
-      if (hasSubtasks) continue; // Skip tasks with subtasks
+      if (hasSubtasks) {
+        this.logger.debug(`[getNextWork] P3 skip ${task._id} (has subtasks)`);
+        continue;
+      }
 
       // Check dependencies
       if (await this.validateDependencies(task)) {
+        this.logger.debug(`[getNextWork] P3 matched: ${task._id}`);
         return {
           work: task,
           metadata: {
@@ -1080,17 +1105,22 @@ export class WorkService extends BaseService<Work> {
             matchedCriteria: ['assigned_to_me', 'task', 'status_todo', 'no_subtasks', 'dependencies_met']
           }
         };
+      } else {
+        this.logger.debug(`[getNextWork] P3 skip ${task._id} (dependencies not met)`);
       }
     }
 
     // Priority 4: Reported works in blocked status
-    const blockedWork = await this.workModel.findOne({
+    const p4Filter = {
       type: { $in: ['task', 'subtask'] },
       'reporter.type': assigneeType,
       'reporter.id': assigneeId,
       status: 'blocked',
       isDeleted: false,
-    }).sort({ createdAt: 1 });
+    };
+    this.logger.debug(`[getNextWork] P4 filter: ${JSON.stringify(p4Filter)}`);
+    const blockedWork = await this.workModel.findOne(p4Filter).sort({ createdAt: 1 });
+    this.logger.debug(`[getNextWork] P4 result: ${blockedWork?._id ?? 'none'}`);
 
     if (blockedWork) {
       return {
@@ -1104,13 +1134,16 @@ export class WorkService extends BaseService<Work> {
     }
 
     // Priority 5: Reported works in review status
-    const reviewWork = await this.workModel.findOne({
+    const p5Filter = {
       type: { $in: ['task', 'subtask'] },
       'reporter.type': assigneeType,
       'reporter.id': assigneeId,
       status: 'review',
       isDeleted: false,
-    }).sort({ createdAt: 1 });
+    };
+    this.logger.debug(`[getNextWork] P5 filter: ${JSON.stringify(p5Filter)}`);
+    const reviewWork = await this.workModel.findOne(p5Filter).sort({ createdAt: 1 });
+    this.logger.debug(`[getNextWork] P5 result: ${reviewWork?._id ?? 'none'}`);
 
     if (reviewWork) {
       return {
@@ -1123,6 +1156,7 @@ export class WorkService extends BaseService<Work> {
       };
     }
 
+    this.logger.debug(`[getNextWork] No work found for assigneeType=${assigneeType} assigneeId=${assigneeId}`);
     // No work found
     return {
       work: null,

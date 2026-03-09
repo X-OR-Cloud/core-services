@@ -77,9 +77,11 @@ export class WorkController {
     @Query() query: GetNextWorkQueryDto,
     @CurrentUser() context: RequestContext
   ) {
+    const assigneeType = query.assigneeType ?? (context.agentId ? 'agent' : 'user');
+    const assigneeId = query.assigneeId ?? (context.agentId || context.userId);
     return this.workService.getNextWork(
-      query.assigneeType,
-      query.assigneeId,
+      assigneeType,
+      assigneeId,
       context
     );
   }
