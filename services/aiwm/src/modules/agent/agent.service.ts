@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -17,7 +18,7 @@ import {
   FindManyResult,
   PaginationQueryDto,
 } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Agent, AgentDocument } from './agent.schema';
 import { Instruction } from '../instruction/instruction.schema';
 import { Tool } from '../tool/tool.schema';
@@ -1668,6 +1669,15 @@ echo "Installation script placeholder - implement actual logic"
     updateAgentDto: UpdateAgentDto,
     context: RequestContext
   ): Promise<Agent | null> {
+    // Only organization.owner or universe.owner can set role to organization.owner
+    if (updateAgentDto.role === 'organization.owner') {
+      const isOrgOwner = context.roles?.includes(PredefinedRole.OrganizationOwner) ||
+        context.roles?.includes(PredefinedRole.UniverseOwner);
+      if (!isOrgOwner) {
+        throw new ForbiddenException('Only organization.owner can assign organization.owner role to an agent');
+      }
+    }
+
     // Prevent type changes (managed <-> autonomous)
     if (updateAgentDto.type) {
       const existingAgent = await this.agentModel.findById(id).exec();

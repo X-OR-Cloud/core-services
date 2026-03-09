@@ -121,12 +121,12 @@ export class CreateAgentDto {
   tags?: string[];
 
   @ApiPropertyOptional({
-    description: 'RBAC role for agent to access MCP tools',
-    enum: ['organization.editor', 'organization.viewer'],
+    description: 'RBAC role for agent to access MCP tools. Setting organization.owner requires the caller to have organization.owner or universe.owner role.',
+    enum: ['organization.owner', 'organization.editor', 'organization.viewer'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['organization.editor', 'organization.viewer'])
+  @IsEnum(['organization.owner', 'organization.editor', 'organization.viewer'])
   role?: string;
 
   @ApiPropertyOptional({ description: 'Secret for agent authentication (will be hashed)', required: false })
@@ -239,12 +239,12 @@ export class UpdateAgentDto {
   nodeId?: string;
 
   @ApiPropertyOptional({
-    description: 'RBAC role for agent to access MCP tools',
-    enum: ['organization.editor', 'organization.viewer'],
+    description: 'RBAC role for agent to access MCP tools. Setting organization.owner requires the caller to have organization.owner or universe.owner role.',
+    enum: ['organization.owner', 'organization.editor', 'organization.viewer'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['organization.editor', 'organization.viewer'])
+  @IsEnum(['organization.owner', 'organization.editor', 'organization.viewer'])
   role?: string;
 
   @ApiPropertyOptional({ description: 'Agent tags', required: false, type: [String] })
