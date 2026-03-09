@@ -30,6 +30,9 @@ export class Document extends BaseSchema {
   @Prop({ type: String })
   projectId?: string; // Optional reference to Project
 
+  @Prop({ enum: ['private', 'organization'], default: 'private' })
+  shareMode?: string; // Sharing mode: 'private' (creator/leads/admins only) or 'organization' (all org members can view)
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
 }

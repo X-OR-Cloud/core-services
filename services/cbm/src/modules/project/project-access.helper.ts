@@ -297,3 +297,54 @@ export function getMemberProjectIds(
   }
   return memberIds;
 }
+
+/**
+ * Check if the caller can view a private document.
+ *
+ * Rules:
+ *   - super-admin (universe.owner / organization.owner): always allowed
+ *   - otherwise: caller must be the document creator (createdBy)
+ *
+ * Note: project-linked documents use membership checks separately;
+ * this helper handles the non-project case and the supra-admin bypass.
+ */
+export function canViewPrivateDocument(doc: any, context: RequestContext): boolean {
+  if (isSuperAdmin(context)) return true;
+  const callerId = context.agentId || context.userId;
+  return doc.createdBy === callerId;
+}
+
+/**
+ * Assert that the caller can update or delete a document (write access).
+ *
+ * Rules:
+ *   - super-admin (universe.owner / organization.owner): always allowed
+ *   - project.lead (when doc belongs to a project): allowed
+ *   - document creator (createdBy): always allowed
+ *   - others: ForbiddenException
+ *
+ * @param doc     - the Document plain object
+ * @param project - the raw Project (null if doc has no projectId)
+ * @param context - caller's RequestContext
+ */
+export function assertCanWriteDocument(doc: any, project: any | null, context: RequestContext): void {
+  if (isSuperAdmin(context)) return;
+
+  const callerId = context.agentId || context.userId;
+  if (doc.createdBy === callerId) return;
+
+  if (project) {
+    const role = getMemberRole(project, context);
+    if (role === 'project.lead') return;
+    throw new ForbiddenException(
+      buildForbiddenMessage(
+        'Only the document creator, project leads, and organization owners can modify or delete this document. Please contact the project lead to perform this action.',
+        project,
+      ),
+    );
+  }
+
+  throw new ForbiddenException(
+    'Only the document creator and organization owners can modify or delete this document.',
+  );
+}

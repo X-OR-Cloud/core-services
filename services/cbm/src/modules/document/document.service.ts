@@ -10,7 +10,7 @@ import { RequestContext } from '@hydrabyte/shared';
 import { Document } from './document.schema';
 import { UpdateContentDto } from './document.dto';
 import { ProjectService } from '../project/project.service';
-import { assertCanDeleteDocument } from '../project/project-access.helper';
+import { assertCanWriteDocument, canViewPrivateDocument, isSuperAdmin } from '../project/project-access.helper';
 
 /**
  * DocumentService
@@ -35,8 +35,12 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
-   * Override findById to exclude content field and respect ownership.
-   * If the document belongs to a project, caller must be a project member.
+   * Override findById to exclude content field and apply shareMode-based access control.
+   *
+   * shareMode = 'organization': all same-org users can view
+   * shareMode = 'private':
+   *   - no projectId: only creator, universe.owner, organization.owner
+   *   - with projectId: project members + universe.owner, organization.owner
    */
   async findById(id: ObjectId, context: RequestContext): Promise<Document | null> {
     const ownerFilter: any = { _id: id, isDeleted: false };
@@ -45,14 +49,7 @@ export class DocumentService extends BaseService<Document> {
     const doc = await this.documentModel.findOne(ownerFilter).select('-content').lean().exec() as Document | null;
     if (!doc) return null;
 
-    if ((doc as any).projectId) {
-      const memberIds = await this.projectService.getMemberProjectIds(context);
-      if (memberIds !== undefined && !memberIds.has((doc as any).projectId.toString())) {
-        return null;
-      }
-    }
-
-    return doc;
+    return this.applyViewAccess(doc, context, false) ? doc : null;
   }
 
   /**
@@ -65,14 +62,36 @@ export class DocumentService extends BaseService<Document> {
     const doc = await this.documentModel.findOne(ownerFilter).lean().exec() as Document | null;
     if (!doc) return null;
 
-    if ((doc as any).projectId) {
-      const memberIds = await this.projectService.getMemberProjectIds(context);
-      if (memberIds !== undefined && !memberIds.has((doc as any).projectId.toString())) {
-        return null;
-      }
+    return this.applyViewAccess(doc, context, true) ? doc : null;
+  }
+
+  /**
+   * Apply view access control based on shareMode.
+   * Returns true if the caller can view the document, false otherwise.
+   * needsMembership=true performs async membership check (used by findByIdWithContent).
+   */
+  private async applyViewAccess(doc: any, context: RequestContext, needsMembership: boolean): Promise<boolean> {
+    const shareMode = (doc as any).shareMode ?? 'private';
+
+    if (shareMode === 'organization') {
+      // All same-org members (filtered by owner.orgId in query) can view
+      return true;
     }
 
-    return doc;
+    // shareMode === 'private'
+    if (isSuperAdmin(context)) return true;
+
+    if ((doc as any).projectId) {
+      // Project-linked: project members can view
+      const memberIds = await this.projectService.getMemberProjectIds(context);
+      if (memberIds !== undefined && !memberIds.has((doc as any).projectId.toString())) {
+        return false;
+      }
+      return true;
+    }
+
+    // No project: only creator can view
+    return canViewPrivateDocument(doc, context);
   }
 
   /**
@@ -83,18 +102,40 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
-   * Build a MongoDB filter that excludes documents belonging to projects
-   * where the caller is not a member. Returns null if no filter is needed (super-admin).
+   * Build a MongoDB filter for findAll that enforces shareMode + membership rules:
+   *
+   * A document is visible if ANY of these conditions hold:
+   *   1. shareMode = 'organization'  → visible to all same-org users
+   *   2. super-admin                  → no restriction (returns null)
+   *   3. private + no projectId       → only the creator
+   *   4. private + projectId          → only project members
    */
   private async buildMembershipFilter(context: RequestContext): Promise<any | null> {
+    if (isSuperAdmin(context)) return null; // super-admin: no restriction
+
     const memberIds = await this.projectService.getMemberProjectIds(context);
-    if (memberIds === undefined) return null; // super-admin: no restriction
+    const callerId = context.agentId || context.userId;
+
+    // Conditions for private documents this caller can see:
+    const privateConditions: any[] = [
+      // private no-project docs created by caller
+      { shareMode: { $in: ['private', null] }, projectId: { $exists: false }, createdBy: callerId },
+      { shareMode: { $in: ['private', null] }, projectId: null, createdBy: callerId },
+    ];
+
+    if (memberIds !== undefined && memberIds.size > 0) {
+      // private project docs where caller is a member
+      privateConditions.push({
+        shareMode: { $in: ['private', null] },
+        projectId: { $in: Array.from(memberIds) },
+      });
+    }
 
     return {
       $or: [
-        { projectId: { $exists: false } },
-        { projectId: null },
-        { projectId: { $in: Array.from(memberIds) } },
+        // organization-shared docs: all org members can view (orgId already filtered in findAll)
+        { shareMode: 'organization' },
+        ...privateConditions,
       ],
     };
   }
@@ -173,6 +214,11 @@ export class DocumentService extends BaseService<Document> {
   async updateContent(id: ObjectId, updateDto: UpdateContentDto, context: RequestContext): Promise<Document> {
     const document = await this.findByIdWithContent(id, context);
     if (!document) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const project = (document as any).projectId
+      ? await this.projectService.getRawProjectById((document as any).projectId.toString())
+      : null;
+    assertCanWriteDocument(document, project, context);
 
     let updatedContent: string;
     switch (updateDto.operation) {
@@ -284,19 +330,41 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
-   * Override softDelete to restrict deletion to project.lead and super-admin.
-   * Project members cannot delete documents.
+   * Override update to enforce write access:
+   * - super-admin: always allowed
+   * - project.lead (if doc has projectId): allowed
+   * - creator (createdBy): allowed
+   * - others: ForbiddenException
+   */
+  async update(id: ObjectId, data: any, context: RequestContext): Promise<Document | null> {
+    const doc = await this.findById(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+
+    assertCanWriteDocument(doc, project, context);
+
+    return super.update(id, data, context);
+  }
+
+  /**
+   * Override softDelete to enforce write access:
+   * - super-admin: always allowed
+   * - project.lead (if doc has projectId): allowed
+   * - creator (createdBy): allowed
+   * - others: ForbiddenException
    */
   async softDelete(id: ObjectId, context: RequestContext): Promise<Document | null> {
     const doc = await this.findById(id, context);
     if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
 
-    if ((doc as any).projectId) {
-      const project = await this.projectService.getRawProjectById((doc as any).projectId.toString());
-      if (project) {
-        assertCanDeleteDocument(project, context);
-      }
-    }
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+
+    assertCanWriteDocument(doc, project, context);
 
     return super.softDelete(id, context);
   }

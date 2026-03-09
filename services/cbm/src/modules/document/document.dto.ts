@@ -61,6 +61,16 @@ export class CreateDocumentDto {
   @IsString()
   projectId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Sharing mode: private (creator/leads/admins only) or organization (all org members can view)',
+    enum: ['private', 'organization'],
+    default: 'private',
+    example: 'private',
+  })
+  @IsOptional()
+  @IsEnum(['private', 'organization'])
+  shareMode?: string;
+
   // status is forced to 'draft' by DocumentService.create() — not settable by client
 }
 
@@ -124,6 +134,15 @@ export class UpdateDocumentDto {
   @IsOptional()
   @IsString()
   projectId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sharing mode: private (creator/leads/admins only) or organization (all org members can view)',
+    enum: ['private', 'organization'],
+    example: 'organization',
+  })
+  @IsOptional()
+  @IsEnum(['private', 'organization'])
+  shareMode?: string;
 }
 
 /**

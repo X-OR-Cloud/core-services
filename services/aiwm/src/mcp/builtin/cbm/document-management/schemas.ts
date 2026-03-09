@@ -7,6 +7,9 @@ import * as z from 'zod';
 // Document type enum
 const DocumentTypeEnum = z.enum(['html', 'text', 'markdown', 'json']);
 
+// Document share mode enum
+const DocumentShareModeEnum = z.enum(['private', 'organization']);
+
 // Document status enum
 const DocumentStatusEnum = z.enum(['draft', 'published', 'archived']);
 
@@ -38,6 +41,9 @@ export const CreateDocumentSchema = z.object({
     .string()
     .optional()
     .describe('Project ID to associate this document with'),
+  shareMode: DocumentShareModeEnum.optional()
+    .default('private')
+    .describe('Sharing mode: private (creator/leads/admins only) or organization (all org members can view)'),
 });
 
 /**
@@ -90,6 +96,7 @@ export const UpdateDocumentSchema = z.object({
   labels: z.array(z.string()).optional().describe('Updated labels'),
   status: DocumentStatusEnum.optional().describe('Updated status'),
   projectId: z.string().optional().describe('Updated project ID'),
+  shareMode: DocumentShareModeEnum.optional().describe('Updated sharing mode'),
 });
 
 /**
