@@ -4,7 +4,7 @@ import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@h
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { NodeService } from './node.service';
-import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto } from './node.dto';
+import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideDto, SetupGuideResponseDto, NodeBootstrapDto, NodeBootstrapResponseDto } from './node.dto';
 
 @ApiTags('nodes')
 @ApiBearerAuth('JWT-auth')
@@ -13,7 +13,10 @@ export class NodeController {
   constructor(private readonly nodeService: NodeService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create node', description: 'Create a new node with auto-generated credentials' })
+  @ApiOperation({
+    summary: 'Create node',
+    description: 'Create a new node. org.owner → status: pending. Others → status: awaiting-approval (requires approval before setup).',
+  })
   @ApiResponse({ status: 201, description: 'Node created successfully' })
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
@@ -21,12 +24,7 @@ export class NodeController {
     @Body() createNodeDto: CreateNodeDto,
     @CurrentUser() context: RequestContext,
   ) {
-    const result = await this.nodeService.createWithCredentials(createNodeDto, context);
-    return {
-      node: result.node,
-      credentials: result.credentials,
-      warning: 'Secret shown only ONCE. Save it now!',
-    };
+    return this.nodeService.createNode(createNodeDto, context);
   }
 
   @Get()
@@ -115,37 +113,70 @@ export class NodeController {
   //   return { message: 'Node deleted successfully' };
   // }
 
+  // ============= Approval =============
+
+  @Post(':id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve node',
+    description: 'Approve a node in awaiting-approval status → pending. Only organization owner.',
+  })
+  @ApiResponse({ status: 200, description: 'Node approved' })
+  @ApiResponse({ status: 400, description: 'Node is not awaiting approval' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
+  @UseGuards(JwtAuthGuard)
+  async approve(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.nodeService.approveNode(id, context);
+  }
+
+  // ============= Setup Guide =============
+
+  @Post(':id/setup-guide')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get node setup guide',
+    description: 'Generate a setup token (24h) and return install instructions. Node must be in pending status. Accessible by org.owner or node creator.',
+  })
+  @ApiResponse({ status: 200, description: 'Setup guide generated', type: SetupGuideResponseDto })
+  @ApiResponse({ status: 400, description: 'Node not in pending status' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
+  @UseGuards(JwtAuthGuard)
+  async getSetupGuide(
+    @Param('id') id: string,
+    @Body() dto: SetupGuideDto,
+    @CurrentUser() context: RequestContext,
+  ): Promise<SetupGuideResponseDto> {
+    return this.nodeService.getSetupGuide(id, dto.os, context);
+  }
+
   // ============= Credential Management =============
 
   @Post(':id/regenerate-credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Regenerate node credentials',
-    description: 'Generate new apiKey and secret for node authentication. Old credentials will be invalidated immediately. Only organization owner can perform this action. WARNING: Secret is shown only ONCE - must be saved!',
+    summary: 'Regenerate node secret',
+    description: 'Generate a new secret for a node (online or offline). Old secret invalidated immediately. WARNING: Online nodes will disconnect. Accessible by org.owner or node creator.',
   })
   @ApiResponse({
     status: 200,
     description: 'Credentials regenerated successfully',
     schema: {
       example: {
-        nodeId: '65a0000000000000000000001',
-        credentials: {
-          apiKey: 'a7b2c3d4-e5f6-4g7h-8i9j-0k1l2m3n4o5p',
-          secret: 'b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q',
-        },
-        warning: 'Secret shown only ONCE. Save it now!',
+        nodeId: '507f1f77bcf86cd799439011',
+        credentials: { secret: 'b8c3d4e5-f6g7-5h8i-9j0k-1l2m3n4o5p6q' },
+        warning: 'WARNING: This node is currently ONLINE. Resetting the secret will immediately disconnect the running node.',
+        affectedStatus: 'online',
       },
     },
   })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Only organization owner can regenerate credentials',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Node not found',
-  })
-  @ApiReadErrors()
+  @ApiResponse({ status: 400, description: 'Node is not online or offline' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
   @UseGuards(JwtAuthGuard)
   async regenerateCredentials(
     @Param('id') id: string,
@@ -155,17 +186,32 @@ export class NodeController {
     return {
       nodeId: (result.node as any)._id.toString(),
       credentials: result.credentials,
-      warning: 'Secret shown only ONCE. Save it now!',
+      warning: result.warning,
+      affectedStatus: result.affectedStatus,
     };
   }
 
   // ============= Node Authentication =============
 
+  @Post('auth/bootstrap')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Node bootstrap',
+    description: 'Called by install script with setup token. Generates and returns the node secret (shown ONCE). Node status → installing.',
+  })
+  @ApiResponse({ status: 200, description: 'Bootstrap successful', type: NodeBootstrapResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid or expired setup token' })
+  async bootstrap(
+    @Body() dto: NodeBootstrapDto,
+  ): Promise<NodeBootstrapResponseDto> {
+    return this.nodeService.bootstrap(dto.setupToken);
+  }
+
   @Post('auth/login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Node login',
-    description: 'Authenticate node using apiKey + secret credentials. Returns JWT token for WebSocket connection and API calls.',
+    description: 'Authenticate node using id + secret. id can be ObjectId (new nodes) or UUID apiKey (legacy nodes). Returns JWT token.',
   })
   @ApiResponse({
     status: 200,

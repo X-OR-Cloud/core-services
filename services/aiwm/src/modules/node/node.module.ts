@@ -8,11 +8,13 @@ import { Node, NodeSchema } from './node.schema';
 import { NodeGateway } from './node.gateway';
 import { NodeConnectionService } from './node-connection.service';
 import { QueueModule } from '../../queues/queue.module';
+import { ConfigurationModule } from '../configuration/configuration.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Node.name, schema: NodeSchema }]),
     QueueModule,
+    ConfigurationModule,
     // Use registerAsync to ensure ConfigModule has loaded .env before reading JWT_SECRET
     JwtModule.registerAsync({
       imports: [ConfigModule],

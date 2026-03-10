@@ -55,6 +55,8 @@ export enum ConfigKey {
   // ==========================================
   AIWM_BASE_API_URL = 'aiwm.base_api_url',
   AIWM_BASE_MCP_URL = 'aiwm.base_mcp_url',
+  AIWM_BASE_WS_URL = 'aiwm.base_ws_url',
   CBM_BASE_API_URL = 'cbm.base_api_url',
   IAM_BASE_API_URL = 'iam.base_api_url',
+  MONA_BASE_API_URL = 'mona.base_api_url',
 }

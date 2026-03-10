@@ -337,6 +337,18 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     example: 'http://localhost:3004',
   },
 
+   [ConfigKey.AIWM_BASE_WS_URL]: {
+    key: ConfigKey.AIWM_BASE_WS_URL,
+    displayName: 'AIWM Base WS URL',
+    description: 'Base URL for AIWM WebSocket server',
+    dataType: 'url',
+    isRequired: false,
+    validation: {
+      pattern: '^https?://.+',
+    },
+    example: 'http://localhost:3004',
+  },
+
   [ConfigKey.CBM_BASE_API_URL]: {
     key: ConfigKey.CBM_BASE_API_URL,
     displayName: 'CBM Base API URL',
@@ -353,6 +365,18 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     key: ConfigKey.IAM_BASE_API_URL,
     displayName: 'IAM Base API URL',
     description: 'Base URL for IAM (Identity & Access Management) REST API',
+    dataType: 'url',
+    isRequired: false,
+    validation: {
+      pattern: '^https?://.+',
+    },
+    example: 'http://localhost:3000',
+  },
+
+    [ConfigKey.MONA_BASE_API_URL]: {
+    key: ConfigKey.MONA_BASE_API_URL,
+    displayName: 'MONA Base API URL',
+    description: 'Base URL for MONA (Monitoring and Alerting) REST API',
     dataType: 'url',
     isRequired: false,
     validation: {

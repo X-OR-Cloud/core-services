@@ -34,7 +34,7 @@ export class Node extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['pending', 'installing', 'online', 'offline', 'maintenance'],
+    enum: ['awaiting-approval', 'pending', 'installing', 'online', 'offline', 'maintenance'],
     default: 'pending'
   })
   status: string;
@@ -164,14 +164,25 @@ export class Node extends BaseSchema {
 
   // ============= Authentication (Node Daemon) =============
 
+  /**
+   * @deprecated Use _id instead. Kept for backward compatibility with legacy nodes using UUID apiKey.
+   */
   @Prop({ unique: true, sparse: true, index: true })
-  apiKey?: string; // Auto-generated UUID (optional for backward compatibility)
+  apiKey?: string;
 
   @Prop({ select: false })
-  secretHash?: string; // Bcrypt hashed secret (optional for backward compatibility)
+  secretHash?: string; // Bcrypt hashed secret
 
   @Prop()
   lastAuthAt?: Date; // Track last authentication time
+
+  // ============= Setup Token =============
+
+  @Prop({ select: false })
+  setupTokenHash?: string; // sha256 hash of setup JWT token
+
+  @Prop()
+  setupTokenExpiresAt?: Date; // Expiry of setup token
 
   // Helper method to verify secret
   async verifySecret(plainSecret: string): Promise<boolean> {

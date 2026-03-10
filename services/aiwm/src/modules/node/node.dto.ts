@@ -85,6 +85,48 @@ export class CreateNodeDto {
   role: string[];
 }
 
+export class ApproveNodeDto {
+  // No body needed — nodeId comes from URL param
+}
+
+export class SetupGuideDto {
+  @ApiProperty({ description: 'Target OS', enum: ['ubuntu'], example: 'ubuntu' })
+  @IsString()
+  @IsEnum(['ubuntu'])
+  os: string;
+}
+
+export class SetupGuideResponseDto {
+  @ApiProperty({ description: 'Target OS' })
+  os: string;
+
+  @ApiProperty({ description: 'Download and run command' })
+  installCommand: string;
+
+  @ApiProperty({ description: 'Step-by-step instructions' })
+  instructions: string[];
+
+  @ApiProperty({ description: 'Setup token expiry (24h from now)' })
+  setupTokenExpiresAt: Date;
+}
+
+export class NodeBootstrapDto {
+  @ApiProperty({ description: 'Setup token from install guide' })
+  @IsString()
+  setupToken: string;
+}
+
+export class NodeBootstrapResponseDto {
+  @ApiProperty({ description: 'Node MongoDB ObjectId' })
+  nodeId: string;
+
+  @ApiProperty({ description: 'Node secret — save this, shown only ONCE' })
+  secret: string;
+
+  @ApiProperty({ description: 'Warning message' })
+  warning: string;
+}
+
 export class UpdateNodeDto {
   @ApiProperty({ description: 'Node name', required: false })
   @IsOptional()
@@ -97,9 +139,9 @@ export class UpdateNodeDto {
   @IsEnum(['controller', 'worker', 'proxy', 'storage'], { each: true })
   role?: string[];
 
-  @ApiProperty({ description: 'Node status', enum: ['pending', 'installing', 'online', 'offline', 'maintenance'], required: false })
+  @ApiProperty({ description: 'Node status', enum: ['awaiting-approval', 'pending', 'installing', 'online', 'offline', 'maintenance'], required: false })
   @IsOptional()
-  @IsEnum(['pending', 'installing', 'online', 'offline', 'maintenance'])
+  @IsEnum(['awaiting-approval', 'pending', 'installing', 'online', 'offline', 'maintenance'])
   status?: string;
 
   @ApiProperty({ description: 'Last heartbeat timestamp', required: false })
@@ -184,14 +226,28 @@ export class GenerateTokenResponseDto {
 
 export class NodeLoginDto {
   @ApiProperty({
-    description: 'Node API key (unique identifier)',
-    example: 'd9721cea-803a-45b3-9381-93972d512d69',
+    description: 'Node identifier — ObjectId (new nodes) or UUID apiKey (legacy nodes). Use either id or apiKey.',
+    example: '507f1f77bcf86cd799439011',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  apiKey: string;
+  id?: string;
+
+  /**
+   * @deprecated Use id instead. Kept for backward compatibility with legacy node agents.
+   */
+  @ApiProperty({
+    description: 'Legacy UUID apiKey (deprecated — use id instead)',
+    example: 'd9721cea-803a-45b3-9381-93972d512d69',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  apiKey?: string;
 
   @ApiProperty({
-    description: 'Node secret (private credential)',
+    description: 'Node secret',
     example: 'e95ec1e2-a295-4373-972d-0db949df7e2a',
   })
   @IsString()

@@ -1,24 +1,32 @@
-import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Node } from './node.schema';
-import { NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto } from './node.dto';
+import { NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideResponseDto, NodeBootstrapResponseDto } from './node.dto';
 import { NodeProducer } from '../../queues/producers/node.producer';
+import { ConfigService } from '../configuration/config.service';
+import { ConfigKey } from '@hydrabyte/shared';
 import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 
 const NODE_TOKEN_EXPIRES_IN = 3600; // 1 hour in seconds
 const NODE_TOKEN_REFRESH_GRACE_PERIOD = 300; // Allow refresh within 5 min after expiry
+const SETUP_TOKEN_EXPIRES_IN = 86400; // 24 hours in seconds
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OBJECT_ID_REGEX = /^[0-9a-f]{24}$/i;
+const SETUP_SCRIPT_URL = 'http://releases.x-or.cloud/xor-stack-ai-node-agent-install.sh';
 
 @Injectable()
 export class NodeService extends BaseService<Node> {
   constructor(
     @InjectModel(Node.name) nodeModel: Model<Node>,
     private readonly nodeProducer: NodeProducer,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {
     super(nodeModel as any);
   }
@@ -59,8 +67,208 @@ export class NodeService extends BaseService<Node> {
   }
 
   /**
-   * Create node with auto-generated credentials
-   * Returns node AND credentials (credentials shown ONLY ONCE)
+   * Create node — status depends on caller's role:
+   *   org.owner / universe.owner → pending
+   *   others                     → awaiting-approval
+   * No credentials are generated at creation time.
+   */
+  async createNode(
+    createNodeDto: any,
+    context: RequestContext
+  ): Promise<Node> {
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const status = isOwner ? 'pending' : 'awaiting-approval';
+
+    const nodeData = { ...createNodeDto, status };
+
+    const saved = await super.create(nodeData, context);
+
+    this.logger.log('Node created', {
+      id: (saved as any)._id,
+      name: saved.name,
+      role: saved.role,
+      status: saved.status,
+      createdBy: context.userId,
+    });
+
+    await this.nodeProducer.emitNodeCreated(saved);
+
+    return saved as Node;
+  }
+
+  /**
+   * Approve a node — moves status from awaiting-approval → pending.
+   * Only organization.owner / universe.owner can approve.
+   */
+  async approveNode(id: string, context: RequestContext): Promise<Node> {
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    if (!isOwner) {
+      throw new ForbiddenException('Only organization owner can approve nodes');
+    }
+
+    const node = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
+
+    if (node.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('You can only approve nodes in your organization');
+    }
+
+    if (node.status !== 'awaiting-approval') {
+      throw new BadRequestException(`Node is not awaiting approval (current status: ${node.status})`);
+    }
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $set: { status: 'pending', updatedBy: context.userId, updatedAt: new Date() } }
+    );
+
+    const updated = await this.model.findOne({ _id: new Types.ObjectId(id) }).exec();
+
+    this.logger.log('Node approved', { nodeId: id, approvedBy: context.userId });
+
+    return updated as Node;
+  }
+
+  /**
+   * Get setup guide with a new setup token (valid 24h).
+   * Accessible by org.owner OR the user who created the node (owner.userId).
+   * Node must be in pending status.
+   */
+  async getSetupGuide(id: string, os: string, context: RequestContext): Promise<SetupGuideResponseDto> {
+    const node = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
+
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const isNodeCreator = node.owner?.userId === context.userId;
+
+    if (!isOwner && !isNodeCreator) {
+      throw new ForbiddenException('Only organization owner or node creator can get setup guide');
+    }
+
+    if (node.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Node does not belong to your organization');
+    }
+
+    if (node.status !== 'pending') {
+      throw new BadRequestException(`Node must be in pending status to get setup guide (current: ${node.status})`);
+    }
+
+    // Generate setup token JWT (24h)
+    const nodeId = (node as any)._id.toString();
+    const expiresAt = new Date(Date.now() + SETUP_TOKEN_EXPIRES_IN * 1000);
+
+    // Resolve URLs from config with fallbacks
+    const [baseApiUrl, baseWsUrl, monaBaseUrl] = await Promise.all([
+      this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, 'http://localhost:3003'),
+      this.configService.getOrDefault(ConfigKey.AIWM_BASE_WS_URL, 'ws://localhost:3003'),
+      this.configService.getOrDefault(ConfigKey.MONA_BASE_API_URL, 'http://localhost:3005'),
+    ]);
+
+    const bootstrapUrl = `${baseApiUrl}/nodes/auth/bootstrap`;
+    const wsUrl = `${baseWsUrl}/ws/node`;
+
+    const setupToken = this.jwtService.sign(
+      {
+        sub: nodeId,
+        type: 'node-setup',
+        nodeId,
+        bootstrapUrl,
+        apiBaseUrl: baseApiUrl,
+        wsBaseUrl: wsUrl,
+        wsPath: '/socket.io',
+        monaBaseUrl,
+      },
+      { expiresIn: SETUP_TOKEN_EXPIRES_IN }
+    );
+
+    // Store sha256 hash of token (never store plain token)
+    const setupTokenHash = createHash('sha256').update(setupToken).digest('hex');
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $set: { setupTokenHash, setupTokenExpiresAt: expiresAt, updatedAt: new Date() } }
+    );
+
+    const installCommand = `curl -fsSL ${SETUP_SCRIPT_URL} | bash -s -- ${setupToken}`;
+
+    const instructions = [
+      `1. Download and run the install script on your Ubuntu node:`,
+      `   ${installCommand}`,
+      `2. The script will automatically register the node with the platform.`,
+      `3. After installation, the node will appear as "installing" and then "online".`,
+      `4. Setup token is valid for 24 hours. After use it is invalidated.`,
+    ];
+
+    this.logger.log('Setup guide generated', { nodeId: id, requestedBy: context.userId, expiresAt });
+
+    return { os, installCommand, instructions, setupTokenExpiresAt: expiresAt };
+  }
+
+  /**
+   * Bootstrap — called by the install script with setup token.
+   * Verifies token, generates new secret, returns { nodeId, secret } once.
+   * Node status → installing.
+   */
+  async bootstrap(setupToken: string): Promise<NodeBootstrapResponseDto> {
+    let decoded: any;
+    try {
+      decoded = this.jwtService.verify(setupToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired setup token');
+    }
+
+    if (decoded.type !== 'node-setup') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    const nodeId = decoded.nodeId;
+    const node = await this.model
+      .findOne({ _id: new Types.ObjectId(nodeId), isDeleted: false })
+      .select('+setupTokenHash')
+      .exec();
+
+    if (!node) throw new NotFoundException('Node not found');
+
+    // Verify token hash matches stored hash
+    const tokenHash = createHash('sha256').update(setupToken).digest('hex');
+    if (node.setupTokenHash !== tokenHash) {
+      throw new UnauthorizedException('Setup token has already been used or is invalid');
+    }
+
+    // Check expiry
+    if (node.setupTokenExpiresAt && node.setupTokenExpiresAt < new Date()) {
+      throw new UnauthorizedException('Setup token has expired');
+    }
+
+    // Generate new secret
+    const secret = randomUUID();
+    const secretHash = await bcrypt.hash(secret, 10);
+
+    // Update node: set secretHash, clear setupToken, status → installing
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(nodeId) },
+      {
+        $set: {
+          secretHash,
+          status: 'installing',
+          setupTokenHash: null,
+          setupTokenExpiresAt: null,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    this.logger.log('Node bootstrapped successfully', { nodeId, status: 'installing' });
+
+    return {
+      nodeId,
+      secret, // Shown ONCE — node agent must save this
+      warning: 'Save this secret now. It will not be shown again.',
+    };
+  }
+
+  /**
+   * @deprecated Use createNode instead
    */
   async createWithCredentials(
     createNodeDto: any,
@@ -72,40 +280,12 @@ export class NodeService extends BaseService<Node> {
       secret: string;
     };
   }> {
-    // Generate credentials
     const { apiKey, secret, secretHash } = await this.generateCredentials();
-
-    // Merge credentials into create DTO
-    const nodeData = {
-      ...createNodeDto,
-      apiKey,
-      secretHash,
-    };
-
-    // BaseService handles permissions, ownership, save, and generic logging
+    const nodeData = { ...createNodeDto, apiKey, secretHash };
     const saved = await super.create(nodeData, context);
-
-    // Business-specific logging with details
-    this.logger.log('Node created with credentials', {
-      id: (saved as any)._id,
-      name: saved.name,
-      role: saved.role,
-      status: saved.status,
-      createdBy: context.userId,
-      hasCredentials: true,
-    });
-
-    // Emit event to queue
+    this.logger.log('Node created with credentials (legacy)', { id: (saved as any)._id });
     await this.nodeProducer.emitNodeCreated(saved);
-
-    // Return credentials ONCE (user must save them)
-    return {
-      node: saved as Node,
-      credentials: {
-        apiKey,
-        secret, // Only shown once!
-      },
-    };
+    return { node: saved as Node, credentials: { apiKey, secret } };
   }
 
   // TODO: Will be analyzed and implemented later
@@ -367,95 +547,93 @@ export class NodeService extends BaseService<Node> {
   }
 
   /**
-   * Regenerate credentials for an existing node
-   * This invalidates old credentials immediately
+   * Regenerate secret for an existing node.
+   * Allowed: org.owner OR the user who created the node (owner.userId).
+   * Only allowed when node is online or offline (has been bootstrapped).
+   * Returns warning severity based on current status.
    */
   async regenerateCredentials(
     id: string,
     context: RequestContext
   ): Promise<{
     node: Node;
-    credentials: {
-      apiKey: string;
-      secret: string;
-    };
+    credentials: { secret: string };
+    warning: string;
+    affectedStatus: string;
   }> {
-    // Verify node exists
     const node = await this.model
       .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
       .exec();
-    if (!node) {
-      throw new NotFoundException(`Node with ID ${id} not found`);
-    }
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
 
-    // Check if current user is organization owner
-    const hasOrgOwnerRole = context.roles?.some(role =>
-      role === 'organization.owner' || role === 'universe.owner'
-    );
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const isNodeCreator = node.owner?.userId === context.userId;
 
-    if (!hasOrgOwnerRole) {
-      this.logger.warn('Attempted to regenerate credentials without org owner permission', {
-        nodeId: id,
-        userId: context.userId,
-        userRoles: context.roles,
+    if (!isOwner && !isNodeCreator) {
+      this.logger.warn('Unauthorized attempt to regenerate credentials', {
+        nodeId: id, userId: context.userId, userRoles: context.roles,
       });
-      throw new ForbiddenException('Only organization owner can regenerate node credentials');
+      throw new ForbiddenException('Only organization owner or node creator can regenerate credentials');
     }
 
-    // Check if node belongs to the same organization
     if (node.owner?.orgId !== context.orgId) {
-      this.logger.warn('Attempted to regenerate credentials for node in different organization', {
-        nodeId: id,
-        nodeOrgId: node.owner?.orgId,
-        userOrgId: context.orgId,
-        userId: context.userId,
-      });
-      throw new ForbiddenException('You can only regenerate credentials for nodes in your organization');
+      throw new ForbiddenException('Node does not belong to your organization');
     }
 
-    // Generate new credentials
-    const { apiKey, secret, secretHash } = await this.generateCredentials();
+    const allowedStatuses = ['online', 'offline'];
+    if (!allowedStatuses.includes(node.status)) {
+      throw new BadRequestException(
+        `Credentials can only be regenerated for online or offline nodes (current: ${node.status}). Use setup guide for pending nodes.`
+      );
+    }
 
-    // Update node with new credentials
+    const secret = randomUUID();
+    const secretHash = await bcrypt.hash(secret, 10);
+
     await this.model.updateOne(
       { _id: new Types.ObjectId(id) },
       {
         $set: {
-          apiKey,
           secretHash,
-          lastAuthAt: null, // Reset last auth
+          setupTokenHash: null,
+          setupTokenExpiresAt: null,
+          lastAuthAt: null,
           updatedAt: new Date(),
           updatedBy: context.userId,
         },
       }
     );
 
-    // Fetch updated node
-    const updatedNode = await this.model
-      .findOne({ _id: new Types.ObjectId(id) })
-      .exec();
+    const updatedNode = await this.model.findOne({ _id: new Types.ObjectId(id) }).exec();
 
-    this.logger.log(`Credentials regenerated for node ${id}`, {
-      nodeId: id,
-      regeneratedBy: context.userId,
-      nodeOrgId: node.owner?.orgId,
+    const warning = node.status === 'online'
+      ? 'WARNING: This node is currently ONLINE. Resetting the secret will immediately disconnect the running node. It must be reconfigured with the new secret to reconnect.'
+      : 'Node is offline. The new secret must be applied before the node can reconnect.';
+
+    this.logger.log('Credentials regenerated', {
+      nodeId: id, regeneratedBy: context.userId, nodeStatus: node.status,
     });
 
-    // Return credentials ONCE (user must save them)
     return {
       node: updatedNode as Node,
-      credentials: {
-        apiKey,
-        secret, // Only shown once!
-      },
+      credentials: { secret },
+      warning,
+      affectedStatus: node.status,
     };
   }
 
   /**
-   * Node login - verify credentials and return JWT token
+   * Node login - verify credentials and return JWT token.
+   * Priority: apiKey (legacy field) > id field.
+   * id field: UUID format → legacy apiKey lookup, ObjectId → _id lookup.
    */
   async login(dto: NodeLoginDto): Promise<NodeLoginResponseDto> {
-    const node = await this.verifyNodeCredentials(dto.apiKey, dto.secret);
+    // apiKey field takes priority for full backward compat with old node agents
+    const identifier = dto.apiKey ?? dto.id;
+    if (!identifier) {
+      throw new UnauthorizedException('Either id or apiKey is required');
+    }
+    const node = await this.verifyNodeCredentials(identifier, dto.secret);
 
     const payload = {
       sub: (node as any)._id.toString(),
@@ -582,18 +760,30 @@ export class NodeService extends BaseService<Node> {
   }
 
   /**
-   * Verify node credentials (internal helper)
+   * Verify node credentials (internal helper).
+   * Dual-mode: UUID → legacy apiKey lookup, ObjectId → _id lookup.
    */
-  private async verifyNodeCredentials(apiKey: string, secret: string): Promise<Node> {
-    const node = await this.model
-      .findOne({ apiKey, isDeleted: false })
-      .select('+secretHash')
-      .exec();
+  private async verifyNodeCredentials(id: string, secret: string): Promise<Node> {
+    let node: Node | null = null;
+
+    if (UUID_REGEX.test(id)) {
+      // Legacy: lookup by apiKey
+      node = await this.model
+        .findOne({ apiKey: id, isDeleted: false })
+        .select('+secretHash')
+        .exec();
+    } else if (OBJECT_ID_REGEX.test(id)) {
+      // New: lookup by _id
+      node = await this.model
+        .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
+        .select('+secretHash')
+        .exec();
+    } else {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     if (!node) {
-      this.logger.warn('Node not found with provided apiKey', {
-        apiKey: apiKey.substring(0, 8) + '...',
-      });
+      this.logger.warn('Node not found', { id: id.substring(0, 8) + '...' });
       throw new UnauthorizedException('Invalid credentials');
     }
 
