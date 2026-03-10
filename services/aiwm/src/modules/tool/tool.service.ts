@@ -115,6 +115,12 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__ListMemoryKeys',
     'mcp__Builtin__DeleteMemory',
   ],
+  ReminderManagement: [
+    'mcp__Builtin__AddReminder',
+    'mcp__Builtin__ListReminders',
+    'mcp__Builtin__DoneReminder',
+    'mcp__Builtin__DeleteReminder',
+  ],
 };
 
 /**

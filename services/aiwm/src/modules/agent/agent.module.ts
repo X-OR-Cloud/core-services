@@ -12,6 +12,7 @@ import { QueueModule } from '../../queues/queue.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DeploymentModule } from '../deployment/deployment.module';
 import { NodeModule } from '../node/node.module';
+import { ReminderModule } from '../reminder/reminder.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { NodeModule } from '../node/node.module';
     ConfigurationModule,
     DeploymentModule, // Import to access DeploymentService
     NodeModule, // Import to access NodeGateway for sending agent.start commands
+    ReminderModule, // Import to access ReminderService for heartbeat reminder injection
   ],
   controllers: [AgentController],
   providers: [AgentService],

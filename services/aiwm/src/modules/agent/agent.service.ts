@@ -37,6 +37,7 @@ import { DeploymentService } from '../deployment/deployment.service';
 import { NodeGateway } from '../node/node.gateway';
 import { NodeService } from '../node/node.service';
 import { MessageType } from '@hydrabyte/shared';
+import { ReminderService } from '../reminder/reminder.service';
 
 @Injectable()
 export class AgentService extends BaseService<Agent> {
@@ -50,7 +51,8 @@ export class AgentService extends BaseService<Agent> {
     private readonly deploymentService: DeploymentService,
     private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
-    private readonly httpService: HttpService
+    private readonly httpService: HttpService,
+    private readonly reminderService: ReminderService,
   ) {
     super(agentModel as any);
   }
@@ -929,9 +931,10 @@ MEMORY CATEGORIES:
     };
     systemMessage?: string;
     systemTask?: {
-      type: 'work' | 'inbox' | 'alert';
+      type: 'work' | 'reminders' | 'inbox' | 'alert';
       id?: string;
       title?: string;
+      reminders?: { id: string; content: string }[];
     };
   }> {
     const agent = await this.agentModel
@@ -979,6 +982,28 @@ MEMORY CATEGORIES:
       } catch (error: any) {
         this.logger.warn(
           `Failed to query next work for agent ${agentId}: ${error.message}`
+        );
+      }
+
+      // No work found — check pending reminders
+      try {
+        const reminders = await this.reminderService.getPendingForHeartbeat(agentId);
+        if (reminders.length > 0) {
+          const reminderList = reminders
+            .map((r: any) => `- [${r._id || r.id}] ${r.content}`)
+            .join('\n');
+          return {
+            success: true,
+            systemMessage: `Bạn có ${reminders.length} reminder đang chờ xử lý:\n${reminderList}\n\nHãy xử lý từng reminder và gọi DoneReminder sau khi hoàn thành.`,
+            systemTask: {
+              type: 'reminders',
+              reminders: reminders.map((r: any) => ({ id: String(r._id || r.id), content: r.content })),
+            },
+          };
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to query reminders for agent ${agentId}: ${error.message}`
         );
       }
     }

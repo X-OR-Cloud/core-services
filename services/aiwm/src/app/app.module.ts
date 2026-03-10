@@ -28,6 +28,7 @@ import { ConversationModule } from '../modules/conversation/conversation.module'
 import { MessageModule } from '../modules/message/message.module';
 import { ChatModule } from '../modules/chat/chat.module';
 import { MemoryModule } from '../modules/memory/memory.module';
+import { ReminderModule } from '../modules/reminder/reminder.module';
 import { WorkflowModule } from '../modules/workflow/workflow.module';
 import { WorkflowStepModule } from '../modules/workflow-step/workflow-step.module';
 import { QueueModule } from '../queues/queue.module';
@@ -64,6 +65,7 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
     MessageModule,
     ChatModule,
     MemoryModule,
+    ReminderModule,
     ProcessorsModule,
   ],
   controllers: [AppController],
