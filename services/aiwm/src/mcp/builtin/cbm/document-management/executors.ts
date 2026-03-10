@@ -45,6 +45,7 @@ export async function executeCreateDocument(
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
     projectId?: string;
+    shareMode?: 'private' | 'organization';
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
@@ -257,6 +258,7 @@ export async function executeUpdateDocument(
     labels?: string[];
     status?: 'draft' | 'published' | 'archived';
     projectId?: string;
+    shareMode?: 'private' | 'organization';
   },
   context: ExecutionContext
 ): Promise<ToolResponse> {
