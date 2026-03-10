@@ -1,6 +1,6 @@
 # Node Module - Technical Overview
 
-> Last updated: 2026-02-23
+> Last updated: 2026-03-10
 
 ## 1. File Structure
 
@@ -31,21 +31,23 @@ services/aiwm/src/modules/node/
 
 | Status | Meaning | Set by | When |
 |--------|---------|--------|------|
-| `pending` | Created, not yet configured | System | On create |
-| `installing` | Being set up | Manual / future automation | Setup flow |
+| `awaiting-approval` | Created by non-org.owner, waiting for approval | System | On create by org.editor |
+| `pending` | Approved/created by owner, ready for setup | System | On create by org.owner / approve API |
+| `installing` | Bootstrap in progress | bootstrap API | After install script calls bootstrap |
 | `online` | WebSocket connected | Gateway | On WS connect + first heartbeat |
 | `offline` | WebSocket disconnected | Gateway | On WS disconnect |
 | `maintenance` | Taken offline for maintenance | User (API) | Manual update |
 
 **State transitions:**
 ```
-create          → pending
-ws.connect      → online
-ws.disconnect   → offline
-user sets       → maintenance (from any)
+org.owner creates     → pending
+org.editor creates    → awaiting-approval
+org.owner approves    → pending
+bootstrap called      → installing
+ws.connect + heartbeat → online
+ws.disconnect         → offline
+user sets             → maintenance (from any)
 ```
-
-> **Note**: Gateway code also checks for `inactive` and `banned` statuses (not in schema). See ROADMAP P0-1.
 
 ## 3. Schema Fields
 
@@ -53,14 +55,16 @@ user sets       → maintenance (from any)
 Node extends BaseSchema:
   name: string (required)
   role: string[] (enum: 'controller' | 'worker' | 'proxy' | 'storage')
-  status: string (enum: 'pending' | 'installing' | 'online' | 'offline' | 'maintenance', default: 'pending')
+  status: string (enum: 'awaiting-approval' | 'pending' | 'installing' | 'online' | 'offline' | 'maintenance', default: 'pending')
   lastHeartbeat: Date (default: now)
   lastMetricsAt?: Date
   systemInfo?: SystemInfo (see node.interface.ts for full structure)
   tokenMetadata?: { tokenGeneratedAt, tokenExpiresAt, tokenLastUsed }
-  apiKey?: string (UUID, unique, sparse index — used for node login)
+  apiKey?: string (deprecated — UUID, legacy login support)
   secretHash?: string (bcrypt hashed, select: false)
   lastAuthAt?: Date
+  setupTokenHash?: string (sha256 hash of setup JWT, select: false)
+  setupTokenExpiresAt?: Date
   // Inherited from BaseSchema: owner, createdBy, updatedBy, isDeleted, metadata, timestamps
 ```
 
@@ -93,27 +97,19 @@ SystemInfo:
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/nodes` | User JWT | Create node → auto-gen apiKey + secret (shown ONCE) |
-| GET | `/nodes` | User JWT | List nodes + statistics (byStatus) |
+| POST | `/nodes` | User JWT (org.editor+) | Create node. org.owner → pending; others → awaiting-approval |
+| GET | `/nodes` | User JWT | List nodes with pagination |
 | GET | `/nodes/:id` | User JWT | Get node by ID |
-| POST | `/nodes/:id/regenerate-credentials` | User JWT (org.owner only) | Regenerate apiKey + secret. Old credentials invalidated immediately |
-| POST | `/nodes/auth/login` | Public (apiKey + secret) | Node login → JWT token (expires 1h) |
+| POST | `/nodes/:id/approve` | User JWT (org.owner) | Approve awaiting-approval node → pending |
+| POST | `/nodes/:id/setup-guide` | User JWT (org.owner or creator) | Generate setup token + install command |
+| POST | `/nodes/:id/regenerate-credentials` | User JWT (org.owner or creator) | Regenerate node secret. Old secret invalidated immediately |
+| POST | `/nodes/auth/bootstrap` | Public (setupToken) | Install script exchanges setup token for node secret |
+| POST | `/nodes/auth/login` | Public (id/apiKey + secret) | Node login → JWT token (expires 1h) |
 | POST | `/nodes/auth/refresh` | Public (JWT) | Refresh node JWT (grace period: 5min after expiry) |
 
-> **Not yet implemented** (commented out): `PUT /nodes/:id`, `DELETE /nodes/:id`, `POST /nodes/:id/token`
+> **Not yet implemented** (commented out): `PUT /nodes/:id`, `DELETE /nodes/:id`
 
-### Create Response Example
-
-```json
-{
-  "node": { "_id": "...", "name": "gpu-node-01", "role": ["worker"], "status": "pending" },
-  "credentials": {
-    "apiKey": "d9721cea-803a-45b3-9381-93972d512d69",
-    "secret": "e95ec1e2-a295-4373-972d-0db949df7e2a"
-  },
-  "warning": "Secret shown only ONCE. Save it now!"
-}
-```
+> **Full API reference with request/response samples:** See `docs/aiwm/node/NODE-API.md`
 
 ## 5. Node Connection Lifecycle
 

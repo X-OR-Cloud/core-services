@@ -79,6 +79,14 @@ export class NodeService extends BaseService<Node> {
     const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
     const status = isOwner ? 'pending' : 'awaiting-approval';
 
+    // Non-owner can only assign 'worker' role
+    const PRIVILEGED_ROLES = ['controller', 'proxy', 'storage'];
+    if (!isOwner && createNodeDto.role?.some((r: string) => PRIVILEGED_ROLES.includes(r))) {
+      throw new ForbiddenException(
+        `Only organization owner can assign roles: ${PRIVILEGED_ROLES.join(', ')}`
+      );
+    }
+
     const nodeData = { ...createNodeDto, status };
 
     const saved = await super.create(nodeData, context);
@@ -229,6 +237,11 @@ export class NodeService extends BaseService<Node> {
 
     if (!node) throw new NotFoundException('Node not found');
 
+    // Guard: node must be approved (pending) before bootstrap
+    if (node.status === 'awaiting-approval') {
+      throw new ForbiddenException('Node has not been approved yet. Please contact your organization owner to approve this node before installation.');
+    }
+
     // Verify token hash matches stored hash
     const tokenHash = createHash('sha256').update(setupToken).digest('hex');
     if (node.setupTokenHash !== tokenHash) {
@@ -237,7 +250,7 @@ export class NodeService extends BaseService<Node> {
 
     // Check expiry
     if (node.setupTokenExpiresAt && node.setupTokenExpiresAt < new Date()) {
-      throw new UnauthorizedException('Setup token has expired');
+      throw new UnauthorizedException('Setup token has expired. Please generate a new setup guide.');
     }
 
     // Generate new secret
@@ -338,6 +351,111 @@ export class NodeService extends BaseService<Node> {
   //     await this.nodeProducer.emitNodeDeleted(id);
   //   }
   // }
+
+  // ============= Maintenance & Deletion =============
+
+  /**
+   * Set node to maintenance mode.
+   * Only org.owner or node creator can trigger this.
+   * Guard: for each critical role (controller, proxy, storage) that the node holds,
+   * there must be at least one OTHER online node with that role.
+   */
+  async setMaintenance(id: string, context: RequestContext): Promise<Node> {
+    const node = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
+
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const isNodeCreator = node.owner?.userId === context.userId;
+
+    if (!isOwner && !isNodeCreator) {
+      throw new ForbiddenException('Only organization owner or node creator can set node to maintenance');
+    }
+
+    if (node.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Node does not belong to your organization');
+    }
+
+    if (node.status === 'maintenance') {
+      throw new BadRequestException('Node is already in maintenance mode');
+    }
+
+    // Guard: check critical roles
+    const CRITICAL_ROLES = ['controller', 'proxy', 'storage'];
+    const nodeId = (node as any)._id.toString();
+    const criticalRolesOnNode = (node.role || []).filter(r => CRITICAL_ROLES.includes(r));
+
+    if (criticalRolesOnNode.length > 0) {
+      const missingCoverage: string[] = [];
+
+      for (const role of criticalRolesOnNode) {
+        const onlineCount = await this.model.countDocuments({
+          _id: { $ne: new Types.ObjectId(nodeId) },
+          role: role,
+          status: 'online',
+          isDeleted: false,
+        }).exec();
+
+        if (onlineCount === 0) {
+          missingCoverage.push(role);
+        }
+      }
+
+      if (missingCoverage.length > 0) {
+        throw new BadRequestException(
+          `Cannot set node to maintenance: no other online node covers role(s): ${missingCoverage.join(', ')}. ` +
+          `Ensure at least one other online node has these roles before proceeding.`
+        );
+      }
+    }
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $set: { status: 'maintenance', updatedBy: context.userId, updatedAt: new Date() } }
+    );
+
+    const updated = await this.model.findOne({ _id: new Types.ObjectId(id) }).exec();
+
+    this.logger.log('Node set to maintenance', { nodeId: id, by: context.userId });
+
+    return updated as Node;
+  }
+
+  /**
+   * Soft delete a node.
+   * Node must be in 'maintenance' status.
+   * Only org.owner or node creator can delete.
+   */
+  async deleteNode(id: string, context: RequestContext): Promise<void> {
+    const node = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
+
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const isNodeCreator = node.owner?.userId === context.userId;
+
+    if (!isOwner && !isNodeCreator) {
+      throw new ForbiddenException('Only organization owner or node creator can delete a node');
+    }
+
+    if (node.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Node does not belong to your organization');
+    }
+
+    if (node.status !== 'maintenance') {
+      throw new BadRequestException(
+        `Node must be in maintenance status before deletion (current: ${node.status}). ` +
+        `Use POST /nodes/${id}/maintenance first.`
+      );
+    }
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(id) },
+      { $set: { isDeleted: true, updatedBy: context.userId, updatedAt: new Date() } }
+    );
+
+    this.logger.log('Node soft deleted', { nodeId: id, deletedBy: context.userId });
+
+    await this.nodeProducer.emitNodeDeleted(id);
+  }
 
   // ============= WebSocket & Token Management =============
   // TODO: Will be analyzed and implemented later

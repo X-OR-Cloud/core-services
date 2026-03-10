@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -133,6 +133,45 @@ export class NodeController {
     return this.nodeService.approveNode(id, context);
   }
 
+  // ============= Maintenance & Deletion =============
+
+  @Post(':id/maintenance')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set node to maintenance',
+    description: 'Transition node to maintenance mode. Accessible by org.owner or node creator. Guard: critical roles (controller, proxy, storage) must have at least one other online node covering them.',
+  })
+  @ApiResponse({ status: 200, description: 'Node set to maintenance' })
+  @ApiResponse({ status: 400, description: 'No online node covers a critical role, or already in maintenance' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
+  @UseGuards(JwtAuthGuard)
+  async setMaintenance(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.nodeService.setMaintenance(id, context);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Delete node',
+    description: 'Soft delete a node. Node must be in maintenance status. Accessible by org.owner or node creator.',
+  })
+  @ApiResponse({ status: 200, description: 'Node deleted successfully' })
+  @ApiResponse({ status: 400, description: 'Node is not in maintenance status' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
+  @UseGuards(JwtAuthGuard)
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    await this.nodeService.deleteNode(id, context);
+    return { message: 'Node deleted successfully' };
+  }
+
   // ============= Setup Guide =============
 
   @Post(':id/setup-guide')
@@ -200,7 +239,9 @@ export class NodeController {
     description: 'Called by install script with setup token. Generates and returns the node secret (shown ONCE). Node status → installing.',
   })
   @ApiResponse({ status: 200, description: 'Bootstrap successful', type: NodeBootstrapResponseDto })
-  @ApiResponse({ status: 401, description: 'Invalid or expired setup token' })
+  @ApiResponse({ status: 401, description: 'Invalid, expired, or already-used setup token' })
+  @ApiResponse({ status: 403, description: 'Node not yet approved (status: awaiting-approval)' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
   async bootstrap(
     @Body() dto: NodeBootstrapDto,
   ): Promise<NodeBootstrapResponseDto> {
