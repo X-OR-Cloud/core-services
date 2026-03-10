@@ -440,9 +440,10 @@ export class NodeService extends BaseService<Node> {
       throw new ForbiddenException('Node does not belong to your organization');
     }
 
-    if (node.status !== 'maintenance') {
+    const deletableStatuses = ['maintenance', 'awaiting-approval'];
+    if (!deletableStatuses.includes(node.status)) {
       throw new BadRequestException(
-        `Node must be in maintenance status before deletion (current: ${node.status}). ` +
+        `Node must be in maintenance or awaiting-approval status before deletion (current: ${node.status}). ` +
         `Use POST /nodes/${id}/maintenance first.`
       );
     }
