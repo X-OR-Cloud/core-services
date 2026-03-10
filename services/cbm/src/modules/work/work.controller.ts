@@ -206,7 +206,7 @@ export class WorkController {
   @Post(':id/reopen')
   @ApiOperation({
     summary: 'Reopen work',
-    description: 'Transition work from done or cancelled to in_progress status. For works with recurrence config: restores isRecurring and recalculates startAt.'
+    description: 'Transition work from done or cancelled to todo status. Clears result, reason, feedback, and documents. For works with recurrence config: restores isRecurring and recalculates startAt.'
   })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)

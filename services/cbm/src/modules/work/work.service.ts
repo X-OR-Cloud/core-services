@@ -630,7 +630,7 @@ export class WorkService extends BaseService<Work> {
 
   /**
    * Action: Reopen work
-   * Transition: done → in_progress, cancelled → in_progress
+   * Transition: done → todo, cancelled → todo
    * For recurring works with recurrence config: restores isRecurring and recalculates startAt
    */
   async reopenWork(
@@ -652,7 +652,13 @@ export class WorkService extends BaseService<Work> {
       );
     }
 
-    const updateData: any = { status: 'in_progress' };
+    const updateData: any = {
+      status: 'todo',
+      result: null,
+      reason: null,
+      feedback: null,
+      documents: [],
+    };
 
     // Restore recurrence if config exists
     if (work.recurrence) {
