@@ -157,10 +157,10 @@ export class NodeController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Delete node',
-    description: 'Soft delete a node. Node must be in maintenance or awaiting-approval status. Accessible by org.owner or node creator.',
+    description: 'Soft delete a node. Node must be in maintenance, awaiting-approval, or pending status. Accessible by org.owner or node creator.',
   })
   @ApiResponse({ status: 200, description: 'Node deleted successfully' })
-  @ApiResponse({ status: 400, description: 'Node is not in maintenance or awaiting-approval status' })
+  @ApiResponse({ status: 400, description: 'Node is not in a deletable status (maintenance/awaiting-approval/pending)' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Node not found' })
   @UseGuards(JwtAuthGuard)
