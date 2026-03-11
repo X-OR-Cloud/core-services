@@ -475,6 +475,8 @@ module.exports = {
       listen_timeout: 10000,
     },
     // ========== AIWM Agent Worker Instances ==========
+    // Both instances connect to the same LB URLs — Redis distributed lock
+    // ensures each agent is owned by exactly one runner across all instances.
     {
       name: 'core.aiwm.agt00',
       script: './dist/services/aiwm/main.js',
@@ -487,8 +489,7 @@ module.exports = {
         NODE_ENV: 'production',
         MODE: 'agt',
         SERVICE_NAME: 'aiwm',
-        WS_CHAT_URL: 'http://localhost:3337',
-        MCP_SERVER_URL: 'http://localhost:3334',
+        // WS_CHAT_URL and MCP_SERVER_URL loaded from .env (LB URLs)
       },
 
       env_file: '.env',
@@ -517,8 +518,7 @@ module.exports = {
         NODE_ENV: 'production',
         MODE: 'agt',
         SERVICE_NAME: 'aiwm',
-        WS_CHAT_URL: 'http://localhost:3338',
-        MCP_SERVER_URL: 'http://localhost:3335',
+        // WS_CHAT_URL and MCP_SERVER_URL loaded from .env (LB URLs)
       },
 
       env_file: '.env',
