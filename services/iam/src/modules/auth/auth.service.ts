@@ -18,6 +18,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { GoogleUserProfile } from './dto/google-auth.dto';
+import { AppService } from '../app/app.service';
 
 @Injectable()
 export class AuthService {
@@ -27,7 +28,8 @@ export class AuthService {
     @InjectModel(User.name) private readonly userRepo: Model<User>,
     private readonly tokenStorage: TokenStorageService,
     private readonly licenseService: LicenseService,
-    private readonly httpService: HttpService
+    private readonly httpService: HttpService,
+    private readonly appService: AppService,
   ) {}
 
   async login(data: LoginData): Promise<TokenData> {
@@ -483,6 +485,7 @@ export class AuthService {
    */
   async handleGoogleCallback(
     googleUser: GoogleUserProfile,
+    appId?: string,
   ): Promise<TokenData | { error: string }> {
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
@@ -490,6 +493,19 @@ export class AuthService {
     }
 
     const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1h';
+
+    // --- App-based SSO validation ---
+    let defaultOrgId = '';
+    let defaultRole = 'organization.viewer';
+
+    if (appId) {
+      const appResult = await this.appService.validateSsoAccess(appId, googleUser.email);
+      if ('error' in appResult) {
+        return { error: appResult.error };
+      }
+      defaultOrgId = appResult.app.defaultOrgId;
+      defaultRole = appResult.app.defaultRole;
+    }
 
     let user = await this.userRepo.findOne({
       googleId: googleUser.googleId,
@@ -515,14 +531,14 @@ export class AuthService {
         googleId: googleUser.googleId,
         fullname: googleUser.displayName || googleUser.email,
         avatarUrl: googleUser.avatarUrl,
-        role: 'organization.viewer',
+        role: defaultRole,
         status: UserStatuses.Active,
         owner: {
-          orgId: '',
+          orgId: defaultOrgId,
           groupId: '',
           userId: '',
           agentId: '',
-          appId: '',
+          appId: appId || '',
         },
         isDeleted: false,
       });

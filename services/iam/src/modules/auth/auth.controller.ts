@@ -8,6 +8,7 @@ import {
   Request,
   Res,
   Req,
+  Query,
   UsePipes,
   ValidationPipe,
   Headers,
@@ -156,11 +157,22 @@ export class AuthController {
   }
 
   @Get('google')
-  @ApiOperation({ summary: 'Google SSO login', description: 'Redirect to Google OAuth 2.0 authorization page' })
+  @ApiOperation({ summary: 'Google SSO login', description: 'Redirect to Google OAuth 2.0. Pass ?appId=<id> for App-based domain validation.' })
   @ApiResponse({ status: 302, description: 'Redirect to Google' })
-  @UseGuards(AuthGuard('google'))
-  async googleAuth(): Promise<void> {
-    // Passport handles the redirect automatically
+  async googleAuth(
+    @Query('appId') appId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    const redirectUri = this.configService.get<string>('GOOGLE_REDIRECT_URI');
+    const state = appId ? Buffer.from(JSON.stringify({ appId })).toString('base64') : '';
+    const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    googleAuthUrl.searchParams.set('client_id', clientId);
+    googleAuthUrl.searchParams.set('redirect_uri', redirectUri);
+    googleAuthUrl.searchParams.set('response_type', 'code');
+    googleAuthUrl.searchParams.set('scope', 'openid email profile');
+    if (state) googleAuthUrl.searchParams.set('state', state);
+    return res.redirect(googleAuthUrl.toString()) as any;
   }
 
   @Get('google/callback')
@@ -170,10 +182,20 @@ export class AuthController {
   async googleCallback(
     @Req() req: Request,
     @Res() res: Response,
+    @Query('state') state: string,
   ): Promise<void> {
     const feBaseUrl = this.configService.get<string>('FE_BASE_URL') || '';
+
+    let appId: string | undefined;
+    if (state) {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+        appId = decoded.appId;
+      } catch { /* state không phải format của chúng ta */ }
+    }
+
     try {
-      const result = await this.authService.handleGoogleCallback((req as any).user as any);
+      const result = await this.authService.handleGoogleCallback((req as any).user as any, appId);
       if ('error' in result) {
         return res.redirect(`${feBaseUrl}/login?error=${result.error}`) as any;
       }

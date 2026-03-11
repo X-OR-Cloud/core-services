@@ -14,6 +14,7 @@ import {
 } from '../organization/organization.schema';
 import { User, UserSchema } from '../user/user.schema';
 import { LicenseModule } from '../license/license.module';
+import { IamAppModule } from '../app/app.module';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { LicenseModule } from '../license/license.module';
       { name: Organization.name, schema: OrganizationSchema },
       { name: User.name, schema: UserSchema },
     ]),
-    LicenseModule, // Import for license fetching during login/refresh
+    LicenseModule,
+    IamAppModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, TokenStorageService, JwtStrategy, GoogleStrategy],

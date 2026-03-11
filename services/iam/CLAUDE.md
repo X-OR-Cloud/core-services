@@ -16,6 +16,7 @@ Handles user authentication (local JWT + Google OAuth 2.0 SSO), organization man
 | User | `src/modules/user/` | User CRUD, password management, RBAC role (single), Google user provisioning |
 | Organization | `src/modules/organization/` | Organization CRUD, auto-license provisioning |
 | License | `src/modules/license/` | Per-org per-service license management (disabled/limited/full) |
+| App | `src/modules/app/` | SSO App configuration: domain whitelist, defaultOrgId, defaultRole for new Google SSO users |
 
 ## Module-Specific Documentation
 
@@ -50,6 +51,14 @@ Browser → GET /auth/google
              hoặc /login?error=<error_code>
 ```
 
+#### App-Based SSO (appId param)
+Khi FE truyền `?appId=<id>` vào `GET /auth/google`, IAM sẽ encode `appId` vào OAuth state param và sau callback kiểm tra:
+1. App tồn tại và `status = active`
+2. App có `ssoEnabled = true`
+3. Email domain của user có trong `allowedDomains`
+
+Nếu hợp lệ và user mới: tự động tạo user với `defaultOrgId` và `defaultRole` từ App config.
+
 #### Google SSO Error Codes
 | Error Code | Nguyên nhân |
 |------------|-------------|
@@ -58,6 +67,9 @@ Browser → GET /auth/google
 | `email_conflict` | Email đã tồn tại với local account |
 | `account_suspended` | Tài khoản bị suspended |
 | `google_service_unavailable` | Google API timeout hoặc lỗi 5xx |
+| `app_not_found` | AppId không hợp lệ hoặc App không active |
+| `sso_disabled` | App chưa bật SSO |
+| `domain_not_allowed` | Email domain không trong allowedDomains của App |
 
 ### JWT Payload Structure
 ```json

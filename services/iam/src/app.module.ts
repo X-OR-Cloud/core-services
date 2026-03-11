@@ -10,6 +10,7 @@ import { OrganizationsModule } from './modules/organization/organization.module'
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/user/user.module';
 import { LicenseModule } from './modules/license/license.module';
+import { IamAppModule } from './modules/app/app.module';
 
 @Module({
   imports: [
@@ -20,7 +21,8 @@ import { LicenseModule } from './modules/license/license.module';
     AuthModule,
     OrganizationsModule,
     UsersModule,
-    LicenseModule, // Register License module
+    LicenseModule,
+    IamAppModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

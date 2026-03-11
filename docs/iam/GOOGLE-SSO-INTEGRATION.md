@@ -44,11 +44,16 @@ FE                          IAM (BE)                    Google
 FE redirect trực tiếp trình duyệt sang IAM (không phải AJAX):
 
 ```js
-// Khi user click nút "Đăng nhập với Google"
+// Khi user click nút "Đăng nhập với Google" (không giới hạn domain)
 window.location.href = 'https://api.x-or.cloud/dev/iam-v2/auth/google';
+
+// Khi đăng nhập qua App cụ thể (kiểm tra domain whitelist + auto-assign org)
+window.location.href = 'https://api.x-or.cloud/dev/iam-v2/auth/google?appId=<appId>';
 ```
 
 IAM sẽ tự redirect sang Google consent screen.
+
+> **App-based SSO**: Khi truyền `appId`, IAM sẽ kiểm tra email domain của user có trong whitelist của App không. Nếu user mới, sẽ được tự động gán vào `defaultOrgId` và `defaultRole` cấu hình trong App.
 
 ---
 
@@ -102,6 +107,9 @@ https://your-fe.com/login?error=<error_code>
 | `google_service_unavailable` | Google API lỗi | Hiển thị: *"Không thể kết nối Google. Vui lòng thử lại."* |
 | `google_access_denied` | User từ chối consent | Hiển thị: *"Bạn chưa cấp quyền cho ứng dụng."* |
 | `csrf_detected` | CSRF / session hết hạn | Tự động thử lại hoặc: *"Phiên đăng nhập hết hạn. Vui lòng thử lại."* |
+| `app_not_found` | AppId không hợp lệ hoặc App không active | Hiển thị: *"Ứng dụng không tồn tại hoặc đã bị vô hiệu hóa."* |
+| `sso_disabled` | App chưa bật SSO | Hiển thị: *"Tính năng SSO chưa được kích hoạt cho ứng dụng này."* |
+| `domain_not_allowed` | Email domain không trong whitelist của App | Hiển thị: *"Email của bạn không được phép đăng nhập vào ứng dụng này."* |
 
 ```js
 // Xử lý error trong route /login
