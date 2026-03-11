@@ -503,7 +503,7 @@ export class AuthService {
         isDeleted: false,
       });
 
-      if (existingUser && existingUser.provider === AuthProvider.LOCAL) {
+      if (existingUser && existingUser.provider !== AuthProvider.GOOGLE) {
         return { error: 'email_conflict' };
       }
 
