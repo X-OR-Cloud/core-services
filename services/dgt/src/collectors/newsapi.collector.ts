@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { BaseCollector } from './base.collector';
 import { SentimentSignalService } from '../modules/sentiment-signal/sentiment-signal.service';
+import { NewsArticleService } from '../modules/news-article/news-article.service';
 
 @Injectable()
 export class NewsapiCollector extends BaseCollector {
@@ -9,6 +10,7 @@ export class NewsapiCollector extends BaseCollector {
 
   constructor(
     private readonly sentimentSignalService: SentimentSignalService,
+    private readonly newsArticleService: NewsArticleService,
   ) {
     super();
   }
@@ -20,14 +22,13 @@ export class NewsapiCollector extends BaseCollector {
       pageSize = 10,
     } = params;
 
-    // TODO: Read API keys from Settings (DB) instead of env
     const newsApiKey = process.env['NEWSAPI_KEY'] || '';
     if (!newsApiKey) {
       this.logger.warn(`[${this.name}] No NewsAPI key configured, skipping`);
       return;
     }
 
-    // Step 1: Fetch headlines
+    // Step 1: Fetch articles
     const newsData = await this.fetchWithRetry(
       `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=${language}&sortBy=publishedAt&pageSize=${pageSize}&apiKey=${newsApiKey}`,
     );
@@ -38,15 +39,27 @@ export class NewsapiCollector extends BaseCollector {
       return;
     }
 
-    const headlines = articles.map((a: any, i: number) => `${i + 1}. ${a.title}`).join('\n');
+    // Step 2: Upsert raw articles (no LLM yet)
+    for (const a of articles) {
+      if (!a.url || !a.title) continue;
+      await this.newsArticleService.upsertByUrl(a.url, {
+        title: a.title,
+        url: a.url,
+        publishedAt: a.publishedAt ? new Date(a.publishedAt) : new Date(),
+        sourceName: a.source?.name || '',
+        description: a.description || '',
+      });
+    }
+    this.logger.info(`[${this.name}] Upserted ${articles.length} articles`);
 
-    // Step 2: LLM sentiment analysis
+    // Step 3: LLM analysis
     const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
     const llmApiKey = process.env['LLM_API_KEY'] || '';
     const llmModel = process.env['LLM_MODEL'] || 'gpt-4o-mini';
 
     if (!llmBaseUrl || !llmApiKey) {
-      this.logger.warn(`[${this.name}] No LLM config, saving raw news only`);
+      this.logger.warn(`[${this.name}] No LLM config, skipping sentiment analysis`);
+      // Still save overall sentiment as neutral
       await this.sentimentSignalService.insert({
         timestamp: new Date(),
         source: 'newsapi',
@@ -55,9 +68,29 @@ export class NewsapiCollector extends BaseCollector {
       return;
     }
 
-    const analysis = await this.analyzeSentiment(headlines, llmBaseUrl, llmApiKey, llmModel);
+    // Step 4: LLM batch analysis — headlines + per-article scores
+    const headlines = articles
+      .map((a: any, i: number) => `${i + 1}. [${a.title}] (url: ${a.url})`)
+      .join('\n');
 
-    // Step 3: Save
+    const analysis = await this.analyzeSentiment(headlines, llmBaseUrl, llmApiKey, llmModel, articles.length);
+
+    // Step 5: Update each article with LLM sentiment
+    const analyzedAt = new Date();
+    const articleResults: { url: string; sentiment: number; label: string; reason: string }[] =
+      analysis.articles || [];
+
+    for (const result of articleResults) {
+      if (!result.url) continue;
+      await this.newsArticleService.upsertByUrl(result.url, {
+        sentiment: result.sentiment,
+        sentimentLabel: result.label,
+        sentimentReason: result.reason,
+        llmAnalyzedAt: analyzedAt,
+      });
+    }
+
+    // Step 6: Save overall SentimentSignal
     await this.sentimentSignalService.insert({
       timestamp: new Date(),
       source: 'llm_analysis',
@@ -68,7 +101,9 @@ export class NewsapiCollector extends BaseCollector {
       analysisSummary: analysis.gold_analysis_summary,
     });
 
-    this.logger.info(`[${this.name}] Saved sentiment: ${analysis.overall_sentiment}, risk: ${analysis.geopolitical_risk_score}`);
+    this.logger.info(
+      `[${this.name}] Saved sentiment: ${analysis.overall_sentiment}, risk: ${analysis.geopolitical_risk_score}, articles analyzed: ${articleResults.length}`,
+    );
   }
 
   private async analyzeSentiment(
@@ -76,9 +111,31 @@ export class NewsapiCollector extends BaseCollector {
     baseUrl: string,
     apiKey: string,
     model: string,
+    articleCount: number,
   ): Promise<any> {
-    const systemPrompt = 'You are a Gold market analyst specializing in macro and geopolitics. Always respond with valid JSON only.';
-    const userPrompt = `Analyze these news headlines for gold market impact:\n${headlines}\n\nReturn JSON: { "geopolitical_risk_score": number (0-100), "event_impact_level": "low"|"medium"|"high", "overall_sentiment": number (-1.0 to +1.0, positive = bullish for gold), "gold_analysis_summary": string (1-2 sentences), "key_events": string[] (top 3 events) }`;
+    const systemPrompt =
+      'You are a Gold market analyst specializing in macro and geopolitics. Always respond with valid JSON only.';
+
+    const userPrompt = `Analyze these ${articleCount} news headlines for gold market impact:
+
+${headlines}
+
+Return JSON with this exact structure:
+{
+  "overall_sentiment": <number -1.0 to +1.0, positive = bullish for gold>,
+  "geopolitical_risk_score": <integer 0-100>,
+  "event_impact_level": "low" | "medium" | "high",
+  "gold_analysis_summary": "<1-2 sentence overall summary>",
+  "key_events": ["<top event 1>", "<top event 2>", "<top event 3>"],
+  "articles": [
+    {
+      "url": "<exact url from input>",
+      "sentiment": <number -1.0 to +1.0>,
+      "label": "bullish" | "bearish" | "neutral",
+      "reason": "<1 sentence explaining why this article is bullish/bearish/neutral for gold>"
+    }
+  ]
+}`;
 
     try {
       const response = await axios.post(
@@ -94,7 +151,7 @@ export class NewsapiCollector extends BaseCollector {
         },
         {
           headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
           timeout: 30_000,
@@ -106,11 +163,12 @@ export class NewsapiCollector extends BaseCollector {
     } catch (error: any) {
       this.logger.error(`[${this.name}] LLM analysis failed: ${error.message}`);
       return {
+        overall_sentiment: 0,
         geopolitical_risk_score: 50,
         event_impact_level: 'medium',
-        overall_sentiment: 0,
         gold_analysis_summary: 'Analysis unavailable',
         key_events: [],
+        articles: [],
       };
     }
   }

@@ -1,14 +1,18 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, ApiReadErrors } from '@hydrabyte/base';
 import { SentimentSignalService } from './sentiment-signal.service';
+import { NewsapiCollector } from '../../collectors/newsapi.collector';
 import { QuerySentimentSignalDto } from './sentiment-signal.dto';
 
 @ApiTags('sentiment-signals')
 @ApiBearerAuth('JWT-auth')
 @Controller('sentiment-signals')
 export class SentimentSignalController {
-  constructor(private readonly service: SentimentSignalService) {}
+  constructor(
+    private readonly service: SentimentSignalService,
+    private readonly newsapiCollector: NewsapiCollector,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Query sentiment signals' })
@@ -39,5 +43,17 @@ export class SentimentSignalController {
     const filter: Record<string, any> = {};
     if (source) filter.source = source;
     return this.service.findLatest(filter);
+  }
+
+  @Post('trigger-collection')
+  @ApiOperation({ summary: '[DEBUG] Trigger NewsAPI sentiment collection immediately (no auth)' })
+  @ApiResponse({ status: 201, description: 'NewsAPI collection triggered' })
+  async triggerCollection() {
+    await this.newsapiCollector.collect({
+      query: '(gold price OR "gold market") AND (finance OR trading OR economy)',
+      language: 'en',
+      pageSize: 10,
+    });
+    return { message: 'NewsAPI sentiment collection triggered' };
   }
 }

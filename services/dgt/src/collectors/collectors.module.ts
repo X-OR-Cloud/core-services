@@ -5,6 +5,7 @@ import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-sig
 import { AccountModule } from '../modules/account/account.module';
 import { PositionModule } from '../modules/position/position.module';
 import { PortfolioSnapshotModule } from '../modules/portfolio-snapshot/portfolio-snapshot.module';
+import { NewsArticleModule } from '../modules/news-article/news-article.module';
 import { GoldapiCollector } from './goldapi.collector';
 import { BinanceSpotCollector } from './binance-spot.collector';
 import { BinanceFuturesCollector } from './binance-futures.collector';
@@ -37,6 +38,7 @@ const collectors = [
     AccountModule,
     PositionModule,
     PortfolioSnapshotModule,
+    NewsArticleModule,
   ],
   providers: [...collectors],
   exports: [...collectors],

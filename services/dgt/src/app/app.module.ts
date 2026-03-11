@@ -15,6 +15,7 @@ import { MarketPriceModule } from '../modules/market-price/market-price.module';
 import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
 import { MacroIndicatorModule } from '../modules/macro-indicator/macro-indicator.module';
 import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-signal.module';
+import { NewsArticleModule } from '../modules/news-article/news-article.module';
 
 // Group 3: Trading (Paper)
 import { OrderModule } from '../modules/order/order.module';
@@ -53,6 +54,7 @@ import { SignalModule } from '../modules/signal/signal.module';
     TechnicalIndicatorModule,
     MacroIndicatorModule,
     SentimentSignalModule,
+    NewsArticleModule,
 
     // Group 3: Trading (Paper)
     OrderModule,
