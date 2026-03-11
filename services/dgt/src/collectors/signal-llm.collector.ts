@@ -11,6 +11,8 @@ import {
 } from '../modules/signal/signal.schema';
 import { MarketPriceService } from '../modules/market-price/market-price.service';
 import { TechnicalIndicatorService } from '../modules/technical-indicator/technical-indicator.service';
+import { SentimentSignalService } from '../modules/sentiment-signal/sentiment-signal.service';
+import { MacroIndicatorService } from '../modules/macro-indicator/macro-indicator.service';
 import { SIGNAL_SYSTEM_PROMPT } from '../prompts/signal-system.prompt';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { NotificationService } from '../shared/notification.service';
@@ -32,6 +34,8 @@ export class SignalLlmCollector extends BaseCollector {
     private readonly signalService: SignalService,
     private readonly marketPriceService: MarketPriceService,
     private readonly technicalIndicatorService: TechnicalIndicatorService,
+    private readonly sentimentSignalService: SentimentSignalService,
+    private readonly macroIndicatorService: MacroIndicatorService,
     private readonly notificationService: NotificationService,
   ) {
     super();
@@ -44,7 +48,7 @@ export class SignalLlmCollector extends BaseCollector {
       timeframe: string;
     };
 
-    // Step 1: Fetch last 50 MarketPrice candles (always use '1m' — raw data granularity)
+    // Step 1: Fetch last N MarketPrice candles (always use '1m' — raw data granularity)
     // The signal timeframe (1h/4h) determines signal validity, not candle granularity
     const candleLimit = timeframe === '4h' ? 240 : 60; // 4h → 240 × 1m candles, 1h → 60 × 1m
     const { data: candlesDesc } = await this.marketPriceService.findAll(
@@ -59,7 +63,19 @@ export class SignalLlmCollector extends BaseCollector {
       timeframe: '1m',
     });
 
-    // Step 3: Fallback if insufficient data
+    // Step 3: Fetch latest SentimentSignal records (last 3, any source)
+    const { data: sentimentSignals } = await this.sentimentSignalService.findAll(
+      {},
+      { sort: { timestamp: -1 }, page: 1, limit: 3 },
+    );
+
+    // Step 4: Fetch latest MacroIndicator records (last 8, one per series)
+    const { data: macroIndicators } = await this.macroIndicatorService.findAll(
+      {},
+      { sort: { timestamp: -1 }, page: 1, limit: 8 },
+    );
+
+    // Step 5: Fallback if insufficient data
     if (candles.length < 10) {
       this.logger.warn(
         `[${this.name}] Insufficient candle data for ${asset}/${timeframe} (${candles.length} candles), generating HOLD signal`,
@@ -71,14 +87,23 @@ export class SignalLlmCollector extends BaseCollector {
         indicatorsUsed: [],
         keyFactors: [],
         llmModel: undefined,
+        llmInput: null,
+        llmRawResponse: null,
       });
       return;
     }
 
-    // Step 4: Build user prompt
-    const userPrompt = this.buildUserPrompt(asset, timeframe, candles, indicator);
+    // Step 6: Build user prompt
+    const userPrompt = this.buildUserPrompt(
+      asset,
+      timeframe,
+      candles,
+      indicator,
+      sentimentSignals,
+      macroIndicators,
+    );
 
-    // Step 5: Call LLM
+    // Step 7: Call LLM
     const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
     const llmApiKey = process.env['LLM_API_KEY'] || '';
     const llmModel =
@@ -95,34 +120,52 @@ export class SignalLlmCollector extends BaseCollector {
         indicatorsUsed: [],
         keyFactors: [],
         llmModel: undefined,
+        llmInput: null,
+        llmRawResponse: null,
       });
       return;
     }
 
     const llmEndpoint = `${llmBaseUrl}/chat/completions`;
+    const llmRequestBody = {
+      model: llmModel,
+      messages: [
+        { role: 'system', content: SIGNAL_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+    };
+
+    // Record input for traceability
+    const llmInput = {
+      endpoint: llmEndpoint,
+      model: llmModel,
+      systemPrompt: SIGNAL_SYSTEM_PROMPT,
+      userPrompt,
+      candleCount: candles.length,
+      sentimentCount: sentimentSignals.length,
+      macroCount: macroIndicators.length,
+      requestedAt: new Date().toISOString(),
+    };
+
     this.logger.info(`[SignalLLM] Calling LLM: ${llmEndpoint} model=${llmModel}`);
     let parsed: any;
+    let llmRawResponse: any;
     try {
       const response = await axios.post(
         llmEndpoint,
-        {
-          model: llmModel,
-          messages: [
-            { role: 'system', content: SIGNAL_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.2,
-          response_format: { type: 'json_object' },
-        },
+        llmRequestBody,
         {
           headers: {
             Authorization: `Bearer ${llmApiKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 20_000,
+          timeout: 30_000,
         },
       );
 
+      llmRawResponse = response.data;
       const content = response.data?.choices?.[0]?.message?.content;
       parsed = JSON.parse(content);
     } catch (error: any) {
@@ -136,11 +179,13 @@ export class SignalLlmCollector extends BaseCollector {
         indicatorsUsed: [],
         keyFactors: [],
         llmModel,
+        llmInput,
+        llmRawResponse: { error: error.message, status, body },
       });
       return;
     }
 
-    // Step 6: Validate LLM response
+    // Step 8: Validate LLM response
     const validSignalTypes = [SignalType.BUY, SignalType.SELL, SignalType.HOLD];
     const rawSignalType = parsed?.signal_type;
     const rawConfidence = parsed?.confidence;
@@ -159,6 +204,8 @@ export class SignalLlmCollector extends BaseCollector {
         indicatorsUsed: [],
         keyFactors: [],
         llmModel,
+        llmInput,
+        llmRawResponse,
       });
       return;
     }
@@ -177,6 +224,8 @@ export class SignalLlmCollector extends BaseCollector {
       keyFactors: Array.isArray(parsed.key_factors) ? parsed.key_factors : [],
       llmModel,
       priceAtCreation: candles[candles.length - 1]?.close,
+      llmInput,
+      llmRawResponse,
     });
   }
 
@@ -192,11 +241,23 @@ export class SignalLlmCollector extends BaseCollector {
       keyFactors: { factor: string; weight: string }[];
       llmModel: string | undefined;
       priceAtCreation?: number;
+      llmInput: Record<string, any> | null;
+      llmRawResponse: Record<string, any> | null;
     },
   ): Promise<void> {
-    const { signalType, confidence, insight, indicatorsUsed, keyFactors, llmModel, priceAtCreation } = result;
+    const {
+      signalType,
+      confidence,
+      insight,
+      indicatorsUsed,
+      keyFactors,
+      llmModel,
+      priceAtCreation,
+      llmInput,
+      llmRawResponse,
+    } = result;
 
-    // Step 7: Calculate confidenceLabel
+    // Calculate confidenceLabel
     let confidenceLabel: ConfidenceLabel;
     if (confidence >= 90) {
       confidenceLabel = ConfidenceLabel.VERY_HIGH;
@@ -208,7 +269,7 @@ export class SignalLlmCollector extends BaseCollector {
       confidenceLabel = ConfidenceLabel.LOW;
     }
 
-    // Step 8: Calculate expiresAt
+    // Calculate expiresAt
     const now = new Date();
     const expiresAt = new Date(now);
     if (timeframe === SignalTimeframe.H1) {
@@ -216,11 +277,10 @@ export class SignalLlmCollector extends BaseCollector {
     } else if (timeframe === SignalTimeframe.H4) {
       expiresAt.setHours(expiresAt.getHours() + 16);
     } else {
-      // Default: +4 hours
       expiresAt.setHours(expiresAt.getHours() + 4);
     }
 
-    // Step 9: Supersede existing ACTIVE signals for same accountId x asset x timeframe
+    // Supersede existing ACTIVE signals for same accountId x asset x timeframe
     const { data: activeSignals } = await this.signalService.findAll(
       {
         filter: {
@@ -243,7 +303,7 @@ export class SignalLlmCollector extends BaseCollector {
       );
     }
 
-    // Step 10: Create new signal
+    // Create new signal
     const newSignal = await this.signalService.create(
       {
         accountId: new Types.ObjectId(accountId),
@@ -259,6 +319,8 @@ export class SignalLlmCollector extends BaseCollector {
         status: SignalStatus.ACTIVE,
         expiresAt,
         priceAtCreation,
+        llmInput,
+        llmRawResponse,
       },
       SYSTEM_CONTEXT,
     );
@@ -307,6 +369,8 @@ export class SignalLlmCollector extends BaseCollector {
     timeframe: string,
     candles: any[],
     indicator: any,
+    sentimentSignals: any[],
+    macroIndicators: any[],
   ): string {
     const candleData = candles.map((c) => ({
       timestamp: c.timestamp,
@@ -341,6 +405,34 @@ export class SignalLlmCollector extends BaseCollector {
 
     const latestCandle = candles[candles.length - 1];
 
+    const sentimentData = sentimentSignals.length > 0
+      ? sentimentSignals.map((s) => ({
+          timestamp: s.timestamp,
+          source: s.source,
+          newsSentimentMean: s.newsSentimentMean,
+          geopoliticalRiskScore: s.geopoliticalRiskScore,
+          eventImpactLevel: s.eventImpactLevel,
+          etfFlow7dOz: s.etfFlow7dOz,
+          etfAumUsd: s.etfAumUsd,
+          fundingRateAnnualized: s.fundingRateAnnualized,
+          longShortRatio: s.longShortRatio,
+          openInterestUsd: s.openInterestUsd,
+          keyEvents: s.keyEvents,
+          analysisSummary: s.analysisSummary,
+        }))
+      : null;
+
+    const macroData = macroIndicators.length > 0
+      ? macroIndicators.map((m) => ({
+          seriesId: m.seriesId,
+          name: m.name,
+          value: m.value,
+          unit: m.unit,
+          timestamp: m.timestamp,
+          frequency: m.frequency,
+        }))
+      : null;
+
     return `Analyze the following market data for ${asset} on the ${timeframe} timeframe and generate a trading signal.
 
 LATEST PRICE: ${latestCandle?.close ?? 'N/A'}
@@ -352,6 +444,12 @@ ${JSON.stringify(candleData, null, 2)}
 TECHNICAL INDICATORS (latest computed):
 ${indicatorData ? JSON.stringify(indicatorData, null, 2) : 'No indicator data available'}
 
-Based on this data, generate a trading signal following the required JSON format.`;
+NEWS & SENTIMENT (most recent records):
+${sentimentData ? JSON.stringify(sentimentData, null, 2) : 'No sentiment data available'}
+
+MACRO INDICATORS (latest values):
+${macroData ? JSON.stringify(macroData, null, 2) : 'No macro data available'}
+
+Based on all available data (technical, sentiment, macro), generate a trading signal following the required JSON format.`;
   }
 }

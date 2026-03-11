@@ -1,14 +1,18 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, ApiReadErrors } from '@hydrabyte/base';
 import { MacroIndicatorService } from './macro-indicator.service';
+import { FredCollector } from '../../collectors/fred.collector';
 import { QueryMacroIndicatorDto } from './macro-indicator.dto';
 
 @ApiTags('macro-indicators')
 @ApiBearerAuth('JWT-auth')
 @Controller('macro-indicators')
 export class MacroIndicatorController {
-  constructor(private readonly service: MacroIndicatorService) {}
+  constructor(
+    private readonly service: MacroIndicatorService,
+    private readonly fredCollector: FredCollector,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Query macro indicators' })
@@ -37,5 +41,13 @@ export class MacroIndicatorController {
   @UseGuards(JwtAuthGuard)
   async findLatest(@Query('seriesId') seriesId: string) {
     return this.service.findLatest({ seriesId });
+  }
+
+  @Post('trigger-collection')
+  @ApiOperation({ summary: '[DEBUG] Trigger FRED macro data collection immediately (no auth)' })
+  @ApiResponse({ status: 201, description: 'FRED collection triggered' })
+  async triggerCollection() {
+    await this.fredCollector.collect({});
+    return { message: 'FRED macro collection triggered' };
   }
 }

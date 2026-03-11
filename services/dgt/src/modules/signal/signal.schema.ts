@@ -76,6 +76,12 @@ export class Signal extends BaseSchema {
 
   @Prop()
   priceAtCreation: number;
+
+  @Prop({ type: Object })
+  llmInput: Record<string, any>;
+
+  @Prop({ type: Object })
+  llmRawResponse: Record<string, any>;
 }
 
 export const SignalSchema = SchemaFactory.createForClass(Signal);

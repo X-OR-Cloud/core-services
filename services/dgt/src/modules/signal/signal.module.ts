@@ -7,6 +7,8 @@ import { SignalLlmCollector } from '../../collectors/signal-llm.collector';
 import { MarketPriceModule } from '../market-price/market-price.module';
 import { TechnicalIndicatorModule } from '../technical-indicator/technical-indicator.module';
 import { AccountModule } from '../account/account.module';
+import { SentimentSignalModule } from '../sentiment-signal/sentiment-signal.module';
+import { MacroIndicatorModule } from '../macro-indicator/macro-indicator.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { AccountModule } from '../account/account.module';
     AccountModule,
     MarketPriceModule,
     TechnicalIndicatorModule,
+    SentimentSignalModule,
+    MacroIndicatorModule,
   ],
   controllers: [SignalController],
   providers: [SignalService, SignalLlmCollector],
