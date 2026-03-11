@@ -20,9 +20,8 @@ export async function bootstrapWorker() {
     const { AppSignalModule } = await import('./app/app-signal.module');
     moduleClass = AppSignalModule;
   } else if (mode === 'mon') {
-    // Phase 4: AppMonitorModule (placeholder — will use AppWorkerModule for now)
-    const { AppWorkerModule } = await import('./app/app-worker.module');
-    moduleClass = AppWorkerModule;
+    const { AppMonitorModule } = await import('./app/app-monitor.module');
+    moduleClass = AppMonitorModule;
   } else {
     const { AppWorkerModule } = await import('./app/app-worker.module');
     moduleClass = AppWorkerModule;
