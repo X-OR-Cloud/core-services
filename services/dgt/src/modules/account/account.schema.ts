@@ -52,6 +52,7 @@ export class Account extends BaseSchema {
       discordWebhookUrl: { type: String, default: '' },
       telegramBotToken: { type: String, default: '' },
       telegramChatId: { type: String, default: '' },
+      telegramThreadId: { type: String, default: '' },
       enabled: { type: Boolean, default: false },
     },
     default: {},
@@ -60,6 +61,7 @@ export class Account extends BaseSchema {
     discordWebhookUrl?: string;
     telegramBotToken?: string;
     telegramChatId?: string;
+    telegramThreadId?: string;
     enabled?: boolean;
   };
 }

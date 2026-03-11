@@ -24,7 +24,7 @@ export class NotificationService {
     const account = await this.accountModel.findById(accountId).lean().exec();
     if (!account || !account.notifications?.enabled) return;
 
-    const { discordWebhookUrl, telegramBotToken, telegramChatId } = account.notifications;
+    const { discordWebhookUrl, telegramBotToken, telegramChatId, telegramThreadId } = account.notifications;
 
     const promises: Promise<void>[] = [];
 
@@ -33,7 +33,7 @@ export class NotificationService {
     }
 
     if (telegramBotToken && telegramChatId) {
-      promises.push(this.sendTelegram(telegramBotToken, telegramChatId, payload));
+      promises.push(this.sendTelegram(telegramBotToken, telegramChatId, payload, telegramThreadId));
     }
 
     await Promise.allSettled(promises);
@@ -67,7 +67,7 @@ export class NotificationService {
     }
   }
 
-  private async sendTelegram(botToken: string, chatId: string, payload: NotificationPayload): Promise<void> {
+  private async sendTelegram(botToken: string, chatId: string, payload: NotificationPayload, threadId?: string): Promise<void> {
     const levelEmoji = { info: 'ℹ️', warning: '⚠️', error: '🔴', success: '✅' };
     const emoji = levelEmoji[payload.level] || '📢';
 
@@ -77,10 +77,15 @@ export class NotificationService {
       text += '\n\n' + lines.join('\n');
     }
 
+    const body: Record<string, any> = { chat_id: chatId, text, parse_mode: 'Markdown' };
+    if (threadId) {
+      body['message_thread_id'] = Number(threadId);
+    }
+
     try {
       await axios.post(
         `https://api.telegram.org/bot${botToken}/sendMessage`,
-        { chat_id: chatId, text, parse_mode: 'Markdown' },
+        body,
         { timeout: 5000 },
       );
       this.logger.info(`[Notification] Telegram sent: ${payload.title}`);
