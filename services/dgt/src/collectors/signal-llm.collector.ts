@@ -13,6 +13,7 @@ import { MarketPriceService } from '../modules/market-price/market-price.service
 import { TechnicalIndicatorService } from '../modules/technical-indicator/technical-indicator.service';
 import { SIGNAL_SYSTEM_PROMPT } from '../prompts/signal-system.prompt';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
+import { NotificationService } from '../shared/notification.service';
 
 const SYSTEM_CONTEXT: RequestContext = {
   userId: 'system',
@@ -31,6 +32,7 @@ export class SignalLlmCollector extends BaseCollector {
     private readonly signalService: SignalService,
     private readonly marketPriceService: MarketPriceService,
     private readonly technicalIndicatorService: TechnicalIndicatorService,
+    private readonly notificationService: NotificationService,
   ) {
     super();
   }
@@ -168,6 +170,7 @@ export class SignalLlmCollector extends BaseCollector {
       indicatorsUsed: Array.isArray(parsed.indicators_used) ? parsed.indicators_used : [],
       keyFactors: Array.isArray(parsed.key_factors) ? parsed.key_factors : [],
       llmModel,
+      priceAtCreation: candles[candles.length - 1]?.close,
     });
   }
 
@@ -182,9 +185,10 @@ export class SignalLlmCollector extends BaseCollector {
       indicatorsUsed: string[];
       keyFactors: { factor: string; weight: string }[];
       llmModel: string | undefined;
+      priceAtCreation?: number;
     },
   ): Promise<void> {
-    const { signalType, confidence, insight, indicatorsUsed, keyFactors, llmModel } = result;
+    const { signalType, confidence, insight, indicatorsUsed, keyFactors, llmModel, priceAtCreation } = result;
 
     // Step 7: Calculate confidenceLabel
     let confidenceLabel: ConfidenceLabel;
@@ -248,6 +252,7 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel,
         status: SignalStatus.ACTIVE,
         expiresAt,
+        priceAtCreation,
       },
       SYSTEM_CONTEXT,
     );
@@ -265,6 +270,23 @@ export class SignalLlmCollector extends BaseCollector {
     this.logger.info(
       `[SignalLLM] Generated ${signalType} signal for ${asset}/${timeframe} (confidence: ${confidence})`,
     );
+
+    // Notify only for actionable signals
+    if (signalType === SignalType.BUY || signalType === SignalType.SELL) {
+      const action = signalType === SignalType.BUY ? '🟢 BUY' : '🔴 SELL';
+      await this.notificationService.notifyAccount(accountId, {
+        title: `${action} Signal — ${asset} (${timeframe})`,
+        message: insight,
+        level: signalType === SignalType.BUY ? 'success' : 'warning',
+        data: {
+          Asset: asset,
+          Timeframe: timeframe,
+          Confidence: `${confidence}% (${confidenceLabel})`,
+          Price: priceAtCreation ? `$${priceAtCreation}` : 'N/A',
+          Expires: expiresAt.toISOString(),
+        },
+      });
+    }
   }
 
   private buildUserPrompt(

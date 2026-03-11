@@ -6,6 +6,7 @@ import { Position, PositionDocument, PositionStatus, CloseReason, MonitoringStat
 import { Account, AccountDocument } from '../modules/account/account.schema';
 import { Order, OrderDocument, OrderSide, OrderType, OrderStatus, OrderSource } from '../modules/order/order.schema';
 import { MarketPrice, MarketPriceDocument } from '../modules/market-price/market-price.schema';
+import { NotificationService } from '../shared/notification.service';
 
 @Injectable()
 export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -18,6 +19,7 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     @InjectModel(MarketPrice.name) private readonly marketPriceModel: Model<MarketPriceDocument>,
+    private readonly notificationService: NotificationService,
   ) {}
 
   onApplicationBootstrap() {
@@ -145,5 +147,21 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
     this.logger.info(
       `[Monitor] Closed position ${position._id} (${closeReason}) at ${exitPrice}, PnL: ${realizedPnl.toFixed(2)}`,
     );
+
+    // Send notification
+    const isTp = closeReason === CloseReason.TAKE_PROFIT;
+    await this.notificationService.notifyAccount(position.accountId, {
+      title: isTp ? '✅ Take Profit Hit' : '🛑 Stop Loss Hit',
+      message: `Position ${position.symbol} (${position.side.toUpperCase()}) closed at ${exitPrice}`,
+      level: isTp ? 'success' : 'error',
+      data: {
+        Symbol: position.symbol,
+        Side: position.side.toUpperCase(),
+        'Entry Price': `${position.entryPrice}`,
+        'Exit Price': `${exitPrice}`,
+        'Realized PnL': `${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)}`,
+        Reason: isTp ? 'Take Profit' : 'Stop Loss',
+      },
+    });
   }
 }
