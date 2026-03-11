@@ -44,17 +44,19 @@ export class SignalLlmCollector extends BaseCollector {
       timeframe: string;
     };
 
-    // Step 1: Fetch last 50 MarketPrice candles (sort desc, then reverse to oldest-first)
+    // Step 1: Fetch last 50 MarketPrice candles (always use '1m' — raw data granularity)
+    // The signal timeframe (1h/4h) determines signal validity, not candle granularity
+    const candleLimit = timeframe === '4h' ? 240 : 60; // 4h → 240 × 1m candles, 1h → 60 × 1m
     const { data: candlesDesc } = await this.marketPriceService.findAll(
-      { symbol: asset, timeframe },
-      { sort: { timestamp: -1 }, page: 1, limit: 50 },
+      { symbol: asset, timeframe: '1m' },
+      { sort: { timestamp: -1 }, page: 1, limit: candleLimit },
     );
     const candles = [...candlesDesc].reverse();
 
-    // Step 2: Fetch latest TechnicalIndicator
+    // Step 2: Fetch latest TechnicalIndicator (always '1m' — computed from 1m candles)
     const indicator = await this.technicalIndicatorService.findLatest({
       symbol: asset,
-      timeframe,
+      timeframe: '1m',
     });
 
     // Step 3: Fallback if insufficient data
