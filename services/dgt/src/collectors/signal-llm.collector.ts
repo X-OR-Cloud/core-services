@@ -79,13 +79,12 @@ export class SignalLlmCollector extends BaseCollector {
     const userPrompt = this.buildUserPrompt(asset, timeframe, candles, indicator);
 
     // Step 5: Call LLM
-    // TODO: remove hardcoded fallbacks after env issue is fixed
-    const llmBaseUrl = process.env['LLM_BASE_URL'] || 'https://api.tokenfactory.nebius.com/v1';
-    const llmApiKey = process.env['LLM_API_KEY'] || 'v1.CmMKHHN0YXRpY2tleS1lMDBia2ZteW5rdDd0Nmh2MDkSIXNlcnZpY2VhY2NvdW50LWUwMG1oNnZ4YTVnbm0yZDFqbTIMCI2a78wGENHX7eICOgsIjZ2HmAcQgN3FMkACWgNlMDA.AAAAAAAAAAFsdIlxBRZK8YSAgCJKznrDA2v4BQcehC500RpQ8JrE3xt_bo6GApiLZkIXDP34KjVGgqUZpo5Ui6Qit0GpppIF';
+    const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
+    const llmApiKey = process.env['LLM_API_KEY'] || '';
     const llmModel =
       process.env['LLM_SIGNAL_MODEL'] ||
       process.env['LLM_MODEL'] ||
-      'openai/gpt-oss-120b';
+      'gpt-4o-mini';
 
     if (!llmBaseUrl || !llmApiKey) {
       this.logger.warn(`[${this.name}] No LLM config, generating fallback HOLD signal`);
