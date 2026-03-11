@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, Logger } from '@nestjs/common';
 import { sign, verify } from 'jsonwebtoken';
 import { TokenData } from './auth.entity';
 import { LoginData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
@@ -6,22 +6,24 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AccessTokenTypes } from '../../core/enums/other.enum';
 import { UserStatuses } from '../../core/enums/user.enum';
+import { AuthProvider } from '../../core/enums/auth-provider.enum';
 import {
   verifyPasswordWithAlgorithm,
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
-import { Organization } from '../organization/organization.schema';
 import { User } from '../user/user.schema';
 import { TokenStorageService } from './token-storage.service';
 import { LicenseService } from '../license/license.service';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
+import { GoogleUserProfile } from './dto/google-auth.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    @InjectModel(Organization.name) private readonly orgRepo: Model<Organization>,
     @InjectModel(User.name) private readonly userRepo: Model<User>,
     private readonly tokenStorage: TokenStorageService,
     private readonly licenseService: LicenseService,
@@ -37,6 +39,11 @@ export class AuthService {
     });
 
     if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Google users cannot login with password
+    if (user.provider === AuthProvider.GOOGLE || !user.password) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -65,8 +72,8 @@ export class AuthService {
     if (orgId) {
       try {
         licenses = await this.licenseService.getLicensesForJWT(orgId);
-      } catch (error) {
-        console.error('Failed to fetch licenses for JWT:', error.message);
+      } catch (error: unknown) {
+        console.error('Failed to fetch licenses for JWT:', (error as Error).message);
         // Continue with empty licenses if fetch fails
       }
     }
@@ -168,6 +175,11 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // Google users cannot change password
+    if (user.provider === AuthProvider.GOOGLE || !user.password) {
+      throw new UnauthorizedException('Password change not supported for Google accounts');
+    }
+
     // Verify old password
     const isOldPasswordValid = await verifyPasswordWithAlgorithm(
       oldPassword,
@@ -239,8 +251,8 @@ export class AuthService {
     if (orgId) {
       try {
         licenses = await this.licenseService.getLicensesForJWT(orgId);
-      } catch (error) {
-        console.error('Failed to fetch licenses for JWT:', error.message);
+      } catch (error: unknown) {
+        console.error('Failed to fetch licenses for JWT:', (error as Error).message);
         // Continue with empty licenses if fetch fails
       }
     }
@@ -284,7 +296,7 @@ export class AuthService {
   async logout(
     accessToken: string,
     refreshToken: string | undefined,
-    userId: string
+    _userId: string
   ): Promise<{ success: boolean; message: string }> {
     // Decode access token to get expiration
     const jwtSecret = process.env.JWT_SECRET;
@@ -436,13 +448,147 @@ export class AuthService {
           roles: node.roles || ['node-operator'],
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
       // Handle AIWM API errors
-      if (error.response?.status === 401) {
+      if ((error as any).response?.status === 401) {
         throw new UnauthorizedException('Invalid node credentials');
       }
       throw error;
     }
+  }
+
+  /**
+   * Generate a random state token for OAuth CSRF protection and store it (TTL 10 min, single-use)
+   * @returns Random hex state token
+   */
+  generateStateToken(): string {
+    const stateToken = crypto.randomBytes(32).toString('hex');
+    this.tokenStorage.storeOAuthStateToken(stateToken);
+    return stateToken;
+  }
+
+  /**
+   * Validate and consume a state token (single-use).
+   * @param state - State token from OAuth callback
+   * @returns true if valid; false if invalid or already used
+   */
+  validateAndConsumeStateToken(state: string): boolean {
+    return this.tokenStorage.validateAndConsumeOAuthStateToken(state);
+  }
+
+  /**
+   * Handle Google OAuth callback — orchestrate user lookup/creation and token issuance
+   * @param googleUser - Google user profile from Passport strategy
+   * @returns TokenData on success, or an object with error code
+   */
+  async handleGoogleCallback(
+    googleUser: GoogleUserProfile,
+  ): Promise<TokenData | { error: string }> {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+
+    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1h';
+
+    let user = await this.userRepo.findOne({
+      googleId: googleUser.googleId,
+      isDeleted: false,
+    });
+
+    if (!user) {
+      // Google ID not found — check if the email is already registered as a local account
+      const existingUser = await this.userRepo.findOne({
+        username: googleUser.email,
+        isDeleted: false,
+      });
+
+      if (existingUser && existingUser.provider !== AuthProvider.GOOGLE) {
+        return { error: 'email_conflict' };
+      }
+
+      // Create new Google user
+      user = await this.userRepo.create({
+        username: googleUser.email,
+        password: null,
+        provider: AuthProvider.GOOGLE,
+        googleId: googleUser.googleId,
+        fullname: googleUser.displayName || googleUser.email,
+        avatarUrl: googleUser.avatarUrl,
+        role: 'organization.viewer',
+        status: UserStatuses.Active,
+        owner: {
+          orgId: '',
+          groupId: '',
+          userId: '',
+          agentId: '',
+          appId: '',
+        },
+        isDeleted: false,
+      });
+    } else {
+      // User found by Google ID — check account status
+      if (user.status !== UserStatuses.Active) {
+        return { error: 'account_suspended' };
+      }
+
+      // Update last login timestamp
+      await this.userRepo.updateOne(
+        { _id: user._id },
+        { $set: { lastLoginAt: new Date(), updatedAt: new Date() } }
+      );
+    }
+
+    // Build JWT payload including provider field
+    const orgId = user.owner?.orgId || '';
+    let licenses: Record<string, string> = {};
+    if (orgId) {
+      try {
+        licenses = await this.licenseService.getLicensesForJWT(orgId);
+      } catch (error: unknown) {
+        this.logger.error('Failed to fetch licenses for Google SSO JWT', { message: (error as Error).message });
+      }
+    }
+
+    const jwtPayload = {
+      sub: user._id.toString(),
+      username: user.username,
+      status: user.status,
+      roles: user.role ? [user.role] : [],
+      orgId,
+      groupId: user.owner?.groupId || '',
+      agentId: user.owner?.agentId || '',
+      appId: user.owner?.appId || '',
+      provider: AuthProvider.GOOGLE,
+      licenses,
+    };
+
+    // Sign access token
+    // @ts-expect-error - TypeScript has issues with jsonwebtoken types
+    const accessToken = sign(jwtPayload, jwtSecret, {
+      expiresIn: jwtExpiresIn,
+    });
+
+    const expiresIn = this.parseExpirationTime(jwtExpiresIn);
+
+    // Generate refresh token (valid for 7 days)
+    const refreshToken = crypto.randomBytes(32).toString('hex');
+    const refreshExpiresIn = 7 * 24 * 60 * 60; // 7 days in seconds
+    const refreshExpiresAt = Date.now() + refreshExpiresIn * 1000;
+
+    this.tokenStorage.storeRefreshToken(
+      refreshToken,
+      user._id.toString(),
+      refreshExpiresAt,
+    );
+
+    return {
+      accessToken,
+      expiresIn,
+      refreshToken,
+      refreshExpiresIn,
+      tokenType: AccessTokenTypes.Bearer,
+    };
   }
 
   /**

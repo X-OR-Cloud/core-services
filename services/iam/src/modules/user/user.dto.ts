@@ -2,6 +2,7 @@ import { Matches, IsNotEmpty, IsObject, IsArray, IsEnum, IsOptional, IsString } 
 import { ApiProperty } from '@nestjs/swagger';
 import { UsernameRegex, InvalidUsernameMessage, PasswordRegex, InvalidPasswordMessage, EmailRegex } from "../../core/const/iam.const";
 import { UserStatuses } from "../../core/enums/user.enum";
+import { AuthProvider } from "../../core/enums/auth-provider.enum";
 import { UserMetadata } from "./user.schema";
 
 // Phone number regex: supports formats like +84123456789, 0123456789, +1-234-567-8900
@@ -179,4 +180,14 @@ export class ChangePasswordDto {
   })
   @IsNotEmpty()
   newPassword: string;
+}
+
+export interface CreateGoogleUserData {
+  username: string;
+  googleId: string;
+  fullname?: string;
+  avatarUrl: string | null;
+  provider: AuthProvider;
+  status: UserStatuses;
+  role: string;
 }

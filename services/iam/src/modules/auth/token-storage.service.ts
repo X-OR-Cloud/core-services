@@ -14,6 +14,9 @@ export class TokenStorageService {
   // Store blacklisted access tokens: Map<accessToken, expiresAt>
   private blacklistedTokens = new Map<string, number>();
 
+  // Store OAuth state tokens: Map<stateToken, expiresAt> — single-use, TTL 10 min
+  private oauthStateTokens = new Map<string, number>();
+
   /**
    * Store refresh token
    */
@@ -95,12 +98,47 @@ export class TokenStorageService {
   }
 
   /**
+   * Store an OAuth state token (single-use, TTL 10 minutes)
+   */
+  storeOAuthStateToken(stateToken: string): void {
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    this.oauthStateTokens.set(stateToken, expiresAt);
+
+    // Auto cleanup after TTL
+    setTimeout(() => {
+      this.oauthStateTokens.delete(stateToken);
+    }, 10 * 60 * 1000);
+  }
+
+  /**
+   * Validate and consume an OAuth state token (single-use).
+   * Returns true if valid and deletes it; returns false otherwise.
+   */
+  validateAndConsumeOAuthStateToken(stateToken: string): boolean {
+    const expiresAt = this.oauthStateTokens.get(stateToken);
+
+    if (!expiresAt) {
+      return false;
+    }
+
+    if (Date.now() > expiresAt) {
+      this.oauthStateTokens.delete(stateToken);
+      return false;
+    }
+
+    // Single-use: delete on first successful validation
+    this.oauthStateTokens.delete(stateToken);
+    return true;
+  }
+
+  /**
    * Get storage stats (for debugging)
    */
   getStats() {
     return {
       refreshTokensCount: this.refreshTokens.size,
       blacklistedTokensCount: this.blacklistedTokens.size,
+      oauthStateTokensCount: this.oauthStateTokens.size,
     };
   }
 }

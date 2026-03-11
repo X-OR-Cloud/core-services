@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SSO Test — Hydrabyte IAM</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f13;
+      color: #e4e4e7;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 440px;
+      padding: 16px;
+    }
+
+    .card {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 16px;
+      padding: 40px;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    .logo p {
+      font-size: 13px;
+      color: #71717a;
+      margin-top: 4px;
+    }
+
+    .config-bar {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 28px;
+      font-size: 12px;
+      color: #52525b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .config-bar span { color: #a1a1aa; }
+    .config-bar input {
+      background: transparent;
+      border: none;
+      color: #e4e4e7;
+      font-size: 12px;
+      font-family: 'SF Mono', monospace;
+      outline: none;
+      flex: 1;
+    }
+
+    .btn-google {
+      width: 100%;
+      padding: 12px 16px;
+      background: #fff;
+      color: #1f1f1f;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.15s;
+      text-decoration: none;
+    }
+
+    .btn-google:hover { background: #f1f1f1; }
+
+    .btn-google svg { flex-shrink: 0; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
+      color: #3f3f46;
+      font-size: 12px;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #27272a;
+    }
+
+    .form-group { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #a1a1aa;
+      margin-bottom: 6px;
+    }
+
+    input[type="email"], input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      color: #e4e4e7;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="email"]:focus, input[type="password"]:focus {
+      border-color: #3f3f46;
+    }
+
+    .btn-login {
+      width: 100%;
+      padding: 11px 16px;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-login:hover { background: #2563eb; }
+    .btn-login:disabled { background: #1d4ed8; opacity: 0.5; cursor: not-allowed; }
+
+    /* Result panel */
+    .result {
+      margin-top: 24px;
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .result-header {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .result.success .result-header { background: #14532d; color: #86efac; }
+    .result.error .result-header { background: #450a0a; color: #fca5a5; }
+    .result.info .result-header { background: #1e3a5f; color: #93c5fd; }
+
+    .result-body {
+      background: #09090b;
+      padding: 14px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: #a1a1aa;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid #27272a;
+      border-top: none;
+    }
+
+    .token-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn-small {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid #27272a;
+      background: #18181b;
+      color: #a1a1aa;
+      transition: all 0.15s;
+    }
+
+    .btn-small:hover { background: #27272a; color: #e4e4e7; }
+    .btn-small.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-green { background: #4ade80; }
+    .dot-red { background: #f87171; }
+    .dot-blue { background: #60a5fa; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div class="logo">
+      <h1>Hydrabyte IAM</h1>
+      <p>SSO Test Interface</p>
+    </div>
+
+    <!-- IAM Base URL config -->
+    <div class="config-bar">
+      <span>API</span>
+      <input id="baseUrl" type="text" value="http://localhost:3001" />
+    </div>
+
+    <!-- Google SSO button -->
+    <a id="btnGoogle" class="btn-google" href="#" onclick="doGoogleSSO(event)">
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.566 2.684-3.874 2.684-6.615z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.259c-.806.54-1.837.86-3.047.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+      </svg>
+      Đăng nhập với Google
+    </a>
+
+    <div class="divider">hoặc đăng nhập bằng email</div>
+
+    <!-- Local login form -->
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="username" value="tech@kaisar.io" />
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="••••••••" />
+    </div>
+    <button class="btn-login" onclick="doLocalLogin()">Đăng nhập</button>
+
+    <!-- Result panel -->
+    <div class="result" id="result">
+      <div class="result-header" id="resultHeader"></div>
+      <div class="result-body" id="resultBody"></div>
+    </div>
+
+    <!-- Token actions (hiện sau khi login thành công) -->
+    <div class="token-actions" id="tokenActions" style="display:none">
+      <button class="btn-small" onclick="doVerifyToken()">Verify Token</button>
+      <button class="btn-small" onclick="doGetProfile()">Get Profile</button>
+      <button class="btn-small" onclick="doRefreshToken()">Refresh Token</button>
+      <button class="btn-small" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentTokens = null;
+
+  function getBase() {
+    return document.getElementById('baseUrl').value.replace(/\/$/, '');
+  }
+
+  function showResult(type, title, data) {
+    const el = document.getElementById('result');
+    el.className = 'result ' + type;
+    el.style.display = 'block';
+
+    const dot = type === 'success' ? 'dot-green' : type === 'error' ? 'dot-red' : 'dot-blue';
+    document.getElementById('resultHeader').innerHTML =
+      `<span class="status-dot ${dot}"></span> ${title}`;
+    document.getElementById('resultBody').textContent =
+      typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  }
+
+  // ── Google SSO ──────────────────────────────────────────────
+  function doGoogleSSO(e) {
+    e.preventDefault();
+    const url = getBase() + '/auth/google';
+    showResult('info', 'Redirecting to Google...', `GET ${url}\n\nMở tab mới để xử lý OAuth redirect...`);
+    window.open(url, '_blank');
+  }
+
+  // Xử lý redirect callback từ Google (nếu FE_BASE_URL trỏ về file này)
+  window.addEventListener('load', () => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const refreshToken = params.get('refreshToken');
+    const error = params.get('error');
+
+    if (token) {
+      currentTokens = { accessToken: token, refreshToken };
+      document.getElementById('tokenActions').style.display = 'flex';
+      showResult('success', '✓ Google SSO thành công', {
+        accessToken: token.substring(0, 40) + '...',
+        refreshToken: refreshToken?.substring(0, 20) + '...',
+        decoded: parseJwt(token)
+      });
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (error) {
+      const messages = {
+        email_conflict: 'Email đã tồn tại với local account — dùng đăng nhập bằng password',
+        account_suspended: 'Tài khoản đã bị suspended',
+        google_service_unavailable: 'Google API không khả dụng',
+        google_access_denied: 'Bạn đã từ chối cấp quyền cho Google',
+        csrf_detected: 'CSRF detected — thử lại',
+      };
+      showResult('error', `✗ SSO Error: ${error}`, messages[error] || error);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  });
+
+  // ── Local login ─────────────────────────────────────────────
+  async function doLocalLogin() {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    showResult('info', 'Đang đăng nhập...', `POST ${getBase()}/auth/login`);
+
+    try {
+      const res = await fetch(getBase() + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        currentTokens = { accessToken: data.accessToken, refreshToken: data.refreshToken };
+        document.getElementById('tokenActions').style.display = 'flex';
+        showResult('success', `✓ Login thành công (${res.status})`, {
+          ...data,
+          accessToken: data.accessToken?.substring(0, 40) + '...',
+          decoded: parseJwt(data.accessToken)
+        });
+      } else {
+        showResult('error', `✗ Login thất bại (${res.status})`, data);
+      }
+    } catch (e) {
+      showResult('error', '✗ Network Error', e.message + '\n\nKiểm tra IAM service có đang chạy không?');
+    }
+  }
+
+  // ── Token actions ───────────────────────────────────────────
+  async function doVerifyToken() {
+    if (!currentTokens) return;
+    const res = await fetch(getBase() + '/auth/verify-token', {
+      headers: { 'Authorization': 'Bearer ' + currentTokens.accessToken }
+    });
+    const data = await res.json();
+    showResult(res.ok ? 'success' : 'error', `Verify Token (${res.status})`, data);
+  }
+
+  async function doGetProfile() {
+    if (!currentTokens) return;
+    const res = await fetch(getBase() + '/auth/profile', {
+      headers: { 'Authorization': 'Bearer ' + currentTokens.accessToken }
+    });
+    const data = await res.json();
+    showResult(res.ok ? 'success' : 'error', `Get Profile (${res.status})`, data);
+  }
+
+  async function doRefreshToken() {
+    if (!currentTokens?.refreshToken) return;
+    const res = await fetch(getBase() + '/auth/refresh-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: currentTokens.refreshToken })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      currentTokens.accessToken = data.accessToken;
+      showResult('success', `✓ Token refreshed (${res.status})`, {
+        ...data,
+        accessToken: data.accessToken?.substring(0, 40) + '...',
+        decoded: parseJwt(data.accessToken)
+      });
+    } else {
+      showResult('error', `✗ Refresh thất bại (${res.status})`, data);
+    }
+  }
+
+  async function doLogout() {
+    if (!currentTokens) return;
+    const res = await fetch(getBase() + '/auth/logout', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + currentTokens.accessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ refreshToken: currentTokens.refreshToken })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      currentTokens = null;
+      document.getElementById('tokenActions').style.display = 'none';
+      showResult('success', `✓ Logged out (${res.status})`, data);
+    } else {
+      showResult('error', `✗ Logout thất bại (${res.status})`, data);
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function parseJwt(token) {
+    try {
+      return JSON.parse(atob(token.split('.')[1]));
+    } catch { return null; }
+  }
+</script>
+</body>
+</html>

@@ -9,7 +9,8 @@ import {
   encodeBase64,
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
-import { CreateUserData, ChangePasswordDto, ChangeRoleDto } from './user.dto';
+import { CreateUserData, ChangePasswordDto, ChangeRoleDto, CreateGoogleUserData } from './user.dto';
+import { AuthProvider } from '../../core/enums/auth-provider.enum';
 @Injectable()
 export class UsersService extends BaseService<User> {
 
@@ -258,5 +259,61 @@ export class UsersService extends BaseService<User> {
     // Save and return updated user
     const updatedUser = await user.save();
     return updatedUser;
+  }
+
+  /**
+   * Find a user by their Google ID
+   * @param googleId - Google account ID
+   * @returns User document or null
+   */
+  async findByGoogleId(googleId: string): Promise<User | null> {
+    return this.model.findOne({ googleId, isDeleted: false }).exec();
+  }
+
+  /**
+   * Find a user by username (email)
+   * @param username - Username (email address)
+   * @returns User document or null
+   */
+  async findByUsername(username: string): Promise<User | null> {
+    return this.model.findOne({ username, isDeleted: false }).exec();
+  }
+
+  /**
+   * Create a new Google SSO user with password = null
+   * @param data - Google user data
+   * @returns Created user document
+   */
+  async createGoogleUser(data: CreateGoogleUserData): Promise<User> {
+    const user = new this.model({
+      username: data.username,
+      password: null,
+      provider: data.provider,
+      googleId: data.googleId,
+      fullname: data.fullname || data.username,
+      avatarUrl: data.avatarUrl,
+      role: data.role,
+      status: data.status,
+      owner: {
+        orgId: '',
+        groupId: '',
+        userId: '',
+        agentId: '',
+        appId: '',
+      },
+      isDeleted: false,
+    });
+    return user.save();
+  }
+
+  /**
+   * Update the last login timestamp for a user
+   * @param userId - User ID
+   */
+  async updateLastLogin(userId: string): Promise<void> {
+    await this.model.updateOne(
+      { _id: userId },
+      { $set: { lastLoginAt: new Date(), updatedAt: new Date() } }
+    ).exec();
   }
 }
