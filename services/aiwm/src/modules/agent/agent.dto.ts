@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested } from 'class-validator';
+import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
@@ -90,13 +90,14 @@ export class CreateAgentDto {
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine)',
-    enum: ['claude-agent-sdk'],
+    description: 'Agent framework (determines runtime engine). Not used for hosted agents.',
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
     example: 'claude-agent-sdk',
     required: false
   })
   @IsOptional()
-  @IsEnum(['claude-agent-sdk'])
+  @ValidateIf((o) => o.type !== 'hosted')
+  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
   framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID (optional)', required: false })
@@ -210,12 +211,13 @@ export class UpdateAgentDto {
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine)',
-    enum: ['claude-agent-sdk'],
+    description: 'Agent framework (determines runtime engine). Not used for hosted agents.',
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['claude-agent-sdk'])
+  @ValidateIf((o) => o.type !== 'hosted')
+  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
   framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID', required: false })
@@ -368,7 +370,7 @@ export class AgentConnectResponseDto {
 
   @ApiProperty({
     description: 'Agent framework (determines runtime engine)',
-    enum: ['claude-agent-sdk'],
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
     example: 'claude-agent-sdk'
   })
   framework: string | undefined;
