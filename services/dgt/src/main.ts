@@ -15,7 +15,7 @@ import { GlobalExceptionFilter, customQueryParser } from '@hydrabyte/base';
 const MODE = process.argv[2] || process.env['MODE'] || 'api';
 
 async function bootstrap() {
-  if (MODE === 'shd' || MODE === 'ing') {
+  if (MODE === 'shd' || MODE === 'ing' || MODE === 'sig' || MODE === 'mon') {
     process.env['MODE'] = MODE;
     const { bootstrapWorker } = await import('./bootstrap-worker');
     await bootstrapWorker();

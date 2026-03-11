@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsNumber, IsBoolean, IsOptional, Min } from 'class-validator';
+import { IsString, IsEnum, IsNumber, IsBoolean, IsOptional, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AccountType, Exchange, AccountStatus } from './account.schema';
 
 export class CreateAccountDto {
@@ -35,6 +36,28 @@ export class CreateAccountDto {
   isDefault?: boolean;
 }
 
+export class NotificationsConfigDto {
+  @ApiProperty({ required: false, example: 'https://discord.com/api/webhooks/...' })
+  @IsString()
+  @IsOptional()
+  discordWebhookUrl?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  telegramBotToken?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  telegramChatId?: string;
+
+  @ApiProperty({ required: false, default: false })
+  @IsBoolean()
+  @IsOptional()
+  enabled?: boolean;
+}
+
 export class UpdateAccountDto {
   @ApiProperty({ required: false })
   @IsString()
@@ -50,4 +73,10 @@ export class UpdateAccountDto {
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+
+  @ApiProperty({ required: false, type: NotificationsConfigDto })
+  @ValidateNested()
+  @Type(() => NotificationsConfigDto)
+  @IsOptional()
+  notifications?: NotificationsConfigDto;
 }

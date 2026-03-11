@@ -20,6 +20,12 @@ export enum CloseReason {
   TAKE_PROFIT = 'take_profit',
 }
 
+export enum MonitoringStatus {
+  ACTIVE = 'active',
+  PAUSED = 'paused',
+  CLOSED = 'closed',
+}
+
 @Schema({ timestamps: true })
 export class Position extends BaseSchema {
   @Prop({ type: Types.ObjectId, ref: 'Account', required: true })
@@ -75,6 +81,15 @@ export class Position extends BaseSchema {
 
   @Prop({ enum: CloseReason })
   closeReason: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Bot' })
+  botId: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Signal' })
+  signalId: Types.ObjectId;
+
+  @Prop({ enum: MonitoringStatus, default: MonitoringStatus.ACTIVE })
+  monitoringStatus: string;
 }
 
 export const PositionSchema = SchemaFactory.createForClass(Position);

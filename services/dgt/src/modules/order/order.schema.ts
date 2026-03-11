@@ -25,6 +25,8 @@ export enum OrderStatus {
 export enum OrderSource {
   MANUAL = 'manual',
   PAPER = 'paper',
+  SYSTEM = 'system',
+  BOT = 'bot',
 }
 
 @Schema({ timestamps: true })
@@ -76,6 +78,12 @@ export class Order extends BaseSchema {
 
   @Prop()
   rejectionReason: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Bot' })
+  botId: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Signal' })
+  signalId: Types.ObjectId;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Account, AccountDocument, AccountStatus } from '../account/account.schema';
 import { Position, PositionDocument, PositionStatus } from '../position/position.schema';
 import { Trade, TradeDocument } from '../trade/trade.schema';
+import { PortfolioSnapshot, PortfolioSnapshotDocument } from '../portfolio-snapshot/portfolio-snapshot.schema';
 
 type RangeKey = '24h' | '7d' | '30d' | '90d' | 'all';
 
@@ -13,6 +14,7 @@ export class AnalyticsService {
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(Position.name) private readonly positionModel: Model<PositionDocument>,
     @InjectModel(Trade.name) private readonly tradeModel: Model<TradeDocument>,
+    @InjectModel(PortfolioSnapshot.name) private readonly snapshotModel: Model<PortfolioSnapshotDocument>,
   ) {}
 
   async getSummary(userId: string, range: RangeKey, accountId?: string) {
@@ -210,6 +212,67 @@ export class AnalyticsService {
     }
 
     return { range, data };
+  }
+
+  async getEquityCurve(userId: string, range: RangeKey, accountId?: string) {
+    const account = await this.resolveAccount(userId, accountId);
+    const accId = account._id as Types.ObjectId;
+    const fromDate = this.rangeToDate(range);
+    const initialBalance = account.initialBalance || 1;
+
+    const snapshots = await this.snapshotModel
+      .find({ accountId: accId, date: { $gte: fromDate } })
+      .sort({ date: 1 })
+      .lean()
+      .exec();
+
+    const data = snapshots.map((s) => {
+      const cumulativePnl = (s.realizedPnlUsd || 0) + (s.unrealizedPnlUsd || 0);
+      const roiPct = initialBalance > 0
+        ? Math.round(((s.totalValueUsd - initialBalance) / initialBalance) * 10000) / 100
+        : 0;
+      return {
+        timestamp: s.date.toISOString(),
+        equity: s.totalValueUsd,
+        cumulativePnl: Math.round(cumulativePnl * 100) / 100,
+        roiPct,
+      };
+    });
+
+    return { range, data };
+  }
+
+  async getDrawdown(userId: string, range: RangeKey, accountId?: string) {
+    const account = await this.resolveAccount(userId, accountId);
+    const accId = account._id as Types.ObjectId;
+    const fromDate = this.rangeToDate(range);
+
+    const snapshots = await this.snapshotModel
+      .find({ accountId: accId, date: { $gte: fromDate } })
+      .sort({ date: 1 })
+      .lean()
+      .exec();
+
+    let peak = snapshots.length > 0 ? snapshots[0].totalValueUsd : (account.initialBalance || 0);
+    let maxDrawdownPct = 0;
+
+    const data = snapshots.map((s) => {
+      const equity = s.totalValueUsd;
+      if (equity > peak) peak = equity;
+      const drawdownPct = peak > 0 ? Math.min(0, ((equity - peak) / peak) * 100) : 0;
+      if (drawdownPct < maxDrawdownPct) maxDrawdownPct = drawdownPct;
+      return {
+        timestamp: s.date.toISOString(),
+        equity,
+        drawdownPct: Math.round(drawdownPct * 100) / 100,
+      };
+    });
+
+    return {
+      range,
+      maxDrawdownPct: Math.round(maxDrawdownPct * 100) / 100,
+      data,
+    };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -4,13 +4,29 @@ import { JwtAuthGuard, CurrentUser, parseQueryString, ApiCreateErrors, ApiReadEr
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { TradeService } from './trade.service';
-import { CreateTradeDto } from './trade.dto';
+import { TradeExecutionService } from './trade-execution.service';
+import { CreateTradeDto, ExecuteFromSignalDto } from './trade.dto';
 
 @ApiTags('trades')
 @ApiBearerAuth('JWT-auth')
 @Controller('trades')
 export class TradeController {
-  constructor(private readonly tradeService: TradeService) {}
+  constructor(
+    private readonly tradeService: TradeService,
+    private readonly tradeExecutionService: TradeExecutionService,
+  ) {}
+
+  @Post('from-signal')
+  @ApiOperation({ summary: 'Execute trade from signal (FRS-02)' })
+  @ApiResponse({ status: 201, description: 'Trade executed successfully from signal' })
+  @ApiCreateErrors()
+  @UseGuards(JwtAuthGuard)
+  async executeFromSignal(
+    @Body() dto: ExecuteFromSignalDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.tradeExecutionService.executeFromSignal(context.userId, dto, context);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create trade' })

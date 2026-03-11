@@ -1,15 +1,20 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { Response } from 'express';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsExportService } from './analytics-export.service';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('analytics')
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(
+    private readonly analyticsService: AnalyticsService,
+    private readonly analyticsExportService: AnalyticsExportService,
+  ) {}
 
   @Get('summary')
   @ApiOperation({ summary: 'Performance summary — PnL, win rate, volume by time range' })
@@ -63,5 +68,47 @@ export class AnalyticsController {
     @Query('accountId') accountId?: string,
   ) {
     return this.analyticsService.getPnlChart(ctx.userId, range, accountId);
+  }
+
+  @Get('equity-curve')
+  @ApiOperation({ summary: 'Equity curve over time from portfolio snapshots' })
+  @ApiQuery({ name: 'range', required: false, enum: ['24h', '7d', '30d', '90d', 'all'], example: '30d' })
+  @ApiQuery({ name: 'accountId', required: false })
+  getEquityCurve(
+    @CurrentUser() ctx: RequestContext,
+    @Query('range') range: '24h' | '7d' | '30d' | '90d' | 'all' = '30d',
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.analyticsService.getEquityCurve(ctx.userId, range, accountId);
+  }
+
+  @Get('drawdown')
+  @ApiOperation({ summary: 'Drawdown curve and max drawdown from portfolio snapshots' })
+  @ApiQuery({ name: 'range', required: false, enum: ['24h', '7d', '30d', '90d', 'all'], example: '30d' })
+  @ApiQuery({ name: 'accountId', required: false })
+  getDrawdown(
+    @CurrentUser() ctx: RequestContext,
+    @Query('range') range: '24h' | '7d' | '30d' | '90d' | 'all' = '30d',
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.analyticsService.getDrawdown(ctx.userId, range, accountId);
+  }
+
+  @Get('export/csv')
+  @ApiOperation({ summary: 'Export trade history as CSV file download' })
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  @ApiQuery({ name: 'range', required: false, enum: ['24h', '7d', '30d', '90d', 'all'], example: '30d' })
+  @ApiQuery({ name: 'accountId', required: false })
+  async exportCsv(
+    @CurrentUser() ctx: RequestContext,
+    @Query('range') range: '24h' | '7d' | '30d' | '90d' | 'all' = '30d',
+    @Query('accountId') accountId: string | undefined,
+    @Res() res: Response,
+  ) {
+    const date = new Date().toISOString().slice(0, 10);
+    const csvString = await this.analyticsExportService.exportTradesToCsv(ctx.userId, accountId, range);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="trades-${range}-${date}.csv"`);
+    res.send(csvString);
   }
 }

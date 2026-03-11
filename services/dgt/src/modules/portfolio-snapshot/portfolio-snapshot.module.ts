@@ -10,6 +10,11 @@ import { PortfolioSnapshotService } from './portfolio-snapshot.service';
     ]),
   ],
   providers: [PortfolioSnapshotService],
-  exports: [PortfolioSnapshotService],
+  exports: [
+    PortfolioSnapshotService,
+    MongooseModule.forFeature([
+      { name: PortfolioSnapshot.name, schema: PortfolioSnapshotSchema },
+    ]),
+  ],
 })
 export class PortfolioSnapshotModule {}

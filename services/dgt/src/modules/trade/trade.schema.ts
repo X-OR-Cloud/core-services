@@ -33,6 +33,9 @@ export class Trade extends BaseSchema {
 
   @Prop({ required: true, type: Date })
   executedAt: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'Bot' })
+  botId: Types.ObjectId;
 }
 
 export const TradeSchema = SchemaFactory.createForClass(Trade);

@@ -46,6 +46,22 @@ export class Account extends BaseSchema {
 
   @Prop({ required: true, default: false })
   isDefault: boolean;
+
+  @Prop({
+    type: {
+      discordWebhookUrl: { type: String, default: '' },
+      telegramBotToken: { type: String, default: '' },
+      telegramChatId: { type: String, default: '' },
+      enabled: { type: Boolean, default: false },
+    },
+    default: {},
+  })
+  notifications!: {
+    discordWebhookUrl?: string;
+    telegramBotToken?: string;
+    telegramChatId?: string;
+    enabled?: boolean;
+  };
 }
 
 export const AccountSchema = SchemaFactory.createForClass(Account);

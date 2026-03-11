@@ -20,11 +20,16 @@ import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-sig
 import { OrderModule } from '../modules/order/order.module';
 import { TradeModule } from '../modules/trade/trade.module';
 import { PositionModule } from '../modules/position/position.module';
+import { BotModule } from '../modules/bot/bot.module';
+import { BotActivityLogModule } from '../modules/bot-activity-log/bot-activity-log.module';
 
 // Group 4: Frontend API
 import { PortfolioSnapshotModule } from '../modules/portfolio-snapshot/portfolio-snapshot.module';
 import { DashboardModule } from '../modules/dashboard/dashboard.module';
 import { AnalyticsModule } from '../modules/analytics/analytics.module';
+
+// Group 5: AI Signal
+import { SignalModule } from '../modules/signal/signal.module';
 
 @Module({
   imports: [
@@ -53,11 +58,16 @@ import { AnalyticsModule } from '../modules/analytics/analytics.module';
     OrderModule,
     TradeModule,
     PositionModule,
+    BotModule,
+    BotActivityLogModule,
 
     // Group 4: Frontend API
     PortfolioSnapshotModule,
     DashboardModule,
     AnalyticsModule,
+
+    // Group 5: AI Signal
+    SignalModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

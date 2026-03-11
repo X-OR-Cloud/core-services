@@ -1,12 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
-import { AppWorkerModule } from './app/app-worker.module';
 
 /**
  * Bootstrap Worker Mode
  * - No HTTP server
  * - Scheduler (shd): emits repeatable jobs to BullMQ
  * - Data Ingestion (ing): consumes jobs, fetches data, saves to MongoDB
+ * - Signal Generation (sig): AI signal generation worker
+ * - Monitor (mon): Monitoring worker
  */
 export async function bootstrapWorker() {
   const mode = process.env.MODE || 'shd';
@@ -14,7 +15,20 @@ export async function bootstrapWorker() {
 
   logger.log(`Starting DGT Worker (mode: ${mode})...`);
 
-  const app = await NestFactory.createApplicationContext(AppWorkerModule, {
+  let moduleClass: any;
+  if (mode === 'sig') {
+    const { AppSignalModule } = await import('./app/app-signal.module');
+    moduleClass = AppSignalModule;
+  } else if (mode === 'mon') {
+    // Phase 4: AppMonitorModule (placeholder — will use AppWorkerModule for now)
+    const { AppWorkerModule } = await import('./app/app-worker.module');
+    moduleClass = AppWorkerModule;
+  } else {
+    const { AppWorkerModule } = await import('./app/app-worker.module');
+    moduleClass = AppWorkerModule;
+  }
+
+  const app = await NestFactory.createApplicationContext(moduleClass, {
     logger: ['log', 'error', 'warn', 'debug'],
   });
 

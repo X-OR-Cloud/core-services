@@ -122,9 +122,10 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
 
 - **DGT** (Digital Gold Trader) - Port 3008
   - Paper trading and market data for gold & crypto assets
-  - 9 entity modules: Account, RiskProfile, MarketPrice, TechnicalIndicator, MacroIndicator, SentimentSignal, Order, Trade, Position
+  - 13 modules: Account, RiskProfile, MarketPrice, TechnicalIndicator, MacroIndicator, SentimentSignal, Order, Trade, Position, Signal, Bot, BotActivityLog, Analytics
   - 9 data collectors (Binance, OKX, Bitfinex, Yahoo, GoldAPI, FRED, NewsAPI+LLM, ByteTree)
-  - Three modes: api, shd (scheduler), ing (data ingestion)
+  - AI signal generation via LLM (OpenAI-compatible endpoint, supports OpenAI/Gemini/Ollama/Groq/OpenRouter)
+  - Four worker modes: api, shd (scheduler), ing (data ingestion), sig (signal generation), mon (SL/TP monitoring)
   - See [`services/dgt/CLAUDE.md`](services/dgt/CLAUDE.md) for details
 
 **Libraries** (`/libs/`):
