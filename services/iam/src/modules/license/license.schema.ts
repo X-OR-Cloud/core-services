@@ -93,7 +93,6 @@ export const LicenseSchema = SchemaFactory.createForClass(License);
 LicenseSchema.index({ orgId: 1, serviceName: 1 }, { unique: true });
 
 // Additional indexes for query performance
-LicenseSchema.index({ orgId: 1 }); // List all licenses for an org
 LicenseSchema.index({ serviceName: 1 }); // List all licenses for a service
 LicenseSchema.index({ status: 1 }); // Filter by status
 LicenseSchema.index({ 'owner.orgId': 1 }); // RBAC filtering (from BaseSchema)
