@@ -44,8 +44,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Google users cannot login with password
-    if (user.provider === AuthProvider.GOOGLE || !user.password) {
+    // Users without password (Google-only accounts) cannot login with password
+    if (!user.password) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -177,9 +177,9 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Google users cannot change password
-    if (user.provider === AuthProvider.GOOGLE || !user.password) {
-      throw new UnauthorizedException('Password change not supported for Google accounts');
+    // Users without password cannot change password
+    if (!user.password) {
+      throw new UnauthorizedException('Password change not supported for accounts without password');
     }
 
     // Verify old password
