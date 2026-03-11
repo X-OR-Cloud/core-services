@@ -2,10 +2,11 @@
  * AIWM Service - AI Workflow Management Platform
  * Demonstrates GPU Node Management, Model Deployment, Agent Framework, and MCP Tool Integration
  *
- * Supports three modes:
+ * Supports four modes:
  * - API mode (default): Full HTTP/WebSocket API server
  * - MCP mode: MCP protocol server for AI agent integration
  * - Worker mode: BullMQ worker for async job processing
+ * - Agent mode: Hosted agent workers connecting to /ws/chat
  */
 
 import { Logger } from '@nestjs/common';
@@ -22,6 +23,10 @@ async function bootstrap() {
     // Worker mode - Process queue jobs only
     const { bootstrapWorker } = await import('./bootstrap-worker');
     await bootstrapWorker();
+  } else if (MODE === 'agt') {
+    // Agent mode - Run hosted agents connected to /ws/chat
+    const { bootstrapAgentWorker } = await import('./bootstrap-agent');
+    await bootstrapAgentWorker();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');

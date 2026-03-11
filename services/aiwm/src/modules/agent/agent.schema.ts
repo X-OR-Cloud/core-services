@@ -37,7 +37,7 @@ export class Agent extends BaseSchema {
 
   @Prop({
     type: String,
-    enum: ['managed', 'autonomous'],
+    enum: ['managed', 'autonomous', 'hosted'],
     default: 'autonomous'
   })
   type: string;
@@ -86,6 +86,10 @@ export class Agent extends BaseSchema {
    *
    * Supported settings:
    * - auth_roles: string[] - Agent roles for RBAC (default: ['agent'])
+   * - hosted_maxConcurrency: number - Max concurrent conversations (hosted agents, default: 5)
+   * - hosted_idleTimeoutMs: number - Disconnect after idle ms (hosted agents, default: 300000)
+   * - hosted_reconnectDelayMs: number - Reconnect delay ms (hosted agents, default: 5000)
+   * - hosted_maxSteps: number - Max tool call steps per generateText (hosted agents, default: 10)
    * - claude_model: string - Claude model version (e.g., 'claude-3-5-sonnet-latest')
    * - claude_maxTurns: number - Maximum conversation turns (default: 100)
    * - claude_permissionMode: string - Permission mode (default: 'bypassPermissions')

@@ -5,6 +5,8 @@
   "scripts": {},
   "private": true,
   "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/openai": "^3.0.41",
     "@google/genai": "^1.41.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
@@ -27,6 +29,7 @@
     "@nestjs/websockets": "^11.1.10",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/marked": "^6.0.0",
+    "ai": "^6.0.116",
     "ajv": "^8.17.1",
     "axios": "^1.13.2",
     "bullmq": "^5.66.5",
@@ -43,7 +46,7 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.1",
+    "socket.io-client": "^4.8.3",
     "uuid": "^13.0.0",
     "zod": "^4.2.1"
   },

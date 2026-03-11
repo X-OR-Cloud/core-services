@@ -474,6 +474,67 @@ module.exports = {
       wait_ready: false,
       listen_timeout: 10000,
     },
+    // ========== AIWM Agent Worker Instances ==========
+    {
+      name: 'core.aiwm.agt00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '1G',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'agt',
+        SERVICE_NAME: 'aiwm',
+        WS_CHAT_URL: 'http://localhost:3337',
+        MCP_SERVER_URL: 'http://localhost:3334',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-agt-00-error.log',
+      out_file: './logs/aiwm-agt-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 15000,  // Allow graceful lock release + runner shutdown
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.aiwm.agt01',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '1G',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'agt',
+        SERVICE_NAME: 'aiwm',
+        WS_CHAT_URL: 'http://localhost:3338',
+        MCP_SERVER_URL: 'http://localhost:3335',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-agt-01-error.log',
+      out_file: './logs/aiwm-agt-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
     {
       name: 'core.cbm.api00',
       script: './dist/services/cbm/main.js',

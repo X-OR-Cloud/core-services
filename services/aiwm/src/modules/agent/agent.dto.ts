@@ -80,13 +80,13 @@ export class CreateAgentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type: managed = system-managed (deployed to node, has secret), autonomous = user-controlled (via UI, uses user JWT)',
-    enum: ['managed', 'autonomous'],
+    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI), hosted = in-process agent run by AIWM agt mode',
+    enum: ['managed', 'autonomous', 'hosted'],
     example: 'autonomous',
     required: false
   })
   @IsOptional()
-  @IsEnum(['managed', 'autonomous'])
+  @IsEnum(['managed', 'autonomous', 'hosted'])
   type?: string;
 
   @ApiPropertyOptional({
@@ -201,12 +201,12 @@ export class UpdateAgentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI)',
-    enum: ['managed', 'autonomous'],
+    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI), hosted = in-process agent run by AIWM agt mode',
+    enum: ['managed', 'autonomous', 'hosted'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['managed', 'autonomous'])
+  @IsEnum(['managed', 'autonomous', 'hosted'])
   type?: string;
 
   @ApiPropertyOptional({
