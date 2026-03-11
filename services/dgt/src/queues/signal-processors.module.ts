@@ -7,6 +7,8 @@ import { AccountModule } from '../modules/account/account.module';
 import { SignalModule } from '../modules/signal/signal.module';
 import { MarketPriceModule } from '../modules/market-price/market-price.module';
 import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
+import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-signal.module';
+import { MacroIndicatorModule } from '../modules/macro-indicator/macro-indicator.module';
 import { SignalLlmCollector } from '../collectors/signal-llm.collector';
 
 @Module({
@@ -19,6 +21,8 @@ import { SignalLlmCollector } from '../collectors/signal-llm.collector';
     SignalModule,
     MarketPriceModule,
     TechnicalIndicatorModule,
+    SentimentSignalModule,
+    MacroIndicatorModule,
   ],
   providers: [
     SignalSchedulerProcessor,
