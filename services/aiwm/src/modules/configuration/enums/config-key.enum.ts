@@ -56,9 +56,11 @@ export enum ConfigKey {
   IAM_BASE_API_URL = 'iam.base_api_url',
 
   // ==========================================
-  // Agent Deployment (1 key)
+  // Node & Agent Deployment (1 key)
   // ==========================================
-  AGENT_DOWNLOAD_BASE_URL = 'agent.download.base_url',
+  AGENT_DOWNLOAD_BASE_URL = 'agent.download_base_url',
+  NODE_DOWNLOAD_URL = 'node.download_url',
+
   // Example: 'https://cdn.x-or.cloud/agents'
   // Agents will download from: {baseUrl}/xora-cc-agent-latest.tar.gz
 }
