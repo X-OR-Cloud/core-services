@@ -16,13 +16,20 @@ export async function bootstrapWorker() {
   logger.log(`Starting DGT Worker (mode: ${mode})...`);
 
   let moduleClass: any;
-  if (mode === 'sig') {
+  if (mode === 'shd') {
+    const { AppSchedulerModule } = await import('./app/app-scheduler.module');
+    moduleClass = AppSchedulerModule;
+  } else if (mode === 'ing') {
+    const { AppIngestionModule } = await import('./app/app-ingestion.module');
+    moduleClass = AppIngestionModule;
+  } else if (mode === 'sig') {
     const { AppSignalModule } = await import('./app/app-signal.module');
     moduleClass = AppSignalModule;
   } else if (mode === 'mon') {
     const { AppMonitorModule } = await import('./app/app-monitor.module');
     moduleClass = AppMonitorModule;
   } else {
+    // fallback
     const { AppWorkerModule } = await import('./app/app-worker.module');
     moduleClass = AppWorkerModule;
   }
