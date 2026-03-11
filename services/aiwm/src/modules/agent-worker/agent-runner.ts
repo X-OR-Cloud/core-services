@@ -23,6 +23,10 @@ export interface AgentRunnerConfig {
   mcpServerUrl: string;
 }
 
+/** Slash commands supported by hosted agents */
+const SLASH_RELOAD = '/reload';
+const SLASH_STOP = '/stop';
+
 /**
  * AgentRunner — manages a single hosted agent's lifecycle:
  * - WebSocket connection to /ws/chat (as agent)
@@ -33,14 +37,16 @@ export class AgentRunner {
   private socket: Socket | null = null;
   private conversationId: string | null = null;
   private readonly processingMap = new Map<string, boolean>();
+  private readonly abortMap = new Map<string, AbortController>();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
+  private isReloading = false;
 
   private readonly maxConcurrency: number;
   private readonly reconnectDelayMs: number;
   private readonly maxSteps: number;
 
-  constructor(private readonly config: AgentRunnerConfig) {
+  constructor(private config: AgentRunnerConfig) {
     this.logger = new Logger(`AgentRunner[${config.agentName}]`);
     this.maxConcurrency = Number(config.settings['hosted_maxConcurrency'] ?? 5);
     this.reconnectDelayMs = Number(config.settings['hosted_reconnectDelayMs'] ?? 5_000);
@@ -130,6 +136,53 @@ export class AgentRunner {
     const conversationId: string = message.conversationId || this.conversationId;
     if (!conversationId) return;
 
+    const content: string = (message.content ?? '').trim();
+
+    // --- Slash command: /stop ---
+    if (content === SLASH_STOP) {
+      const controller = this.abortMap.get(conversationId);
+      if (controller) {
+        controller.abort();
+        this.logger.log(`/stop received — aborted generation for ${conversationId}`);
+        this.socket?.emit('message:send', {
+          conversationId,
+          role: 'assistant',
+          content: 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.',
+        });
+      } else {
+        this.socket?.emit('message:send', {
+          conversationId,
+          role: 'assistant',
+          content: 'Không có tác vụ nào đang chạy.',
+        });
+      }
+      return;
+    }
+
+    // --- Slash command: /reload ---
+    if (content === SLASH_RELOAD) {
+      if (this.isReloading) {
+        this.socket?.emit('message:send', {
+          conversationId,
+          role: 'assistant',
+          content: 'Đang reload, vui lòng chờ...',
+        });
+        return;
+      }
+      this.socket?.emit('message:send', {
+        conversationId,
+        role: 'assistant',
+        content: 'Đang reload instruction và MCP tools...',
+      });
+      const ok = await this.reload();
+      this.socket?.emit('message:send', {
+        conversationId,
+        role: 'assistant',
+        content: ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.',
+      });
+      return;
+    }
+
     // Concurrency guard
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
     if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
@@ -138,6 +191,8 @@ export class AgentRunner {
     }
 
     this.processingMap.set(conversationId, true);
+    const abortController = new AbortController();
+    this.abortMap.set(conversationId, abortController);
 
     try {
       this.socket?.emit('message:typing', { conversationId });
@@ -152,6 +207,7 @@ export class AgentRunner {
         messages: history,
         tools,
         stopWhen: stepCountIs(this.maxSteps),
+        abortSignal: abortController.signal,
       });
 
       this.socket?.emit('message:send', {
@@ -159,15 +215,51 @@ export class AgentRunner {
         role: 'assistant',
         content: result.text,
       });
-    } catch (err) {
-      this.logger.error(`AI generation error: ${err.message}`, err.stack);
-      this.socket?.emit('message:send', {
-        conversationId,
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your message.',
-      });
+    } catch (err: unknown) {
+      const e = err as Error;
+      if (e?.name === 'AbortError' || abortController.signal.aborted) {
+        // Already handled by /stop — no duplicate message
+      } else {
+        this.logger.error(`AI generation error: ${e.message}`, e.stack);
+        this.socket?.emit('message:send', {
+          conversationId,
+          role: 'assistant',
+          content: 'Sorry, I encountered an error processing your message.',
+        });
+      }
     } finally {
       this.processingMap.set(conversationId, false);
+      this.abortMap.delete(conversationId);
+    }
+  }
+
+  /**
+   * Re-fetch instruction, deployment and settings from /agents/:id/connect.
+   * Keeps the existing WebSocket connection alive.
+   */
+  private async reload(): Promise<boolean> {
+    this.isReloading = true;
+    try {
+      const resp = await axios.post(
+        `${this.config.wsChatUrl}/agents/${this.config.agentId}/connect`,
+        { secret: undefined }, // hosted agents connect via accessToken internally — call with current token
+        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
+      );
+      const { accessToken, instruction, deployment, settings } = resp.data;
+      this.config = {
+        ...this.config,
+        accessToken: accessToken ?? this.config.accessToken,
+        instruction: instruction ?? this.config.instruction,
+        deployment: deployment ?? this.config.deployment,
+        settings: settings ?? this.config.settings,
+      };
+      this.logger.log('Reloaded instruction and MCP config');
+      return true;
+    } catch (err: unknown) {
+      this.logger.error(`Reload failed: ${(err as Error).message}`);
+      return false;
+    } finally {
+      this.isReloading = false;
     }
   }
 
