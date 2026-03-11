@@ -100,10 +100,12 @@ export class SignalLlmCollector extends BaseCollector {
       return;
     }
 
+    const llmEndpoint = `${llmBaseUrl}/chat/completions`;
+    this.logger.info(`[SignalLLM] Calling LLM: ${llmEndpoint} model=${llmModel}`);
     let parsed: any;
     try {
       const response = await axios.post(
-        `${llmBaseUrl}/chat/completions`,
+        llmEndpoint,
         {
           model: llmModel,
           messages: [
@@ -125,7 +127,9 @@ export class SignalLlmCollector extends BaseCollector {
       const content = response.data?.choices?.[0]?.message?.content;
       parsed = JSON.parse(content);
     } catch (error: any) {
-      this.logger.error(`[${this.name}] LLM call failed: ${error.message}`);
+      const status = error.response?.status;
+      const body = JSON.stringify(error.response?.data)?.slice(0, 300);
+      this.logger.error(`[${this.name}] LLM call failed: ${error.message} | status=${status} | body=${body}`);
       await this.saveSignal(accountId, asset, timeframe, {
         signalType: SignalType.HOLD,
         confidence: 0,
