@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import axios from 'axios';
 import { Agent, AgentDocument } from '../agent/agent.schema';
+import { AgentService } from '../agent/agent.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
 
@@ -25,15 +25,14 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   private healthCheckTimer: NodeJS.Timeout | null = null;
 
   private readonly wsChatUrl: string;
-  private readonly mcpServerUrl: string;
   private readonly agentIdFilter: string[];
 
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly lockService: AgentLockService,
+    private readonly agentService: AgentService,
   ) {
     this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
-    this.mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:3355';
     this.agentIdFilter = process.env.AGENT_IDS
       ? process.env.AGENT_IDS.split(',').filter(Boolean)
       : [];
@@ -101,12 +100,14 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     const agentId = (agent as any)._id.toString();
 
     try {
-      const connectResp = await axios.post(
-        `${this.wsChatUrl}/agents/${agentId}/connect`,
-        { secret: (agent as any).secret },
-      );
+      // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
+      const connectResp = await this.agentService.connectInternal(agentId);
 
-      const { accessToken, instruction, deployment, settings } = connectResp.data;
+      const { accessToken, instruction, deployment, settings, mcpServers } = connectResp;
+
+      this.logger.debug(
+        `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}`,
+      );
 
       const runner = new AgentRunner({
         agentId,
@@ -115,8 +116,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         instruction,
         deployment,
         settings: settings || agent.settings || {},
+        mcpServers: {}, // mcpServers || {},
         wsChatUrl: this.wsChatUrl,
-        mcpServerUrl: this.mcpServerUrl,
+        connectInternal: (id) => this.agentService.connectInternal(id),
       });
 
       runner.start();

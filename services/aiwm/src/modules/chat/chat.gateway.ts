@@ -307,9 +307,11 @@ export class ChatGateway
       };
 
       // Create request context from socket data
+      // Agents are always allowed to create messages regardless of their RBAC role
+      const isAgent = client.data.type === 'agent';
       const context = {
         userId: client.data.userId || '',
-        roles: client.data.roles,
+        roles: isAgent ? ['organization.editor'] : client.data.roles,
         orgId: client.data.orgId,
         groupId: '',
         agentId: client.data.agentId || '',

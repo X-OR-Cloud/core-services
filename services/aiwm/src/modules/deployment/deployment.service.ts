@@ -9,7 +9,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -144,6 +144,14 @@ export class DeploymentService extends BaseService<Deployment> {
     // await this.deploymentProducer.emitDeploymentCreated(deployment);
 
     return deployment as Deployment;
+  }
+
+  /**
+   * Find a deployment by ID without permission checks (internal use only)
+   */
+  async findByObjectId(id: string): Promise<Deployment | null> {
+    const objectId = new Types.ObjectId(id);
+    return this.deploymentModel.findOne({ _id: objectId, isDeleted: { $ne: true } }).exec();
   }
 
   /**

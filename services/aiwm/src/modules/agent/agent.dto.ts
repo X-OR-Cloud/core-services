@@ -110,6 +110,15 @@ export class CreateAgentDto {
   @IsString()
   guardrailId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Deployment ID (required for hosted agents, must be status=running)',
+    required: false
+  })
+  @ValidateIf((o) => o.type === 'hosted')
+  @IsNotEmpty()
+  @IsString()
+  deploymentId?: string;
+
   @ApiPropertyOptional({ description: 'Node ID where agent runs (required for managed agents)', required: false })
   @IsString()
   @IsOptional()
@@ -230,8 +239,12 @@ export class UpdateAgentDto {
   @IsString()
   guardrailId?: string;
 
-  @ApiPropertyOptional({ description: 'Deployment ID (for autonomous agents)', required: false })
-  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'Deployment ID (required for hosted agents, must be status=running)',
+    required: false
+  })
+  @ValidateIf((o) => o.type === 'hosted')
+  @IsNotEmpty()
   @IsString()
   deploymentId?: string;
 

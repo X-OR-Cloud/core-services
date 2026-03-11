@@ -187,6 +187,11 @@ export class AgentService extends BaseService<Agent> {
       createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
     }
 
+    // Validate deploymentId for hosted agents
+    if (createAgentDto.type === 'hosted') {
+      await this.validateHostedDeployment(createAgentDto.deploymentId);
+    }
+
     // Validate nodeId for managed agents
     if (createAgentDto.type === 'managed') {
       if (!createAgentDto.nodeId) {
@@ -366,8 +371,8 @@ export class AgentService extends BaseService<Agent> {
       channels: agent.channels || [],
     };
 
-    // For autonomous agents, populate deployment info
-    if (agent.type === 'autonomous' && agent.deploymentId) {
+    // For autonomous and hosted agents, populate deployment info
+    if ((agent.type === 'autonomous' || agent.type === 'hosted') && agent.deploymentId) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -422,6 +427,25 @@ export class AgentService extends BaseService<Agent> {
    * Validates agentId + secret, returns JWT token + config
    * For managed agents only (system-managed agents with secrets)
    */
+  /**
+   * Internal connect for hosted agents spawned by AgentWorkerService.
+   * Bypasses secret verification — caller is trusted (same process).
+   */
+  async connectInternal(agentId: string): Promise<AgentConnectResponseDto> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+    if (agent.status === 'suspended') {
+      throw new UnauthorizedException('Agent is suspended');
+    }
+
+    return this.buildConnectResponse(agent);
+  }
+
   async connect(
     agentId: string,
     connectDto: AgentConnectDto
@@ -436,10 +460,6 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    // Both managed and autonomous agents can connect
-    // managed: system-managed agents (deployed to nodes, background agents)
-    // autonomous: user-controlled agents (chat UI)
-
     // Check if agent is suspended
     if (agent.status === 'suspended') {
       throw new UnauthorizedException('Agent is suspended');
@@ -453,6 +473,12 @@ export class AgentService extends BaseService<Agent> {
     if (!isSecretValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    return this.buildConnectResponse(agent);
+  }
+
+  private async buildConnectResponse(agent: AgentDocument): Promise<AgentConnectResponseDto> {
+    const agentId = (agent as any)._id.toString();
 
     // Extract roles from agent.role field or settings (backward compatibility)
     const agentRoles = agent.role
@@ -566,8 +592,8 @@ export class AgentService extends BaseService<Agent> {
       channels: agent.channels || [],
     };
 
-    // For autonomous agents, populate deployment info
-    if (agent.type === 'autonomous' && agent.deploymentId) {
+    // For autonomous and hosted agents, populate deployment info
+    if ((agent.type === 'autonomous' || agent.type === 'hosted') && agent.deploymentId) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -1714,6 +1740,15 @@ echo "Installation script placeholder - implement actual logic"
       }
     }
 
+    // Validate deploymentId for hosted agents
+    if (updateAgentDto.deploymentId) {
+      const existingAgent = await this.agentModel.findById(id).exec();
+      const effectiveType = updateAgentDto.type ?? existingAgent?.type;
+      if (effectiveType === 'hosted') {
+        await this.validateHostedDeployment(updateAgentDto.deploymentId);
+      }
+    }
+
     // Convert string to ObjectId for BaseService
     const objectId = new Types.ObjectId(id);
     const updated = await super.update(
@@ -1823,6 +1858,28 @@ echo "Installation script placeholder - implement actual logic"
           );
         }
       }
+    }
+  }
+
+  /**
+   * Validate that a deployment exists, is not deleted, and has status=running.
+   * Used for hosted agent create/update operations.
+   */
+  private async validateHostedDeployment(deploymentId: string | undefined): Promise<void> {
+    if (!deploymentId) {
+      throw new BadRequestException('deploymentId is required for hosted agents');
+    }
+
+    const deployment = await this.deploymentService.findByObjectId(deploymentId);
+
+    if (!deployment) {
+      throw new BadRequestException(`Deployment with ID ${deploymentId} not found`);
+    }
+
+    if (deployment.status !== 'running') {
+      throw new BadRequestException(
+        `Deployment ${deploymentId} must be in 'running' status (current: '${deployment.status}')`
+      );
     }
   }
 }

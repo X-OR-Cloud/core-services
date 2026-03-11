@@ -2,10 +2,25 @@ import { Logger } from '@nestjs/common';
 import { io, Socket } from 'socket.io-client';
 import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
 import axios from 'axios';
+
+export interface McpServerConfig {
+  type: string;
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface AgentConnectResult {
+  accessToken: string;
+  instruction: { id: string; systemPrompt: string };
+  deployment?: { id: string; provider: string; model: string; baseAPIEndpoint: string };
+  settings: Record<string, unknown>;
+  mcpServers?: Record<string, McpServerConfig>;
+}
 
 export interface AgentRunnerConfig {
   agentId: string;
@@ -19,8 +34,10 @@ export interface AgentRunnerConfig {
     baseAPIEndpoint: string;
   };
   settings: Record<string, unknown>;
+  mcpServers: Record<string, McpServerConfig>;
   wsChatUrl: string;
-  mcpServerUrl: string;
+  /** In-process connect callback — avoids HTTP round-trip through LB */
+  connectInternal: (agentId: string) => Promise<AgentConnectResult>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -137,6 +154,7 @@ export class AgentRunner {
     if (!conversationId) return;
 
     const content: string = (message.content ?? '').trim();
+    this.logger.debug(`[message:new] conv=${conversationId} role=${message.role} content="${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`);
 
     // --- Slash command: /stop ---
     if (content === SLASH_STOP) {
@@ -197,34 +215,60 @@ export class AgentRunner {
     try {
       this.socket?.emit('message:typing', { conversationId });
 
-      const history = await this.fetchHistory(conversationId);
-      const model = this.buildModel();
-      const tools = await this.resolveMcpTools();
+      let history = await this.fetchHistory(conversationId);
+      // Fallback: if history is empty (fetch failed or first message), use current message
+      if (!history.length) {
+        history = [{ role: 'user', content }];
+      }
+      this.logger.debug(`[history] conv=${conversationId} messages=${history.length}`);
 
+      const model = this.buildModel();
+      this.logger.debug(`[model] deployment=${this.config.deployment?.id} model=${this.config.deployment?.model}`);
+
+      const tools = await this.resolveMcpTools();
+      this.logger.debug(`[tools] resolved=${Object.keys(tools).length} names=[${Object.keys(tools).join(', ')}]`);
+
+      this.logger.debug(`[llm] calling generateText conv=${conversationId}`);
       const result = await generateText({
         model,
         system: this.config.instruction.systemPrompt,
         messages: history,
-        tools,
+        // tools,
         stopWhen: stepCountIs(this.maxSteps),
         abortSignal: abortController.signal,
+        onStepFinish: (step) => {
+          this.logger.debug(`[step#${step.stepNumber}] toolCalls=${step.toolCalls?.length ?? 0} toolResults=${step.toolResults?.length ?? 0} finishReason=${step.finishReason}`);
+          for (const call of step.toolCalls ?? []) {
+            this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
+          }
+          for (const res of step.toolResults ?? []) {
+            const outputStr = JSON.stringify(res.output).slice(0, 120);
+            this.logger.debug(`  [tool:result] ${res.toolName} → ${outputStr}`);
+          }
+        },
       });
 
+      this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
+      this.logger.debug(`[emit] message:send socketConnected=${this.socket?.connected} conv=${conversationId} text="${result.text?.slice(0, 60)}"`);
       this.socket?.emit('message:send', {
         conversationId,
         role: 'assistant',
         content: result.text,
       });
+      this.logger.debug(`[emit] message:send done`);
     } catch (err: unknown) {
       const e = err as Error;
       if (e?.name === 'AbortError' || abortController.signal.aborted) {
         // Already handled by /stop — no duplicate message
       } else {
         this.logger.error(`AI generation error: ${e.message}`, e.stack);
+        const isLlmError = e.name === 'AI_APICallError' || e.message?.includes('deployment') || e.message?.includes('Not Found') || e.message?.includes('API key');
         this.socket?.emit('message:send', {
           conversationId,
           role: 'assistant',
-          content: 'Sorry, I encountered an error processing your message.',
+          content: isLlmError
+            ? 'Hiện tại không thể kết nối với dịch vụ AI. Vui lòng thử lại sau hoặc liên hệ quản trị viên.'
+            : 'Đã xảy ra lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.',
         });
       }
     } finally {
@@ -234,24 +278,19 @@ export class AgentRunner {
   }
 
   /**
-   * Re-fetch instruction, deployment and settings from /agents/:id/connect.
+   * Re-fetch instruction, deployment and settings via in-process callback.
    * Keeps the existing WebSocket connection alive.
    */
   private async reload(): Promise<boolean> {
     this.isReloading = true;
     try {
-      const resp = await axios.post(
-        `${this.config.wsChatUrl}/agents/${this.config.agentId}/connect`,
-        { secret: undefined }, // hosted agents connect via accessToken internally — call with current token
-        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
-      );
-      const { accessToken, instruction, deployment, settings } = resp.data;
+      const resp = await this.config.connectInternal(this.config.agentId);
       this.config = {
         ...this.config,
-        accessToken: accessToken ?? this.config.accessToken,
-        instruction: instruction ?? this.config.instruction,
-        deployment: deployment ?? this.config.deployment,
-        settings: settings ?? this.config.settings,
+        accessToken: resp.accessToken ?? this.config.accessToken,
+        instruction: resp.instruction ?? this.config.instruction,
+        deployment: resp.deployment ?? this.config.deployment,
+        settings: resp.settings ?? this.config.settings,
       };
       this.logger.log('Reloaded instruction and MCP config');
       return true;
@@ -264,45 +303,51 @@ export class AgentRunner {
   }
 
   /**
-   * Resolve tools from MCP server using @modelcontextprotocol/sdk.
-   * Returns Vercel AI SDK compatible tool definitions.
+   * Resolve tools from all MCP servers in config.
+   * Returns Vercel AI SDK compatible tool definitions merged from all servers.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async resolveMcpTools(): Promise<Record<string, any>> {
-    const mcpClient = new McpClient({
-      name: `aiwm-hosted-${this.config.agentId}`,
-      version: '1.0.0',
-    });
-    const transport = new StreamableHTTPClientTransport(
-      new URL(`${this.config.mcpServerUrl}/mcp`),
-      { requestInit: { headers: { Authorization: `Bearer ${this.config.accessToken}` } } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toolMap: Record<string, any> = {};
+    const servers = Object.entries(this.config.mcpServers);
+
+    if (!servers.length) return toolMap;
+
+    await Promise.allSettled(
+      servers.map(async ([serverName, serverConfig]) => {
+        const mcpClient = new McpClient({
+          name: `aiwm-hosted-${this.config.agentId}-${serverName}`,
+          version: '1.0.0',
+        });
+        const transport = new StreamableHTTPClientTransport(new URL(serverConfig.url), {
+          requestInit: { headers: serverConfig.headers },
+        });
+
+        try {
+          await mcpClient.connect(transport);
+          const { tools: mcpTools } = await mcpClient.listTools();
+
+          for (const mcpTool of mcpTools) {
+            const toolName = mcpTool.name;
+            // Keep reference to this client for execute calls
+            toolMap[toolName] = {
+              description: mcpTool.description ?? '',
+              parameters: z.record(z.string(), z.unknown()),
+              execute: async (args: Record<string, unknown>) => {
+                const resp = await mcpClient.callTool({ name: toolName, arguments: args });
+                return resp.content;
+              },
+            };
+          }
+        } catch (err) {
+          this.logger.warn(`MCP tool resolution failed for [${serverName}]: ${(err as Error).message}`);
+        }
+        // Note: keep mcpClient open for execute() calls during generation
+      }),
     );
 
-    try {
-      await mcpClient.connect(transport);
-      const { tools: mcpTools } = await mcpClient.listTools();
-
-      const toolMap: Record<string, any> = {};
-      for (const mcpTool of mcpTools) {
-        const toolName = mcpTool.name;
-        const toolDescription = mcpTool.description ?? '';
-        // Build tool as plain object matching Vercel AI SDK ToolV1 shape
-        toolMap[toolName] = {
-          description: toolDescription,
-          parameters: z.object({}).passthrough(),
-          execute: async (args: Record<string, unknown>) => {
-            const resp = await mcpClient.callTool({ name: toolName, arguments: args });
-            return resp.content;
-          },
-        };
-      }
-
-      return toolMap;
-    } catch (err) {
-      this.logger.warn(`MCP tool resolution failed: ${err.message}`);
-      return {};
-    } finally {
-      await mcpClient.close().catch(() => {});
-    }
+    return toolMap;
   }
 
   /**
@@ -339,18 +384,33 @@ export class AgentRunner {
   private buildModel() {
     const { deployment } = this.config;
 
-    if (deployment?.baseAPIEndpoint) {
-      // Route through AIWM deployment proxy (OpenAI-compatible)
-      const openai = createOpenAI({
-        baseURL: deployment.baseAPIEndpoint,
-        apiKey: this.config.accessToken,
-      });
-      return openai(deployment.model);
+    if (!deployment?.baseAPIEndpoint) {
+      throw new Error('Agent chưa được cấu hình dịch vụ LLM. Vui lòng liên hệ quản trị viên để thiết lập deployment.');
     }
 
-    // Fallback: direct OpenAI
-    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY ?? '' });
-    return openai('gpt-4o-mini');
+    const { baseAPIEndpoint, model, provider } = deployment;
+
+    switch (provider?.toLowerCase()) {
+      case 'google': {
+        const google = createGoogleGenerativeAI({
+          apiKey: this.config.accessToken,
+          baseURL: baseAPIEndpoint.endsWith('/v1beta')
+            ? baseAPIEndpoint
+            : `${baseAPIEndpoint}/v1beta`,
+        });
+        return google(model);
+      }
+      default: {
+        // openai, azure, or any openai-compatible proxy
+        const openai = createOpenAI({
+          apiKey: this.config.accessToken,
+          baseURL: baseAPIEndpoint.endsWith('/v1')
+            ? baseAPIEndpoint
+            : `${baseAPIEndpoint}/v1`,
+        });
+        return openai.chat(model);
+      }
+    }
   }
 
   /**
@@ -359,10 +419,13 @@ export class AgentRunner {
    */
   private async fetchHistory(conversationId: string): Promise<any[]> {
     try {
-      const resp = await axios.get(`${this.config.wsChatUrl}/messages`, {
-        params: { conversationId, limit: 20, sort: 'createdAt:asc' },
-        headers: { Authorization: `Bearer ${this.config.accessToken}` },
-      });
+      const resp = await axios.get(
+        `${this.config.wsChatUrl}/messages/conversation/${conversationId}`,
+        {
+          params: { limit: 20, sort: 'createdAt:asc' },
+          headers: { Authorization: `Bearer ${this.config.accessToken}` },
+        },
+      );
 
       const messages: any[] = resp.data?.data || resp.data || [];
       return messages
