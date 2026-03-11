@@ -22,14 +22,6 @@ export class BotService extends BaseService<Bot> {
       throw new BadRequestException(`Cannot transition from RUNNING to CREATED`);
     }
 
-    if (newStatus === BotStatus.RUNNING && currentStatus === BotStatus.STOPPED) {
-      throw new BadRequestException(`Cannot transition from STOPPED to RUNNING. The bot must be restarted`);
-    }
-
-    if (newStatus === BotStatus.RUNNING && currentStatus === BotStatus.ERROR) {
-      throw new BadRequestException(`Cannot transition from ERROR to RUNNING. The bot must be restarted`);
-    }
-
     if (newStatus === BotStatus.CREATED && currentStatus === BotStatus.PAUSED) {
       throw new BadRequestException(`Cannot transition from PAUSED to CREATED`);
     }
