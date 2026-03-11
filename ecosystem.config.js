@@ -899,5 +899,63 @@ module.exports = {
       wait_ready: false,
       listen_timeout: 10000,
     },
+    {
+      name: 'core.dgt.sig00',
+      script: './dist/services/dgt/main.js',
+      args: 'sig',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '512M',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'sig',
+        SERVICE_NAME: 'dgt',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/dgt-sig-00-error.log',
+      out_file: './logs/dgt-sig-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 10000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.dgt.mon00',
+      script: './dist/services/dgt/main.js',
+      args: 'mon',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '256M',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'mon',
+        SERVICE_NAME: 'dgt',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/dgt-mon-00-error.log',
+      out_file: './logs/dgt-mon-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 10000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
   ],
 };
