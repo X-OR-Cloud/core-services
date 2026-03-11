@@ -68,6 +68,11 @@ export class CreateMessageDto {
   @IsEnum(['user', 'assistant', 'system'])
   role: string;
 
+  @ApiProperty({ description: 'Message type', enum: ['text', 'thinking', 'tool_call', 'tool_result', 'error', 'system'], required: false })
+  @IsOptional()
+  @IsEnum(['text', 'thinking', 'tool_call', 'tool_result', 'error', 'system'])
+  type?: string;
+
   @ApiProperty({ description: 'Message content' })
   @IsString()
   content: string;

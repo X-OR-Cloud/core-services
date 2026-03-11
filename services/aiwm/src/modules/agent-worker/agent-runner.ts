@@ -38,6 +38,8 @@ export interface AgentRunnerConfig {
   wsChatUrl: string;
   /** In-process connect callback — avoids HTTP round-trip through LB */
   connectInternal: (agentId: string) => Promise<AgentConnectResult>;
+  /** In-process heartbeat callback */
+  heartbeatInternal: (agentId: string, status: 'idle' | 'busy') => Promise<void>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -62,16 +64,20 @@ export class AgentRunner {
   private readonly maxConcurrency: number;
   private readonly reconnectDelayMs: number;
   private readonly maxSteps: number;
+  private readonly heartbeatIntervalMs: number;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(private config: AgentRunnerConfig) {
     this.logger = new Logger(`AgentRunner[${config.agentName}]`);
     this.maxConcurrency = Number(config.settings['hosted_maxConcurrency'] ?? 5);
     this.reconnectDelayMs = Number(config.settings['hosted_reconnectDelayMs'] ?? 5_000);
     this.maxSteps = Number(config.settings['hosted_maxSteps'] ?? 10);
+    this.heartbeatIntervalMs = Number(config.settings['hosted_heartbeatIntervalMs'] ?? 30_000);
   }
 
   start() {
     this.connect();
+    this.startHeartbeat();
   }
 
   stop() {
@@ -80,6 +86,10 @@ export class AgentRunner {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -87,8 +97,36 @@ export class AgentRunner {
     this.logger.log('Stopped');
   }
 
+  private startHeartbeat() {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => {
+      const status = this.isBusy ? 'busy' : 'idle';
+      this.config.heartbeatInternal(this.config.agentId, status).catch((err) => {
+        this.logger.warn(`Heartbeat failed: ${(err as Error).message}`);
+      });
+    }, this.heartbeatIntervalMs);
+  }
+
   get isConnected() {
     return this.socket?.connected ?? false;
+  }
+
+  get isBusy() {
+    return [...this.processingMap.values()].some(Boolean);
+  }
+
+  sendReadyMessage() {
+    this.emitSystemMessage(this.conversationId, 'Agent đã sẵn sàng!');
+  }
+
+  private emitSystemMessage(conversationId: string | null, content: string) {
+    if (!conversationId || !this.socket?.connected) return;
+    this.socket.emit('message:send', {
+      conversationId,
+      role: 'assistant',
+      type: 'system',
+      content,
+    });
   }
 
   reconnect() {
@@ -128,6 +166,7 @@ export class AgentRunner {
       if (data.agentId === this.config.agentId && data.conversationId) {
         this.conversationId = data.conversationId;
         this.logger.log(`Conversation assigned: ${this.conversationId}`);
+        this.sendReadyMessage();
       }
     });
 
@@ -162,17 +201,9 @@ export class AgentRunner {
       if (controller) {
         controller.abort();
         this.logger.log(`/stop received — aborted generation for ${conversationId}`);
-        this.socket?.emit('message:send', {
-          conversationId,
-          role: 'assistant',
-          content: 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.',
-        });
+        this.emitSystemMessage(conversationId, 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.');
       } else {
-        this.socket?.emit('message:send', {
-          conversationId,
-          role: 'assistant',
-          content: 'Không có tác vụ nào đang chạy.',
-        });
+        this.emitSystemMessage(conversationId, 'Không có tác vụ nào đang chạy.');
       }
       return;
     }
@@ -180,24 +211,12 @@ export class AgentRunner {
     // --- Slash command: /reload ---
     if (content === SLASH_RELOAD) {
       if (this.isReloading) {
-        this.socket?.emit('message:send', {
-          conversationId,
-          role: 'assistant',
-          content: 'Đang reload, vui lòng chờ...',
-        });
+        this.emitSystemMessage(conversationId, 'Đang reload, vui lòng chờ...');
         return;
       }
-      this.socket?.emit('message:send', {
-        conversationId,
-        role: 'assistant',
-        content: 'Đang reload instruction và MCP tools...',
-      });
+      this.emitSystemMessage(conversationId, 'Đang reload instruction và MCP tools...');
       const ok = await this.reload();
-      this.socket?.emit('message:send', {
-        conversationId,
-        role: 'assistant',
-        content: ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.',
-      });
+      this.emitSystemMessage(conversationId, ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.');
       return;
     }
 
@@ -221,6 +240,19 @@ export class AgentRunner {
         history = [{ role: 'user', content }];
       }
       this.logger.debug(`[history] conv=${conversationId} messages=${history.length}`);
+
+      const systemPrompt = this.config.instruction?.systemPrompt ?? '';
+      this.logger.debug(`[system] instructionId=${this.config.instruction?.id} prompt="${systemPrompt.slice(0, 80)}..."`);
+
+      const INVALID_PROMPTS = [
+        'No instruction configured for this agent.',
+        'Instruction not found.',
+        'Instruction is currently inactive.',
+      ];
+      if (!systemPrompt || INVALID_PROMPTS.includes(systemPrompt)) {
+        this.emitSystemMessage(conversationId, 'Agent chưa được thiết lập chỉ dẫn hoặc chỉ dẫn không còn hoạt động. Vui lòng liên hệ quản trị viên để cấu hình lại.');
+        return;
+      }
 
       const model = this.buildModel();
       this.logger.debug(`[model] deployment=${this.config.deployment?.id} model=${this.config.deployment?.model}`);
@@ -263,13 +295,12 @@ export class AgentRunner {
       } else {
         this.logger.error(`AI generation error: ${e.message}`, e.stack);
         const isLlmError = e.name === 'AI_APICallError' || e.message?.includes('deployment') || e.message?.includes('Not Found') || e.message?.includes('API key');
-        this.socket?.emit('message:send', {
+        this.emitSystemMessage(
           conversationId,
-          role: 'assistant',
-          content: isLlmError
+          isLlmError
             ? 'Hiện tại không thể kết nối với dịch vụ AI. Vui lòng thử lại sau hoặc liên hệ quản trị viên.'
             : 'Đã xảy ra lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.',
-        });
+        );
       }
     } finally {
       this.processingMap.set(conversationId, false);
@@ -429,7 +460,7 @@ export class AgentRunner {
 
       const messages: any[] = resp.data?.data || resp.data || [];
       return messages
-        .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+        .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && m.type !== 'system')
         .map((m: any) => ({ role: m.role, content: m.content }));
     } catch (err) {
       this.logger.warn(`Failed to fetch history: ${err.message}`);
