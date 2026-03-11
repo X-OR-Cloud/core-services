@@ -37,7 +37,6 @@ export class License extends BaseSchema {
     type: String,
     required: true,
     enum: Object.values(ServiceName),
-    index: true,
   })
   serviceName: ServiceName;
 
