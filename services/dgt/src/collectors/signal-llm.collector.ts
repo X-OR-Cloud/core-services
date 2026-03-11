@@ -80,7 +80,7 @@ export class SignalLlmCollector extends BaseCollector {
 
     // Step 5: Call LLM
     // TODO: remove hardcoded fallbacks after env issue is fixed
-    const llmBaseUrl = process.env['LLM_BASE_URL'] || 'https://api.tokenfactory.nebius.com/v1/';
+    const llmBaseUrl = process.env['LLM_BASE_URL'] || 'https://api.tokenfactory.nebius.com/v1';
     const llmApiKey = process.env['LLM_API_KEY'] || 'v1.CmMKHHN0YXRpY2tleS1lMDBia2ZteW5rdDd0Nmh2MDkSIXNlcnZpY2VhY2NvdW50LWUwMG1oNnZ4YTVnbm0yZDFqbTIMCI2a78wGENHX7eICOgsIjZ2HmAcQgN3FMkACWgNlMDA.AAAAAAAAAAFsdIlxBRZK8YSAgCJKznrDA2v4BQcehC500RpQ8JrE3xt_bo6GApiLZkIXDP34KjVGgqUZpo5Ui6Qit0GpppIF';
     const llmModel =
       process.env['LLM_SIGNAL_MODEL'] ||
