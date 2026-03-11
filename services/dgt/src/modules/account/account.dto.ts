@@ -52,6 +52,11 @@ export class NotificationsConfigDto {
   @IsOptional()
   telegramChatId?: string;
 
+  @ApiProperty({ required: false, description: 'Telegram topic/thread ID for supergroups' })
+  @IsString()
+  @IsOptional()
+  telegramThreadId?: string;
+
   @ApiProperty({ required: false, default: false })
   @IsBoolean()
   @IsOptional()
