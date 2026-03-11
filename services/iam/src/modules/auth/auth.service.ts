@@ -11,7 +11,6 @@ import {
   verifyPasswordWithAlgorithm,
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
-import { Organization } from '../organization/organization.schema';
 import { User } from '../user/user.schema';
 import { TokenStorageService } from './token-storage.service';
 import { LicenseService } from '../license/license.service';
@@ -25,7 +24,6 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    @InjectModel(Organization.name) private readonly orgRepo: Model<Organization>,
     @InjectModel(User.name) private readonly userRepo: Model<User>,
     private readonly tokenStorage: TokenStorageService,
     private readonly licenseService: LicenseService,
@@ -41,6 +39,11 @@ export class AuthService {
     });
 
     if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Google users cannot login with password
+    if (user.provider === AuthProvider.GOOGLE || !user.password) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -69,8 +72,8 @@ export class AuthService {
     if (orgId) {
       try {
         licenses = await this.licenseService.getLicensesForJWT(orgId);
-      } catch (error) {
-        console.error('Failed to fetch licenses for JWT:', error.message);
+      } catch (error: unknown) {
+        console.error('Failed to fetch licenses for JWT:', (error as Error).message);
         // Continue with empty licenses if fetch fails
       }
     }
@@ -172,6 +175,11 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // Google users cannot change password
+    if (user.provider === AuthProvider.GOOGLE || !user.password) {
+      throw new UnauthorizedException('Password change not supported for Google accounts');
+    }
+
     // Verify old password
     const isOldPasswordValid = await verifyPasswordWithAlgorithm(
       oldPassword,
@@ -243,8 +251,8 @@ export class AuthService {
     if (orgId) {
       try {
         licenses = await this.licenseService.getLicensesForJWT(orgId);
-      } catch (error) {
-        console.error('Failed to fetch licenses for JWT:', error.message);
+      } catch (error: unknown) {
+        console.error('Failed to fetch licenses for JWT:', (error as Error).message);
         // Continue with empty licenses if fetch fails
       }
     }
@@ -288,7 +296,7 @@ export class AuthService {
   async logout(
     accessToken: string,
     refreshToken: string | undefined,
-    userId: string
+    _userId: string
   ): Promise<{ success: boolean; message: string }> {
     // Decode access token to get expiration
     const jwtSecret = process.env.JWT_SECRET;
@@ -440,9 +448,9 @@ export class AuthService {
           roles: node.roles || ['node-operator'],
         },
       };
-    } catch (error) {
+    } catch (error: unknown) {
       // Handle AIWM API errors
-      if (error.response?.status === 401) {
+      if ((error as any).response?.status === 401) {
         throw new UnauthorizedException('Invalid node credentials');
       }
       throw error;
@@ -537,8 +545,8 @@ export class AuthService {
     if (orgId) {
       try {
         licenses = await this.licenseService.getLicensesForJWT(orgId);
-      } catch (error) {
-        this.logger.error('Failed to fetch licenses for Google SSO JWT', { message: error.message });
+      } catch (error: unknown) {
+        this.logger.error('Failed to fetch licenses for Google SSO JWT', { message: (error as Error).message });
       }
     }
 
