@@ -6,10 +6,15 @@ import {
   Patch,
   UseGuards,
   Request,
+  Res,
+  Req,
   UsePipes,
   ValidationPipe,
   Headers,
+  Logger,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -17,6 +22,7 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { TokenData } from './auth.entity';
@@ -25,7 +31,12 @@ import { JwtAuthGuard } from '@hydrabyte/base';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  private readonly logger = new Logger(AuthController.name);
+
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('login')
   @ApiOperation({ summary: 'User login', description: 'Authenticate user and return JWT tokens' })
@@ -142,5 +153,37 @@ export class AuthController {
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async nodeLogin(@Body() dto: NodeLoginDto): Promise<NodeTokenData> {
     return this.authService.nodeLogin(dto);
+  }
+
+  @Get('google')
+  @ApiOperation({ summary: 'Google SSO login', description: 'Redirect to Google OAuth 2.0 authorization page' })
+  @ApiResponse({ status: 302, description: 'Redirect to Google' })
+  @UseGuards(AuthGuard('google'))
+  async googleAuth(): Promise<void> {
+    // Passport handles the redirect automatically
+  }
+
+  @Get('google/callback')
+  @ApiOperation({ summary: 'Google SSO callback', description: 'Handle Google OAuth 2.0 callback and redirect to frontend' })
+  @ApiResponse({ status: 302, description: 'Redirect to frontend with tokens or error' })
+  @UseGuards(AuthGuard('google'))
+  async googleCallback(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const feBaseUrl = this.configService.get<string>('FE_BASE_URL') || '';
+    try {
+      const result = await this.authService.handleGoogleCallback((req as any).user as any);
+      if ('error' in result) {
+        return res.redirect(`${feBaseUrl}/login?error=${result.error}`) as any;
+      }
+      const redirectUrl = new URL(`${feBaseUrl}/auth/callback`);
+      redirectUrl.searchParams.set('token', result.accessToken);
+      redirectUrl.searchParams.set('refreshToken', result.refreshToken);
+      return res.redirect(redirectUrl.toString()) as any;
+    } catch (error) {
+      this.logger.error('Google OAuth callback error', { message: error.message });
+      return res.redirect(`${feBaseUrl}/login?error=google_service_unavailable`) as any;
+    }
   }
 }

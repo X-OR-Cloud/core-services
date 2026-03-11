@@ -90,8 +90,9 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
 - **IAM** (Identity & Access Management) - Port 3001
   - User management with MongoDB/Mongoose
   - Organization management
-  - JWT authentication strategy
+  - JWT authentication strategy (local + Google OAuth 2.0 SSO)
   - Password encryption utilities
+  - See [`services/iam/CLAUDE.md`](services/iam/CLAUDE.md) for Google SSO details
 
 - **NOTI** (Notification Service) - Port 3002
   - Real-time notifications via WebSocket

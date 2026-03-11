@@ -51,6 +51,28 @@ const REQUIRED_ENV_VARS: EnvVariable[] = [
     description: 'Internal API key for service-to-service communication',
     sensitive: true,
   },
+  {
+    key: 'GOOGLE_CLIENT_ID',
+    required: false,
+    description: 'Google OAuth 2.0 client ID',
+    sensitive: true,
+  },
+  {
+    key: 'GOOGLE_CLIENT_SECRET',
+    required: false,
+    description: 'Google OAuth 2.0 client secret',
+    sensitive: true,
+  },
+  {
+    key: 'GOOGLE_REDIRECT_URI',
+    required: false,
+    description: 'Google OAuth 2.0 redirect URI',
+  },
+  {
+    key: 'FE_BASE_URL',
+    required: false,
+    description: 'Frontend base URL for redirecting after OAuth',
+  },
 ];
 
 /**

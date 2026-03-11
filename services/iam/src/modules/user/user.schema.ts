@@ -3,6 +3,7 @@ import { BaseSchema } from '@hydrabyte/base';
 import { HydratedDocument } from 'mongoose';
 import { UserStatuses } from '../../core/enums/user.enum';
 import { PasswordHashAlgorithms } from '../../core/enums/other.enum';
+import { AuthProvider } from '../../core/enums/auth-provider.enum';
 
 export interface UserMetadata {
   discordUserId?: string;
@@ -21,17 +22,18 @@ export class User extends BaseSchema {
 
   @Prop({
     type: {
-      hashedValue: { type: String, required: true },
-      algorithm: { type: String, required: true },
+      hashedValue: { type: String, required: false },
+      algorithm: { type: String, required: false },
       ref: { type: String, required: false },
     },
-    required: true,
+    required: false,
+    default: null,
   })
   password: {
     hashedValue: string;
     algorithm: PasswordHashAlgorithms;
     ref?: string;
-  };
+  } | null;
 
   @Prop({ required: true })
   role: string;
@@ -51,6 +53,21 @@ export class User extends BaseSchema {
   // Override metadata from BaseSchema with specific type
   @Prop({ type: Object, required: false, default: {} })
   metadata: UserMetadata;
+
+  @Prop({ type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL })
+  provider: AuthProvider;
+
+  @Prop({ type: String, required: false, default: null })
+  googleId: string | null;
+
+  @Prop({ type: String, required: false, default: null })
+  avatarUrl: string | null;
+
+  @Prop({ type: Date, required: false, default: null })
+  lastLoginAt: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Create sparse unique index on googleId so multiple null values are allowed
+UserSchema.index({ googleId: 1 }, { sparse: true, unique: true });
