@@ -273,22 +273,29 @@ export class SignalLlmCollector extends BaseCollector {
       `[SignalLLM] Generated ${signalType} signal for ${asset}/${timeframe} (confidence: ${confidence})`,
     );
 
-    // Notify only for actionable signals
-    if (signalType === SignalType.BUY || signalType === SignalType.SELL) {
-      const action = signalType === SignalType.BUY ? '🟢 BUY' : '🔴 SELL';
-      await this.notificationService.notifyAccount(accountId, {
-        title: `${action} Signal — ${asset} (${timeframe})`,
-        message: insight,
-        level: signalType === SignalType.BUY ? 'success' : 'warning',
-        data: {
-          Asset: asset,
-          Timeframe: timeframe,
-          Confidence: `${confidence}% (${confidenceLabel})`,
-          Price: priceAtCreation ? `$${priceAtCreation}` : 'N/A',
-          Expires: expiresAt.toISOString(),
-        },
-      });
-    }
+    // Notify for all signal types
+    const actionMap = {
+      [SignalType.BUY]: '🟢 BUY',
+      [SignalType.SELL]: '🔴 SELL',
+      [SignalType.HOLD]: '⏸️ HOLD',
+    };
+    const levelMap = {
+      [SignalType.BUY]: 'success' as const,
+      [SignalType.SELL]: 'warning' as const,
+      [SignalType.HOLD]: 'info' as const,
+    };
+    await this.notificationService.notifyAccount(accountId, {
+      title: `${actionMap[signalType]} Signal — ${asset} (${timeframe})`,
+      message: insight || 'No analysis available.',
+      level: levelMap[signalType],
+      data: {
+        Asset: asset,
+        Timeframe: timeframe,
+        Confidence: `${confidence}% (${confidenceLabel})`,
+        Price: priceAtCreation ? `$${priceAtCreation}` : 'N/A',
+        Expires: expiresAt.toISOString(),
+      },
+    });
   }
 
   private buildUserPrompt(
