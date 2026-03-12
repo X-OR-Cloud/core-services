@@ -394,9 +394,16 @@ export class ChatGateway
       const messageDto = { ...dto, conversationId };
 
       const isAgent = client.data.type === 'agent';
+      const isAnonymous = client.data.type === 'anonymous';
+      // Agent and anonymous users bypass RBAC with a minimum role
+      const roles = isAgent
+        ? ['organization.editor']
+        : isAnonymous
+          ? ['organization.viewer']
+          : client.data.roles;
       const context = {
         userId: client.data.userId || '',
-        roles: isAgent ? ['organization.editor'] : client.data.roles,
+        roles,
         orgId: client.data.orgId,
         groupId: '',
         agentId: client.data.agentId || '',
