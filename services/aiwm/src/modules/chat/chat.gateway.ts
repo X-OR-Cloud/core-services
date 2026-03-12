@@ -99,7 +99,8 @@ export class ChatGateway
             return;
           }
           // Broadcast to room — no Message record needed, Action was already saved by con worker
-          const broadcastPayload = { conversationId, agentId, orgId, role, content, externalUsername };
+          // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
+          const broadcastPayload = { conversationId, orgId, role, content, externalUsername };
           this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
             `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,

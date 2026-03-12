@@ -87,7 +87,7 @@ export class ConnectionRunner {
           type: ActionType.MESSAGE,
           actor: resolved.actor,
           content: msg.text,
-          actionMeta: {
+          metadata: {
             attachments: msg.attachments,
             raw: msg.raw,
           },

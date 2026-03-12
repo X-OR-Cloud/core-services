@@ -72,7 +72,7 @@ export class Action extends BaseSchema {
   content: string;
 
   @Prop({ required: false, type: Object })
-  actionMeta?: ActionMetadata;
+  metadata?: ActionMetadata;
 
   @Prop({ required: false, type: Object })
   usage?: ActionUsage;

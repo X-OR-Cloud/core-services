@@ -154,7 +154,7 @@ export class CreateActionDto {
   @IsOptional()
   @ValidateNested()
   @Type(() => ActionMetadataDto)
-  actionMeta?: ActionMetadataDto;
+  metadata?: ActionMetadataDto;
 
   @ApiProperty({ type: ActionUsageDto, required: false })
   @IsOptional()
