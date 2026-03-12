@@ -24,12 +24,17 @@ export class ChatService {
   ) {}
 
   /**
-   * Send a message in a conversation
+   * Send a message in a conversation.
+   * When owner is provided, bypasses RBAC (used for agent and anonymous users).
    */
   async sendMessage(
     dto: CreateMessageDto,
     context: RequestContext,
+    owner?: { orgId: string; agentId: string; userId: string },
   ): Promise<Message> {
+    if (owner) {
+      return this.messageService.createMessageDirect(dto, owner);
+    }
     return this.messageService.createMessage(dto, context);
   }
 

@@ -21,6 +21,88 @@ export class MessageService extends BaseService<Message> {
   }
 
   /**
+   * Create a message directly, bypassing RBAC.
+   * Used for agent and anonymous users in WebSocket chat.
+   * Caller must supply full owner context.
+   */
+  async createMessageDirect(
+    dto: CreateMessageDto,
+    owner: { orgId: string; agentId: string; userId: string },
+  ): Promise<Message> {
+    // Validate attachments if present
+    if (dto.attachments && dto.attachments.length > 0) {
+      const validation = AttachmentHelper.validateAll(dto.attachments);
+      if (!validation.valid) {
+        throw new BadRequestException({
+          message: 'Invalid attachments',
+          invalidAttachments: validation.invalidAttachments,
+        });
+      }
+    }
+
+    const actorId = owner.userId || owner.agentId;
+    const message = await this.model.create({
+      ...dto,
+      owner: {
+        orgId: owner.orgId || '',
+        agentId: owner.agentId || '',
+        userId: owner.userId || '',
+        groupId: '',
+        appId: '',
+      },
+      createdBy: actorId,
+      updatedBy: actorId,
+    });
+
+    // Update conversation metadata
+    await this.conversationService.updateLastMessage(
+      dto.conversationId,
+      dto.content,
+      dto.role,
+      new Date(),
+    );
+    await this.conversationService.incrementMessageCount(dto.conversationId);
+
+    if (dto.usage) {
+      const cost = this.calculateCost(dto.usage.totalTokens);
+      await this.conversationService.updateTokenUsage(
+        dto.conversationId,
+        dto.usage.totalTokens,
+        cost,
+      );
+    }
+
+    const context: RequestContext = {
+      userId: actorId,
+      roles: ['organization.editor'],
+      orgId: owner.orgId || '',
+      groupId: '',
+      agentId: owner.agentId || '',
+      appId: '',
+    };
+    const conversation = await this.conversationService.findById(
+      new Types.ObjectId(dto.conversationId) as any,
+      context,
+    );
+    if (conversation && conversation.totalMessages % 10 === 0) {
+      this.conversationService
+        .generateContextSummary(dto.conversationId, context)
+        .catch((error) => {
+          this.logger.error(
+            `Failed to generate summary for conversation ${dto.conversationId}:`,
+            error.stack,
+          );
+        });
+    }
+
+    this.logger.log(
+      `Created message (direct) ${(message as any)._id} in conversation ${dto.conversationId}`,
+    );
+
+    return message as unknown as Message;
+  }
+
+  /**
    * Create a new message
    */
   async createMessage(

@@ -395,22 +395,25 @@ export class ChatGateway
 
       const isAgent = client.data.type === 'agent';
       const isAnonymous = client.data.type === 'anonymous';
-      // Agent and anonymous users bypass RBAC with a minimum role
-      const roles = isAgent
-        ? ['organization.editor']
-        : isAnonymous
-          ? ['organization.viewer']
-          : client.data.roles;
       const context = {
         userId: client.data.userId || '',
-        roles,
+        roles: client.data.roles || [],
         orgId: client.data.orgId,
         groupId: '',
         agentId: client.data.agentId || '',
         appId: '',
       };
 
-      const message = await this.chatService.sendMessage(messageDto, context);
+      // Agent and anonymous users bypass RBAC via createMessageDirect with full owner
+      const owner = (isAgent || isAnonymous)
+        ? {
+            orgId: client.data.orgId || '',
+            agentId: client.data.agentId || '',
+            userId: client.data.userId || '',
+          }
+        : undefined;
+
+      const message = await this.chatService.sendMessage(messageDto, context, owner);
       const messageDoc = message as MessageDocument;
       const messageId = messageDoc._id?.toString() || 'unknown';
 
