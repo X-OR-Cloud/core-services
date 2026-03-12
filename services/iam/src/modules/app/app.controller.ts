@@ -73,7 +73,7 @@ export class AppController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
-  ): Promise<App | null> {
+  ): Promise<Partial<App>> {
     const app = await this.appService.findById(new Types.ObjectId(id) as unknown as ObjectId, context);
     if (!app) throw new NotFoundException(`App with ID ${id} not found`);
     return app;
@@ -89,7 +89,7 @@ export class AppController {
     @Param('id') id: string,
     @Body() updateDTO: UpdateAppDTO,
     @CurrentUser() context: RequestContext,
-  ): Promise<App | null> {
+  ): Promise<Partial<App>> {
     const updated = await this.appService.update(new Types.ObjectId(id) as unknown as ObjectId, updateDTO, context);
     if (!updated) throw new NotFoundException(`App with ID ${id} not found`);
     return updated;

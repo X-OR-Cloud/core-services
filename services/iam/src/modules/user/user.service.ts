@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -11,10 +11,15 @@ import {
 } from '../../core/utils/encryption.util';
 import { CreateUserData, ChangePasswordDto, ChangeRoleDto, CreateGoogleUserData } from './user.dto';
 import { AuthProvider } from '../../core/enums/auth-provider.enum';
+import { IamEventProducer } from '../../queues/producers/iam-event.producer';
+
 @Injectable()
 export class UsersService extends BaseService<User> {
 
-  constructor(@InjectModel(User.name) userModel: Model<User>) {
+  constructor(
+    @InjectModel(User.name) userModel: Model<User>,
+    @Optional() private readonly iamEventProducer: IamEventProducer,
+  ) {
     super(userModel);
   }
 
@@ -46,34 +51,10 @@ export class UsersService extends BaseService<User> {
         options.filter['address'] = { $regex: options.filter['address'], $options: 'i' };
       }
     }
-    const findResult = await super.findAll(options, context);
-    // Aggregate statistics by status
-    const statusStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
 
-    // Build statistics object
-    const statistics: any = {
-      total: findResult.pagination.total,
-      byStatus: {},
-    };
-
-    // Map status statistics
-    statusStats.forEach((stat: any) => {
-      statistics.byStatus[stat._id] = stat.count;
-    });
-
-    findResult.statistics = statistics;
-    return findResult;
+    options.statisticFields = ['status', 'role']; // Specify fields for statistics aggregation
+    options.selectFields = ['-password']; // Exclude password field from results
+    return await super.findAll(options, context);
   }
 
   async create(data: CreateUserData, context: RequestContext): Promise<Partial<User>> {
@@ -97,7 +78,20 @@ export class UsersService extends BaseService<User> {
       appId: '',
     };
     user.role = data.role;
-    return await super.create(user, context);
+    const created = await super.create(user, context);
+    const createdId = (created as { _id?: { toString(): string } })._id?.toString();
+    if (createdId) {
+      await this.iamEventProducer?.emitUserCreated({
+        userId: createdId,
+        username: created.username ?? data.username,
+        role: created.role ?? data.role,
+        orgId: context.orgId,
+        provider: 'local',
+        status: (created.status ?? data.status) as string,
+        fullname: created.fullname,
+      });
+    }
+    return created;
   }
 
   /**
@@ -107,7 +101,7 @@ export class UsersService extends BaseService<User> {
     id: ObjectId,
     data: Partial<User>,
     context: RequestContext
-  ): Promise<User | null> {
+  ): Promise<Partial<User>> {
     const targetUser = await this.model.findById(id).exec();
     if (!targetUser) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -115,7 +109,17 @@ export class UsersService extends BaseService<User> {
 
     this.assertNotEscalatingPrivilege(context.roles, targetUser.role);
 
-    return super.update(id, data, context);
+    const updated = await super.update(id, data, context);
+    // await this.iamEventProducer?.emitUserUpdated({
+    //   userId: id.toString(),
+    //   username: targetUser.username,
+    //   orgId: targetUser.owner?.orgId ?? '',
+    //   updatedFields: Object.keys(data),
+    //   role: data.role,
+    //   status: data.status as string | undefined,
+    //   fullname: data.fullname,
+    // });
+    return updated;
   }
 
   /**
@@ -125,7 +129,7 @@ export class UsersService extends BaseService<User> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<User | null> {
+  ): Promise<Partial<User>> {
     this.logger.debug('User soft delete requested', {
       targetUserId: id.toString(),
       currentUserId: context.userId,
@@ -168,7 +172,14 @@ export class UsersService extends BaseService<User> {
     }
 
     // Call parent softDelete method
-    return super.softDelete(id, context);
+    const deleted = await super.softDelete(id, context);
+    // await this.iamEventProducer?.emitUserDeleted({
+    //   userId: id.toString(),
+    //   username: targetUser?.username ?? '',
+    //   orgId: targetUser?.owner?.orgId ?? '',
+    //   deletedBy: context.userId,
+    // });
+    return deleted;
   }
 
   /**
@@ -208,7 +219,15 @@ export class UsersService extends BaseService<User> {
     }
 
     user.role = changeRoleDto.role;
-    return user.save();
+    const saved = await user.save();
+    // await this.iamEventProducer?.emitUserUpdated({
+    //   userId: userId.toString(),
+    //   username: user.username,
+    //   orgId: user.owner?.orgId ?? '',
+    //   updatedFields: ['role'],
+    //   role: changeRoleDto.role,
+    // });
+    return saved;
   }
 
   /**
@@ -262,12 +281,12 @@ export class UsersService extends BaseService<User> {
   }
 
   /**
-   * Find a user by their Google ID
+   * Find a user by their Google ID (stored in metadata.googleId)
    * @param googleId - Google account ID
    * @returns User document or null
    */
   async findByGoogleId(googleId: string): Promise<User | null> {
-    return this.model.findOne({ googleId, isDeleted: false }).exec();
+    return this.model.findOne({ 'metadata.googleId': googleId, isDeleted: false }).exec();
   }
 
   /**
@@ -289,9 +308,8 @@ export class UsersService extends BaseService<User> {
       username: data.username,
       password: null,
       provider: data.provider,
-      googleId: data.googleId,
       fullname: data.fullname || data.username,
-      avatarUrl: data.avatarUrl,
+      metadata: data.metadata,
       role: data.role,
       status: data.status,
       owner: {

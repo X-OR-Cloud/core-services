@@ -73,7 +73,7 @@ export class UsersController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext
-  ): Promise<User | null> {
+  ): Promise<Partial<User>> {
     const user = await this.userService.findById(new Types.ObjectId(id) as unknown as ObjectId, context);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -90,7 +90,7 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateDTO: UpdateUserData,
     @CurrentUser() context: RequestContext
-  ): Promise<User | null> {
+  ): Promise<Partial<User>> {
     const updated = await this.userService.update(new Types.ObjectId(id) as unknown as ObjectId, updateDTO, context);
     if (!updated) {
       throw new NotFoundException(`User with ID ${id} not found`);

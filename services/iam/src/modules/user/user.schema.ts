@@ -6,6 +6,8 @@ import { PasswordHashAlgorithms } from '../../core/enums/other.enum';
 import { AuthProvider } from '../../core/enums/auth-provider.enum';
 
 export interface UserMetadata {
+  googleId?: string;
+  avatarUrl?: string | null;
   discordUserId?: string;
   discordUsername?: string;
   telegramUserId?: string;
@@ -57,17 +59,8 @@ export class User extends BaseSchema {
   @Prop({ type: String, enum: Object.values(AuthProvider), default: AuthProvider.LOCAL })
   provider: AuthProvider;
 
-  @Prop({ type: String, required: false, default: null })
-  googleId: string | null;
-
-  @Prop({ type: String, required: false, default: null })
-  avatarUrl: string | null;
-
   @Prop({ type: Date, required: false, default: null })
   lastLoginAt: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-
-// Create sparse unique index on googleId so multiple null values are allowed
-UserSchema.index({ googleId: 1 }, { sparse: true, unique: true });

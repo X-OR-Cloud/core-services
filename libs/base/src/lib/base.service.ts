@@ -92,11 +92,6 @@ export class BaseService<Entity> {
     const created = new this.model(dataWithAudit);
     const saved = await created.save();
 
-    this.logger.log('Entity created', {
-      id: (saved as any)._id,
-      userId: context.userId,
-    });
-
     // Remove internal fields and password from result
     const obj = saved.toObject ? saved.toObject() : saved;
     delete (obj as any).isDeleted;
@@ -183,19 +178,26 @@ export class BaseService<Entity> {
     }
     // Merge scope-based filter with user filter (user filter takes precedence)
     const finalFilter = { ...permissions.filter, ...filter, isDeleted: false };
-
+    const selectFields = [
+      ...notAllowedFields,
+      ...(options.selectFields ? options.selectFields : []),
+    ];
+    const statisticFields = options.statisticFields || [];
+    delete finalFilter.selectFields;
+    delete finalFilter.statisticFields;
+    this.logger.debug('Finding entities with filter', {
+      filter: finalFilter,
+      userId: context.userId,
+      selectFields,
+      statisticFields,
+    });
     const [data, total] = await Promise.all([
       this.model
         .find(finalFilter)
         .sort(sort)
         .skip((page - 1) * limit)
         .limit(limit)
-        .select(
-          [
-            ...notAllowedFields,
-            ...(options.selectFields ? options.selectFields : []),
-          ].join(' ')
-        )
+        .select(selectFields.join(' '))
         .exec(),
       this.model.countDocuments(finalFilter).exec(),
     ]);
@@ -275,12 +277,7 @@ export class BaseService<Entity> {
       .select('-isDeleted -deletedAt -password')
       .exec();
 
-    if (updated) {
-      this.logger.log('Entity updated', {
-        id: id.toString(),
-        userId: context.userId,
-      });
-    } else {
+    if (!updated) {
       this.logger.warn('Entity not found for update', { id: id.toString() });
     }
 
@@ -346,7 +343,9 @@ export class BaseService<Entity> {
       .exec();
 
     if (!updated) {
-      throw new ForbiddenException(`Entity with ID ${id} not found or access denied`);
+      throw new ForbiddenException(
+        `Entity with ID ${id} not found or access denied`
+      );
     }
 
     return {

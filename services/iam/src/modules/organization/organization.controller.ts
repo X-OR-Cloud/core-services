@@ -63,8 +63,6 @@ export class OrganizationsController {
   @RequireUniverseRole()
   @UniverseScopeOnly()
   @UseGuards(JwtAuthGuard, UniverseRoleGuard)
-  @RequireUniverseRole()
-  @UniverseScopeOnly()
   async findAll(
     @Query() paginationQuery: PaginationQueryDto,
     @CurrentUser() context: RequestContext
@@ -80,7 +78,7 @@ export class OrganizationsController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext
-  ): Promise<Organization | null> {
+  ): Promise<Partial<Organization>> {
     const organization = await this.organizationsService.findById(new Types.ObjectId(id) as unknown as ObjectId, context);
     if (!organization) {
       throw new NotFoundException(`Organization with ID ${id} not found`);
@@ -98,7 +96,7 @@ export class OrganizationsController {
     @Param('id') id: string,
     @Body() updateDTO: UpdateOrganizationDTO,
     @CurrentUser() context: RequestContext
-  ): Promise<Organization | null> {
+  ): Promise<Partial<Organization>> {
     const updated = await this.organizationsService.update(new Types.ObjectId(id) as unknown as ObjectId, updateDTO, context);
     if (!updated) {
       throw new NotFoundException(`Organization with ID ${id} not found`);

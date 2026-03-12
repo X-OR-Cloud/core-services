@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, Logger, Optional } from '@nestjs/common';
 import { sign, verify } from 'jsonwebtoken';
 import { TokenData } from './auth.entity';
 import { LoginData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
@@ -19,6 +19,7 @@ import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { GoogleUserProfile } from './dto/google-auth.dto';
 import { AppService } from '../app/app.service';
+import { IamEventProducer } from '../../queues/producers/iam-event.producer';
 
 @Injectable()
 export class AuthService {
@@ -30,6 +31,7 @@ export class AuthService {
     private readonly licenseService: LicenseService,
     private readonly httpService: HttpService,
     private readonly appService: AppService,
+    @Optional() private readonly iamEventProducer: IamEventProducer,
   ) {}
 
   async login(data: LoginData): Promise<TokenData> {
@@ -508,7 +510,7 @@ export class AuthService {
     }
 
     let user = await this.userRepo.findOne({
-      googleId: googleUser.googleId,
+      'metadata.googleId': googleUser.googleId,
       isDeleted: false,
     });
 
@@ -528,9 +530,11 @@ export class AuthService {
         username: googleUser.email,
         password: null,
         provider: AuthProvider.GOOGLE,
-        googleId: googleUser.googleId,
         fullname: googleUser.displayName || googleUser.email,
-        avatarUrl: googleUser.avatarUrl,
+        metadata: {
+          googleId: googleUser.googleId,
+          avatarUrl: googleUser.avatarUrl,
+        },
         role: defaultRole,
         status: UserStatuses.Active,
         owner: {
@@ -541,6 +545,15 @@ export class AuthService {
           appId: appId || '',
         },
         isDeleted: false,
+      });
+      await this.iamEventProducer?.emitUserCreated({
+        userId: user._id.toString(),
+        username: user.username,
+        role: user.role,
+        orgId: defaultOrgId,
+        provider: 'google',
+        status: user.status,
+        fullname: user.fullname,
       });
     } else {
       // User found by Google ID — check account status

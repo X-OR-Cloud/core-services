@@ -15,6 +15,7 @@ import {
 import { User, UserSchema } from '../user/user.schema';
 import { LicenseModule } from '../license/license.module';
 import { IamAppModule } from '../app/app.module';
+import { IamQueueModule } from '../../queues/queue.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { IamAppModule } from '../app/app.module';
     ]),
     LicenseModule,
     IamAppModule,
+    IamQueueModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, TokenStorageService, JwtStrategy, GoogleStrategy],

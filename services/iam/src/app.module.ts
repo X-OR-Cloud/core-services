@@ -11,6 +11,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/user/user.module';
 import { LicenseModule } from './modules/license/license.module';
 import { IamAppModule } from './modules/app/app.module';
+import { IamQueueModule } from './queues/queue.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { IamAppModule } from './modules/app/app.module';
     MongooseModule.forRoot(`${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.iam.name}`),
     PassportModule,
     HealthModule,
+    IamQueueModule,
     AuthModule,
     OrganizationsModule,
     UsersModule,

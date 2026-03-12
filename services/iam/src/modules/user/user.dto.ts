@@ -184,10 +184,12 @@ export class ChangePasswordDto {
 
 export interface CreateGoogleUserData {
   username: string;
-  googleId: string;
   fullname?: string;
-  avatarUrl: string | null;
   provider: AuthProvider;
   status: UserStatuses;
   role: string;
+  metadata: {
+    googleId: string;
+    avatarUrl: string | null;
+  };
 }
