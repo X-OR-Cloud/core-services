@@ -100,6 +100,14 @@ export class ChatGateway
             this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
             return;
           }
+          // Ensure agent is in the conversation room before broadcasting
+          // (agent:join-room may arrive after chat:message-new due to Redis pub ordering)
+          if (agentId) {
+            const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+            if (agentSocketIds.length > 0) {
+              this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+            }
+          }
           // Broadcast to room — no Message record needed, Action was already saved by con worker
           // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
           const broadcastPayload = { conversationId, orgId, role, content, externalUsername };
