@@ -453,7 +453,7 @@ export class ChatGateway
 
   @SubscribeMessage('message:send')
   async handleSendMessage(
-    @MessageBody() dto: CreateMessageDto,
+    @MessageBody() dto: { conversationId?: string; role: string; content: string; type?: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
