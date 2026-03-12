@@ -5,9 +5,9 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
-import { MessageModule } from '../message/message.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { AgentModule } from '../agent/agent.module';
+import { ActionModule } from '../action/action.module';
 
 @Module({
   imports: [
@@ -44,14 +44,14 @@ import { AgentModule } from '../agent/agent.module';
       inject: [ConfigService],
     }),
 
-    // Message module for creating messages
-    MessageModule,
-
     // Conversation module for auto-creating conversations
     ConversationModule,
 
     // Agent module for token revocation checks
     AgentModule,
+
+    // Action module for audit logging
+    ActionModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, ChatService],

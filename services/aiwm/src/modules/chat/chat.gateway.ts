@@ -14,10 +14,10 @@ import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.config';
 import { ChatService } from './chat.service';
-import { CreateMessageDto } from '../message/dto/create-message.dto';
 import { ConversationService } from '../conversation/conversation.service';
-import { MessageDocument } from '../message/message.schema';
 import { AgentService } from '../agent/agent.service';
+import { ActionService } from '../action/action.service';
+import { ActionType, ActorRole } from '../action/action.enum';
 
 /**
  * ChatGateway - WebSocket Gateway for real-time chat
@@ -60,6 +60,7 @@ export class ChatGateway
     private readonly jwtService: JwtService,
     private readonly conversationService: ConversationService,
     private readonly agentService: AgentService,
+    private readonly actionService: ActionService,
   ) {}
 
   afterInit(server: Server) {
@@ -89,7 +90,7 @@ export class ChatGateway
 
       if (channel === 'chat:message-new') {
         try {
-          const { conversationId, agentId, orgId, role, content, msgNonce } = JSON.parse(message);
+          const { conversationId, agentId, orgId, role, content, externalUsername, msgNonce } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
           const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
@@ -97,17 +98,11 @@ export class ChatGateway
             this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
             return;
           }
-          const owner = { orgId, agentId, userId: '' };
-          const savedMessage = await this.chatService.sendMessage(
-            { conversationId, role, content },
-            { userId: '', roles: [], orgId, groupId: '', agentId, appId: '' },
-            owner,
-          ) as any;
-          // Ensure _id is included so AgentRunner can deduplicate repeated deliveries
-          const messagePayload = savedMessage.toObject ? savedMessage.toObject() : savedMessage;
-          this.server.to(`conversation:${conversationId}`).emit('message:new', messagePayload);
+          // Broadcast to room — no Message record needed, Action was already saved by con worker
+          const broadcastPayload = { conversationId, agentId, orgId, role, content, externalUsername };
+          this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
-            `[Redis] chat:message-new saved+broadcast conversationId=${conversationId} role=${role} msgId=${messagePayload._id}`,
+            `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,
           );
         } catch (err: any) {
           this.logger.error(`Failed to process chat:message-new: ${err.message}`);
@@ -471,28 +466,27 @@ export class ChatGateway
       const messageDto = { ...dto, conversationId };
 
       const isAgent = client.data.type === 'agent';
-      const isAnonymous = client.data.type === 'anonymous';
-      const context = {
-        userId: client.data.userId || '',
-        roles: client.data.roles || [],
-        orgId: client.data.orgId,
-        groupId: '',
-        agentId: client.data.agentId || '',
-        appId: '',
-      };
+      const orgId: string = client.data.orgId || '';
+      const agentId: string = client.data.agentId || '';
 
-      // Agent and anonymous users bypass RBAC via createMessageDirect with full owner
-      const owner = (isAgent || isAnonymous)
-        ? {
-            orgId: client.data.orgId || '',
-            agentId: client.data.agentId || '',
-            userId: client.data.userId || '',
-          }
-        : undefined;
-
-      const message = await this.chatService.sendMessage(messageDto, context, owner);
-      const messageDoc = message as MessageDocument;
-      const messageId = messageDoc._id?.toString() || 'unknown';
+      // Save Action record
+      const actionRole = isAgent ? ActorRole.AGENT : ActorRole.USER;
+      const actionType = dto.type === 'system' ? ActionType.NOTICE : ActionType.MESSAGE;
+      const savedAction = await this.actionService.createActionDirect(
+        {
+          conversationId,
+          type: actionType,
+          actor: {
+            role: actionRole,
+            agentId: isAgent ? agentId : undefined,
+            userId: isAgent ? undefined : (client.data.userId || undefined),
+            displayName: isAgent ? agentId : (client.data.userId || 'user'),
+          },
+          content: dto.content,
+        },
+        { orgId, agentId, userId: client.data.userId || '' },
+      );
+      const actionId = (savedAction as any)._id?.toString() || 'unknown';
 
       let roomSize = 0;
       try {
@@ -503,20 +497,21 @@ export class ChatGateway
         ? dto.content.substring(0, 20) + '...'
         : dto.content;
 
-      const senderId = client.data.userId || client.data.agentId;
+      const senderId = client.data.userId || agentId;
       this.logger.log(
-        `[WS-MSG-SEND] msgId=${messageId} | ${client.data.type}Id=${senderId} | role=${dto.role} | conversationId=${conversationId} | content="${contentPreview}"`,
+        `[WS-MSG-SEND] actionId=${actionId} | ${client.data.type}Id=${senderId} | role=${dto.role} | conversationId=${conversationId} | content="${contentPreview}"`,
       );
       this.logger.debug(
-        `[WS-BROADCAST] room=conversation:${conversationId} | roomSize=${roomSize} | msgId=${messageId}`,
+        `[WS-BROADCAST] room=conversation:${conversationId} | roomSize=${roomSize} | actionId=${actionId}`,
       );
 
-      this.server.to(`conversation:${conversationId}`).emit('message:new', message);
+      const broadcastPayload = { ...messageDto, _id: actionId };
+      this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
 
       // Bridge agent response back to con worker (Discord/Telegram outbound)
-      // Lock on messageId to prevent duplicate outbound from multiple WS instances
+      // Lock on actionId to prevent duplicate outbound from multiple WS instances
       if (dto.role === 'assistant' && this.redisPub) {
-        const outboundLockKey = `lock:outbound:${messageId}`;
+        const outboundLockKey = `lock:outbound:${actionId}`;
         this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
           if (acquired && this.redisPub) {
             this.redisPub.publish(
@@ -533,11 +528,11 @@ export class ChatGateway
 
       client.emit('message:sent', {
         success: true,
-        messageId: messageDoc._id?.toString() || '',
+        messageId: actionId,
         timestamp: new Date(),
       });
 
-      return { success: true, message };
+      return { success: true, message: broadcastPayload };
     } catch (error) {
       this.logger.error('Error sending message:', (error as Error).message);
       client.emit('message:error', {

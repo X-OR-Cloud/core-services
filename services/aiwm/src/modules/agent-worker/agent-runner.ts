@@ -245,7 +245,7 @@ export class AgentRunner {
     this.abortMap.set(conversationId, abortController);
 
     try {
-      this.socket?.emit('message:typing', { conversationId });
+      this.socket?.emit('message:typing', { conversationId, isTyping: true });
 
       let history = await this.fetchHistory(conversationId);
       // Fallback: if history is empty (fetch failed or first message), use current message
@@ -322,6 +322,7 @@ export class AgentRunner {
     } finally {
       this.processingMap.set(conversationId, false);
       this.abortMap.delete(conversationId);
+      this.socket?.emit('message:typing', { conversationId, isTyping: false });
     }
   }
 
@@ -468,17 +469,23 @@ export class AgentRunner {
   private async fetchHistory(conversationId: string): Promise<any[]> {
     try {
       const resp = await axios.get(
-        `${this.config.wsChatUrl}/messages/conversation/${conversationId}`,
+        `${this.config.wsChatUrl}/actions/conversation/${conversationId}`,
         {
-          params: { limit: 20, sort: 'createdAt:asc' },
+          params: { limit: 20 },
           headers: { Authorization: `Bearer ${this.config.accessToken}` },
         },
       );
 
-      const messages: any[] = resp.data?.data || resp.data || [];
-      return messages
-        .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && m.type !== 'system')
-        .map((m: any) => ({ role: m.role, content: m.content }));
+      const actions: any[] = resp.data?.data || resp.data || [];
+      return actions
+        .filter((a: any) => {
+          const role = a.actor?.role;
+          return (role === 'user' || role === 'agent') && a.type === 'message';
+        })
+        .map((a: any) => ({
+          role: a.actor?.role === 'agent' ? 'assistant' : 'user',
+          content: a.content,
+        }));
     } catch (err) {
       this.logger.warn(`Failed to fetch history: ${(err as Error).message}`);
       return [];
