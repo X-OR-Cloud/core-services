@@ -10,7 +10,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, ApiCreateErrors, ApiReadErrors, ApiDeleteErrors } from '@hydrabyte/base';
+import {
+  JwtAuthGuard,
+  CurrentUser,
+  ApiCreateErrors,
+  ApiReadErrors,
+  ApiDeleteErrors,
+  parseQueryString,
+  QueryStringParams,
+} from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { MemoryService } from './memory.service';
 import { SearchMemoryDto, UpsertMemoryDto, ListMemoryKeysDto } from './memory.dto';
@@ -26,6 +34,16 @@ import { MemoryCategory } from './memory.schema';
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
   constructor(private readonly memoryService: MemoryService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Get all memory entries with content' })
+  @ApiReadErrors({ notFound: false })
+  async findAll(
+    @Query() query: QueryStringParams,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.memoryService.findAll(parseQueryString(query), context);
+  }
 
   @Post('search')
   @ApiOperation({ summary: 'Search memory by keyword (full-text)' })
@@ -60,15 +78,24 @@ export class MemoryController {
     return this.memoryService.listKeys(context.userId, dto);
   }
 
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft delete a memory entry by ID' })
+  @ApiDeleteErrors()
+  async deleteById(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.memoryService.softDelete(id, context);
+  }
+
   @Delete(':category/:key')
   @ApiOperation({ summary: 'Soft delete a memory entry by category and key' })
-  @ApiResponse({ status: 200, description: 'Memory deleted' })
   @ApiDeleteErrors()
-  async delete(
+  async deleteByKey(
     @Param('category') category: MemoryCategory,
     @Param('key') key: string,
     @CurrentUser() context: RequestContext
   ) {
-    return this.memoryService.delete(context.userId, category, key);
+    return this.memoryService.deleteByKey(context.userId, category, key);
   }
 }

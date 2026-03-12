@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { BaseSchema } from '@hydrabyte/base';
 
 export type MemoryCategory = 'user-preferences' | 'decisions' | 'notes' | 'lessons';
 
@@ -10,24 +11,21 @@ export type AgentMemoryDocument = AgentMemory & Document;
  * Stores factual, concise information across sessions
  */
 @Schema({ timestamps: true })
-export class AgentMemory {
+export class AgentMemory extends BaseSchema {
   @Prop({ required: true })
-  agentId: string;
+  agentId!: string;
 
   @Prop({ required: true, enum: ['user-preferences', 'decisions', 'notes', 'lessons'] })
-  category: MemoryCategory;
+  category!: MemoryCategory;
 
   @Prop({ required: true })
-  key: string; // slug-style, e.g. "dung-report-style", unique within (agentId, category)
+  key!: string; // slug-style, e.g. "dung-report-style", unique within (agentId, category)
 
   @Prop({ required: true, maxlength: 2000 })
-  content: string; // Short, factual text
+  content!: string; // Short, factual text
 
   @Prop({ type: [String], default: [] })
-  tags: string[];
-
-  @Prop({ type: Date, default: null })
-  deletedAt: Date | null; // null = active (soft delete)
+  tags!: string[];
 }
 
 export const AgentMemorySchema = SchemaFactory.createForClass(AgentMemory);

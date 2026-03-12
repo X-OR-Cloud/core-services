@@ -52,6 +52,28 @@ export class ListMemoryKeysDto {
   category?: MemoryCategory;
 }
 
+export class ListMemoryDto {
+  @ApiPropertyOptional({ enum: MEMORY_CATEGORIES, description: 'Filter by category' })
+  @IsOptional()
+  @IsEnum(MEMORY_CATEGORIES)
+  category?: MemoryCategory;
+
+  @ApiPropertyOptional({ description: 'Page number (default: 1)', default: 1 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  page?: number;
+
+  @ApiPropertyOptional({ description: 'Items per page (default: 20)', default: 20 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  limit?: number;
+}
+
 export class DeleteMemoryDto {
   @ApiProperty({ enum: MEMORY_CATEGORIES })
   @IsEnum(MEMORY_CATEGORIES)

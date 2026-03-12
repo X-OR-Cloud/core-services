@@ -1,14 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
+import { RequestContext } from '@hydrabyte/shared';
 import { AgentMemory, MemoryCategory } from './memory.schema';
 import { SearchMemoryDto, UpsertMemoryDto, ListMemoryKeysDto } from './memory.dto';
 
 @Injectable()
-export class MemoryService {
+export class MemoryService extends BaseService<AgentMemory> {
   constructor(
     @InjectModel(AgentMemory.name) private readonly memoryModel: Model<AgentMemory>
-  ) {}
+  ) {
+    super(memoryModel);
+  }
+
+  /**
+   * Override findAll to scope by agentId filter from query
+   */
+  async findAll(
+    options: FindManyOptions,
+    context: RequestContext
+  ): Promise<FindManyResult<AgentMemory>> {
+    return super.findAll(options, context);
+  }
 
   /**
    * Full-text search memory entries by keyword, scoped to agentId
@@ -17,7 +31,7 @@ export class MemoryService {
     const limit = dto.limit ?? 5;
     const filter: Record<string, any> = {
       agentId,
-      deletedAt: null,
+      isDeleted: false,
       $text: { $search: dto.keyword },
     };
     if (dto.category) filter.category = dto.category;
@@ -54,6 +68,7 @@ export class MemoryService {
       $set: {
         content: dto.content,
         tags: dto.tags ?? [],
+        isDeleted: false,
         deletedAt: null,
       },
       $setOnInsert: { agentId, category: dto.category, key: dto.key },
@@ -76,7 +91,7 @@ export class MemoryService {
    * List all keys (no content), scoped to agentId
    */
   async listKeys(agentId: string, dto: ListMemoryKeysDto) {
-    const filter: Record<string, any> = { agentId, deletedAt: null };
+    const filter: Record<string, any> = { agentId, isDeleted: false };
     if (dto.category) filter.category = dto.category;
 
     const keys = await this.memoryModel
@@ -100,11 +115,11 @@ export class MemoryService {
   /**
    * Soft delete a memory entry by (agentId, category, key)
    */
-  async delete(agentId: string, category: MemoryCategory, key: string) {
+  async deleteByKey(agentId: string, category: MemoryCategory, key: string) {
     const result = await this.memoryModel
       .findOneAndUpdate(
-        { agentId, category, key, deletedAt: null },
-        { $set: { deletedAt: new Date() } },
+        { agentId, category, key, isDeleted: false },
+        { $set: { isDeleted: true, deletedAt: new Date() } },
         { new: true }
       )
       .lean()
