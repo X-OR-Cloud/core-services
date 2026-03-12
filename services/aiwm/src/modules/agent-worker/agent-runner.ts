@@ -3,9 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { z } from 'zod';
+import { createMCPClient } from '@ai-sdk/mcp';
 import axios from 'axios';
 
 export interface McpServerConfig {
@@ -20,6 +18,7 @@ export interface AgentConnectResult {
   deployment?: { id: string; provider: string; model: string; baseAPIEndpoint: string };
   settings: Record<string, unknown>;
   mcpServers?: Record<string, McpServerConfig>;
+  allowedFunctions?: string[];
 }
 
 export interface AgentRunnerConfig {
@@ -35,6 +34,7 @@ export interface AgentRunnerConfig {
   };
   settings: Record<string, unknown>;
   mcpServers: Record<string, McpServerConfig>;
+  allowedFunctions: string[];
   wsChatUrl: string;
   /** In-process connect callback — avoids HTTP round-trip through LB */
   connectInternal: (agentId: string) => Promise<AgentConnectResult>;
@@ -274,37 +274,42 @@ export class AgentRunner {
       const model = this.buildModel();
       this.logger.debug(`[model] deployment=${this.config.deployment?.id} model=${this.config.deployment?.model}`);
 
-      const tools = await this.resolveMcpTools();
+      const { tools, clients: mcpClients } = await this.resolveMcpTools();
       this.logger.debug(`[tools] resolved=${Object.keys(tools).length} names=[${Object.keys(tools).join(', ')}]`);
 
-      this.logger.debug(`[llm] calling generateText conv=${conversationId}`);
-      const result = await generateText({
-        model,
-        system: this.config.instruction.systemPrompt,
-        messages: history,
-        // tools,
-        stopWhen: stepCountIs(this.maxSteps),
-        abortSignal: abortController.signal,
-        onStepFinish: (step) => {
-          this.logger.debug(`[step#${step.stepNumber}] toolCalls=${step.toolCalls?.length ?? 0} toolResults=${step.toolResults?.length ?? 0} finishReason=${step.finishReason}`);
-          for (const call of step.toolCalls ?? []) {
-            this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
-          }
-          for (const res of step.toolResults ?? []) {
-            const outputStr = JSON.stringify(res.output).slice(0, 120);
-            this.logger.debug(`  [tool:result] ${res.toolName} → ${outputStr}`);
-          }
-        },
-      });
+      try {
+        this.logger.debug(`[llm] calling generateText conv=${conversationId}`);
+        const result = await generateText({
+          model,
+          system: this.config.instruction.systemPrompt,
+          messages: history,
+          tools: Object.keys(tools).length > 0 ? tools : undefined,
+          stopWhen: stepCountIs(this.maxSteps),
+          abortSignal: abortController.signal,
+          onStepFinish: (step) => {
+            this.logger.debug(`[step#${step.stepNumber}] toolCalls=${step.toolCalls?.length ?? 0} toolResults=${step.toolResults?.length ?? 0} finishReason=${step.finishReason}`);
+            for (const call of step.toolCalls ?? []) {
+              this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
+            }
+            for (const res of step.toolResults ?? []) {
+              const outputStr = JSON.stringify(res.output).slice(0, 120);
+              this.logger.debug(`  [tool:result] ${res.toolName} → ${outputStr}`);
+            }
+          },
+        });
 
-      this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
-      this.logger.debug(`[emit] message:send socketConnected=${this.socket?.connected} conv=${conversationId} text="${result.text?.slice(0, 60)}"`);
-      this.socket?.emit('message:send', {
-        conversationId,
-        role: 'assistant',
-        content: result.text,
-      });
-      this.logger.debug(`[emit] message:send done`);
+        this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
+        this.logger.debug(`[emit] message:send socketConnected=${this.socket?.connected} conv=${conversationId} text="${result.text?.slice(0, 60)}"`);
+        this.socket?.emit('message:send', {
+          conversationId,
+          role: 'assistant',
+          content: result.text,
+        });
+        this.logger.debug(`[emit] message:send done`);
+      } finally {
+        // Close all MCP clients after generation (short-lived pattern)
+        await Promise.allSettled(mcpClients.map((c) => c.close()));
+      }
     } catch (err: unknown) {
       const e = err as Error;
       if (e?.name === 'AbortError' || abortController.signal.aborted) {
@@ -352,82 +357,50 @@ export class AgentRunner {
   }
 
   /**
-   * Resolve tools from all MCP servers in config.
-   * Returns Vercel AI SDK compatible tool definitions merged from all servers.
+   * Resolve tools from all MCP servers in config using @ai-sdk/mcp.
+   * Returns merged Vercel AI SDK tools filtered by allowedFunctions,
+   * and the list of clients to close after generation.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async resolveMcpTools(): Promise<Record<string, any>> {
+  private async resolveMcpTools(): Promise<{
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: Record<string, any>;
+    clients: Awaited<ReturnType<typeof createMCPClient>>[];
+  }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toolMap: Record<string, any> = {};
+    const clients: Awaited<ReturnType<typeof createMCPClient>>[] = [];
     const servers = Object.entries(this.config.mcpServers);
+    const allowedSet = new Set(this.config.allowedFunctions);
 
-    if (!servers.length) return toolMap;
+    if (!servers.length) return { tools: toolMap, clients };
 
     await Promise.allSettled(
       servers.map(async ([serverName, serverConfig]) => {
-        const mcpClient = new McpClient({
-          name: `aiwm-hosted-${this.config.agentId}-${serverName}`,
-          version: '1.0.0',
-        });
-        const transport = new StreamableHTTPClientTransport(new URL(serverConfig.url), {
-          requestInit: { headers: serverConfig.headers },
-        });
-
         try {
-          await mcpClient.connect(transport);
-          const { tools: mcpTools } = await mcpClient.listTools();
+          const client = await createMCPClient({
+            transport: {
+              type: 'http',
+              url: serverConfig.url,
+              headers: serverConfig.headers,
+            },
+          });
+          clients.push(client);
 
-          for (const mcpTool of mcpTools) {
-            const toolName = mcpTool.name;
-            // Keep reference to this client for execute calls
-            toolMap[toolName] = {
-              description: mcpTool.description ?? '',
-              parameters: z.record(z.string(), z.unknown()),
-              execute: async (args: Record<string, unknown>) => {
-                const resp = await mcpClient.callTool({ name: toolName, arguments: args });
-                return resp.content;
-              },
-            };
+          const serverTools = await client.tools();
+
+          for (const [toolName, toolDef] of Object.entries(serverTools)) {
+            // Namespaced key: mcp__ServerName__toolName
+            const namespacedKey = `mcp__${serverName}__${toolName}`;
+            if (allowedSet.size > 0 && !allowedSet.has(namespacedKey)) continue;
+            toolMap[namespacedKey] = toolDef;
           }
         } catch (err) {
           this.logger.warn(`MCP tool resolution failed for [${serverName}]: ${(err as Error).message}`);
         }
-        // Note: keep mcpClient open for execute() calls during generation
       }),
     );
 
-    return toolMap;
-  }
-
-  /**
-   * Convert MCP JSON Schema properties to flat Zod shape.
-   */
-  private mcpInputSchemaToZod(
-    inputSchema: { properties?: Record<string, any>; required?: string[] },
-  ): Record<string, z.ZodTypeAny> {
-    const shape: Record<string, z.ZodTypeAny> = {};
-    const required = new Set(inputSchema.required ?? []);
-
-    for (const [key, prop] of Object.entries(inputSchema.properties ?? {})) {
-      let zodType: z.ZodTypeAny;
-      switch (prop.type) {
-        case 'number':
-        case 'integer':
-          zodType = z.number().describe(prop.description ?? '');
-          break;
-        case 'boolean':
-          zodType = z.boolean().describe(prop.description ?? '');
-          break;
-        case 'array':
-          zodType = z.array(z.any()).describe(prop.description ?? '');
-          break;
-        default:
-          zodType = z.string().describe(prop.description ?? '');
-      }
-      shape[key] = required.has(key) ? zodType : zodType.optional();
-    }
-
-    return shape;
+    return { tools: toolMap, clients };
   }
 
   private buildModel() {

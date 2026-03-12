@@ -118,10 +118,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
       const connectResp = await this.agentService.connectInternal(agentId);
 
-      const { accessToken, instruction, deployment, settings, mcpServers } = connectResp;
+      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions } = connectResp;
 
       this.logger.debug(
-        `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}`,
+        `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
       );
 
       const runner = new AgentRunner({
@@ -131,7 +131,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         instruction,
         deployment,
         settings: settings || agent.settings || {},
-        mcpServers: {}, // mcpServers || {},
+        mcpServers: mcpServers || {},
+        allowedFunctions: allowedFunctions || [],
         wsChatUrl: this.wsChatUrl,
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
