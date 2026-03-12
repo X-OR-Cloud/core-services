@@ -4,7 +4,7 @@ import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createMCPClient } from '@ai-sdk/mcp';
-import axios from 'axios';
+
 
 export interface McpServerConfig {
   type: string;
@@ -40,6 +40,8 @@ export interface AgentRunnerConfig {
   connectInternal: (agentId: string) => Promise<AgentConnectResult>;
   /** In-process heartbeat callback */
   heartbeatInternal: (agentId: string, status: 'idle' | 'busy') => Promise<void>;
+  /** In-process history fetch — direct DB query, avoids HTTP round-trip */
+  getHistoryInternal: (conversationId: string) => Promise<Array<{ role: string; content: string }>>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -251,6 +253,25 @@ export class AgentRunner {
       // Fallback: if history is empty (fetch failed or first message), use current message
       if (!history.length) {
         history = [{ role: 'user', content }];
+      } else {
+        // Ensure the current message is at the end of history.
+        // Due to race condition, the action may not be persisted yet when fetchHistory runs.
+        const lastMsg = history[history.length - 1];
+        if (!(lastMsg.role === 'user' && lastMsg.content === content)) {
+          history.push({ role: 'user', content });
+        }
+        // Normalize: merge consecutive same-role messages so LLM receives valid alternating format.
+        // When user sends multiple messages quickly before agent replies, they appear as consecutive
+        // user messages in DB — merge them into one to avoid LLM confusion.
+        history = history.reduce((acc: any[], msg: any) => {
+          const prev = acc[acc.length - 1];
+          if (prev && prev.role === msg.role) {
+            prev.content = `${prev.content}\n${msg.content}`;
+          } else {
+            acc.push({ ...msg });
+          }
+          return acc;
+        }, []);
       }
       this.logger.debug(`[history] conv=${conversationId} messages=${history.length}`);
       for (const m of history) {
@@ -436,29 +457,12 @@ export class AgentRunner {
   }
 
   /**
-   * Fetch recent message history from AIWM REST API.
+   * Fetch recent message history via in-process DB callback.
    * Returns Vercel AI SDK CoreMessage array.
    */
   private async fetchHistory(conversationId: string): Promise<any[]> {
     try {
-      // Use /last/:count endpoint to get the most recent N actions in chronological order
-      const resp = await axios.get(
-        `${this.config.wsChatUrl}/actions/conversation/${conversationId}/last/40`,
-        {
-          headers: { Authorization: `Bearer ${this.config.accessToken}` },
-        },
-      );
-
-      const actions: any[] = Array.isArray(resp.data) ? resp.data : resp.data?.data || [];
-      return actions
-        .filter((a: any) => {
-          const role = a.actor?.role;
-          return (role === 'user' || role === 'agent') && a.type === 'message';
-        })
-        .map((a: any) => ({
-          role: a.actor?.role === 'agent' ? 'assistant' : 'user',
-          content: a.content,
-        }));
+      return await this.config.getHistoryInternal(conversationId);
     } catch (err) {
       this.logger.warn(`Failed to fetch history: ${(err as Error).message}`);
       return [];

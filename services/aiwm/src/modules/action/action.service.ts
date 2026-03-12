@@ -138,7 +138,7 @@ export class ActionService extends BaseService<Action> {
   ): Promise<Action[]> {
     const actions = await this.model
       .find({ conversationId, isDeleted: false })
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .limit(count)
       .exec();
 

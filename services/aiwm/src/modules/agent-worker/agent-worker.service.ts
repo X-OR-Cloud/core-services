@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { createHash } from 'crypto';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
+import { ActionService } from '../action/action.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
 
@@ -46,6 +47,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly lockService: AgentLockService,
     private readonly agentService: AgentService,
+    private readonly actionService: ActionService,
   ) {
     this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
     this.agentIdFilter = process.env.AGENT_IDS
@@ -137,6 +139,19 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
           this.agentService.heartbeat(id, { status }, accessToken).then((_r) => _r as unknown as void),
+        getHistoryInternal: async (conversationId: string) => {
+          const systemContext = { userId: agentId, roles: [], orgId: '', groupId: '', agentId, appId: '' };
+          const actions = await this.actionService.getLastActions(conversationId, 40, systemContext as any);
+          return actions
+            .filter((a: any) => {
+              const role = a.actor?.role;
+              return (role === 'user' || role === 'agent') && a.type === 'message';
+            })
+            .map((a: any) => ({
+              role: a.actor?.role === 'agent' ? 'assistant' : 'user',
+              content: a.content,
+            }));
+        },
       });
 
       runner.start();
