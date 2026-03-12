@@ -1,10 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
-import { RequestContext } from '@hydrabyte/shared';
-import { MessageService } from '../message/message.service';
-import { CreateMessageDto } from '../message/dto/create-message.dto';
-import { Message } from '../message/message.schema';
 
 /**
  * ChatService - Business logic for chat functionality
@@ -20,23 +16,7 @@ export class ChatService {
 
   constructor(
     @InjectRedis() private readonly redis: Redis,
-    private readonly messageService: MessageService,
   ) {}
-
-  /**
-   * Send a message in a conversation.
-   * When owner is provided, bypasses RBAC (used for agent and anonymous users).
-   */
-  async sendMessage(
-    dto: CreateMessageDto,
-    context: RequestContext,
-    owner?: { orgId: string; agentId: string; userId: string },
-  ): Promise<Message> {
-    if (owner) {
-      return this.messageService.createMessageDirect(dto, owner);
-    }
-    return this.messageService.createMessage(dto, context);
-  }
 
   /**
    * Set user as online
