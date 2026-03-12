@@ -32,6 +32,8 @@ import {
   AgentCredentialsResponseDto,
   AnonymousTokenDto,
   AnonymousTokenResponseDto,
+  AnonymousTokenEntryDto,
+  AnonymousTokenListResponseDto,
 } from './agent.dto';
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -1879,6 +1881,8 @@ echo "Installation script placeholder - implement actual logic"
 
     const anonymousId = dto.anonymousId || uuidv4();
     const expiresIn = dto.expiresIn && dto.expiresIn > 0 ? dto.expiresIn : 86400;
+    const tokenId = uuidv4();
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
     const payload = {
       type: 'anonymous',
@@ -1886,14 +1890,106 @@ echo "Installation script placeholder - implement actual logic"
       orgId: (agent as any).owner?.orgId || context.orgId,
       anonymousId,
       userId: '',
+      tokenId,
     };
 
     const token = this.jwtService.sign(payload, { expiresIn });
-    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    this.logger.log(`Generated anonymous token for agent ${agentId}, anonymousId=${anonymousId}, expiresIn=${expiresIn}s`);
+    await this.model.updateOne(
+      { _id: agentId },
+      {
+        $push: {
+          anonymousTokens: {
+            tokenId,
+            createdAt: new Date(),
+            expiresAt,
+          },
+        },
+      },
+    );
 
-    return { token, anonymousId, expiresIn, expiresAt };
+    this.logger.log(`Generated anonymous token for agent ${agentId}, tokenId=${tokenId}, anonymousId=${anonymousId}, expiresIn=${expiresIn}s`);
+
+    return { token, anonymousId, expiresIn, expiresAt: expiresAt.toISOString(), tokenId };
+  }
+
+  /**
+   * List all anonymous tokens for an agent (without JWT values).
+   */
+  async listAnonymousTokens(
+    agentId: string,
+    context: RequestContext,
+  ): Promise<AnonymousTokenListResponseDto> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    const agentWithTokens = await this.model
+      .findById(agentId)
+      .select('anonymousTokens')
+      .lean();
+
+    const tokens: AnonymousTokenEntryDto[] = ((agentWithTokens as any)?.anonymousTokens || []).map(
+      (t: any) => ({
+        tokenId: t.tokenId,
+        createdAt: t.createdAt,
+        lastConnectedAt: t.lastConnectedAt,
+        expiresAt: t.expiresAt,
+        revokedAt: t.revokedAt,
+        isActive: !t.revokedAt && new Date(t.expiresAt) > new Date(),
+      }),
+    );
+
+    return { items: tokens, total: tokens.length };
+  }
+
+  /**
+   * Revoke an anonymous token by setting revokedAt.
+   */
+  async revokeAnonymousToken(
+    agentId: string,
+    tokenId: string,
+    context: RequestContext,
+  ): Promise<void> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    const result = await this.model.updateOne(
+      { _id: agentId, 'anonymousTokens.tokenId': tokenId, 'anonymousTokens.revokedAt': { $exists: false } },
+      { $set: { 'anonymousTokens.$.revokedAt': new Date() } },
+    );
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException(`Token ${tokenId} not found or already revoked`);
+    }
+
+    this.logger.log(`Revoked anonymous token ${tokenId} for agent ${agentId}`);
+  }
+
+  /**
+   * Validate an anonymous token is active (not revoked) and update lastConnectedAt.
+   * Returns false if token is revoked or not found.
+   */
+  async validateAndTouchAnonymousToken(agentId: string, tokenId: string): Promise<boolean> {
+    const agentWithToken = await this.agentModel
+      .findOne({ _id: agentId, 'anonymousTokens.tokenId': tokenId })
+      .select('anonymousTokens.$')
+      .lean();
+
+    const tokenEntry = (agentWithToken as any)?.anonymousTokens?.[0];
+    if (!tokenEntry || tokenEntry.revokedAt) {
+      return false;
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agentId, 'anonymousTokens.tokenId': tokenId },
+      { $set: { 'anonymousTokens.$.lastConnectedAt': new Date() } },
+    );
+
+    return true;
   }
 
   /**

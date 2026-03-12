@@ -15,6 +15,7 @@ import { ChatService } from './chat.service';
 import { CreateMessageDto } from '../message/dto/create-message.dto';
 import { ConversationService } from '../conversation/conversation.service';
 import { MessageDocument } from '../message/message.schema';
+import { AgentService } from '../agent/agent.service';
 
 /**
  * ChatGateway - WebSocket Gateway for real-time chat
@@ -54,6 +55,7 @@ export class ChatGateway
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
     private readonly conversationService: ConversationService,
+    private readonly agentService: AgentService,
   ) {}
 
   afterInit(server: Server) {
@@ -123,7 +125,16 @@ export class ChatGateway
   }
 
   private async _handleAnonymousConnect(client: Socket, payload: any) {
-    const { anonymousId, agentId, orgId } = payload;
+    const { anonymousId, agentId, orgId, tokenId } = payload;
+
+    if (tokenId) {
+      const isValid = await this.agentService.validateAndTouchAnonymousToken(agentId, tokenId);
+      if (!isValid) {
+        this.logger.warn(`Anonymous token ${tokenId} is revoked or not found, rejecting client ${client.id}`);
+        client.disconnect();
+        return;
+      }
+    }
 
     client.data.type = 'anonymous';
     client.data.userId = anonymousId;

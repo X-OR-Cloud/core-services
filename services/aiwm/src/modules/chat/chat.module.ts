@@ -7,6 +7,7 @@ import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
 import { MessageModule } from '../message/message.module';
 import { ConversationModule } from '../conversation/conversation.module';
+import { AgentModule } from '../agent/agent.module';
 
 @Module({
   imports: [
@@ -48,6 +49,9 @@ import { ConversationModule } from '../conversation/conversation.module';
 
     // Conversation module for auto-creating conversations
     ConversationModule,
+
+    // Agent module for token revocation checks
+    AgentModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, ChatService],

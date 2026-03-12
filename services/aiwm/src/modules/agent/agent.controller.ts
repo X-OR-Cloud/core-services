@@ -14,6 +14,7 @@ import {
   AgentDisconnectDto,
   AnonymousTokenDto,
   AnonymousTokenResponseDto,
+  AnonymousTokenListResponseDto,
 } from './agent.dto';
 
 @ApiTags('agents')
@@ -232,6 +233,38 @@ export class AgentController {
     @CurrentUser() context: RequestContext,
   ): Promise<AnonymousTokenResponseDto> {
     return this.agentService.generateAnonymousToken(id, dto, context);
+  }
+
+  @Get(':id/anonymous-tokens')
+  @ApiOperation({
+    summary: 'List anonymous tokens',
+    description: 'List all anonymous tokens for an agent. Does not return JWT values.',
+  })
+  @ApiResponse({ status: 200, description: 'List of tokens', type: AnonymousTokenListResponseDto })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async listAnonymousTokens(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<AnonymousTokenListResponseDto> {
+    return this.agentService.listAnonymousTokens(id, context);
+  }
+
+  @Delete(':id/anonymous-tokens/:tokenId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Revoke anonymous token',
+    description: 'Revoke an anonymous token by tokenId. Revoked tokens can no longer connect.',
+  })
+  @ApiResponse({ status: 204, description: 'Token revoked successfully' })
+  @ApiResponse({ status: 404, description: 'Agent or token not found' })
+  @UseGuards(JwtAuthGuard)
+  async revokeAnonymousToken(
+    @Param('id') id: string,
+    @Param('tokenId') tokenId: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<void> {
+    return this.agentService.revokeAnonymousToken(id, tokenId, context);
   }
 
   @Post(':id/credentials/regenerate')

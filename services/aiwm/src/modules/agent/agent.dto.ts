@@ -512,4 +512,41 @@ export class AnonymousTokenResponseDto {
 
   @ApiProperty({ description: 'Token expiry timestamp (ISO 8601)', example: '2026-03-13T10:00:00.000Z' })
   expiresAt!: string;
+
+  @ApiProperty({ description: 'Token ID for management (list/revoke)', example: '550e8400-e29b-41d4-a716-446655440001' })
+  tokenId!: string;
+}
+
+/**
+ * Response DTO for a single anonymous token entry (list view, no JWT value)
+ */
+export class AnonymousTokenEntryDto {
+  @ApiProperty({ description: 'Token ID', example: '550e8400-e29b-41d4-a716-446655440001' })
+  tokenId!: string;
+
+  @ApiProperty({ description: 'Token creation timestamp' })
+  createdAt!: Date;
+
+  @ApiPropertyOptional({ description: 'Last time this token was used to connect' })
+  lastConnectedAt?: Date;
+
+  @ApiProperty({ description: 'Token expiry timestamp' })
+  expiresAt!: Date;
+
+  @ApiPropertyOptional({ description: 'Revocation timestamp (null if active)' })
+  revokedAt?: Date;
+
+  @ApiProperty({ description: 'Whether the token is currently active', example: true })
+  isActive!: boolean;
+}
+
+/**
+ * Response DTO for listing anonymous tokens
+ */
+export class AnonymousTokenListResponseDto {
+  @ApiProperty({ type: [AnonymousTokenEntryDto] })
+  items!: AnonymousTokenEntryDto[];
+
+  @ApiProperty({ description: 'Total number of tokens' })
+  total!: number;
 }

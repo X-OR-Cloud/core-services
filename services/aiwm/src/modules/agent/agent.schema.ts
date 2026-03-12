@@ -5,6 +5,14 @@ import { BaseSchema } from '@hydrabyte/base';
 export type ChannelPlatform = 'discord' | 'telegram';
 export type VerboseLoggingTarget = 'channel' | 'thread' | string;
 
+export interface AnonymousTokenEntry {
+  tokenId: string;
+  createdAt: Date;
+  lastConnectedAt?: Date;
+  expiresAt: Date;
+  revokedAt?: Date;
+}
+
 export interface ChannelConfig {
   platform: ChannelPlatform;
   label?: string;
@@ -137,6 +145,22 @@ export class Agent extends BaseSchema {
     default: [],
   })
   channels: ChannelConfig[];
+
+  // Anonymous tokens for chatbot widget integration
+  @Prop({
+    type: [
+      {
+        tokenId: { type: String, required: true },
+        createdAt: { type: Date, required: true },
+        lastConnectedAt: { type: Date },
+        expiresAt: { type: Date, required: true },
+        revokedAt: { type: Date },
+      },
+    ],
+    default: [],
+    select: false,
+  })
+  anonymousTokens: AnonymousTokenEntry[];
 
   // Connection tracking
   @Prop()
