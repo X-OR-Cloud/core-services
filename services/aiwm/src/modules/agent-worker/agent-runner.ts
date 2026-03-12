@@ -191,7 +191,8 @@ export class AgentRunner {
     if (message.agentId === this.config.agentId || message.role === 'assistant') return;
 
     // Deduplicate: agent may receive the same event multiple times (multiple socket rooms)
-    const messageId: string = message._id || message.id || '';
+    const rawId = message._id || message.id;
+    const messageId: string = rawId ? String(rawId) : '';
     if (messageId) {
       if (this.seenMessageIds.has(messageId)) return;
       this.seenMessageIds.add(messageId);

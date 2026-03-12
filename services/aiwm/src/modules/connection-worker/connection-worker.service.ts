@@ -73,7 +73,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     content: string;
     externalUsername: string;
   }): Promise<void> {
-    this.redisPub?.publish(CHANNEL_MESSAGE_NEW, JSON.stringify(payload)).catch((err: Error) =>
+    // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
+    const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    this.redisPub?.publish(CHANNEL_MESSAGE_NEW, JSON.stringify({ ...payload, msgNonce })).catch((err: Error) =>
       this.logger.error(`Failed to publish chat:message-new: ${err.message}`),
     );
   }

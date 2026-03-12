@@ -89,16 +89,25 @@ export class ChatGateway
 
       if (channel === 'chat:message-new') {
         try {
-          const { conversationId, agentId, orgId, role, content } = JSON.parse(message);
+          const { conversationId, agentId, orgId, role, content, msgNonce } = JSON.parse(message);
+          // Distributed lock: only one WS instance processes each inbound message
+          const lockKey = `lock:chat-msg:${msgNonce}`;
+          const acquired = await this.redisSub!.set(lockKey, '1', 'EX', 10, 'NX');
+          if (!acquired) {
+            this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
+            return;
+          }
           const owner = { orgId, agentId, userId: '' };
           const savedMessage = await this.chatService.sendMessage(
             { conversationId, role, content },
             { userId: '', roles: [], orgId, groupId: '', agentId, appId: '' },
             owner,
-          );
-          this.server.to(`conversation:${conversationId}`).emit('message:new', savedMessage);
+          ) as any;
+          // Ensure _id is included so AgentRunner can deduplicate repeated deliveries
+          const messagePayload = savedMessage.toObject ? savedMessage.toObject() : savedMessage;
+          this.server.to(`conversation:${conversationId}`).emit('message:new', messagePayload);
           this.logger.debug(
-            `[Redis] chat:message-new saved+broadcast conversationId=${conversationId} role=${role}`,
+            `[Redis] chat:message-new saved+broadcast conversationId=${conversationId} role=${role} msgId=${messagePayload._id}`,
           );
         } catch (err: any) {
           this.logger.error(`Failed to process chat:message-new: ${err.message}`);
@@ -505,12 +514,20 @@ export class ChatGateway
       this.server.to(`conversation:${conversationId}`).emit('message:new', message);
 
       // Bridge agent response back to con worker (Discord/Telegram outbound)
+      // Lock on messageId to prevent duplicate outbound from multiple WS instances
       if (dto.role === 'assistant' && this.redisPub) {
-        this.redisPub.publish(
-          'outbound:message',
-          JSON.stringify({ conversationId, text: dto.content }),
-        ).catch((err: Error) =>
-          this.logger.error(`Failed to publish outbound:message: ${err.message}`),
+        const outboundLockKey = `lock:outbound:${messageId}`;
+        this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
+          if (acquired && this.redisPub) {
+            this.redisPub.publish(
+              'outbound:message',
+              JSON.stringify({ conversationId, text: dto.content }),
+            ).catch((err: Error) =>
+              this.logger.error(`Failed to publish outbound:message: ${err.message}`),
+            );
+          }
+        }).catch((err: Error) =>
+          this.logger.error(`Failed to acquire outbound lock: ${err.message}`),
         );
       }
 
