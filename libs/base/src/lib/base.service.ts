@@ -158,10 +158,6 @@ export class BaseService<Entity> {
     id: ObjectId,
     context: RequestContext
   ): Promise<Entity | null> {
-    this.logger.debug('Finding entity by ID', {
-      id: id.toString(),
-      userId: context.userId,
-    });
 
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowRead) {
@@ -178,11 +174,11 @@ export class BaseService<Entity> {
       .select('-isDeleted -deletedAt -password')
       .exec();
 
-    if (entity) {
+    /* if (entity) {
       this.logger.debug('Entity found', { id: id.toString() });
     } else {
       this.logger.debug('Entity not found', { id: id.toString() });
-    }
+    } */
 
     return entity;
   }

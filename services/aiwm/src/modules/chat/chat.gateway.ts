@@ -205,6 +205,13 @@ export class ChatGateway
       this.logger.debug(
         `[WS-JOIN] Agent socketsJoin | agentId=${agentId} | conversationId=${conversationId} | sockets=${agentSocketIds.length}`,
       );
+      // Notify this client that the agent is already online (agent connected before user)
+      client.emit('presence:update', {
+        type: 'agent',
+        agentId,
+        status: 'online',
+        timestamp: new Date(),
+      });
     }
 
     let roomSize = 0;
