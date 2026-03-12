@@ -22,6 +22,7 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Conversation>> {
+    options.statisticFields = ['status', 'conversationType']; // Specify fields for statistics aggregation
     return await super.findAll(options, context);
   }
 
