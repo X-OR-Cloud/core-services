@@ -24,6 +24,8 @@ import {
   ApiCreateErrors,
   ApiReadErrors,
   ApiDeleteErrors,
+  QueryStringParams,
+  parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { ActionService } from './action.service';
@@ -38,13 +40,32 @@ import { ActorRole } from './action.enum';
 export class ActionController {
   constructor(private readonly actionService: ActionService) {}
 
+  @Get()
+  @ApiOperation({ summary: 'Get all Actions with pagination' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Actions retrieved successfully',
+    type: [Action],
+  })
+  @ApiReadErrors({ notFound: false })
+  async findAll(
+    @Query() query: QueryStringParams,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.actionService.findAll(parseQueryString(query), context);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new action' })
-  @ApiResponse({ status: HttpStatus.CREATED, description: 'Action created successfully', type: Action })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Action created successfully',
+    type: Action,
+  })
   @ApiCreateErrors()
   async create(
     @Body() dto: CreateActionDto,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<Action> {
     return this.actionService.createAction(dto, context);
   }
@@ -71,38 +92,50 @@ export class ActionController {
     @Param('conversationId') conversationId: string,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 50,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<{ data: Action[]; total: number; page: number; limit: number }> {
     return this.actionService.getConversationActions(
       conversationId,
       Number(page),
       Number(limit),
-      context,
+      context
     );
   }
 
   @Get('conversation/:conversationId/role/:role')
   @ApiOperation({ summary: 'Get actions by actor role' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Actions retrieved successfully', type: [Action] })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Actions retrieved successfully',
+    type: [Action],
+  })
   @ApiReadErrors({ notFound: false })
   async getActionsByRole(
     @Param('conversationId') conversationId: string,
     @Param('role') role: ActorRole,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<Action[]> {
     return this.actionService.getActionsByRole(conversationId, role, context);
   }
 
   @Get('conversation/:conversationId/last/:count')
   @ApiOperation({ summary: 'Get last N actions from conversation' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Actions retrieved successfully', type: [Action] })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Actions retrieved successfully',
+    type: [Action],
+  })
   @ApiReadErrors({ notFound: false })
   async getLastActions(
     @Param('conversationId') conversationId: string,
     @Param('count') count: number,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<Action[]> {
-    return this.actionService.getLastActions(conversationId, Number(count), context);
+    return this.actionService.getLastActions(
+      conversationId,
+      Number(count),
+      context
+    );
   }
 
   @Get('conversation/:conversationId/statistics')
@@ -124,29 +157,37 @@ export class ActionController {
   @ApiReadErrors({ notFound: false })
   async getActionStatistics(
     @Param('conversationId') conversationId: string,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ) {
     return this.actionService.getActionStatistics(conversationId, context);
   }
 
   @Get('thread/:actionId')
   @ApiOperation({ summary: 'Get action thread (parent and children)' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Action thread retrieved successfully', type: [Action] })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Action thread retrieved successfully',
+    type: [Action],
+  })
   @ApiReadErrors({ notFound: false })
   async getActionThread(
     @Param('actionId') actionId: string,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<Action[]> {
     return this.actionService.getActionThread(actionId, context);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get action by ID' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Action retrieved successfully', type: Action })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Action retrieved successfully',
+    type: Action,
+  })
   @ApiReadErrors()
   async findOne(
     @Param('id') id: string,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<Partial<Action>> {
     return this.actionService.findById(new Types.ObjectId(id) as any, context);
   }
@@ -154,11 +195,14 @@ export class ActionController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft delete action' })
-  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: 'Action deleted successfully' })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: 'Action deleted successfully',
+  })
   @ApiDeleteErrors()
   async remove(
     @Param('id') id: string,
-    @CurrentUser() context: RequestContext,
+    @CurrentUser() context: RequestContext
   ): Promise<void> {
     await this.actionService.softDelete(new Types.ObjectId(id) as any, context);
   }
