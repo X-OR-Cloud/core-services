@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseService } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Message, MessageDocument } from './message.schema';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { AttachmentHelper } from './attachment.helper';
@@ -74,7 +74,7 @@ export class MessageService extends BaseService<Message> {
 
     const context: RequestContext = {
       userId: actorId,
-      roles: ['organization.editor'],
+      roles: [PredefinedRole.OrganizationEditor],
       orgId: owner.orgId || '',
       groupId: '',
       agentId: owner.agentId || '',
