@@ -23,6 +23,7 @@ export class ConversationService extends BaseService<Conversation> {
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Conversation>> {
     options.statisticFields = ['status', 'conversationType']; // Specify fields for statistics aggregation
+    options.sort = { updatedAt: -1 }; // Default sorting by updatedAt descending
     return await super.findAll(options, context);
   }
 
