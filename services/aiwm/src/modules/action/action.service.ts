@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BaseService } from '@hydrabyte/base';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Action, ActionDocument } from './action.schema';
 import { CreateActionDto } from './dto/create-action.dto';
@@ -15,9 +15,24 @@ export class ActionService extends BaseService<Action> {
   constructor(
     @InjectModel(Action.name)
     actionModel: Model<ActionDocument>,
-    private readonly conversationService: ConversationService,
+    private readonly conversationService: ConversationService
   ) {
     super(actionModel as any);
+  }
+
+  /**
+   * Find many actions with pagination and statistics aggregation
+   * @param options
+   * @param context
+   * @returns
+   */
+  async findAll(
+    options: FindManyOptions,
+    context: RequestContext
+  ): Promise<FindManyResult<Action>> {
+    options.statisticFields = ['status', 'type', 'actor']; // Specify fields for statistics aggregation
+    options.sort = { createdAt: -1 }; // Default sorting by updatedAt descending
+    return await super.findAll(options, context);
   }
 
   /**
@@ -26,7 +41,7 @@ export class ActionService extends BaseService<Action> {
    */
   async createActionDirect(
     dto: CreateActionDto,
-    owner: { orgId: string; agentId?: string; userId?: string },
+    owner: { orgId: string; agentId?: string; userId?: string }
   ): Promise<Action> {
     const actorId = owner.userId || owner.agentId || '';
 
@@ -46,7 +61,9 @@ export class ActionService extends BaseService<Action> {
     await this._updateConversationMetadata(dto, owner.orgId, actorId);
 
     this.logger.log(
-      `Created action (direct) ${(action as any)._id} [${dto.type}] in conversation ${dto.conversationId}`,
+      `Created action (direct) ${(action as any)._id} [${
+        dto.type
+      }] in conversation ${dto.conversationId}`
     );
 
     return action as unknown as Action;
@@ -55,13 +72,18 @@ export class ActionService extends BaseService<Action> {
   /**
    * Create an action with RBAC check.
    */
-  async createAction(dto: CreateActionDto, context: RequestContext): Promise<Action> {
+  async createAction(
+    dto: CreateActionDto,
+    context: RequestContext
+  ): Promise<Action> {
     const action = await this.create(dto, context);
 
     await this._updateConversationMetadata(dto, context.orgId, context.userId);
 
     this.logger.log(
-      `Created action ${(action as any)._id} [${dto.type}] in conversation ${dto.conversationId}`,
+      `Created action ${(action as any)._id} [${dto.type}] in conversation ${
+        dto.conversationId
+      }`
     );
 
     return action as Action;
@@ -74,13 +96,18 @@ export class ActionService extends BaseService<Action> {
     conversationId: string,
     page: number = 1,
     limit: number = 50,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<{ data: Action[]; total: number; page: number; limit: number }> {
     const filter = { conversationId, isDeleted: false };
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
-      this.model.find(filter).sort({ createdAt: 1 }).skip(skip).limit(limit).exec(),
+      this.model
+        .find(filter)
+        .sort({ createdAt: 1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
       this.model.countDocuments(filter).exec(),
     ]);
 
@@ -93,7 +120,7 @@ export class ActionService extends BaseService<Action> {
   async getActionsByRole(
     conversationId: string,
     role: ActorRole,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<Action[]> {
     return this.model
       .find({ conversationId, 'actor.role': role, isDeleted: false })
@@ -107,7 +134,7 @@ export class ActionService extends BaseService<Action> {
   async getLastActions(
     conversationId: string,
     count: number,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<Action[]> {
     const actions = await this.model
       .find({ conversationId, isDeleted: false })
@@ -121,8 +148,14 @@ export class ActionService extends BaseService<Action> {
   /**
    * Get action thread (parent + children).
    */
-  async getActionThread(actionId: string, context: RequestContext): Promise<Action[]> {
-    const action = await this.findById(new Types.ObjectId(actionId) as any, context);
+  async getActionThread(
+    actionId: string,
+    context: RequestContext
+  ): Promise<Action[]> {
+    const action = await this.findById(
+      new Types.ObjectId(actionId) as any,
+      context
+    );
     if (!action) return [];
 
     const children = await this.model
@@ -138,7 +171,7 @@ export class ActionService extends BaseService<Action> {
    */
   async getActionStatistics(
     conversationId: string,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<{
     total: number;
     byRole: Record<string, number>;
@@ -175,20 +208,25 @@ export class ActionService extends BaseService<Action> {
   private async _updateConversationMetadata(
     dto: CreateActionDto,
     orgId: string,
-    actorId: string,
+    actorId: string
   ): Promise<void> {
     await this.conversationService.updateLastMessage(
       dto.conversationId,
       dto.content,
       dto.actor.role,
-      new Date(),
+      new Date()
     );
     await this.conversationService.incrementMessageCount(dto.conversationId);
 
     if (dto.usage) {
-      const totalTokens = (dto.usage.inputTokens || 0) + (dto.usage.outputTokens || 0);
+      const totalTokens =
+        (dto.usage.inputTokens || 0) + (dto.usage.outputTokens || 0);
       const cost = (totalTokens / 1000) * 0.002;
-      await this.conversationService.updateTokenUsage(dto.conversationId, totalTokens, cost);
+      await this.conversationService.updateTokenUsage(
+        dto.conversationId,
+        totalTokens,
+        cost
+      );
     }
 
     const context: RequestContext = {
@@ -201,7 +239,7 @@ export class ActionService extends BaseService<Action> {
     };
     const conversation = await this.conversationService.findById(
       new Types.ObjectId(dto.conversationId) as any,
-      context,
+      context
     );
     if (conversation && conversation.totalMessages % 10 === 0) {
       this.conversationService
@@ -209,7 +247,7 @@ export class ActionService extends BaseService<Action> {
         .catch((err) => {
           this.logger.error(
             `Failed to generate summary for conversation ${dto.conversationId}:`,
-            err.stack,
+            err.stack
           );
         });
     }
