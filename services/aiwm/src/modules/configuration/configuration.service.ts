@@ -64,7 +64,6 @@ export class ConfigurationService extends BaseService<Configuration> {
       'owner.orgId': context.orgId,
     };
     const config = await this.configModel.findOne(filter).exec();
-    console.log('findByKey filter:', filter);
     if (!config) {
       return null;
     }
