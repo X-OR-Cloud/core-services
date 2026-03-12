@@ -26,6 +26,8 @@ import { McpModule } from '../modules/mcp/mcp.module';
 import { UtilModule } from '../modules/util/util.module';
 import { ConversationModule } from '../modules/conversation/conversation.module';
 import { MessageModule } from '../modules/message/message.module';
+import { ActionModule } from '../modules/action/action.module';
+import { ConnectionModule } from '../modules/connection/connection.module';
 import { ChatModule } from '../modules/chat/chat.module';
 import { MemoryModule } from '../modules/memory/memory.module';
 import { ReminderModule } from '../modules/reminder/reminder.module';
@@ -63,6 +65,8 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
     UtilModule,
     ConversationModule,
     MessageModule,
+    ActionModule,
+    ConnectionModule,
     ChatModule,
     MemoryModule,
     ReminderModule,

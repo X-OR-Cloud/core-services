@@ -5,14 +5,6 @@ import { BaseSchema } from '@hydrabyte/base';
 export type ChannelPlatform = 'discord' | 'telegram';
 export type VerboseLoggingTarget = 'channel' | 'thread' | string;
 
-export interface AnonymousTokenEntry {
-  tokenId: string;
-  createdAt: Date;
-  lastConnectedAt?: Date;
-  expiresAt: Date;
-  revokedAt?: Date;
-}
-
 export interface ChannelConfig {
   platform: ChannelPlatform;
   label?: string;
@@ -24,6 +16,15 @@ export interface ChannelConfig {
   verboseLogging: boolean;
   verboseLoggingTarget: VerboseLoggingTarget;
 }
+
+export interface AnonymousTokenEntry {
+  tokenId: string;
+  createdAt: Date;
+  lastConnectedAt?: Date;
+  expiresAt: Date;
+  revokedAt?: Date;
+}
+
 
 export type AgentDocument = Agent & Document;
 
@@ -122,12 +123,7 @@ export class Agent extends BaseSchema {
   @Prop({ type: Object, default: {} })
   settings: Record<string, unknown>;
 
-  /**
-   * Structured channel configurations for Discord and Telegram.
-   * Each entry represents one channel with full config (token, channelId, behavior flags).
-   * Replaces the legacy settings.discord_* / settings.telegram_* flat keys.
-   * Session ID pattern per channel: {agentId}:{platform}:{channelId}
-   */
+  /** @deprecated Use Connection module instead. Kept for backward compatibility with existing managed agents. */
   @Prop({
     type: [
       {

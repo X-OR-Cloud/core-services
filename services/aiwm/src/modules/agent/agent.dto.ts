@@ -4,57 +4,45 @@ import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
 import { Instruction } from '../instruction/instruction.schema';
 
-/**
- * DTO for a single channel configuration entry.
- * Each entry represents one Discord channel or Telegram group.
- */
+/** @deprecated Use ConnectionRouteDto in Connection module instead. Kept for backward compatibility. */
 export class ChannelConfigDto {
-  @ApiProperty({ description: 'Platform', enum: ['discord', 'telegram'] })
+  @ApiProperty({ enum: ['discord', 'telegram'] })
   @IsEnum(['discord', 'telegram'])
-  platform: 'discord' | 'telegram';
+  platform!: 'discord' | 'telegram';
 
-  @ApiPropertyOptional({ description: 'Human-readable label, e.g. "VTV Support Discord"', required: false })
+  @ApiPropertyOptional({ required: false })
   @IsOptional()
   @IsString()
   label?: string;
 
-  @ApiProperty({ description: 'Enable or disable this channel', example: true })
+  @ApiProperty()
   @IsBoolean()
-  enabled: boolean;
+  enabled!: boolean;
 
-  @ApiProperty({ description: 'Bot token for the platform' })
+  @ApiProperty()
   @IsString()
-  token: string;
+  token!: string;
 
-  @ApiPropertyOptional({
-    description: 'Discord: bot user ID (numeric string). Telegram: @botUsername. Used to verify mentions.',
-    required: false
-  })
+  @ApiPropertyOptional({ required: false })
   @IsOptional()
   @IsString()
   botId?: string;
 
-  @ApiProperty({
-    description: 'Discord: channel ID. Telegram: group ID (negative number as string).',
-    example: '987654321012345678'
-  })
+  @ApiProperty()
   @IsString()
-  channelId: string;
+  channelId!: string;
 
-  @ApiProperty({ description: 'Only respond when the bot is @mentioned', example: false })
+  @ApiProperty()
   @IsBoolean()
-  requireMentions: boolean;
+  requireMentions!: boolean;
 
-  @ApiProperty({ description: 'Emit step-by-step action logs to the channel', example: false })
+  @ApiProperty()
   @IsBoolean()
-  verboseLogging: boolean;
+  verboseLogging!: boolean;
 
-  @ApiProperty({
-    description: 'Where to send verbose logs: "channel" (same channel), "thread" (Discord thread / reply chain), or a specific channel ID',
-    example: 'channel'
-  })
+  @ApiProperty()
   @IsString()
-  verboseLoggingTarget: string;
+  verboseLoggingTarget!: string;
 }
 
 /**
@@ -175,11 +163,8 @@ export class CreateAgentDto {
   @IsObject()
   settings?: Record<string, unknown>;
 
-  @ApiPropertyOptional({
-    description: 'Structured channel configurations (Discord / Telegram). Each entry = one channel with its own token, behavior flags, and logging config.',
-    required: false,
-    type: [ChannelConfigDto]
-  })
+  /** @deprecated Use Connection module. Kept for backward compatibility. */
+  @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -299,11 +284,8 @@ export class UpdateAgentDto {
   @IsObject()
   settings?: Record<string, unknown>;
 
-  @ApiPropertyOptional({
-    description: 'Structured channel configurations (Discord / Telegram). Each entry = one channel with its own token, behavior flags, and logging config.',
-    required: false,
-    type: [ChannelConfigDto]
-  })
+  /** @deprecated Use Connection module. Kept for backward compatibility. */
+  @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -391,7 +373,8 @@ export class AgentConnectResponseDto {
   @ApiProperty({ description: 'Agent runtime settings/configuration' })
   settings: Record<string, unknown>;
 
-  @ApiProperty({ description: 'Structured channel configurations for Discord/Telegram', type: [ChannelConfigDto] })
+  /** @deprecated Use Connection module. Kept for backward compatibility. */
+  @ApiProperty({ description: 'Legacy channel configurations', type: [ChannelConfigDto] })
   channels: ChannelConfigDto[];
 
   @ApiPropertyOptional({

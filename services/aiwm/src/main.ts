@@ -27,6 +27,10 @@ async function bootstrap() {
     // Agent mode - Run hosted agents connected to /ws/chat
     const { bootstrapAgentWorker } = await import('./bootstrap-agent');
     await bootstrapAgentWorker();
+  } else if (MODE === 'con') {
+    // Connection mode - Bridge Discord/Telegram to AIWM pipeline
+    const { bootstrapConnectionWorker } = await import('./bootstrap-connection');
+    await bootstrapConnectionWorker();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');
