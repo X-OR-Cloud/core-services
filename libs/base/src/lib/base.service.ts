@@ -151,13 +151,6 @@ export class BaseService<Entity> {
       this.model.countDocuments(finalFilter).exec(),
     ]);
 
-    this.logger.log('Entities retrieved', {
-      count: data.length,
-      total,
-      page,
-      userId: context.userId,
-    });
-
     return { data, pagination: { page, limit, total }, statistics: { total } };
   }
 
@@ -346,12 +339,6 @@ export class BaseService<Entity> {
       const finalPipeline = [{ $match: scopeFilter }, ...pipeline];
 
       const result = await this.model.aggregate(finalPipeline).exec();
-
-      this.logger.log('Aggregation completed', {
-        resultCount: result.length,
-        userId: context.userId,
-      });
-
       return result;
     } catch (error) {
       this.logger.error('Aggregation failed', {
