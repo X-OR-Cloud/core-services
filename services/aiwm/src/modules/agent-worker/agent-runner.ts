@@ -253,9 +253,13 @@ export class AgentRunner {
         history = [{ role: 'user', content }];
       }
       this.logger.debug(`[history] conv=${conversationId} messages=${history.length}`);
+      for (const m of history) {
+        const preview = String(m.content ?? '').slice(0, 60).replace(/\n/g, '\\n');
+        this.logger.debug(`  [history:${m.role}] "${preview}${String(m.content ?? '').length > 60 ? '...' : ''}"`);
+      }
 
       const systemPrompt = this.config.instruction?.systemPrompt ?? '';
-      this.logger.debug(`[system] instructionId=${this.config.instruction?.id} prompt="${systemPrompt.slice(0, 80)}..."`);
+      this.logger.debug(`[system] instructionId=${this.config.instruction?.id} promptLen=${systemPrompt.length} prompt="${systemPrompt.slice(0, 120).replace(/\n/g, '\\n')}..."`);
 
       const INVALID_PROMPTS = [
         'No instruction configured for this agent.',
