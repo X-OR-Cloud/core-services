@@ -478,6 +478,29 @@ export class AgentDisconnectDto {
 }
 
 /**
+ * Query DTO for previewing agent instruction with optional systemPrompt override
+ */
+export class PreviewInstructionQueryDto {
+  @ApiPropertyOptional({
+    description: 'Override systemPrompt for preview (does not modify the stored instruction)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  systemPrompt?: string;
+}
+
+/**
+ * DTO for updating agent instruction's systemPrompt
+ */
+export class UpdateAgentInstructionDto {
+  @ApiProperty({ description: 'New systemPrompt to save into the agent instruction' })
+  @IsString()
+  @IsNotEmpty()
+  systemPrompt: string;
+}
+
+/**
  * DTO for generating anonymous chat token
  */
 export class AnonymousTokenDto {

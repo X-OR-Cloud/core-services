@@ -287,12 +287,14 @@ export class AgentService extends BaseService<Agent> {
 
   /**
    * Get latest instruction for agent (with context injection)
-   * Used by agent to refresh instruction without reconnecting
+   * Used by agent to refresh instruction without reconnecting.
+   * Pass systemPromptOverride to preview a different systemPrompt without saving.
    */
   async getAgentInstruction(
     agentId: string,
-    accessToken: string
-  ): Promise<{ id: string; systemPrompt: string }> {
+    accessToken: string,
+    systemPromptOverride?: string
+  ): Promise<{ id: string; systemPrompt: string; isPreview?: boolean }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -301,7 +303,53 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    return this.buildInstructionObjectForAgent(agent, accessToken);
+    return this.buildInstructionObjectForAgent(agent, accessToken, systemPromptOverride);
+  }
+
+  /**
+   * Update the systemPrompt of the agent's current instruction.
+   * Throws if agent has no instruction configured.
+   */
+  async updateAgentInstruction(
+    agentId: string,
+    systemPrompt: string,
+    context: RequestContext
+  ): Promise<{ id: string; name: string; systemPrompt: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    if (!agent.instructionId) {
+      throw new BadRequestException('Agent has no instruction configured');
+    }
+
+    const instruction = await this.instructionModel
+      .findOne({ _id: agent.instructionId, isDeleted: false })
+      .exec();
+
+    if (!instruction) {
+      throw new NotFoundException('Instruction not found');
+    }
+
+    const updated = await this.instructionModel.findOneAndUpdate(
+      { _id: agent.instructionId, isDeleted: false },
+      { $set: { systemPrompt, updatedBy: context.userId } },
+      { new: true }
+    ).exec();
+
+    if (!updated) {
+      throw new NotFoundException('Instruction not found');
+    }
+
+    return {
+      id: (updated as any)._id.toString(),
+      name: updated.name,
+      systemPrompt: updated.systemPrompt,
+    };
   }
 
   /**
@@ -649,14 +697,17 @@ export class AgentService extends BaseService<Agent> {
 
   /**
    * Build instruction object for agent (new format)
-   * Returns structured instruction with id and systemPrompt
+   * Returns structured instruction with id and systemPrompt.
+   * Pass systemPromptOverride to render with a different core prompt (preview only).
    */
   private async buildInstructionObjectForAgent(
     agent: Agent,
-    accessToken?: string
+    accessToken?: string,
+    systemPromptOverride?: string
   ): Promise<{
     id: string;
     systemPrompt: string;
+    isPreview?: boolean;
   }> {
     if (!agent.instructionId) {
       return {
@@ -693,11 +744,14 @@ export class AgentService extends BaseService<Agent> {
       };
     }
 
+    // Use override for preview if provided, otherwise use stored systemPrompt
+    const corePrompt = systemPromptOverride ?? instruction.systemPrompt;
+
     // Resolve @project:<id> and @document:<id> references if token available
     let contextBlocks: string[] = [];
     if (accessToken) {
       contextBlocks = await this.resolveContextReferences(
-        instruction.systemPrompt,
+        corePrompt,
         accessToken,
         agent.owner.orgId
       );
@@ -707,15 +761,16 @@ export class AgentService extends BaseService<Agent> {
     const tools = await this.getAllowedToolsWithMemory(agent);
     const agentId = (agent as any)._id.toString();
 
-    return {
+    const result: { id: string; systemPrompt: string; isPreview?: boolean } = {
       id: agentId,
-      systemPrompt: this.buildFinalSystemPrompt(
-        instruction.systemPrompt,
-        contextBlocks,
-        tools,
-        agentId
-      ),
+      systemPrompt: this.buildFinalSystemPrompt(corePrompt, contextBlocks, tools, agentId),
     };
+
+    if (systemPromptOverride !== undefined) {
+      result.isPreview = true;
+    }
+
+    return result;
   }
 
   /**

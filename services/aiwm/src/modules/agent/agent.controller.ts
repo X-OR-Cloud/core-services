@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Patch, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -15,6 +15,8 @@ import {
   AnonymousTokenDto,
   AnonymousTokenResponseDto,
   AnonymousTokenListResponseDto,
+  PreviewInstructionQueryDto,
+  UpdateAgentInstructionDto,
 } from './agent.dto';
 
 @ApiTags('agents')
@@ -97,17 +99,35 @@ export class AgentController {
   @Get(':id/instruction')
   @ApiOperation({
     summary: 'Preview agent instruction (for users)',
-    description: 'Returns the resolved instruction for the specified agent, including injected @project and @document context. For users to verify how the instruction will be built.'
+    description: 'Returns the fully rendered instruction for the agent, including @project/@document injection and tool rules. Pass ?systemPrompt=... to preview with an override without modifying the stored instruction.'
   })
   @ApiResponse({ status: 200, description: 'Instruction retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Agent not found' })
   @UseGuards(JwtAuthGuard)
   async getInstruction(
     @Param('id') id: string,
+    @Query() query: PreviewInstructionQueryDto,
     @Req() req: any,
   ) {
     const token = req.headers?.authorization?.replace('Bearer ', '') || '';
-    return this.agentService.getAgentInstruction(id, token);
+    return this.agentService.getAgentInstruction(id, token, query.systemPrompt);
+  }
+
+  @Patch(':id/instruction')
+  @ApiOperation({
+    summary: 'Update agent instruction systemPrompt',
+    description: "Update the systemPrompt of the agent's current instruction. The instruction record is updated in place."
+  })
+  @ApiResponse({ status: 200, description: 'Instruction updated successfully' })
+  @ApiResponse({ status: 400, description: 'Agent has no instruction configured' })
+  @ApiResponse({ status: 404, description: 'Agent or instruction not found' })
+  @UseGuards(JwtAuthGuard)
+  async updateInstruction(
+    @Param('id') id: string,
+    @Body() dto: UpdateAgentInstructionDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.agentService.updateAgentInstruction(id, dto.systemPrompt, context);
   }
 
   @Get(':id/config')
