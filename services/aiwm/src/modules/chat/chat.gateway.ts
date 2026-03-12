@@ -74,13 +74,15 @@ export class ChatGateway
       }
 
       const payload = this.jwtService.verify(token);
-      const isAgent = payload.type === 'agent' || !!payload.agentId;
+      // Check anonymous first — anonymous token contains agentId which would
+      // otherwise be misidentified as an agent token
       const isAnonymous = payload.type === 'anonymous';
+      const isAgent = !isAnonymous && (payload.type === 'agent' || !!payload.agentId);
 
-      if (isAgent) {
-        await this._handleAgentConnect(client, payload);
-      } else if (isAnonymous) {
+      if (isAnonymous) {
         await this._handleAnonymousConnect(client, payload);
+      } else if (isAgent) {
+        await this._handleAgentConnect(client, payload);
       } else {
         await this._handleUserConnect(client, payload);
       }
