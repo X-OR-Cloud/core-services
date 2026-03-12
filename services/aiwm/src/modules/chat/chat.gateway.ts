@@ -9,8 +9,10 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import Redis from 'ioredis';
+import { redisConfig } from '../../config/redis.config';
 import { ChatService } from './chat.service';
 import { CreateMessageDto } from '../message/dto/create-message.dto';
 import { ConversationService } from '../conversation/conversation.service';
@@ -44,12 +46,14 @@ import { AgentService } from '../agent/agent.service';
   }, */
 })
 export class ChatGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
+  private redisSub: Redis | null = null;
+  private redisPub: Redis | null = null;
 
   constructor(
     private readonly chatService: ChatService,
@@ -60,6 +64,34 @@ export class ChatGateway
 
   afterInit(server: Server) {
     this.logger.log('Chat WebSocket Gateway initialized');
+  }
+
+  async onModuleInit() {
+    this.redisSub = new Redis(redisConfig);
+    this.redisPub = new Redis(redisConfig);
+
+    await this.redisSub.subscribe('agent:join-room');
+    this.redisSub.on('message', async (channel, message) => {
+      if (channel === 'agent:join-room') {
+        try {
+          const { agentId, conversationId } = JSON.parse(message);
+          const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+          if (agentSocketIds.length > 0) {
+            this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+            this.logger.debug(
+              `[Redis] agent:join-room agentId=${agentId} conversationId=${conversationId} sockets=${agentSocketIds.length}`,
+            );
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to process agent:join-room: ${err.message}`);
+        }
+      }
+    });
+  }
+
+  async onModuleDestroy() {
+    this.redisSub?.disconnect();
+    this.redisPub?.disconnect();
   }
 
   async handleConnection(client: Socket) {
@@ -453,6 +485,16 @@ export class ChatGateway
       );
 
       this.server.to(`conversation:${conversationId}`).emit('message:new', message);
+
+      // Bridge agent response back to con worker (Discord/Telegram outbound)
+      if (dto.role === 'assistant' && this.redisPub) {
+        this.redisPub.publish(
+          'outbound:message',
+          JSON.stringify({ conversationId, text: dto.content }),
+        ).catch((err: Error) =>
+          this.logger.error(`Failed to publish outbound:message: ${err.message}`),
+        );
+      }
 
       client.emit('message:sent', {
         success: true,

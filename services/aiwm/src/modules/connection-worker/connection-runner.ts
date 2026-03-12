@@ -24,6 +24,7 @@ export class ConnectionRunner {
     private readonly routingService: RoutingService,
     private readonly onOutbound: (conversationId: string, handler: OutboundHandler) => void,
     private readonly offOutbound: (conversationId: string) => void,
+    private readonly onAgentJoinRoom: (agentId: string, conversationId: string) => void,
   ) {}
 
   async start(): Promise<void> {
@@ -90,6 +91,9 @@ export class ConnectionRunner {
       this.onOutbound(resolved.conversationId, async (responseText: string) => {
         await this.sendResponse(msg.channelId, responseText);
       });
+
+      // Signal ChatGateway (any api instance) to force agent into the conversation room
+      this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
 
       this.logger.debug(
         `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}`,
