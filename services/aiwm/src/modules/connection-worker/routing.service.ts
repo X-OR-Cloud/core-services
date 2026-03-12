@@ -39,12 +39,12 @@ export class RoutingService {
 
     // Lookup IAM user by external identity
     let iamUserId: string | undefined;
-    let iamUserType: 'anonymous' | 'registered' = 'anonymous';
+    let iamUserType: 'anonymous' | 'authenticated' = 'anonymous';
     if (msg.provider === 'discord' && msg.externalUserId) {
       const iamUser = await this.iamLookupService.findByDiscordId(msg.externalUserId);
       if (iamUser) {
         iamUserId = iamUser.id;
-        iamUserType = 'registered';
+        iamUserType = 'authenticated';
         this.logger.debug(`Linked Discord user ${msg.externalUserId} → IAM ${iamUser.id} (${iamUser.username})`);
       }
     }
