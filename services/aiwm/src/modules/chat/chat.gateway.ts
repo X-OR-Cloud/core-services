@@ -70,7 +70,7 @@ export class ChatGateway
     this.redisSub = new Redis(redisConfig);
     this.redisPub = new Redis(redisConfig);
 
-    await this.redisSub.subscribe('agent:join-room');
+    await this.redisSub.subscribe('agent:join-room', 'chat:message-new');
     this.redisSub.on('message', async (channel, message) => {
       if (channel === 'agent:join-room') {
         try {
@@ -84,6 +84,24 @@ export class ChatGateway
           }
         } catch (err: any) {
           this.logger.error(`Failed to process agent:join-room: ${err.message}`);
+        }
+      }
+
+      if (channel === 'chat:message-new') {
+        try {
+          const { conversationId, agentId, orgId, role, content } = JSON.parse(message);
+          const owner = { orgId, agentId, userId: '' };
+          const savedMessage = await this.chatService.sendMessage(
+            { conversationId, role, content },
+            { userId: '', roles: [], orgId, groupId: '', agentId, appId: '' },
+            owner,
+          );
+          this.server.to(`conversation:${conversationId}`).emit('message:new', savedMessage);
+          this.logger.debug(
+            `[Redis] chat:message-new saved+broadcast conversationId=${conversationId} role=${role}`,
+          );
+        } catch (err: any) {
+          this.logger.error(`Failed to process chat:message-new: ${err.message}`);
         }
       }
     });

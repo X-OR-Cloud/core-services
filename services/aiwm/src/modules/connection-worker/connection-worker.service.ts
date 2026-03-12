@@ -9,6 +9,7 @@ import { redisConfig } from '../../config/redis.config';
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL_OUTBOUND = 'outbound:message';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
+const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 
 /**
  * ConnectionWorkerService — orchestrates all active ConnectionRunners.
@@ -64,6 +65,19 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  async publishMessageNew(payload: {
+    conversationId: string;
+    agentId: string;
+    orgId: string;
+    role: string;
+    content: string;
+    externalUsername: string;
+  }): Promise<void> {
+    this.redisPub?.publish(CHANNEL_MESSAGE_NEW, JSON.stringify(payload)).catch((err: Error) =>
+      this.logger.error(`Failed to publish chat:message-new: ${err.message}`),
+    );
+  }
+
   /**
    * Called by ChatGateway (or event listener) when agent emits a response.
    * Forwards the response to the correct external platform.
@@ -97,6 +111,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       (conversationId, handler) => this.outboundHandlers.set(conversationId, handler),
       (conversationId) => this.outboundHandlers.delete(conversationId),
       (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
+      (payload) => this.publishMessageNew(payload),
     );
 
     try {

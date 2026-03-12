@@ -25,6 +25,14 @@ export class ConnectionRunner {
     private readonly onOutbound: (conversationId: string, handler: OutboundHandler) => void,
     private readonly offOutbound: (conversationId: string) => void,
     private readonly onAgentJoinRoom: (agentId: string, conversationId: string) => void,
+    private readonly onMessageNew: (payload: {
+      conversationId: string;
+      agentId: string;
+      orgId: string;
+      role: string;
+      content: string;
+      externalUsername: string;
+    }) => void,
   ) {}
 
   async start(): Promise<void> {
@@ -94,6 +102,16 @@ export class ConnectionRunner {
 
       // Signal ChatGateway (any api instance) to force agent into the conversation room
       this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
+
+      // Publish message to ChatGateway so it saves Message record + broadcasts message:new to room
+      this.onMessageNew({
+        conversationId: resolved.conversationId,
+        agentId: resolved.agentId,
+        orgId,
+        role: 'user',
+        content: msg.text,
+        externalUsername: msg.externalUsername,
+      });
 
       this.logger.debug(
         `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}`,
