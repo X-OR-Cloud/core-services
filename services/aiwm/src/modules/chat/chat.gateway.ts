@@ -76,6 +76,7 @@ export class ChatGateway
       if (channel === 'agent:join-room') {
         try {
           const { agentId, conversationId } = JSON.parse(message);
+          if (!this.server) return;
           const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
           if (agentSocketIds.length > 0) {
             this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
@@ -90,6 +91,7 @@ export class ChatGateway
 
       if (channel === 'chat:message-new') {
         try {
+          if (!this.server) return;
           const { conversationId, agentId, orgId, role, content, externalUsername, msgNonce } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
