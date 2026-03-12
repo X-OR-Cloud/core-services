@@ -81,7 +81,7 @@ export class ExecutionController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext
-  ): Promise<Execution | null> {
+  ): Promise<Partial<Execution> | null> {
     const { Types } = await import('mongoose');
     return await this.executionService.findById(new Types.ObjectId(id) as any, context);
   }

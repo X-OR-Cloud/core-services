@@ -5,6 +5,7 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, InstructionInUseException } from '@hydrabyte/shared';
 import { Instruction } from './instruction.schema';
 import { Agent } from '../agent/agent.schema';
+import { CreateInstructionDto } from './instruction.dto';
 
 /**
  * InstructionService
@@ -19,28 +20,39 @@ export class InstructionService extends BaseService<Instruction> {
   ) {
     super(instructionModel);
   }
+  /**
+   * Override create method to add custom validation or processing
+   */
+  async create(
+    createData: CreateInstructionDto,
+    context: RequestContext
+  ): Promise<Partial<Instruction>> {
+    // Additional validation or processing can be added here
+    if(!createData.status){
+      createData.status = 'active'; // Default status to active if not provided
+    }
+    return super.create(createData, context);
+  }
 
   /**
-   * Helper method to check if instruction is being used by active agents
-   * @param instructionId - Instruction ID to check
-   * @returns Array of active agents using this instruction
+   * Override findAll to handle statistics aggregation
    */
-  private async checkActiveAgentDependencies(
-    instructionId: ObjectId
-  ): Promise<Array<{ id: string; name: string }>> {
-    const activeAgents = await this.agentModel
-      .find({
-        instructionId: instructionId.toString(),
-        isDeleted: false,
-      })
-      .select('_id name')
-      .lean()
-      .exec();
+  async findAll(
+    options: FindManyOptions,
+    context: RequestContext
+  ): Promise<FindManyResult<Instruction>> {
+    options.selectFields = ['-systemPrompt'];
+    options.statisticFields = ['status']; // Specify fields for statistics aggregation
+    return await super.findAll(options, context);
+  }
 
-    return activeAgents.map((agent) => ({
-      id: agent._id.toString(),
-      name: agent.name,
-    }));
+  /**
+   * Override findById
+   */
+  async findById(id: string, context: RequestContext): Promise<Partial<Instruction>> {
+    const instruction = await super.findById(id, context);
+    // additional processing if needed
+    return instruction;
   }
 
   /**
@@ -48,10 +60,10 @@ export class InstructionService extends BaseService<Instruction> {
    * Prevents deactivating instructions that are in use by active agents
    */
   async update(
-    id: ObjectId,
+    id: string,
     updateData: Partial<Instruction>,
     context: RequestContext
-  ): Promise<Instruction | null> {
+  ): Promise<Partial<Instruction>> {
     // Check if status is being changed to 'inactive'
     if (updateData.status === 'inactive') {
       const activeAgents = await this.checkActiveAgentDependencies(id);
@@ -69,73 +81,37 @@ export class InstructionService extends BaseService<Instruction> {
    * Prevents deleting instructions that are in use by active agents
    */
   async softDelete(
-    id: ObjectId,
+    id: string,
     context: RequestContext
-  ): Promise<Instruction | null> {
+  ): Promise<Partial<Instruction>> {
     const activeAgents = await this.checkActiveAgentDependencies(id);
     if (activeAgents.length > 0) {
       throw new InstructionInUseException(activeAgents, 'delete');
     }
-
     // Call parent softDelete method
     return super.softDelete(id, context);
   }
 
   /**
-   * Override findAll to handle statistics aggregation
+   * Helper method to check if instruction is being used by active agents
+   * @param instructionId - Instruction ID to check
+   * @returns Array of active agents using this instruction
    */
-  async findAll(
-    options: FindManyOptions,
-    context: RequestContext
-  ): Promise<FindManyResult<Instruction>> {
-    if(options.filter !== null) {
-      // loop each filter if value = null, "", undefined, remove from filter
-      for (const key in options.filter) {
-        if (
-          options.filter[key] === null ||
-          options.filter[key] === '' ||
-          options.filter[key] === undefined
-        ) {
-          delete options.filter[key];
-        }
-      }
-    }
-    const findResult = await super.findAll(options, context);
-    findResult.data = findResult.data.map((item: any) => {
-      const obj = item.toObject ? item.toObject() : { ...item };
-      delete obj.content;
-      return obj;
-    });
+  private async checkActiveAgentDependencies(
+    instructionId: string | ObjectId
+  ): Promise<Array<{ id: string; name: string }>> {
+    const activeAgents = await this.agentModel
+      .find({
+        instructionId: instructionId.toString(),
+        isDeleted: false,
+      })
+      .select('_id name')
+      .lean()
+      .exec();
 
-    // Aggregate statistics by status
-
-
-    const statusStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Build statistics object
-    const statistics: any = {
-      total: findResult.pagination.total,
-      byStatus: {},
-      byType: {},
-    };
-
-    // Map status statistics
-    statusStats.forEach((stat: any) => {
-      statistics.byStatus[stat._id] = stat.count;
-    });
-
-    findResult.statistics = statistics;
-    return findResult;
+    return activeAgents.map((agent) => ({
+      id: agent._id.toString(),
+      name: agent.name,
+    }));
   }
 }

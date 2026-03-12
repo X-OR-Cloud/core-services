@@ -219,7 +219,7 @@ export class MessageController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
-  ): Promise<Message> {
+  ): Promise<Partial<Message>> {
     return this.messageService.findById(
       new Types.ObjectId(id) as any,
       context,

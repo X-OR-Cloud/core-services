@@ -271,7 +271,7 @@ export class MessageService extends BaseService<Message> {
       .sort({ createdAt: 1 })
       .exec();
 
-    return [message, ...children];
+    return [message as any, ...children];
   }
 
   /**

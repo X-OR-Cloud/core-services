@@ -96,7 +96,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
     }
 
     // Get ready steps
-    const readySteps = this.executionService.getReadySteps(execution);
+    const readySteps = this.executionService.getReadySteps(execution as any);
 
     if (readySteps.length === 0) {
       this.logger.debug(`No ready steps for execution ${id}`);
@@ -113,7 +113,7 @@ export class ExecutionOrchestrator implements OnModuleInit {
 
     // Execute ready steps in parallel
     await Promise.all(
-      readySteps.map((step) => this.executeStep(execution, step))
+      readySteps.map((step) => this.executeStep(execution as any, step))
     );
   }
 
@@ -315,9 +315,9 @@ export class ExecutionOrchestrator implements OnModuleInit {
     }
 
     // Check if execution is complete
-    if (this.executionService.isExecutionComplete(execution)) {
+    if (this.executionService.isExecutionComplete(execution as any)) {
       // Check if execution has failed
-      const hasFailed = this.executionService.hasExecutionFailed(execution);
+      const hasFailed = this.executionService.hasExecutionFailed(execution as any);
 
       if (hasFailed) {
         // Mark as failed

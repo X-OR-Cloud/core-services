@@ -51,7 +51,7 @@ export class GuardrailService extends BaseService<Guardrail> {
     id: ObjectId,
     updateData: Partial<Guardrail>,
     context: RequestContext
-  ): Promise<Guardrail | null> {
+  ): Promise<Partial<Guardrail>> {
     // Check if enabled is being changed to false or status to inactive
     if (updateData.enabled === false || updateData.status === 'inactive') {
       const activeAgents = await this.checkActiveAgentDependencies(id);
@@ -75,7 +75,7 @@ export class GuardrailService extends BaseService<Guardrail> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Guardrail | null> {
+  ): Promise<Partial<Guardrail>> {
     const activeAgents = await this.checkActiveAgentDependencies(id);
     if (activeAgents.length > 0) {
       throw new Error(

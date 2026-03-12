@@ -130,7 +130,7 @@ export class ActionService extends BaseService<Action> {
       .sort({ createdAt: 1 })
       .exec();
 
-    return [action, ...children];
+    return [action as any, ...children];
   }
 
   /**

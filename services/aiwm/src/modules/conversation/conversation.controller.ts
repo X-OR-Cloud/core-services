@@ -115,7 +115,7 @@ export class ConversationController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
-  ): Promise<Conversation> {
+  ): Promise<Partial<Conversation>> {
     return this.conversationService.findById(
       new Types.ObjectId(id) as any,
       context,

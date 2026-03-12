@@ -164,7 +164,7 @@ export class ConversationService extends BaseService<Conversation> {
       this.logger.warn(
         `Participant ${participantId} already in conversation ${conversationId}`,
       );
-      return conversation;
+      return conversation as any;
     }
 
     // Add new participant

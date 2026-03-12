@@ -23,7 +23,7 @@ export class Instruction extends BaseSchema {
   @Prop({ type: [String], default: [] })
   tags!: string[]; // e.g., ['customer-service', 'polite', 'helpful']
 
-  @Prop({ enum: ['active', 'inactive'], default: 'active' })
+  @Prop({ type: String, enum: ['active', 'inactive'], default: 'active' })
   status!: string; // 'active' or 'inactive'
 
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps

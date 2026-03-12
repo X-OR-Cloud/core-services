@@ -1,9 +1,8 @@
-import { Model, ObjectId, PipelineStage } from 'mongoose';
+import { Model, ObjectId, PipelineStage, Types } from 'mongoose';
 import {
   RequestContext,
   createRoleBasedPermissions,
   createLogger,
-  logDebug,
 } from '@hydrabyte/shared';
 import { ForbiddenException } from '@nestjs/common';
 
@@ -16,7 +15,7 @@ export interface FindManyResult<T> {
   };
   statistics: {
     total: number;
-    [key: string]: number;
+    [key: string]: any;
   };
 }
 export interface FindManyOptions {
@@ -24,6 +23,8 @@ export interface FindManyOptions {
   sort?: Record<string, 1 | -1>;
   page?: number;
   limit?: number;
+  selectFields?: string[];
+  statisticFields?: string[]; // Fields to include in statistics aggregation
 }
 
 export class BaseService<Entity> {
@@ -104,60 +105,16 @@ export class BaseService<Entity> {
     return obj as Entity;
   }
 
-  async findAll(
-    options: FindManyOptions,
-    context: RequestContext
-  ): Promise<FindManyResult<Entity>> {
-    const permissions = createRoleBasedPermissions(context);
-    if (!permissions.allowRead) {
-      this.logger.warn('Read permission denied', {
-        userId: context.userId,
-        roles: context.roles,
-      });
-      throw new ForbiddenException('You do not have permission to read.');
-    }
-
-    const { sort, page = 1, limit = 10 } = options;
-    const filter = options.filter
-      ? { ...(options.filter as any) }
-      : {...(options as any)};
-    delete filter['isDeleted']; // Ensure isDeleted is not set by user filter
-    delete filter['deletedAt']; // Ensure deletedAt is not set by user filter
-    delete filter['owner']; // Ensure owner is not set by user filter
-    delete filter['sort']; // Ensure sort is not set by user filter
-    delete filter['sortOrder']; // Ensure sortOrder is not set by user filter
-    delete filter['sortBy']; // Ensure sortBy is not set by user filter
-    delete filter['page']; // Ensure page is not set by user filter
-    delete filter['limit']; // Ensure limit is not set by user filter
-    // Loop each filter, delete if "" or null
-    for (const key in filter) {
-      if (filter[key] === '' || filter[key] === null) {
-        delete filter[key];
-      }
-    }
-    // Merge scope-based filter with user filter (user filter takes precedence)
-    const finalFilter = { ...permissions.filter, ...filter, isDeleted: false };
-    this.logger.debug('Origin filter, sort', { filter, sort });
-    this.logger.debug('Final query filter', finalFilter);
-
-    const [data, total] = await Promise.all([
-      this.model
-        .find(finalFilter)
-        .sort(sort)
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .select('-isDeleted -deletedAt -password')
-        .exec(),
-      this.model.countDocuments(finalFilter).exec(),
-    ]);
-
-    return { data, pagination: { page, limit, total }, statistics: { total } };
-  }
-
   async findById(
-    id: ObjectId,
+    id: ObjectId | string,
     context: RequestContext
-  ): Promise<Entity | null> {
+  ): Promise<Partial<Entity>> {
+    if (typeof id === 'string') {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new ForbiddenException(`Invalid ID format ${id}`);
+      }
+      id = new Types.ObjectId(id) as any; // Convert string to ObjectId if necessary
+    }
 
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowRead) {
@@ -171,27 +128,123 @@ export class BaseService<Entity> {
     const condition = { _id: id, ...permissions.filter, isDeleted: false };
     const entity = await this.model
       .findOne(condition)
-      .select('-isDeleted -deletedAt -password')
+      .select('-isDeleted -deletedAt -password -updatedBy -createdBy')
       .exec();
 
-    /* if (entity) {
-      this.logger.debug('Entity found', { id: id.toString() });
-    } else {
-      this.logger.debug('Entity not found', { id: id.toString() });
-    } */
+    if (!entity) {
+      throw new ForbiddenException(
+        `Entity with ID ${id} not found or access denied`
+      );
+    }
 
     return entity;
   }
 
-  async update(
-    id: ObjectId,
-    updateData: Partial<Entity>,
+  async findAll(
+    options: FindManyOptions,
     context: RequestContext
-  ): Promise<Entity | null> {
-    this.logger.debug('Updating entity', {
-      id: id.toString(),
-      userId: context.userId,
-    });
+  ): Promise<FindManyResult<Entity>> {
+    const notAllowedFilters = [
+      'isDeleted',
+      'deletedAt',
+      'owner',
+      'sort',
+      'sortOrder',
+      'sortBy',
+      'page',
+      'limit',
+    ];
+    const notAllowedFields = [
+      '-isDeleted',
+      '-deletedAt',
+      '-password',
+      '-createdBy',
+      '-updatedBy',
+    ];
+    const permissions = createRoleBasedPermissions(context);
+    if (!permissions.allowRead) {
+      this.logger.warn('Read permission denied', {
+        userId: context.userId,
+        roles: context.roles,
+      });
+      throw new ForbiddenException('You do not have permission to read.');
+    }
+
+    const { sort, page = 1, limit = 10 } = options;
+    const filter = options.filter
+      ? { ...(options.filter as any) }
+      : { ...(options as any) };
+    notAllowedFilters.forEach((field) => delete filter[field]); // Ensure removed fields are not set by user filter
+    // Loop each filter, delete if "" or null
+    for (const key in filter) {
+      if (filter[key] === '' || filter[key] === null) {
+        delete filter[key];
+      }
+    }
+    // Merge scope-based filter with user filter (user filter takes precedence)
+    const finalFilter = { ...permissions.filter, ...filter, isDeleted: false };
+
+    const [data, total] = await Promise.all([
+      this.model
+        .find(finalFilter)
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select(
+          [
+            ...notAllowedFields,
+            ...(options.selectFields ? options.selectFields : []),
+          ].join(' ')
+        )
+        .exec(),
+      this.model.countDocuments(finalFilter).exec(),
+    ]);
+    const result: FindManyResult<Entity> = {
+      data,
+      pagination: { page, limit, total },
+      statistics: { total },
+    };
+
+    // check if Entity has status field, if yes, aggregate statistics by status
+    if (options.statisticFields) {
+      await Promise.all(
+        options.statisticFields.map(async (field) => {
+          result.statistics[
+            `by${field.charAt(0).toUpperCase() + field.slice(1)}`
+          ] = {};
+          const pipeline: PipelineStage[] = [
+            { $match: finalFilter },
+            {
+              $group: {
+                _id: `$${field}`,
+                count: { $sum: 1 },
+              },
+            },
+          ];
+          const fieldStats = await this.aggregate(pipeline, context);
+          fieldStats.forEach((stat: any) => {
+            result.statistics[
+              `by${field.charAt(0).toUpperCase() + field.slice(1)}`
+            ][stat._id] = stat.count;
+          });
+        })
+      );
+    }
+
+    return result;
+  }
+
+  async update(
+    id: ObjectId | string,
+    updateData: Partial<Entity> | any,
+    context: RequestContext
+  ): Promise<Partial<Entity>> {
+    if (typeof id === 'string') {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new ForbiddenException(`Invalid ID format ${id}`);
+      }
+      id = new Types.ObjectId(id) as any; // Convert string to ObjectId if necessary
+    }
 
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowWrite) {
@@ -231,13 +284,19 @@ export class BaseService<Entity> {
       this.logger.warn('Entity not found for update', { id: id.toString() });
     }
 
-    return updated;
+    return updated as Partial<Entity>;
   }
 
   async hardDelete(
-    id: ObjectId,
+    id: ObjectId | string,
     context: RequestContext
   ): Promise<Entity | null> {
+    if (typeof id === 'string') {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new ForbiddenException(`Invalid ID format ${id}`);
+      }
+      id = new Types.ObjectId(id) as any; // Convert string to ObjectId if necessary
+    }
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowAdministrative) {
       throw new ForbiddenException(
@@ -256,20 +315,18 @@ export class BaseService<Entity> {
   }
 
   async softDelete(
-    id: ObjectId,
+    id: ObjectId | string,
     context: RequestContext
-  ): Promise<Entity | null> {
-    this.logger.debug('Soft deleting entity', {
-      id: id.toString(),
-      userId: context.userId,
-    });
+  ): Promise<Partial<Entity>> {
+    if (typeof id === 'string') {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new ForbiddenException(`Invalid ID format ${id}`);
+      }
+      id = new Types.ObjectId(id) as any; // Convert string to ObjectId if necessary
+    }
 
     const permissions = createRoleBasedPermissions(context);
     if (!permissions.allowDelete) {
-      this.logger.warn('Delete permission denied', {
-        userId: context.userId,
-        roles: context.roles,
-      });
       throw new ForbiddenException('You do not have permission to delete.');
     }
 
@@ -288,21 +345,14 @@ export class BaseService<Entity> {
       )
       .exec();
 
-    if (updated) {
-      this.logger.log('Entity soft deleted', {
-        id: id.toString(),
-        userId: context.userId,
-      });
-    } else {
-      this.logger.warn('Entity not found for deletion', { id: id.toString() });
+    if (!updated) {
+      throw new ForbiddenException(`Entity with ID ${id} not found or access denied`);
     }
-
-    if (!updated) return null;
 
     return {
       _id: updated._id,
       deletedAt: new Date(),
-    } as any;
+    } as Entity;
   }
 
   /**
@@ -315,18 +365,18 @@ export class BaseService<Entity> {
     pipeline: PipelineStage[],
     context: RequestContext
   ): Promise<unknown[]> {
-    this.logger.debug('Running aggregation pipeline', {
+    /* this.logger.debug('Running aggregation pipeline', {
       stageCount: pipeline.length,
       userId: context.userId,
-    });
+    }); */
 
     try {
       const permissions = createRoleBasedPermissions(context);
       if (!permissions.allowRead) {
-        this.logger.warn('Read permission denied for aggregation', {
+        /* this.logger.warn('Read permission denied for aggregation', {
           userId: context.userId,
           roles: context.roles,
-        });
+        }); */
         throw new ForbiddenException('You do not have permission to read.');
       }
 
@@ -337,10 +387,10 @@ export class BaseService<Entity> {
       const result = await this.model.aggregate(finalPipeline).exec();
       return result;
     } catch (error) {
-      this.logger.error('Aggregation failed', {
+      /* this.logger.error('Aggregation failed', {
         error: (error as Error).message,
         userId: context.userId,
-      });
+      }); */
       return [];
     }
   }

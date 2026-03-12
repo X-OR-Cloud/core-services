@@ -63,7 +63,7 @@ export class ModelService extends BaseService<ModelEntity> {
   async create(
     createData: Partial<ModelEntity>,
     context: RequestContext
-  ): Promise<ModelEntity | null> {
+  ): Promise<Partial<ModelEntity>> {
     // Set initial status based on deploymentType
     if (!createData.status) {
       if (createData.deploymentType === 'self-hosted') {
@@ -74,7 +74,7 @@ export class ModelService extends BaseService<ModelEntity> {
     }
 
     // Call parent create method
-    return super.create(createData, context) as Promise<ModelEntity | null>;
+    return await super.create(createData, context);
   }
 
   /**
@@ -110,7 +110,7 @@ export class ModelService extends BaseService<ModelEntity> {
     id: ObjectId,
     updateData: Partial<ModelEntity>,
     context: RequestContext
-  ): Promise<ModelEntity | null> {
+  ): Promise<Partial<ModelEntity>> {
     // Check if status is being changed to 'inactive'
     if (updateData.status === 'inactive') {
       const activeDeployments = await this.checkActiveDeploymentDependencies(id);
@@ -130,7 +130,7 @@ export class ModelService extends BaseService<ModelEntity> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<ModelEntity | null> {
+  ): Promise<Partial<ModelEntity>> {
     const activeDeployments = await this.checkActiveDeploymentDependencies(id);
     if (activeDeployments.length > 0) {
       throw new ModelInUseException(activeDeployments, 'delete');
@@ -147,7 +147,7 @@ export class ModelService extends BaseService<ModelEntity> {
   async activateModel(
     id: ObjectId,
     context: RequestContext
-  ): Promise<ModelEntity | null> {
+  ): Promise<Partial<ModelEntity>> {
     const model = await this.modelModel.findOne({
       _id: id,
       isDeleted: false,
@@ -176,7 +176,7 @@ export class ModelService extends BaseService<ModelEntity> {
   async deactivateModel(
     id: ObjectId,
     context: RequestContext
-  ): Promise<ModelEntity | null> {
+  ): Promise<Partial<ModelEntity>> {
     const model = await this.modelModel.findOne({
       _id: id,
       isDeleted: false,

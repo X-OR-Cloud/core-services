@@ -162,7 +162,7 @@ export class DeploymentService extends BaseService<Deployment> {
     id: ObjectId,
     updateData: Partial<Deployment>,
     context: RequestContext
-  ): Promise<Deployment | null> {
+  ): Promise<Partial<Deployment>> {
     // If status is being changed, validate the transition
     if (updateData.status) {
       const currentDeployment = await this.deploymentModel
@@ -202,7 +202,7 @@ export class DeploymentService extends BaseService<Deployment> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Deployment | null> {
+  ): Promise<Partial<Deployment>> {
     const deployment = await this.deploymentModel
       .findOne({
         _id: id,
@@ -268,7 +268,7 @@ export class DeploymentService extends BaseService<Deployment> {
   async startDeployment(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Deployment | null> {
+  ): Promise<Partial<Deployment>> {
     const deployment = await this.deploymentModel
       .findOne({
         _id: id,
@@ -303,7 +303,7 @@ export class DeploymentService extends BaseService<Deployment> {
   async stopDeployment(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Deployment | null> {
+  ): Promise<Partial<Deployment>> {
     const deployment = await this.deploymentModel
       .findOne({
         _id: id,

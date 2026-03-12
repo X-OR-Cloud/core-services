@@ -147,7 +147,7 @@ export class ActionController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
-  ): Promise<Action> {
+  ): Promise<Partial<Action>> {
     return this.actionService.findById(new Types.ObjectId(id) as any, context);
   }
 

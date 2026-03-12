@@ -59,6 +59,7 @@ export class Action extends BaseSchema {
 
   @Prop({
     required: true,
+    type: String,
     enum: Object.values(ActionType),
     index: true,
   })
@@ -78,6 +79,7 @@ export class Action extends BaseSchema {
 
   @Prop({
     required: false,
+    type: String,
     enum: Object.values(ActionStatus),
     default: ActionStatus.COMPLETED,
   })

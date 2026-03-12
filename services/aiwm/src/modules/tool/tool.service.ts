@@ -169,7 +169,7 @@ export class ToolService extends BaseService<Tool> {
     id: ObjectId,
     updateData: Partial<Tool>,
     context: RequestContext
-  ): Promise<Tool | null> {
+  ): Promise<Partial<Tool>> {
     // Check if status is being changed to 'inactive'
     if (updateData.status === 'inactive') {
       const activeAgents = await this.checkActiveAgentDependencies(id);
@@ -189,7 +189,7 @@ export class ToolService extends BaseService<Tool> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Tool | null> {
+  ): Promise<Partial<Tool>> {
     const activeAgents = await this.checkActiveAgentDependencies(id);
     if (activeAgents.length > 0) {
       throw new ToolInUseException(activeAgents, 'delete');

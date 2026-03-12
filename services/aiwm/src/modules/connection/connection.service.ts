@@ -1,44 +1,25 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BaseService } from '@hydrabyte/base';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Connection, ConnectionDocument } from './connection.schema';
-import { CreateConnectionDto } from './dto/create-connection.dto';
-import { UpdateConnectionDto } from './dto/update-connection.dto';
+import { Connection } from './connection.schema';
 
 @Injectable()
 export class ConnectionService extends BaseService<Connection> {
-  protected readonly logger = new Logger(ConnectionService.name);
-
   constructor(
     @InjectModel(Connection.name)
-    connectionModel: Model<ConnectionDocument>,
+    connectionModel: Model<Connection>,
   ) {
-    super(connectionModel as any);
+    super(connectionModel);
   }
 
-  async createConnection(dto: CreateConnectionDto, context: RequestContext): Promise<Connection> {
-    const connection = await this.create(dto, context);
-    this.logger.log(`Created connection ${(connection as any)._id} [${dto.provider}] "${dto.name}"`);
-    return connection as Connection;
-  }
-
-  async updateConnection(
-    id: string,
-    dto: UpdateConnectionDto,
+  async findAll(
+    options: FindManyOptions,
     context: RequestContext,
-  ): Promise<Connection> {
-    const connection = await this.update(new Types.ObjectId(id) as any, dto as any, context);
-    this.logger.log(`Updated connection ${id}`);
-    return connection as Connection;
-  }
-
-  async getOrgConnections(orgId: string, context: RequestContext): Promise<Connection[]> {
-    return this.model
-      .find({ 'owner.orgId': orgId, isDeleted: false })
-      .sort({ createdAt: -1 })
-      .exec();
+  ): Promise<FindManyResult<Connection>> {
+    options.selectFields = ['-config', '-routes'];
+    return super.findAll(options, context);
   }
 
   async getActiveConnections(): Promise<Connection[]> {
@@ -62,7 +43,6 @@ export class ConnectionService extends BaseService<Connection> {
       throw new NotFoundException(`Connection ${id} not found`);
     }
 
-    this.logger.log(`Connection ${id} status → ${status}`);
     return connection;
   }
 
@@ -78,6 +58,32 @@ export class ConnectionService extends BaseService<Connection> {
     if (!connection) {
       throw new NotFoundException(`Connection ${id} not found`);
     }
+
+    return connection;
+  }
+
+  async updateRoute(
+    id: string,
+    routeIndex: number,
+    route: any,
+    context: RequestContext,
+  ): Promise<Connection> {
+    const connection = await this.model
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: false })
+      .exec();
+
+    if (!connection) {
+      throw new NotFoundException(`Connection ${id} not found`);
+    }
+
+    if (routeIndex < 0 || routeIndex >= connection.routes.length) {
+      throw new NotFoundException(`Route at index ${routeIndex} not found`);
+    }
+
+    connection.routes[routeIndex] = { ...connection.routes[routeIndex], ...route };
+    (connection as any).updatedBy = context.userId;
+    (connection as any).markModified('routes');
+    await (connection as any).save();
 
     return connection;
   }

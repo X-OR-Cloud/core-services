@@ -70,7 +70,7 @@ export class AgentService extends BaseService<Agent> {
     id: any,
     context: RequestContext,
     query?: any
-  ): Promise<Agent | null> {
+  ): Promise<Partial<Agent> | null> {
     const shouldPopulate = query?.populate === 'instruction';
 
     if (shouldPopulate) {
@@ -1676,7 +1676,7 @@ echo "Installation script placeholder - implement actual logic"
     id: string,
     updateAgentDto: UpdateAgentDto,
     context: RequestContext
-  ): Promise<Agent | null> {
+  ): Promise<Partial<Agent> | null> {
     // Only organization.owner or universe.owner can set role to organization.owner
     if (updateAgentDto.role === 'organization.owner') {
       const isOrgOwner = context.roles?.includes(PredefinedRole.OrganizationOwner) ||

@@ -38,7 +38,7 @@ export class WorkflowService extends BaseService<Workflow> {
    * @param context - Request context
    * @returns Updated workflow
    */
-  async activate(id: ObjectId, context: RequestContext): Promise<Workflow | null> {
+  async activate(id: ObjectId, context: RequestContext): Promise<Partial<Workflow>> {
     // TODO: Validate workflow has at least 1 step before activating
     return this.update(id, { status: 'active' }, context);
   }
@@ -49,7 +49,7 @@ export class WorkflowService extends BaseService<Workflow> {
    * @param context - Request context
    * @returns Updated workflow
    */
-  async archive(id: ObjectId, context: RequestContext): Promise<Workflow | null> {
+  async archive(id: ObjectId, context: RequestContext): Promise<Partial<Workflow>> {
     return this.update(id, { status: 'archived' }, context);
   }
 }
