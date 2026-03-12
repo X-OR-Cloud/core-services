@@ -33,7 +33,7 @@ module.exports = {
       kill_timeout: 5000,
       wait_ready: true,
       listen_timeout: 10000,
-    },{
+    }, {
       name: 'core.iam.api01',
       script: './dist/services/iam/main.js',
       instances: 1,
@@ -66,7 +66,7 @@ module.exports = {
       kill_timeout: 5000,
       wait_ready: true,
       listen_timeout: 10000,
-    },{
+    }, {
       name: 'core.noti.api00',
       script: './dist/services/noti/main.js',
       instances: 1,
@@ -532,6 +532,38 @@ module.exports = {
       min_uptime: '10s',
 
       kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
+    // ========== AIWM Connection Worker Instances ==========
+    // Both instances connect to the same LB URLs — Redis distributed lock
+    // ensures each agent is owned by exactly one runner across all instances.
+    {
+      name: 'core.aiwm.con00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '1G',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'con',
+        SERVICE_NAME: 'aiwm',
+        // WS_CHAT_URL and MCP_SERVER_URL loaded from .env (LB URLs)
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-agt-00-error.log',
+      out_file: './logs/aiwm-agt-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 15000,  // Allow graceful lock release + runner shutdown
       wait_ready: false,
       listen_timeout: 10000,
     },
