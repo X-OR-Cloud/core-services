@@ -553,7 +553,6 @@ export class AgentService extends BaseService<Agent> {
       maskedToken: `${token.substring(0, 20)}...${token.substring(
         token.length - 20
       )}`,
-      token: token,
     });
 
     // Get AIWM base URL from configuration
