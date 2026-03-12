@@ -185,12 +185,7 @@ export class BaseService<Entity> {
     const statisticFields = options.statisticFields || [];
     delete finalFilter.selectFields;
     delete finalFilter.statisticFields;
-    this.logger.debug('Finding entities with filter', {
-      filter: finalFilter,
-      userId: context.userId,
-      selectFields,
-      statisticFields,
-    });
+
     const [data, total] = await Promise.all([
       this.model
         .find(finalFilter)
