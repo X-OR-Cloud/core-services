@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, Req, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -12,6 +12,8 @@ import {
   AgentHeartbeatDto,
   AgentCredentialsResponseDto,
   AgentDisconnectDto,
+  AnonymousTokenDto,
+  AnonymousTokenResponseDto,
 } from './agent.dto';
 
 @ApiTags('agents')
@@ -213,6 +215,23 @@ export class AgentController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.agentService.disconnect(id, disconnectDto);
+  }
+
+  @Post(':id/anonymous-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Generate anonymous chat token',
+    description: 'Generate a JWT token for anonymous users to connect to the agent chat WebSocket. Used for chatbot widget integration. Requires org.owner or org.editor role.',
+  })
+  @ApiResponse({ status: 200, description: 'Token generated successfully', type: AnonymousTokenResponseDto })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async generateAnonymousToken(
+    @Param('id') id: string,
+    @Body() dto: AnonymousTokenDto,
+    @CurrentUser() context: RequestContext,
+  ): Promise<AnonymousTokenResponseDto> {
+    return this.agentService.generateAnonymousToken(id, dto, context);
   }
 
   @Post(':id/credentials/regenerate')

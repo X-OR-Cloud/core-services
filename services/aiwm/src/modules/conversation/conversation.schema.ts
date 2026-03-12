@@ -64,6 +64,14 @@ export class Conversation extends BaseSchema {
     createdAt: Date;
   };
 
+  // User identity (authenticated userId or anonymousId)
+  @Prop({ type: String, default: '', index: true })
+  userId: string;
+
+  // User type for analytics and future cleanup
+  @Prop({ type: String, enum: ['authenticated', 'anonymous'], default: 'authenticated' })
+  userType: 'authenticated' | 'anonymous';
+
   // Tags for categorization
   @Prop({ type: [String], default: [] })
   tags: string[];
@@ -79,3 +87,4 @@ export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ agentId: 1, status: 1, createdAt: -1 });
 ConversationSchema.index({ 'participants.id': 1, status: 1 });
 ConversationSchema.index({ createdBy: 1, status: 1, createdAt: -1 });
+ConversationSchema.index({ agentId: 1, userId: 1, status: 1 }); // findOrCreate per (userId, agentId)

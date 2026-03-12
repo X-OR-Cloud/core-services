@@ -26,55 +26,54 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   /**
-   * Find or create a conversation for an agent
-   * Used for auto-creating conversations when agent connects
+   * Find or create a conversation for a specific (userId, agentId) pair.
+   * Works for both authenticated users and anonymous users.
    */
-  async findOrCreateForAgent(
+  async findOrCreateForUser(
+    userId: string,
     agentId: string,
     orgId: string,
+    userType: 'authenticated' | 'anonymous',
   ): Promise<Conversation> {
-    // Find existing active conversation for this agent
     const existing = await this.model.findOne({
-      agentId: agentId,
+      agentId,
+      userId,
       status: 'active',
-      'owner.orgId': orgId,
       isDeleted: false,
     }).exec();
 
     if (existing) {
-      this.logger.log(`Reusing existing conversation ${existing._id} for agent ${agentId}`);
+      this.logger.log(`Reusing existing conversation ${existing._id} for user ${userId} + agent ${agentId}`);
       return existing as Conversation;
     }
 
-    // Create new conversation for agent (system-initiated, no userId)
     const newConversation = await this.model.create({
-      title: `Agent ${agentId} - Auto Conversation`,
-      description: 'Automatically created conversation for agent',
-      agentId: agentId,
+      title: `Conversation with agent ${agentId}`,
+      description: '',
+      agentId,
+      userId,
+      userType,
       conversationType: 'chat',
       status: 'active',
       totalTokens: 0,
       totalMessages: 0,
       totalCost: 0,
       participants: [
-        {
-          type: 'agent' as const,
-          id: agentId,
-          joined: new Date(),
-        },
+        { type: 'user' as const, id: userId, joined: new Date() },
+        { type: 'agent' as const, id: agentId, joined: new Date() },
       ],
       owner: {
-        orgId: orgId,
-        userId: '',
+        orgId,
+        userId: userType === 'authenticated' ? userId : '',
         groupId: '',
-        agentId: agentId,
+        agentId,
         appId: '',
       },
-      createdBy: agentId, // Agent creates its own conversation
-      updatedBy: agentId,
+      createdBy: userId || agentId,
+      updatedBy: userId || agentId,
     });
 
-    this.logger.log(`Created new conversation ${newConversation._id} for agent ${agentId}`);
+    this.logger.log(`Created new conversation ${newConversation._id} for user ${userId} + agent ${agentId}`);
     return newConversation as Conversation;
   }
 

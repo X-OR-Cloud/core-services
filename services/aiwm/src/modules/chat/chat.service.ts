@@ -218,6 +218,18 @@ export class ChatService {
   }
 
   /**
+   * Get all socket IDs for an agent (used for cross-instance socketsJoin)
+   */
+  async getAgentSocketIds(agentId: string): Promise<string[]> {
+    try {
+      return await this.redis.smembers(`presence:agent:${agentId}`);
+    } catch (error) {
+      this.logger.error(`Error getting agent socket IDs:`, (error as Error).message);
+      return [];
+    }
+  }
+
+  /**
    * Get all online agents
    */
   async getAllOnlineAgents(): Promise<string[]> {

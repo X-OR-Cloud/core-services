@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { InjectModel } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
@@ -29,6 +30,8 @@ import {
   AgentConnectResponseDto,
   AgentHeartbeatDto,
   AgentCredentialsResponseDto,
+  AnonymousTokenDto,
+  AnonymousTokenResponseDto,
 } from './agent.dto';
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -1859,6 +1862,39 @@ echo "Installation script placeholder - implement actual logic"
         }
       }
     }
+  }
+
+  /**
+   * Generate an anonymous JWT token for chatbot widget integration.
+   * Token allows anonymous users to connect to the agent's chat WebSocket.
+   */
+  async generateAnonymousToken(
+    agentId: string,
+    dto: AnonymousTokenDto,
+    context: RequestContext,
+  ): Promise<AnonymousTokenResponseDto> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    const anonymousId = dto.anonymousId || uuidv4();
+    const expiresIn = dto.expiresIn && dto.expiresIn > 0 ? dto.expiresIn : 86400;
+
+    const payload = {
+      type: 'anonymous',
+      agentId,
+      orgId: (agent as any).owner?.orgId || context.orgId,
+      anonymousId,
+      userId: '',
+    };
+
+    const token = this.jwtService.sign(payload, { expiresIn });
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+    this.logger.log(`Generated anonymous token for agent ${agentId}, anonymousId=${anonymousId}, expiresIn=${expiresIn}s`);
+
+    return { token, anonymousId, expiresIn, expiresAt };
   }
 
   /**

@@ -9,7 +9,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, UseGuards } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ChatService } from './chat.service';
 import { CreateMessageDto } from '../message/dto/create-message.dto';
@@ -20,19 +20,20 @@ import { MessageDocument } from '../message/message.schema';
  * ChatGateway - WebSocket Gateway for real-time chat
  *
  * Client Events (emit to server):
- * - conversation:join - Join a conversation room
+ * - agent:connect     - Authenticated user connects to an agent (creates/resumes conversation)
+ * - conversation:join - Join a specific conversation by ID (resume existing)
  * - conversation:leave - Leave a conversation room
- * - message:send - Send a new message
- * - message:typing - Typing indicator (both user and agent)
- * - presence:online - User/agent online status
+ * - message:send      - Send a new message
+ * - message:typing    - Typing indicator (both user and agent)
+ * - presence:online   - User/agent online status
  *
  * Server Events (emit to client):
- * - message:new - New message received
- * - message:sent - Message successfully sent
- * - message:error - Error sending message
- * - agent:typing - Agent is typing (received by users)
- * - user:typing - User is typing (received by agents)
- * - presence:update - Online status update
+ * - message:new       - New message received
+ * - message:sent      - Message successfully sent
+ * - message:error     - Error sending message
+ * - agent:typing      - Agent is typing (received by users)
+ * - user:typing       - User is typing (received by agents)
+ * - presence:update   - Online status update (includes conversationId for anonymous/agent:connect flow)
  */
 @WebSocketGateway({
   namespace: '/ws/chat',
@@ -61,7 +62,6 @@ export class ChatGateway
 
   async handleConnection(client: Socket) {
     try {
-      // Extract token from handshake auth, headers, or query parameters
       const token =
         client.handshake.auth?.token ||
         client.handshake.headers?.authorization?.replace('Bearer ', '') ||
@@ -73,104 +73,171 @@ export class ChatGateway
         return;
       }
 
-      // Verify JWT token
       const payload = this.jwtService.verify(token);
-
-      // Determine if this is a user or agent token
       const isAgent = payload.type === 'agent' || !!payload.agentId;
+      const isAnonymous = payload.type === 'anonymous';
 
-      // Store connection info in socket data
-      client.data.type = isAgent ? 'agent' : 'user';
-      client.data.userId = isAgent ? null : (payload.sub || payload.userId);
-      client.data.agentId = isAgent ? (payload.agentId || payload.sub) : null;
-      client.data.roles = payload.roles || [];
-      client.data.orgId = payload.orgId;
-
-      // Track online presence
       if (isAgent) {
-        await this.chatService.setAgentOnline(client.data.agentId, client.id);
-        this.logger.debug(
-          `[WS-CONNECT] Agent connected | socketId=${client.id} | agentId=${client.data.agentId}`,
-        );
-
-        // Auto-create or reuse conversation for agent
-        const conversation = await this.conversationService.findOrCreateForAgent(
-          client.data.agentId,
-          client.data.orgId,
-        );
-
-        const conversationId = (conversation as any)._id.toString();
-
-        // Auto-join the conversation room
-        await client.join(`conversation:${conversationId}`);
-        client.data.conversationId = conversationId;
-
-        // Track in Redis
-        await this.chatService.joinConversation(
-          conversationId,
-          client.data.agentId,
-        );
-
-        // Get room info (safely check if server is ready)
-        let roomSize = 0;
-        try {
-          const room = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`);
-          roomSize = room?.size || 0;
-        } catch {
-          // Adapter not ready yet, skip room size
-        }
-
-        this.logger.log(
-          `[WS-JOIN] Agent auto-joined | agentId=${client.data.agentId} | conversationId=${conversationId} | roomSize=${roomSize}`,
-        );
+        await this._handleAgentConnect(client, payload);
+      } else if (isAnonymous) {
+        await this._handleAnonymousConnect(client, payload);
       } else {
-        await this.chatService.setUserOnline(client.data.userId, client.id);
-        this.logger.debug(
-          `[WS-CONNECT] User connected | socketId=${client.id} | userId=${client.data.userId}`,
-        );
+        await this._handleUserConnect(client, payload);
       }
-
-      // Broadcast online status
-      this.server.emit('presence:update', {
-        type: client.data.type,
-        userId: client.data.userId,
-        agentId: client.data.agentId,
-        conversationId: client.data.conversationId,
-        status: 'online',
-        timestamp: new Date(),
-      });
     } catch (error) {
       this.logger.error(
         `Authentication failed for client ${client.id}:`,
-        error.message,
+        (error as Error).message,
       );
       client.disconnect();
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Internal connection handlers
+  // ---------------------------------------------------------------------------
+
+  private async _handleAgentConnect(client: Socket, payload: any) {
+    const agentId = payload.agentId || payload.sub;
+
+    client.data.type = 'agent';
+    client.data.agentId = agentId;
+    client.data.orgId = payload.orgId;
+    client.data.userId = null;
+    client.data.roles = payload.roles || [];
+
+    await this.chatService.setAgentOnline(agentId, client.id);
+
+    this.logger.log(
+      `[WS-CONNECT] Agent connected | socketId=${client.id} | agentId=${agentId}`,
+    );
+
+    this.server.emit('presence:update', {
+      type: 'agent',
+      agentId,
+      status: 'online',
+      timestamp: new Date(),
+    });
+  }
+
+  private async _handleAnonymousConnect(client: Socket, payload: any) {
+    const { anonymousId, agentId, orgId } = payload;
+
+    client.data.type = 'anonymous';
+    client.data.userId = anonymousId;
+    client.data.agentId = agentId;
+    client.data.orgId = orgId;
+    client.data.roles = [];
+
+    await this.chatService.setUserOnline(anonymousId, client.id);
+
+    // Anonymous always has agentId in token — auto findOrCreate
+    const conversation = await this.conversationService.findOrCreateForUser(
+      anonymousId,
+      agentId,
+      orgId,
+      'anonymous',
+    );
+    const conversationId = (conversation as any)._id.toString();
+
+    await this._joinConversationRoom(client, conversationId, agentId);
+
+    this.logger.log(
+      `[WS-CONNECT] Anonymous connected | socketId=${client.id} | anonymousId=${anonymousId} | conversationId=${conversationId}`,
+    );
+
+    this.server.emit('presence:update', {
+      type: 'anonymous',
+      userId: anonymousId,
+      agentId,
+      conversationId,
+      status: 'online',
+      timestamp: new Date(),
+    });
+  }
+
+  private async _handleUserConnect(client: Socket, payload: any) {
+    const userId = payload.sub || payload.userId;
+
+    client.data.type = 'user';
+    client.data.userId = userId;
+    client.data.agentId = null;
+    client.data.orgId = payload.orgId;
+    client.data.roles = payload.roles || [];
+
+    await this.chatService.setUserOnline(userId, client.id);
+
+    this.logger.log(
+      `[WS-CONNECT] User connected | socketId=${client.id} | userId=${userId}`,
+    );
+
+    // No room join yet — user must emit agent:connect or conversation:join
+    this.server.emit('presence:update', {
+      type: 'user',
+      userId,
+      status: 'online',
+      timestamp: new Date(),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper: join room + agent socketsJoin
+  // ---------------------------------------------------------------------------
+
+  private async _joinConversationRoom(
+    client: Socket,
+    conversationId: string,
+    agentId: string,
+  ) {
+    await client.join(`conversation:${conversationId}`);
+    client.data.conversationId = conversationId;
+    client.data.agentId = agentId;
+
+    const participantId = client.data.userId || client.data.agentId;
+    await this.chatService.joinConversation(conversationId, participantId);
+
+    // Cross-instance: force agent socket(s) to join this room via Redis Adapter
+    const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+    if (agentSocketIds.length > 0) {
+      this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+      this.logger.debug(
+        `[WS-JOIN] Agent socketsJoin | agentId=${agentId} | conversationId=${conversationId} | sockets=${agentSocketIds.length}`,
+      );
+    }
+
+    let roomSize = 0;
+    try {
+      roomSize = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`)?.size || 0;
+    } catch { /* adapter not ready */ }
+
+    this.logger.log(
+      `[WS-JOIN] Joined room | type=${client.data.type} | id=${participantId} | conversationId=${conversationId} | roomSize=${roomSize}`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disconnect
+  // ---------------------------------------------------------------------------
+
   async handleDisconnect(client: Socket) {
     if (client.data.type === 'agent' && client.data.agentId) {
       await this.chatService.setAgentOffline(client.data.agentId, client.id);
       this.logger.debug(
-        `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${client.data.agentId} | conversationId=${client.data.conversationId || 'none'}`,
+        `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${client.data.agentId}`,
       );
-
-      // Broadcast offline status
       this.server.emit('presence:update', {
         type: 'agent',
         agentId: client.data.agentId,
         status: 'offline',
         timestamp: new Date(),
       });
-    } else if (client.data.type === 'user' && client.data.userId) {
+    } else if (client.data.userId) {
       await this.chatService.setUserOffline(client.data.userId, client.id);
       this.logger.debug(
-        `[WS-DISCONNECT] User disconnected | socketId=${client.id} | userId=${client.data.userId} | conversationId=${client.data.conversationId || 'none'}`,
+        `[WS-DISCONNECT] ${client.data.type} disconnected | socketId=${client.id} | userId=${client.data.userId}`,
       );
-
-      // Broadcast offline status
       this.server.emit('presence:update', {
-        type: 'user',
+        type: client.data.type,
         userId: client.data.userId,
         status: 'offline',
         timestamp: new Date(),
@@ -178,9 +245,52 @@ export class ChatGateway
     }
   }
 
-  /**
-   * Join a conversation room
-   */
+  // ---------------------------------------------------------------------------
+  // Event: agent:connect — authenticated user picks an agent
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('agent:connect')
+  async handleAgentConnect(
+    @MessageBody() data: { agentId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      if (client.data.type !== 'user') {
+        return { success: false, error: 'Only authenticated users can emit agent:connect' };
+      }
+
+      const { agentId } = data;
+      const { userId, orgId } = client.data;
+
+      const conversation = await this.conversationService.findOrCreateForUser(
+        userId,
+        agentId,
+        orgId,
+        'authenticated',
+      );
+      const conversationId = (conversation as any)._id.toString();
+
+      await this._joinConversationRoom(client, conversationId, agentId);
+
+      // Notify others in room
+      client.to(`conversation:${conversationId}`).emit('user:joined', {
+        type: 'user',
+        userId,
+        conversationId,
+        timestamp: new Date(),
+      });
+
+      return { success: true, conversationId };
+    } catch (error) {
+      this.logger.error('Error handling agent:connect:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event: conversation:join — resume an existing conversation by ID
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('conversation:join')
   async handleJoinConversation(
     @MessageBody() data: { conversationId: string },
@@ -189,33 +299,20 @@ export class ChatGateway
     try {
       const { conversationId } = data;
 
-      // Join the room
-      await client.join(`conversation:${conversationId}`);
-      client.data.conversationId = conversationId;
-
-      // Track presence in conversation
-      await this.chatService.joinConversation(
-        conversationId,
-        client.data.userId || client.data.agentId,
+      // Load conversation to get agentId
+      const conversation = await this.conversationService.findById(
+        conversationId as any,
+        { userId: client.data.userId || '', roles: client.data.roles || [], orgId: client.data.orgId, groupId: '', agentId: '', appId: '' },
       );
 
-      // Get room info after join (safely)
-      let roomSize = 0;
-      try {
-        const room = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`);
-        roomSize = room?.size || 0;
-      } catch {
-        // Adapter not ready yet, skip room size
+      if (!conversation) {
+        return { success: false, error: `Conversation ${conversationId} not found` };
       }
 
-      const participantId = client.data.userId || client.data.agentId;
-      const participantType = client.data.type;
+      const agentId = (conversation as any).agentId;
 
-      this.logger.log(
-        `[WS-JOIN] ${participantType} joined | ${participantType}Id=${participantId} | conversationId=${conversationId} | roomSize=${roomSize}`,
-      );
+      await this._joinConversationRoom(client, conversationId, agentId);
 
-      // Notify others in the room
       client.to(`conversation:${conversationId}`).emit('user:joined', {
         type: client.data.type,
         userId: client.data.userId,
@@ -226,14 +323,15 @@ export class ChatGateway
 
       return { success: true, conversationId };
     } catch (error) {
-      this.logger.error('Error joining conversation:', error.message);
-      return { success: false, error: error.message };
+      this.logger.error('Error joining conversation:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
     }
   }
 
-  /**
-   * Leave a conversation room
-   */
+  // ---------------------------------------------------------------------------
+  // Event: conversation:leave
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('conversation:leave')
   async handleLeaveConversation(
     @MessageBody() data: { conversationId: string },
@@ -242,33 +340,24 @@ export class ChatGateway
     try {
       const { conversationId } = data;
 
-      // Leave the room
       await client.leave(`conversation:${conversationId}`);
       client.data.conversationId = null;
 
-      // Remove from conversation tracking
       await this.chatService.leaveConversation(
         conversationId,
         client.data.userId || client.data.agentId,
       );
 
-      // Get room info after leave (safely)
       let roomSize = 0;
       try {
-        const room = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`);
-        roomSize = room?.size || 0;
-      } catch {
-        // Adapter not ready yet, skip room size
-      }
+        roomSize = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`)?.size || 0;
+      } catch { /* adapter not ready */ }
 
       const participantId = client.data.userId || client.data.agentId;
-      const participantType = client.data.type;
-
       this.logger.log(
-        `[WS-LEAVE] ${participantType} left | ${participantType}Id=${participantId} | conversationId=${conversationId} | roomSize=${roomSize}`,
+        `[WS-LEAVE] ${client.data.type} left | id=${participantId} | conversationId=${conversationId} | roomSize=${roomSize}`,
       );
 
-      // Notify others in the room
       client.to(`conversation:${conversationId}`).emit('user:left', {
         type: client.data.type,
         userId: client.data.userId,
@@ -279,35 +368,29 @@ export class ChatGateway
 
       return { success: true, conversationId };
     } catch (error) {
-      this.logger.error('Error leaving conversation:', error.message);
-      return { success: false, error: error.message };
+      this.logger.error('Error leaving conversation:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
     }
   }
 
-  /**
-   * Send a new message
-   */
+  // ---------------------------------------------------------------------------
+  // Event: message:send
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('message:send')
   async handleSendMessage(
     @MessageBody() dto: CreateMessageDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      // Auto-fill conversationId if not provided (from socket connection)
       const conversationId = dto.conversationId || client.data.conversationId;
 
       if (!conversationId) {
-        throw new Error('No conversation found. Please join a conversation first.');
+        throw new Error('No conversation found. Please emit agent:connect or conversation:join first.');
       }
 
-      // Create message DTO with conversationId
-      const messageDto = {
-        ...dto,
-        conversationId,
-      };
+      const messageDto = { ...dto, conversationId };
 
-      // Create request context from socket data
-      // Agents are always allowed to create messages regardless of their RBAC role
       const isAgent = client.data.type === 'agent';
       const context = {
         userId: client.data.userId || '',
@@ -318,43 +401,29 @@ export class ChatGateway
         appId: '',
       };
 
-      // Create message via service
       const message = await this.chatService.sendMessage(messageDto, context);
-
-      // Emit to all clients in the conversation room
       const messageDoc = message as MessageDocument;
       const messageId = messageDoc._id?.toString() || 'unknown';
 
-      // Get room size for debugging (safely)
       let roomSize = 0;
       try {
-        const room = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`);
-        roomSize = room?.size || 0;
-      } catch {
-        // Adapter not ready yet, skip room size
-      }
+        roomSize = this.server?.sockets?.adapter?.rooms?.get(`conversation:${conversationId}`)?.size || 0;
+      } catch { /* adapter not ready */ }
 
-      // Truncate content for logging (first 20 chars)
       const contentPreview = dto.content.length > 20
         ? dto.content.substring(0, 20) + '...'
         : dto.content;
 
       const senderId = client.data.userId || client.data.agentId;
-      const senderType = client.data.type;
-
       this.logger.log(
-        `[WS-MSG-SEND] Message created | msgId=${messageId} | ${senderType}Id=${senderId} | role=${dto.role} | conversationId=${conversationId} | content="${contentPreview}"`,
+        `[WS-MSG-SEND] msgId=${messageId} | ${client.data.type}Id=${senderId} | role=${dto.role} | conversationId=${conversationId} | content="${contentPreview}"`,
       );
-
       this.logger.debug(
-        `[WS-BROADCAST] Broadcasting to room | room=conversation:${conversationId} | roomSize=${roomSize} | msgId=${messageId}`,
+        `[WS-BROADCAST] room=conversation:${conversationId} | roomSize=${roomSize} | msgId=${messageId}`,
       );
 
-      this.server
-        .to(`conversation:${conversationId}`)
-        .emit('message:new', message);
+      this.server.to(`conversation:${conversationId}`).emit('message:new', message);
 
-      // Confirm to sender
       client.emit('message:sent', {
         success: true,
         messageId: messageDoc._id?.toString() || '',
@@ -363,37 +432,29 @@ export class ChatGateway
 
       return { success: true, message };
     } catch (error) {
-      this.logger.error('Error sending message:', error.message);
-
-      // Emit error to sender
+      this.logger.error('Error sending message:', (error as Error).message);
       client.emit('message:error', {
         success: false,
-        error: error.message,
+        error: (error as Error).message,
         timestamp: new Date(),
       });
-
-      return { success: false, error: error.message };
+      return { success: false, error: (error as Error).message };
     }
   }
 
-  /**
-   * Typing indicator for both user and agent
-   * Emits different events based on sender type:
-   * - Agent typing → emits 'agent:typing' (received by users)
-   * - User typing → emits 'user:typing' (received by agents)
-   */
+  // ---------------------------------------------------------------------------
+  // Event: message:typing
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('message:typing')
   async handleTyping(
     @MessageBody() data: { conversationId: string; isTyping: boolean },
     @ConnectedSocket() client: Socket,
   ) {
     const { conversationId, isTyping } = data;
-
-    // Determine event name based on sender type
     const isAgent = client.data.type === 'agent';
     const eventName = isAgent ? 'agent:typing' : 'user:typing';
 
-    // Broadcast typing status to others in the room (exclude sender)
     client.to(`conversation:${conversationId}`).emit(eventName, {
       type: client.data.type,
       userId: client.data.userId,
@@ -404,37 +465,34 @@ export class ChatGateway
     });
 
     this.logger.debug(
-      `[WS-TYPING] ${eventName} | conversationId=${conversationId} | isTyping=${isTyping} | ${isAgent ? 'agentId' : 'userId'}=${isAgent ? client.data.agentId : client.data.userId}`,
+      `[WS-TYPING] ${eventName} | conversationId=${conversationId} | isTyping=${isTyping}`,
     );
 
     return { success: true };
   }
 
-  /**
-   * Get online users in a conversation
-   */
+  // ---------------------------------------------------------------------------
+  // Event: conversation:online
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('conversation:online')
   async handleGetOnlineUsers(
     @MessageBody() data: { conversationId: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const { conversationId } = data;
-
-      const onlineUsers = await this.chatService.getOnlineUsersInConversation(
-        conversationId,
-      );
-
+      const onlineUsers = await this.chatService.getOnlineUsersInConversation(data.conversationId);
       return { success: true, onlineUsers };
     } catch (error) {
-      this.logger.error('Error getting online users:', error.message);
-      return { success: false, error: error.message };
+      this.logger.error('Error getting online users:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
     }
   }
 
-  /**
-   * Mark message as read
-   */
+  // ---------------------------------------------------------------------------
+  // Event: message:read
+  // ---------------------------------------------------------------------------
+
   @SubscribeMessage('message:read')
   async handleMessageRead(
     @MessageBody() data: { conversationId: string; messageId: string },
@@ -442,8 +500,6 @@ export class ChatGateway
   ) {
     try {
       const { conversationId, messageId } = data;
-
-      // Broadcast read status to others in the room
       client.to(`conversation:${conversationId}`).emit('message:read', {
         type: client.data.type,
         userId: client.data.userId,
@@ -452,11 +508,10 @@ export class ChatGateway
         conversationId,
         timestamp: new Date(),
       });
-
       return { success: true };
     } catch (error) {
-      this.logger.error('Error marking message as read:', error.message);
-      return { success: false, error: error.message };
+      this.logger.error('Error marking message as read:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
     }
   }
 }

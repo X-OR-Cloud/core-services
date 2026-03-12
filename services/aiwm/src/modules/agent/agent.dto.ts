@@ -476,3 +476,40 @@ export class AgentDisconnectDto {
   @IsString()
   reason?: string;
 }
+
+/**
+ * DTO for generating anonymous chat token
+ */
+export class AnonymousTokenDto {
+  @ApiPropertyOptional({
+    description: 'Anonymous user ID (UUID). If not provided, server will generate one.',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsOptional()
+  @IsString()
+  anonymousId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Token expiry in seconds. Default is 86400 (24h).',
+    example: 86400,
+  })
+  @IsOptional()
+  expiresIn?: number;
+}
+
+/**
+ * Response DTO for anonymous token generation
+ */
+export class AnonymousTokenResponseDto {
+  @ApiProperty({ description: 'JWT token for anonymous WebSocket connection' })
+  token!: string;
+
+  @ApiProperty({ description: 'Anonymous user ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
+  anonymousId!: string;
+
+  @ApiProperty({ description: 'Token expiry in seconds', example: 86400 })
+  expiresIn!: number;
+
+  @ApiProperty({ description: 'Token expiry timestamp (ISO 8601)', example: '2026-03-13T10:00:00.000Z' })
+  expiresAt!: string;
+}
