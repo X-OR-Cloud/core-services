@@ -57,6 +57,7 @@ export class AgentRunner {
   private conversationId: string | null = null;
   private readonly processingMap = new Map<string, boolean>();
   private readonly abortMap = new Map<string, AbortController>();
+  private readonly seenMessageIds = new Set<string>();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
   private isReloading = false;
@@ -188,6 +189,17 @@ export class AgentRunner {
   private async handleMessage(message: any) {
     // Skip own messages (agent echo)
     if (message.agentId === this.config.agentId || message.role === 'assistant') return;
+
+    // Deduplicate: agent may receive the same event multiple times (multiple socket rooms)
+    const messageId: string = message._id || message.id || '';
+    if (messageId) {
+      if (this.seenMessageIds.has(messageId)) return;
+      this.seenMessageIds.add(messageId);
+      // Keep set bounded — drop oldest entries beyond 200
+      if (this.seenMessageIds.size > 200) {
+        this.seenMessageIds.delete(this.seenMessageIds.values().next().value!);
+      }
+    }
 
     const conversationId: string = message.conversationId || this.conversationId;
     if (!conversationId) return;
@@ -463,7 +475,7 @@ export class AgentRunner {
         .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && m.type !== 'system')
         .map((m: any) => ({ role: m.role, content: m.content }));
     } catch (err) {
-      this.logger.warn(`Failed to fetch history: ${err.message}`);
+      this.logger.warn(`Failed to fetch history: ${(err as Error).message}`);
       return [];
     }
   }
