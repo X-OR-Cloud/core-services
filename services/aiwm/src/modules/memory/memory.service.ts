@@ -21,6 +21,7 @@ export class MemoryService extends BaseService<AgentMemory> {
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<AgentMemory>> {
+    options.statisticFields = ['category'];
     return super.findAll(options, context);
   }
 
