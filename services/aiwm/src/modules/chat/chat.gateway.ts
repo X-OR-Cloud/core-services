@@ -92,7 +92,7 @@ export class ChatGateway
           const { conversationId, agentId, orgId, role, content, msgNonce } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
-          const acquired = await this.redisSub!.set(lockKey, '1', 'EX', 10, 'NX');
+          const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
           if (!acquired) {
             this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
             return;
