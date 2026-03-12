@@ -3,7 +3,7 @@ import { Prop, Schema } from '@nestjs/mongoose';
 @Schema()
 export abstract class BaseSchema {
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, any> | any = {};
+  metadata?: Record<string, any> | any;
 
   @Prop({ type: Date, default: Date.now })
   createdAt: Date = new Date();
