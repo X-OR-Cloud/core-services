@@ -4,6 +4,7 @@ import { NormalizedInbound } from './adapters/base.adapter';
 import { Actor } from '../action/action.schema';
 import { ActorRole } from '../action/action.enum';
 import { ConversationService } from '../conversation/conversation.service';
+import { IamLookupService } from './iam-lookup.service';
 
 export interface ResolvedRoute {
   agentId: string;
@@ -17,6 +18,7 @@ export class RoutingService {
 
   constructor(
     private readonly conversationService: ConversationService,
+    private readonly iamLookupService: IamLookupService,
   ) {}
 
   /**
@@ -35,23 +37,35 @@ export class RoutingService {
       return null;
     }
 
-    // Build conversation key: external user per agent per channel
-    const externalUserId = `${msg.provider}:${msg.externalUserId}`;
+    // Lookup IAM user by external identity
+    let iamUserId: string | undefined;
+    let iamUserType: 'anonymous' | 'registered' = 'anonymous';
+    if (msg.provider === 'discord' && msg.externalUserId) {
+      const iamUser = await this.iamLookupService.findByDiscordId(msg.externalUserId);
+      if (iamUser) {
+        iamUserId = iamUser.id;
+        iamUserType = 'registered';
+        this.logger.debug(`Linked Discord user ${msg.externalUserId} → IAM ${iamUser.id} (${iamUser.username})`);
+      }
+    }
+
+    // Build conversation key: prefer IAM userId, fallback to external composite ID
+    const conversationUserId = iamUserId ?? `${msg.provider}:${msg.externalUserId}`;
 
     const conversation = await this.conversationService.findOrCreateForUser(
-      externalUserId,
+      conversationUserId,
       route.agentId,
       (connection as any).owner?.orgId || '',
-      'anonymous',
+      iamUserType,
     );
 
     const actor: Actor = {
       role: ActorRole.USER,
+      userId: iamUserId,
       displayName: msg.externalUsername,
       externalProvider: msg.provider,
       externalId: msg.externalUserId,
       externalUsername: msg.externalUsername,
-      // userId populated later if IAM lookup is added
     };
 
     return {

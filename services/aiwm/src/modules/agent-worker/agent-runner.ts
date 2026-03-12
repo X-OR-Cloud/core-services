@@ -441,15 +441,15 @@ export class AgentRunner {
    */
   private async fetchHistory(conversationId: string): Promise<any[]> {
     try {
+      // Use /last/:count endpoint to get the most recent N actions in chronological order
       const resp = await axios.get(
-        `${this.config.wsChatUrl}/actions/conversation/${conversationId}`,
+        `${this.config.wsChatUrl}/actions/conversation/${conversationId}/last/40`,
         {
-          params: { limit: 20 },
           headers: { Authorization: `Bearer ${this.config.accessToken}` },
         },
       );
 
-      const actions: any[] = resp.data?.data || resp.data || [];
+      const actions: any[] = Array.isArray(resp.data) ? resp.data : resp.data?.data || [];
       return actions
         .filter((a: any) => {
           const role = a.actor?.role;

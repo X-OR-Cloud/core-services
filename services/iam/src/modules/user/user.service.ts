@@ -289,6 +289,10 @@ export class UsersService extends BaseService<User> {
     return this.model.findOne({ 'metadata.googleId': googleId, isDeleted: false }).exec();
   }
 
+  async findByDiscordId(discordUserId: string): Promise<User | null> {
+    return this.model.findOne({ 'metadata.discordUserId': discordUserId, isDeleted: false }).exec();
+  }
+
   /**
    * Find a user by username (email)
    * @param username - Username (email address)

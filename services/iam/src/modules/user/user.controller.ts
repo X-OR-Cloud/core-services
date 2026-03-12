@@ -3,11 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
   Put,
   Query,
+  UnauthorizedException,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -63,6 +65,30 @@ export class UsersController {
     @CurrentUser() context: RequestContext
   ) {
     return this.userService.findAll(paginationQuery, context);
+  }
+
+  @Get('lookup/discord/:discordUserId')
+  @ApiOperation({ summary: 'Lookup user by Discord ID (internal)', description: 'Find IAM user by metadata.discordUserId — requires X-API-Key header' })
+  @ApiResponse({ status: 200, description: 'User found' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing API key' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async lookupByDiscordId(
+    @Param('discordUserId') discordUserId: string,
+    @Headers('x-api-key') apiKey: string,
+  ): Promise<{ id: string; username: string; fullname: string }> {
+    const internalKey = process.env.INTERNAL_API_KEY;
+    if (!internalKey || apiKey !== internalKey) {
+      throw new UnauthorizedException('Invalid API key');
+    }
+    const user = await this.userService.findByDiscordId(discordUserId);
+    if (!user) {
+      throw new NotFoundException(`No IAM user linked to Discord ID ${discordUserId}`);
+    }
+    return {
+      id: String((user as unknown as { _id: unknown })._id),
+      username: user.username,
+      fullname: user.fullname || user.username,
+    };
   }
 
   @Get(':id')
