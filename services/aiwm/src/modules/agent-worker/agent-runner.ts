@@ -72,10 +72,10 @@ export class AgentRunner {
 
   constructor(private config: AgentRunnerConfig) {
     this.logger = new Logger(`AgentRunner[${config.agentName}]`);
-    this.maxConcurrency = Number(config.settings['hosted_maxConcurrency'] ?? 5);
-    this.reconnectDelayMs = Number(config.settings['hosted_reconnectDelayMs'] ?? 5_000);
-    this.maxSteps = Number(config.settings['hosted_maxSteps'] ?? 10);
-    this.heartbeatIntervalMs = Number(config.settings['hosted_heartbeatIntervalMs'] ?? 30_000);
+    this.maxConcurrency = Number(config.settings['assistant_maxConcurrency'] ?? config.settings['hosted_maxConcurrency'] ?? 5);
+    this.reconnectDelayMs = Number(config.settings['assistant_reconnectDelayMs'] ?? config.settings['hosted_reconnectDelayMs'] ?? 5_000);
+    this.maxSteps = Number(config.settings['assistant_maxSteps'] ?? config.settings['hosted_maxSteps'] ?? 10);
+    this.heartbeatIntervalMs = Number(config.settings['assistant_heartbeatIntervalMs'] ?? config.settings['hosted_heartbeatIntervalMs'] ?? 30_000);
   }
 
   start() {

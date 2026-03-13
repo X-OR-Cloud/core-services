@@ -21,6 +21,7 @@ import {
 } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Agent, AgentDocument } from './agent.schema';
+import { AGENT_CODE_ADJS, AGENT_CODE_NAMES } from './agent.const';
 import { Instruction } from '../instruction/instruction.schema';
 import { Tool } from '../tool/tool.schema';
 import {
@@ -180,7 +181,7 @@ export class AgentService extends BaseService<Agent> {
     createAgentDto: CreateAgentDto,
     context: RequestContext
   ): Promise<Agent> {
-    // Both managed and autonomous agents have secrets for authentication
+    // Both assistant and engineer agents have secrets for authentication
     let plaintextSecret: string;
     if (createAgentDto.secret) {
       // Hash provided secret, keep plaintext for response/events
@@ -192,13 +193,13 @@ export class AgentService extends BaseService<Agent> {
       createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
     }
 
-    // Validate deploymentId for hosted agents
-    if (createAgentDto.type === 'hosted') {
+    // Validate deploymentId for assistant agents
+    if (createAgentDto.type === 'assistant') {
       await this.validateHostedDeployment(createAgentDto.deploymentId);
     }
 
-    // Validate nodeId for managed agents
-    if (createAgentDto.type === 'managed') {
+    // Validate nodeId for engineer agents with nodeId (system-managed via node)
+    if (createAgentDto.type === 'engineer' && createAgentDto.nodeId) {
       if (!createAgentDto.nodeId) {
         throw new BadRequestException('nodeId is required for managed agents');
       }
@@ -248,8 +249,8 @@ export class AgentService extends BaseService<Agent> {
     // Emit event to queue
     await this.agentProducer.emitAgentCreated(saved);
 
-    // For managed agents, send agent.start command to the target node via WebSocket
-    if (saved.type === 'managed' && saved.nodeId) {
+    // For engineer agents with nodeId, send agent.start command to the target node via WebSocket
+    if (saved.type === 'engineer' && saved.nodeId) {
       try {
         await this.nodeGateway.sendCommandToNode(
           saved.nodeId,
@@ -362,7 +363,7 @@ export class AgentService extends BaseService<Agent> {
   }
 
   /**
-   * Get agent configuration for autonomous agents
+   * Get agent configuration for engineer agents
    * Requires user authentication, returns config without issuing new JWT
    */
   async getAgentConfig(
@@ -415,11 +416,11 @@ export class AgentService extends BaseService<Agent> {
       },
     };
 
-    // Prepare response (no accessToken for autonomous agents - they use user's JWT)
+    // Prepare response (no accessToken for engineer agents - they use user's JWT)
     const response: AgentConnectResponseDto = {
       id: agentId,
       name: agent.name,
-      accessToken: '', // Empty - autonomous agents use user's JWT token
+      accessToken: '', // Empty - engineer agents use user's JWT token
       expiresIn: 0,
       refreshToken: null,
       refreshExpiresIn: 0,
@@ -435,7 +436,7 @@ export class AgentService extends BaseService<Agent> {
 
     // For autonomous and hosted agents, populate deployment info
     if (
-      (agent.type === 'autonomous' || agent.type === 'hosted') &&
+      (agent.type === 'assistant' || agent.type === 'engineer') &&
       agent.deploymentId
     ) {
       try {
@@ -490,10 +491,10 @@ export class AgentService extends BaseService<Agent> {
   /**
    * Agent connection/authentication endpoint
    * Validates agentId + secret, returns JWT token + config
-   * For managed agents only (system-managed agents with secrets)
+   * For engineer agents with nodeId (system-managed via node WebSocket)
    */
   /**
-   * Internal connect for hosted agents spawned by AgentWorkerService.
+   * Internal connect for assistant agents spawned by AgentWorkerService.
    * Bypasses secret verification — caller is trusted (same process).
    */
   async connectInternal(agentId: string): Promise<AgentConnectResponseDto> {
@@ -660,7 +661,7 @@ export class AgentService extends BaseService<Agent> {
 
     // For autonomous and hosted agents, populate deployment info
     if (
-      (agent.type === 'autonomous' || agent.type === 'hosted') &&
+      (agent.type === 'assistant' || agent.type === 'engineer') &&
       agent.deploymentId
     ) {
       try {
@@ -1285,7 +1286,7 @@ MEMORY CATEGORIES:
   /**
    * Regenerate agent credentials (admin only)
    * Returns new secret + env config + install script
-   * Works for both managed and autonomous agents
+   * Works for both assistant and engineer agents
    */
   async regenerateCredentials(
     agentId: string,
@@ -1318,8 +1319,8 @@ MEMORY CATEGORIES:
       regeneratedBy: context.userId,
     });
 
-    // For managed agents, notify node via WebSocket with new secret
-    if (agent.type === 'managed' && agent.nodeId) {
+    // For engineer agents with nodeId, notify node via WebSocket with new secret
+    if (agent.type === 'engineer' && agent.nodeId) {
       try {
         await this.nodeGateway.sendCommandToNode(
           agent.nodeId,
@@ -1724,56 +1725,8 @@ echo "Installation script placeholder - implement actual logic"
    * Format: [name]-[adjective], e.g. "jack-bold"
    */
   private async generateCode(orgId: string): Promise<string> {
-    const NAMES = [
-      'jack',
-      'lena',
-      'nova',
-      'mila',
-      'tara',
-      'evan',
-      'zola',
-      'leon',
-      'aria',
-      'hugo',
-      'vera',
-      'niko',
-      'ella',
-      'oma',
-      'adam',
-      'kira',
-      'theo',
-      'yuna',
-      'cleo',
-      'elia',
-      'dane'
-    ];
-    const ADJS = [
-      'bold',
-      'cool',
-      'fast',
-      'gold',
-      'wild',
-      'calm',
-      'cat',
-      'soft',
-      'keen',
-      'blue',
-      'kind',
-      'slim',
-      'wam',
-      'live',
-      'pure',
-      'safe',
-      'mint',
-      'top',
-      'vip',
-      'pro',
-      'love',
-      'sun',
-      'mon',
-      'sea',
-      'red',
-    ];
+    const NAMES = AGENT_CODE_NAMES;
+    const ADJS = AGENT_CODE_ADJS;
 
     const existing = await this.agentModel
       .find({ 'owner.orgId': orgId, isDeleted: false })
@@ -1781,22 +1734,31 @@ echo "Installation script placeholder - implement actual logic"
       .lean();
     const usedSet = new Set(existing.map((a: any) => a.code).filter(Boolean));
 
-    const all: string[] = [];
-    for (const n of NAMES) for (const a of ADJS) all.push(`${n}-${a}`);
+    // Shuffle helper (Fisher-Yates)
+    const shuffle = <T>(arr: T[]): T[] => {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
 
-    // Fisher-Yates shuffle
-    for (let i = all.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [all[i], all[j]] = [all[j], all[i]];
-    }
+    // Phase 1: single names
+    const singlePool = shuffle(NAMES);
+    const single = singlePool.find((c) => !usedSet.has(c));
+    if (single) return single;
 
-    const code = all.find((c) => !usedSet.has(c));
-    if (!code) {
-      throw new BadRequestException(
-        'Organization has reached the maximum number of agents (400)'
-      );
-    }
-    return code;
+    // Phase 2: name-adj combinations
+    const combos: string[] = [];
+    for (const n of NAMES) for (const a of ADJS) combos.push(`${n}-${a}`);
+    const comboPool = shuffle(combos);
+    const combo = comboPool.find((c) => !usedSet.has(c));
+    if (combo) return combo;
+
+    throw new BadRequestException(
+      'Organization has reached the maximum number of agents'
+    );
   }
 
   async updateAgent(
@@ -1816,7 +1778,7 @@ echo "Installation script placeholder - implement actual logic"
       }
     }
 
-    // Prevent type changes (managed <-> autonomous)
+    // Prevent type changes (assistant <-> engineer)
     if (updateAgentDto.type) {
       const existingAgent = await this.agentModel.findById(id).exec();
       if (existingAgent && existingAgent.type !== updateAgentDto.type) {
@@ -1827,11 +1789,11 @@ echo "Installation script placeholder - implement actual logic"
       }
     }
 
-    // Validate deploymentId for hosted agents
+    // Validate deploymentId for assistant agents
     if (updateAgentDto.deploymentId) {
       const existingAgent = await this.agentModel.findById(id).exec();
       const effectiveType = updateAgentDto.type ?? existingAgent?.type;
-      if (effectiveType === 'hosted') {
+      if (effectiveType === 'assistant') {
         await this.validateHostedDeployment(updateAgentDto.deploymentId);
       }
     }
@@ -1862,8 +1824,8 @@ echo "Installation script placeholder - implement actual logic"
       // Emit event to queue
       await this.agentProducer.emitAgentUpdated(updated);
 
-      // Send agent.update to node via WebSocket if managed agent
-      if (updated.type === 'managed' && updated.nodeId) {
+      // Send agent.update to node via WebSocket if engineer agent with nodeId
+      if (updated.type === 'engineer' && updated.nodeId) {
         try {
           await this.nodeGateway.sendCommandToNode(
             updated.nodeId,
@@ -1927,8 +1889,8 @@ echo "Installation script placeholder - implement actual logic"
       // Emit event to queue
       await this.agentProducer.emitAgentDeleted(id);
 
-      // For managed agents, send agent.delete command to the node via WebSocket
-      if (agent && agent.type === 'managed' && agent.nodeId) {
+      // For engineer agents with nodeId, send agent.delete command to the node via WebSocket
+      if (agent && agent.type === 'engineer' && agent.nodeId) {
         try {
           await this.nodeGateway.sendCommandToNode(
             agent.nodeId,
@@ -2107,14 +2069,14 @@ echo "Installation script placeholder - implement actual logic"
 
   /**
    * Validate that a deployment exists, is not deleted, and has status=running.
-   * Used for hosted agent create/update operations.
+   * Used for assistant agent create/update operations.
    */
   private async validateHostedDeployment(
     deploymentId: string | undefined
   ): Promise<void> {
     if (!deploymentId) {
       throw new BadRequestException(
-        'deploymentId is required for hosted agents'
+        'deploymentId is required for assistant agents'
       );
     }
 

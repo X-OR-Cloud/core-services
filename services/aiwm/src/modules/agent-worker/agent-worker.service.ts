@@ -74,7 +74,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async spawnAgents() {
-    const query: any = { type: 'hosted', isDeleted: { $ne: true } };
+    const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
     }
@@ -82,11 +82,11 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     const agents = await this.agentModel.find(query).select('+secret').lean();
 
     if (!agents.length) {
-      this.logger.warn('No hosted agents found.');
+      this.logger.warn('No assistant agents found.');
       return;
     }
 
-    this.logger.log(`Found ${agents.length} hosted agent(s). Competing for locks...`);
+    this.logger.log(`Found ${agents.length} assistant agent(s). Competing for locks...`);
 
     await Promise.allSettled(
       agents.map((agent) => this.trySpawnRunner(agent as unknown as AgentDocument)),
@@ -225,11 +225,11 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Query all hosted agents and try to claim any that are not locked.
+   * Query all assistant agents and try to claim any that are not locked.
    * Handles: new agents created after startup, or instance crashed releasing locks.
    */
   private async claimUnlockedAgents() {
-    const query: any = { type: 'hosted', isDeleted: { $ne: true } };
+    const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
     }

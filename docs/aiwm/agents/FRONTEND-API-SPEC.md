@@ -34,7 +34,7 @@ Get paginated list of agents with filtering and sorting.
 - `limit` (number, optional): Items per page (default: 10)
 - `sort` (string, optional): Sort field, prefix with `-` for descending (e.g., `-createdAt`, `name`)
 - `status` (string, optional): Filter by status (`inactive`, `idle`, `busy`, `suspended`)
-- `type` (string, optional): Filter by type (`managed`, `autonomous`)
+- `type` (string, optional): Filter by type (`engineer`, `assistant`)
 - `name:regex` (string, optional): Filter by name (partial match)
 - `tags:in` (string, optional): Filter by tags (comma-separated)
 
@@ -47,7 +47,7 @@ Get paginated list of agents with filtering and sorting.
       "name": "Customer Support Agent",
       "description": "AI agent for customer support",
       "status": "idle",
-      "type": "autonomous",
+      "type": "engineer",
       "framework": "claude-agent-sdk",
       "instructionId": "instruction-id",
       "guardrailId": null,
@@ -103,8 +103,8 @@ Get paginated list of agents with filtering and sorting.
       "suspended": 2
     },
     "byType": {
-      "autonomous": 18,
-      "managed": 7
+      "engineer": 18,
+      "assistant": 7
     },
     "byFramework": {
       "claude-agent-sdk": 25
@@ -138,7 +138,7 @@ Get detailed information about a specific agent.
   "name": "Customer Support Agent",
   "description": "AI agent for customer support",
   "status": "idle",
-  "type": "autonomous",
+  "type": "engineer",
   "framework": "claude-agent-sdk",
   "instructionId": "instruction-id",
   "guardrailId": null,
@@ -220,7 +220,7 @@ Create a new agent.
 {
   "name": "Customer Support Agent",
   "description": "AI agent for customer support",
-  "type": "autonomous",
+  "type": "engineer",
   "framework": "claude-agent-sdk",
   "instructionId": "instruction-id",
   "guardrailId": null,
@@ -260,11 +260,11 @@ Create a new agent.
 |-------|------|----------|-------------|
 | `name` | string | Yes | Agent display name |
 | `description` | string | Yes | Agent description |
-| `type` | enum | Yes | `managed` (system-deployed) or `autonomous` (user-deployed) |
+| `type` | enum | Yes | `engineer` (has environment access) or `assistant` (in-process, no environment access) |
 | `framework` | enum | No | `claude-agent-sdk` (default) |
 | `instructionId` | string | No | ID of instruction (system prompt) to assign |
 | `guardrailId` | string | No | ID of guardrail (content filter) to assign |
-| `nodeId` | string | No | Node ID — required only for `managed` type |
+| `nodeId` | string | No | Node ID — only for `engineer` agents managed by the system via WebSocket |
 | `role` | enum | No | RBAC role: `organization.editor` or `organization.viewer` (default) |
 | `tags` | string[] | No | Tags for categorization |
 | `secret` | string | No | Custom secret for auth (hashed). Random if omitted |
@@ -280,7 +280,7 @@ Create a new agent.
 | `auth_roles` | string[] | Agent RBAC roles (default: `["agent"]`) |
 | `claude_model` | string | Claude model (e.g. `claude-3-5-haiku-latest`) |
 | `claude_maxTurns` | number | Max conversation turns (default: 100) |
-| `claude_permissionMode` | string | `bypassPermissions` for managed agents |
+| `claude_permissionMode` | string | `bypassPermissions` for engineer agents |
 | `claude_resume` | boolean | Enable resume capability |
 | `claude_oauthToken` | string | OAuth token for Claude API (optional) |
 
@@ -389,8 +389,8 @@ The `GET /agents` response includes `statistics` with breakdowns by status, type
       "suspended": 2
     },
     "byType": {
-      "autonomous": 18,
-      "managed": 7
+      "engineer": 18,
+      "assistant": 7
     },
     "byFramework": {
       "claude-agent-sdk": 25
@@ -411,11 +411,11 @@ interface Agent {
   name: string;
   description: string;
   status: 'inactive' | 'idle' | 'busy' | 'suspended';
-  type: 'managed' | 'autonomous';
+  type: 'engineer' | 'assistant';
   framework: 'claude-agent-sdk';
   instructionId?: string;
   guardrailId?: string;
-  nodeId?: string;                  // required for managed agents
+  nodeId?: string;                  // only for system-managed engineer agents
   role: 'organization.editor' | 'organization.viewer';
   tags: string[];
   allowedToolIds: string[];
@@ -460,7 +460,7 @@ interface ChannelConfig {
 **Columns to Display:**
 - Status badge (`idle`=green, `inactive`=gray, `busy`=yellow, `suspended`=red)
 - Name
-- Type badge (`managed` / `autonomous`)
+- Type badge (`engineer` / `assistant`)
 - Description (truncated)
 - Instruction (link to detail)
 - Channels (icons: Discord/Telegram count)
@@ -470,7 +470,7 @@ interface ChannelConfig {
 
 **Filters:**
 - Status dropdown (`all`, `idle`, `inactive`, `busy`, `suspended`)
-- Type dropdown (`all`, `managed`, `autonomous`)
+- Type dropdown (`all`, `engineer`, `assistant`)
 - Search by name
 
 **Sorting:**
@@ -488,7 +488,7 @@ interface ChannelConfig {
 
 2. **Configuration**
    - Instruction (dropdown)
-   - Node (dropdown, only for `managed` type)
+   - Node (dropdown, only for `engineer` type when system-managed)
    - Role (dropdown)
    - Tools (multi-select)
    - Allowed Functions (multi-select or free text list)
@@ -521,7 +521,7 @@ interface ChannelConfig {
 ├─────────────────────────────────────┤
 │ Name: [___________________]         │
 │ Description: [______________]       │
-│ Type: [autonomous ▼]               │
+│ Type: [engineer ▼]                 │
 │ Status: [inactive ▼]               │
 │ Role: [organization.viewer ▼]      │
 │ Tags: [tag1] [tag2] [+ Add]         │
@@ -531,7 +531,7 @@ interface ChannelConfig {
 │ Configuration                       │
 ├─────────────────────────────────────┤
 │ Instruction: [Select ▼]            │
-│ Node: [Select ▼] (managed only)    │
+│ Node: [Select ▼] (engineer only)   │
 │ Tools: [☑ tool1] [☐ tool2]          │
 │ Allowed Functions: [+ Add]          │
 └─────────────────────────────────────┘
@@ -572,7 +572,7 @@ interface ChannelConfig {
 - `channels[].channelId`: required (can be empty string if unknown yet)
 - `channels[].enabled`, `requireMentions`, `verboseLogging`: required booleans
 - `channels[].verboseLoggingTarget`: required, default `"channel"`
-- `nodeId`: required only when `type = "managed"`
+- `nodeId`: required only when `type = "engineer"` and the agent is system-managed
 
 ### Credentials Modal
 
@@ -659,7 +659,7 @@ After regeneration:
 
 ### Version 2.0
 - Added `channels[]` field (structured Discord/Telegram config per channel)
-- Added `type` field: `managed` / `autonomous`
+- Added `type` field: `engineer` / `assistant`
 - Added `framework` field: `claude-agent-sdk`
 - Added `role` field: RBAC role for MCP tool access
 - Added `allowedFunctions` field: function-level access control

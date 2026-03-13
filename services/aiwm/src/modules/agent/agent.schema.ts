@@ -49,8 +49,8 @@ export class Agent extends BaseSchema {
 
   @Prop({
     type: String,
-    enum: ['managed', 'autonomous', 'hosted'],
-    default: 'autonomous'
+    enum: ['assistant', 'engineer'],
+    default: 'engineer'
   })
   type: string;
 
@@ -68,10 +68,10 @@ export class Agent extends BaseSchema {
   guardrailId?: string;
 
   @Prop({ type: String, ref: 'Deployment' })
-  deploymentId?: string; // For autonomous agents - link to LLM deployment
+  deploymentId?: string; // For assistant/engineer agents - link to LLM deployment
 
   @Prop({ required: false, type: String, ref: 'Node' })
-  nodeId?: string; // For managed agents - node where agent is deployed and managed by the system
+  nodeId?: string; // For engineer agents - node where agent is deployed and managed by the system
 
   @Prop({
     type: String,
@@ -83,7 +83,7 @@ export class Agent extends BaseSchema {
   @Prop({ default: [] })
   tags: string[];
 
-  // Authentication & Connection Management (both managed and autonomous agents)
+  // Authentication & Connection Management (both assistant and engineer agents)
   @Prop({ required: false, select: false })
   secret?: string; // Hashed secret for agent authentication
 
@@ -98,10 +98,10 @@ export class Agent extends BaseSchema {
    *
    * Supported settings:
    * - auth_roles: string[] - Agent roles for RBAC (default: ['agent'])
-   * - hosted_maxConcurrency: number - Max concurrent conversations (hosted agents, default: 5)
-   * - hosted_idleTimeoutMs: number - Disconnect after idle ms (hosted agents, default: 300000)
-   * - hosted_reconnectDelayMs: number - Reconnect delay ms (hosted agents, default: 5000)
-   * - hosted_maxSteps: number - Max tool call steps per generateText (hosted agents, default: 10)
+   * - assistant_maxConcurrency: number - Max concurrent conversations (assistant agents, default: 5)
+   * - assistant_idleTimeoutMs: number - Disconnect after idle ms (assistant agents, default: 300000)
+   * - assistant_reconnectDelayMs: number - Reconnect delay ms (assistant agents, default: 5000)
+   * - assistant_maxSteps: number - Max tool call steps per generateText (assistant agents, default: 10)
    * - claude_model: string - Claude model version (e.g., 'claude-3-5-sonnet-latest')
    * - claude_maxTurns: number - Maximum conversation turns (default: 100)
    * - claude_permissionMode: string - Permission mode (default: 'bypassPermissions')
@@ -126,7 +126,7 @@ export class Agent extends BaseSchema {
   @Prop({ type: Object, default: {} })
   settings: Record<string, unknown>;
 
-  /** @deprecated Use Connection module instead. Kept for backward compatibility with existing managed agents. */
+  /** @deprecated Use Connection module instead. Kept for backward compatibility with existing engineer agents. */
   @Prop({
     type: [
       {

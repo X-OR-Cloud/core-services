@@ -14,15 +14,15 @@
 | `name` | `string` | yes | — | — | Tên hiển thị của agent |
 | `description` | `string` | yes | — | — | Mô tả mục đích agent |
 | `status` | `string` | no | `inactive` | `inactive` `idle` `busy` `suspended` | Trạng thái hoạt động hiện tại |
-| `type` | `string` | no | `autonomous` | `managed` `autonomous` `hosted` | Loại agent (xem 1.2) |
-| `framework` | `string` | no | `claude-agent-sdk` | `claude-agent-sdk` | Runtime engine cho agent. Không dùng với `hosted` |
+| `type` | `string` | no | `engineer` | `assistant` `engineer` | Loại agent (xem 1.2) |
+| `framework` | `string` | no | `claude-agent-sdk` | `claude-agent-sdk` | Runtime engine cho agent. Không dùng với `assistant` |
 | `instructionId` | `string` (ref) | no | — | ObjectId → Instruction | System prompt / guideline |
 | `guardrailId` | `string` (ref) | no | — | ObjectId → Guardrail | Ràng buộc an toàn |
-| `deploymentId` | `string` (ref) | no | — | ObjectId → Deployment | LLM deployment (dành cho `autonomous`) |
-| `nodeId` | `string` (ref) | no | — | ObjectId → Node | Node vật lý (bắt buộc với `managed`) |
+| `deploymentId` | `string` (ref) | no | — | ObjectId → Deployment | LLM deployment (dành cho `engineer` tự triển khai, không có `nodeId`) |
+| `nodeId` | `string` (ref) | no | — | ObjectId → Node | Node vật lý (chỉ dành cho `engineer` do hệ thống quản lý) |
 | `role` | `string` | no | `organization.viewer` | `organization.owner` `organization.editor` `organization.viewer` | RBAC role để gọi MCP tools |
 | `tags` | `string[]` | no | `[]` | Mảng chuỗi tự do | Nhãn phân loại, tìm kiếm |
-| `secret` | `string` | no | — | Bcrypt hash (ẩn trong response) | Secret dùng cho xác thực agent (`managed` / `hosted`) |
+| `secret` | `string` | no | — | Bcrypt hash (ẩn trong response) | Secret dùng cho xác thực agent (`engineer` / `assistant`) |
 | `allowedToolIds` | `string[]` (ref) | no | `[]` | Mảng ObjectId → Tool | Whitelist MCP tool sets agent được dùng |
 | `allowedFunctions` | `string[]` | no | `[]` | Tên function runtime | Whitelist function agent được gọi. Rỗng = cho phép tất cả |
 | `settings` | `object` | no | `{}` | Flat key-value với prefix | Cấu hình runtime (xem 1.3) |
@@ -43,9 +43,8 @@
 
 | Type | Mô tả | Yêu cầu riêng |
 |------|-------|---------------|
-| `autonomous` | User-controlled via UI. Frontend gọi LLM trực tiếp bằng JWT của user. | `deploymentId` |
-| `managed` | Hệ thống deploy lên node, quản lý lifecycle qua WebSocket. | `nodeId` (node phải online) |
-| `hosted` | Agent chạy in-process trong AIWM (`nx run aiwm:agt`). Scale ngang qua Redis lock. | Không cần `nodeId`/`framework` |
+| `engineer` | Agent có quyền truy cập môi trường (bash, file, v.v.). Nếu có `nodeId`: hệ thống deploy lên node và quản lý lifecycle qua WebSocket. Nếu không có `nodeId`: người dùng tự triển khai. | `nodeId` nếu do hệ thống quản lý; `deploymentId` nếu tự triển khai |
+| `assistant` | Agent chạy in-process trong AIWM (`nx run aiwm:agt`). Không có quyền truy cập môi trường. Kết nối `/ws/chat`. Scale ngang qua Redis lock. | Không cần `nodeId`/`framework` |
 
 > **Lưu ý**: `type` là bất biến sau khi tạo. Mọi request PATCH/PUT thay đổi `type` sẽ trả về `400 Bad Request`.
 
@@ -61,7 +60,7 @@ Object phẳng (flat) với các key theo prefix:
 |-----|------|---------|---------|
 | `auth_roles` | `string[]` | `['agent']` | Roles gán thêm cho agent trong JWT |
 
-#### Prefix `claude_` (dành cho `managed` / `autonomous` với framework `claude-agent-sdk`)
+#### Prefix `claude_` (dành cho `engineer` / `assistant` với framework `claude-agent-sdk`)
 
 | Key | Type | Default | Ý nghĩa |
 |-----|------|---------|---------|
@@ -71,14 +70,14 @@ Object phẳng (flat) với các key theo prefix:
 | `claude_resume` | `boolean` | `true` | Cho phép resume conversation |
 | `claude_oauthToken` | `string` | — | OAuth token tùy chọn |
 
-#### Prefix `hosted_` (chỉ dành cho `type: hosted`)
+#### Prefix `assistant_` (chỉ dành cho `type: assistant`)
 
 | Key | Type | Default | Ý nghĩa |
 |-----|------|---------|---------|
-| `hosted_maxConcurrency` | `number` | `5` | Số conversation xử lý song song tối đa |
-| `hosted_idleTimeoutMs` | `number` | `300000` | Ngắt kết nối sau khoảng idle (ms) |
-| `hosted_reconnectDelayMs` | `number` | `5000` | Thời gian chờ trước khi reconnect (ms) |
-| `hosted_maxSteps` | `number` | `10` | Số bước tool call tối đa mỗi lần `generateText` |
+| `assistant_maxConcurrency` | `number` | `5` | Số conversation xử lý song song tối đa |
+| `assistant_idleTimeoutMs` | `number` | `300000` | Ngắt kết nối sau khoảng idle (ms) |
+| `assistant_reconnectDelayMs` | `number` | `5000` | Thời gian chờ trước khi reconnect (ms) |
+| `assistant_maxSteps` | `number` | `10` | Số bước tool call tối đa mỗi lần `generateText` |
 
 #### Prefix `discord_` / `telegram_` *(deprecated)*
 
@@ -92,8 +91,8 @@ Object phẳng (flat) với các key theo prefix:
   "claude_model": "claude-3-5-sonnet-latest",
   "claude_maxTurns": 50,
   "claude_permissionMode": "bypassPermissions",
-  "hosted_maxConcurrency": 10,
-  "hosted_maxSteps": 15
+  "assistant_maxConcurrency": 10,
+  "assistant_maxSteps": 15
 }
 ```
 
@@ -174,19 +173,19 @@ Object phẳng (flat) với các key theo prefix:
 |-------|------|----------|-------|---------|
 | `name` | `string` | yes | `"Customer Support Agent"` | Tên agent |
 | `description` | `string` | yes | `"AI agent for customer support"` | Mô tả |
-| `type` | `string` | no | `"autonomous"` | `managed` / `autonomous` (tạm disable chưa sử dụng) / `hosted` |
+| `type` | `string` | no | `"engineer"` | `engineer` / `assistant` |
 | `status` | `string` | no | `"inactive"` | Trạng thái ban đầu |
-| `framework` | `string` | no | `"claude-agent-sdk"` | Runtime engine (Không sử dụng với hosted) |
+| `framework` | `string` | no | `"claude-agent-sdk"` | Runtime engine (Không sử dụng với assistant) |
 | `instructionId` | `string` | no | `"64a1b2c3d4e5f6789012345"` | ID instruction |
 | `guardrailId` | `string` | no | `"64a1b2c3d4e5f6789012346"` | ID guardrail |
-| `nodeId` | `string` | no | `"64a1b2c3d4e5f6789012347"` | ID node (bắt buộc với `managed`) |
+| `nodeId` | `string` | no | `"64a1b2c3d4e5f6789012347"` | ID node (chỉ dành cho `engineer` do hệ thống quản lý) |
 | `role` | `string` | no | `"organization.viewer"` | RBAC role |
 | `secret` | `string` | no | `"my-secret-key"` | Secret thô (sẽ bcrypt hash) |
 | `tags` | `string[]` | no | `["support", "discord"]` | Tags |
 | `allowedToolIds` | `string[]` | no | `["64a1b2c3d4e5f6789012348"]` | Whitelist tool IDs |
 | `allowedFunctions` | `string[]` | no | `["Bash", "Read"]` | Whitelist function names |
 | `settings` | `object` | no | `{"claude_model": "claude-3-5-sonnet-latest"}` | Cấu hình runtime |
-| `channels` | `ChannelConfig[]` | no | Xem 1.4 | Kênh Discord/Telegram (Không sử dụng với hosted) |
+| `channels` | `ChannelConfig[]` | no | Xem 1.4 | Kênh Discord/Telegram (Không sử dụng với assistant) |
 
 **Response 201:**
 
@@ -196,7 +195,7 @@ Object phẳng (flat) với các key theo prefix:
   "name": "Customer Support Agent",
   "description": "AI agent for customer support",
   "status": "inactive",
-  "type": "autonomous",
+  "type": "engineer",
   "framework": "claude-agent-sdk",
   "instructionId": null,
   "guardrailId": null,
@@ -237,7 +236,7 @@ Object phẳng (flat) với các key theo prefix:
 | `page` | `number` | `1` | Trang hiện tại (mặc định: 1) |
 | `limit` | `number` | `20` | Số bản ghi mỗi trang (mặc định: 20) |
 | `populate` | `string` | `instruction` | Populate relation: `instruction` |
-| `type` | `string` | `hosted` | Lọc theo type |
+| `type` | `string` | `assistant` | Lọc theo type |
 | `status` | `string` | `idle` | Lọc theo status |
 | `sort` | `string` | `createdAt:desc` | Sắp xếp |
 
@@ -251,15 +250,15 @@ Object phẳng (flat) với các key theo prefix:
       "name": "Customer Support Agent",
       "description": "AI agent for customer support",
       "status": "idle",
-      "type": "hosted",
+      "type": "assistant",
       "framework": "claude-agent-sdk",
       "role": "organization.viewer",
       "tags": ["support"],
       "allowedToolIds": [],
       "allowedFunctions": [],
       "settings": {
-        "hosted_maxConcurrency": 5,
-        "hosted_maxSteps": 10
+        "assistant_maxConcurrency": 5,
+        "assistant_maxSteps": 10
       },
       "channels": [],
       "connectionCount": 12,
@@ -301,7 +300,7 @@ Object phẳng (flat) với các key theo prefix:
   "name": "Customer Support Agent",
   "description": "AI agent for customer support",
   "status": "idle",
-  "type": "managed",
+  "type": "engineer",
   "framework": "claude-agent-sdk",
   "instructionId": {
     "_id": "64a1b2c3d4e5f6789012346",
@@ -383,10 +382,10 @@ Object phẳng (flat) với các key theo prefix:
 
 ---
 
-### 2.7 `GET /agents/:id/config` — Lấy config cho autonomous agent
+### 2.7 `GET /agents/:id/config` — Lấy config cho engineer agent (tự triển khai)
 
 **Auth**: User JWT
-**Chỉ dành cho**: `type: autonomous`
+**Chỉ dành cho**: `type: engineer` (không có `nodeId`)
 
 **Params:** `id` — Agent ID
 
@@ -395,7 +394,7 @@ Object phẳng (flat) với các key theo prefix:
 ```json
 {
   "id": "64a1b2c3d4e5f6789012345",
-  "name": "My Autonomous Agent",
+  "name": "My Self-Deployed Engineer Agent",
   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expiresIn": 86400,
   "refreshToken": null,
@@ -436,16 +435,16 @@ Object phẳng (flat) với các key theo prefix:
 
 | Code | Tình huống |
 |------|------------|
-| `400` | Gọi với `type: managed` hoặc `type: hosted` |
+| `400` | Gọi với `type: engineer` có `nodeId` hoặc `type: assistant` |
 | `403` | User không có quyền truy cập agent này |
 | `404` | Agent không tồn tại |
 
 ---
 
-### 2.8 `POST /agents/:id/connect` — Xác thực agent (managed / hosted)
+### 2.8 `POST /agents/:id/connect` — Xác thực agent (engineer / assistant)
 
 **Auth**: **Không cần** JWT (public endpoint)
-**Chỉ dành cho**: `type: managed` hoặc `type: hosted`
+**Chỉ dành cho**: `type: engineer` hoặc `type: assistant`
 
 **Params:** `id` — Agent ID
 
@@ -487,8 +486,8 @@ Object phẳng (flat) với các key theo prefix:
   "allowedFunctions": ["Bash", "Read", "Write"],
   "framework": "claude-agent-sdk",
   "settings": {
-    "hosted_maxConcurrency": 5,
-    "hosted_maxSteps": 10
+    "assistant_maxConcurrency": 5,
+    "assistant_maxSteps": 10
   },
   "channels": [
     {
@@ -510,7 +509,7 @@ Object phẳng (flat) với các key theo prefix:
 
 | Code | Tình huống |
 |------|------------|
-| `400` | Gọi với `type: autonomous` |
+| `400` | Secret sai định dạng hoặc agent bị suspended |
 | `401` | Secret sai hoặc agent đang `suspended` |
 | `404` | Agent không tồn tại |
 
@@ -579,7 +578,7 @@ Object phẳng (flat) với các key theo prefix:
 ### 2.11 `POST /agents/:id/credentials/regenerate` — Tái tạo credentials
 
 **Auth**: User JWT
-**Chỉ dành cho**: `type: managed` hoặc `type: hosted`
+**Chỉ dành cho**: `type: engineer` hoặc `type: assistant`
 
 **Params:** `id` — Agent ID
 
@@ -608,8 +607,8 @@ Object phẳng (flat) với các key theo prefix:
 | Cập nhật agent | `PUT /agents/:id` | User JWT |
 | Xóa agent | `DELETE /agents/:id` | User JWT |
 | Preview instruction | `GET /agents/:id/instruction` | User JWT |
-| Lấy config (autonomous) | `GET /agents/:id/config` | User JWT |
-| Xác thực agent (managed/hosted) | `POST /agents/:id/connect` | Không cần |
+| Lấy config (engineer tự triển khai) | `GET /agents/:id/config` | User JWT |
+| Xác thực agent (engineer/assistant) | `POST /agents/:id/connect` | Không cần |
 | Heartbeat | `POST /agents/heartbeat` | Agent JWT |
 | Ngắt kết nối | `POST /agents/disconnect` | Agent JWT |
 | Tái tạo credentials | `POST /agents/:id/credentials/regenerate` | User JWT |
