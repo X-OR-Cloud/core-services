@@ -108,7 +108,7 @@ export class WorkService extends BaseService<Work> {
    * - status: Must use action methods (startWork, blockWork, etc.)
    * - reason: Managed automatically by blockWork/unblockWork actions
    */
-  async update(id: ObjectId, data: any, context: RequestContext): Promise<Work | null> {
+  async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Work>> {
     // Check project lead access
     const existingWork = await super.findById(id, context);
     if (existingWork) {
@@ -813,7 +813,7 @@ export class WorkService extends BaseService<Work> {
   async softDelete(
     id: ObjectId,
     context: RequestContext
-  ): Promise<Work | null> {
+  ): Promise<Partial<Work>> {
     const work = await this.findById(id, context);
     if (!work) {
       throw new BadRequestException('Work not found');

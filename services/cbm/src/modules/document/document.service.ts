@@ -336,7 +336,7 @@ export class DocumentService extends BaseService<Document> {
    * - creator (createdBy): allowed
    * - others: ForbiddenException
    */
-  async update(id: ObjectId, data: any, context: RequestContext): Promise<Document | null> {
+  async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Document>> {
     const doc = await this.findById(id, context);
     if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
 
@@ -356,7 +356,7 @@ export class DocumentService extends BaseService<Document> {
    * - creator (createdBy): allowed
    * - others: ForbiddenException
    */
-  async softDelete(id: ObjectId, context: RequestContext): Promise<Document | null> {
+  async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Document>> {
     const doc = await this.findById(id, context);
     if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
 

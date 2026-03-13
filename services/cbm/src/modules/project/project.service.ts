@@ -143,7 +143,7 @@ export class ProjectService extends BaseService<Project> {
   /**
    * Override update to restrict to project.lead and super-admin only.
    */
-  async update(id: ObjectId, data: any, context: RequestContext): Promise<Project> {
+  async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Project>> {
     const project = await super.findById(id, context);
     if (!project) throw new NotFoundException('Project not found');
     assertCanManageProject(project, context);
@@ -154,11 +154,11 @@ export class ProjectService extends BaseService<Project> {
    * Override softDelete to validate status and restrict to super-admin only.
    * Only allow deletion when status is 'completed' or 'archived'.
    */
-  async softDelete(id: ObjectId, context: RequestContext): Promise<Project | null> {
+  async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Project>> {
     const project = await super.findById(id, context);
     if (!project) throw new BadRequestException('Project not found');
     assertCanManageProject(project, context);
-    if (!['completed', 'archived'].includes(project.status)) {
+    if (!['completed', 'archived'].includes(project.status as string)) {
       throw new BadRequestException(`Cannot delete project with status: ${project.status}. Only completed or archived projects can be deleted.`);
     }
     return super.softDelete(id, context);
