@@ -68,11 +68,15 @@ nx run cbm:build
 # API mode (REST API server)
 nx run <service>:api
 
-# MCP mode (for AIWM - MCP server)
+# MCP mode (for AIWM - MCP server, port 3355)
 nx run aiwm:mcp
 
 # Worker mode (microservices worker)
 nx run <service>:wrk
+
+# AIWM-specific modes
+nx run aiwm:agt   # Hosted agent worker
+nx run aiwm:con   # Connection worker (Discord/Telegram bridge)
 ```
 
 ## High-Level Architecture
@@ -101,9 +105,9 @@ This is an Nx monorepo using NestJS framework for microservices architecture wit
 
 - **AIWM** (AI Workload Manager) - Port 3003
   - Core service for AI operations at scale
-  - 16 modules: Model, Agent, Node, Resource, Deployment, Instruction, PII, Guardrail, Execution, Reports, etc.
-  - Multi-mode: API, MCP, Worker
-  - See [`services/aiwm/README.md`](services/aiwm/README.md) for detailed documentation
+  - 22 modules: Agent, Node, Chat, Model, Deployment, Instruction, Tool, Guardrail, PII, Configuration, Conversation, Message, Execution, Workflow, Resource, Reports, Memory, Reminder, Action, Connection, Agent-Worker, Util
+  - Multi-mode: API, MCP, Worker (BullMQ), Agent runner (hosted agents), Connection (Discord/Telegram bridge)
+  - See [`services/aiwm/CLAUDE.md`](services/aiwm/CLAUDE.md) for detailed documentation
 
 - **CBM** (Core Business Management) - Port 3004
   - Project management with member-based access control (project.lead / project.member roles)

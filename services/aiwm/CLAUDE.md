@@ -4,13 +4,24 @@
 
 AIWM (AI Workload Manager) is the core service for AI operations. Port 3003 (dev), 3330-3339 (prod).
 
-Dual mode: API (HTTP/WebSocket) + MCP (AI agent integration).
+Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) + Agent runner + Connection bridge.
+
+## Run Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **api** | `nx run aiwm:api` | REST API + WebSocket server (default) |
+| **mcp** | `nx run aiwm:mcp` | Standalone MCP protocol server (port 3355) |
+| **wrk** | `nx run aiwm:wrk` | BullMQ background job worker |
+| **agt** | `nx run aiwm:agt` | Hosted agent worker (connects to `/ws/chat`) |
+| **con** | `nx run aiwm:con` | Connection worker (Discord/Telegram bridge) |
 
 ## Modules
 
 | Module | Path | Description |
 |--------|------|-------------|
-| Agent | `src/modules/agent/` | AI agent management (managed + autonomous types) |
+| Agent | `src/modules/agent/` | AI agent management (managed/autonomous/hosted types) |
+| Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) |
 | Node | `src/modules/node/` | Worker node management + WebSocket gateway (`/ws/node`) |
 | Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) |
 | Model | `src/modules/model/` | AI model metadata and lifecycle |
@@ -18,6 +29,7 @@ Dual mode: API (HTTP/WebSocket) + MCP (AI agent integration).
 | Instruction | `src/modules/instruction/` | System prompts and guidelines |
 | Tool | `src/modules/tool/` | MCP tools, built-in tools, custom tools |
 | Guardrail | `src/modules/guardrail/` | Safety constraints for agents |
+| PII | `src/modules/pii/` | PII detection and redaction |
 | Configuration | `src/modules/configuration/` | Key-value configuration management |
 | Conversation | `src/modules/conversation/` | Chat conversation management |
 | Message | `src/modules/message/` | Chat message storage and retrieval |
@@ -25,7 +37,11 @@ Dual mode: API (HTTP/WebSocket) + MCP (AI agent integration).
 | Workflow | `src/modules/workflow/` | Workflow definition and steps |
 | Resource | `src/modules/resource/` | Infrastructure resource management |
 | Reports | `src/modules/reports/` | Analytics and reporting |
-| PII | `src/modules/pii/` | PII detection and redaction |
+| Memory | `src/modules/memory/` | Agent memory/context storage |
+| Reminder | `src/modules/reminder/` | Scheduled reminders and notifications |
+| Action | `src/modules/action/` | Audit trail for chat actions |
+| Connection | `src/modules/connection/` | Discord/Telegram connection config |
+| Util | `src/modules/util/` | AI utilities (text generation via OpenAI Responses API) |
 
 ## Module-Specific Documentation
 
@@ -47,23 +63,64 @@ When working on a specific module, read the corresponding docs:
 
 ### WebSocket Gateways
 - **NodeGateway** (`/ws/node`): Node worker connections. JWT auth in `afterInit` middleware. In-memory connection tracking via `NodeConnectionService`.
-- **ChatGateway** (`/ws/chat`): User/Agent chat. JWT auth in `handleConnection`. Redis-based presence tracking via `ChatService`.
+- **ChatGateway** (`/ws/chat`): User/Agent/Anonymous chat. JWT auth in `handleConnection`. Redis-based presence tracking. Redis pub/sub for cross-instance communication.
+
+### Agent Types
+- **managed**: System-deployed to nodes via WebSocket commands (agent.start/update/delete). Has `nodeId` and `secret` for auth.
+- **autonomous**: User self-deploys. Has `secret` for auth. Uses user's own environment.
+- **hosted**: System-deployed, runs in `MODE=agt` worker. Connects to `/ws/chat` for autonomous operation.
+- See `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` for full details.
+
+### Authentication Token Types
+- **User JWT**: Standard `sub` (userId), `orgId`, `roles`, `groupId`
+- **Agent JWT**: `sub` (agentId), `orgId`, `type: 'agent'`, `roles: ['agent']`
+- **Anonymous Token**: `type: 'anonymous'`, `agentId`, `anonymousId`, `tokenId`, `expiresAt`
+- **Node JWT**: `sub` (nodeId), `type`, `username`, `status`, `orgId`
 
 ### Queue System (BullMQ)
 - Producers in `src/queues/producers/` — emit events
 - Processors in `src/queues/processors/` — consume events (currently: NodeProcessor, ModelProcessor)
 - Config in `src/config/queue.config.ts`
 
-### Agent Types
-- **managed**: System-deployed to nodes via WebSocket commands (agent.start/update/delete). Has secret for auth.
-- **autonomous**: User self-deploys following install guide. Has secret for auth. Uses user's own environment.
-- See `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` for full details.
+### MCP (Model Context Protocol)
+- Server runs on port 3355 (configurable via `MCP_PORT`)
+- **48 built-in tools** in `src/mcp/builtin/`: CBM (Document/Project/Work management), IAM (User), AIWM (Agent/Instruction/Memory/Reminder)
+- Per-session `McpServer` instances with 30-minute inactivity timeout
+- Tools filtered by `agent.allowedToolIds`
+- Transport: Streamable HTTP (POST + SSE)
+
+### Distributed Architecture
+- Redis adapter for WebSocket horizontal scaling (`redis-io.adapter.ts`)
+- Redis pub/sub channels: `agent:join-room`, `chat:message-new`
+- Distributed locking: `lock:chat-msg:{nonce}` to prevent duplicate processing
 
 ## Commands
 
 ```bash
 nx run aiwm:api    # API mode (REST + WebSocket)
-nx run aiwm:mcp    # MCP mode
-nx run aiwm:wrk    # Worker mode
+nx run aiwm:mcp    # MCP mode (port 3355)
+nx run aiwm:wrk    # Worker mode (BullMQ)
+nx run aiwm:agt    # Agent worker mode (hosted agents)
+nx run aiwm:con    # Connection worker mode (Discord/Telegram)
 nx run aiwm:build  # Build
+```
+
+## Environment Variables
+
+```bash
+# Required
+JWT_SECRET=<secret>
+MONGODB_URI=mongodb://host:27017
+REDIS_URL=redis://host:6379
+REDIS_HOST=host
+REDIS_PORT=6379
+
+# Optional
+PORT=3003                      # HTTP server port
+MCP_PORT=3355                  # MCP server port
+MODE=api|mcp|wrk|agt|con       # Run mode (default: api)
+INTERNAL_API_KEY=<key>         # Service-to-service auth
+MCP_ALLOWED_HOSTS=<hosts>      # Comma-separated allowed hosts
+WS_CHAT_URL=http://host:3003   # Chat WebSocket URL (for agent mode)
+AGENT_IDS=id1,id2,id3          # Filter agents to run (agent mode)
 ```
