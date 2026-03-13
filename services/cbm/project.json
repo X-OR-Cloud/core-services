@@ -65,6 +65,25 @@
         }
       }
     },
+    "emb": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "cbm:build",
+        "runBuildTargetDependencies": false,
+        "args": ["emb"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "cbm:build:development"
+        },
+        "production": {
+          "buildTarget": "cbm:build:production"
+        }
+      }
+    },
     "test": {
       "options": {
         "passWithNoTests": true

@@ -15,6 +15,11 @@ Single mode: API (REST).
 | Document | `src/modules/document/` | Text documents with advanced content operations and time-limited share links |
 | Content | `src/modules/content/` | Multimedia content (images, videos, audio) — planned, not yet active |
 | Notification | `src/modules/notification/` | Event notification handling |
+| Knowledge Collection | `src/modules/knowledge-collection/` | RAG knowledge domains — org-scoped, links to Qdrant collection |
+| Knowledge File | `src/modules/knowledge-file/` | File upload + indexing pipeline (pdf-parse, mammoth, OCR fallback) |
+| Knowledge Chunk | `src/modules/knowledge-chunk/` | Derived text chunks from indexed files, stored in MongoDB + Qdrant |
+| Knowledge Shared | `src/modules/knowledge-shared/` | Shared services: EmbeddingService, QdrantService, ChunkingService, OcrService |
+| Knowledge Worker | `src/modules/knowledge-worker/` | Background worker: polls pending files, runs full indexing pipeline |
 
 ## Module-Specific Documentation
 
@@ -22,6 +27,7 @@ Single mode: API (REST).
 - **Work module**: `docs/cbm/work/OVERVIEW.md`, `docs/cbm/work/ROADMAP.md`, `docs/cbm/work/FRONTEND-API.md`, `docs/cbm/NEXT-WORK-PRIORITY-LOGIC.md`
 - **Document module**: `docs/cbm/document/OVERVIEW.md`, `docs/cbm/document/ROADMAP.md`, `docs/cbm/document/FRONTEND-API.md`
 - **Content module**: `docs/cbm/CONTENT-MODULE-PLAN.md`
+- **Knowledge Base module**: `docs/cbm/knowledge-base/API.md`
 - **Full entity + API reference**: `docs/cbm/CBM-ENTITIES-AND-API.md`
 - **Access control detail**: `docs/cbm/member-access-control.md`
 - **Test scenarios**: `docs/cbm/test-scenarios.md`
@@ -118,11 +124,12 @@ return this.workService.findAll(options, context);
 
 - MongoDB with Mongoose ODM
 - Database: `{PREFIX}cbm`
-- Collections: `projects`, `works`, `documents`, `content`, `notifications`
+- Collections: `projects`, `works`, `documents`, `content`, `notifications`, `knowledge_collections`, `knowledge_files`, `knowledge_chunks`
 
 ## Commands
 
 ```bash
 nx run cbm:api    # API mode (REST)
+nx run cbm:emb    # Knowledge Base embedding worker
 nx run cbm:build  # Build
 ```

@@ -11,12 +11,14 @@ import { KnowledgeCollectionService } from '../knowledge-collection/knowledge-co
 import { ChunkingService } from '../knowledge-shared/chunking.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
+import { OcrService } from '../knowledge-shared/ocr.service';
 
-// LangChain document loaders
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
+// Document loaders
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse');
+import * as mammoth from 'mammoth';
 import { DocxLoader } from '@langchain/community/document_loaders/fs/docx';
 import { TextLoader } from '@langchain/classic/document_loaders/fs/text';
-import { CSVLoader } from '@langchain/community/document_loaders/fs/csv';
 
 // Batch size for embedding API calls
 const EMBEDDING_BATCH_SIZE = 32;
@@ -34,6 +36,7 @@ export class KnowledgeIndexerService {
     private readonly chunkingService: ChunkingService,
     private readonly embeddingService: EmbeddingService,
     private readonly qdrantService: QdrantService,
+    private readonly ocrService: OcrService,
   ) {}
 
   /**
@@ -193,15 +196,26 @@ export class KnowledgeIndexerService {
 
     try {
       if (mimeType === 'application/pdf') {
-        const loader = new PDFLoader(absolutePath);
-        const docs = await loader.load();
-        return docs.map((d) => d.pageContent).join('\n\n');
+        const buffer = fs.readFileSync(absolutePath);
+        const data = await pdfParse(buffer);
+
+        // Fallback to OCR if text is insufficient (image-based PDF)
+        if (this.ocrService.isTextInsufficient(data.text)) {
+          if (this.ocrService.isConfigured()) {
+            this.logger.log(`PDF text insufficient (${data.text.trim().length} chars) — falling back to OCR: ${file.fileName}`);
+            return this.ocrService.ocrPdf(absolutePath);
+          } else {
+            this.logger.warn(`PDF text insufficient for ${file.fileName} and OCR not configured (KB_OCR_API_URL not set)`);
+          }
+        }
+
+        return data.text;
       }
 
       if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        const loader = new DocxLoader(absolutePath);
-        const docs = await loader.load();
-        return docs.map((d) => d.pageContent).join('\n\n');
+        const buffer = fs.readFileSync(absolutePath);
+        const result = await mammoth.extractRawText({ buffer });
+        return result.value;
       }
 
       if (mimeType === 'text/plain' || mimeType === 'text/markdown') {
@@ -217,9 +231,8 @@ export class KnowledgeIndexerService {
       }
 
       if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-        const loader = new CSVLoader(absolutePath);
-        const docs = await loader.load();
-        return docs.map((d) => d.pageContent).join('\n\n');
+        // XLSX: read as binary and extract text via fallback
+        return fs.readFileSync(absolutePath, 'utf-8');
       }
 
       // Fallback: read as text

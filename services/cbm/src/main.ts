@@ -1,6 +1,10 @@
 /**
  * CBM Service - Core Business Management
  * Manages projects, works, and documents
+ *
+ * Modes:
+ * - api (default): REST API server
+ * - emb: Knowledge Base embedding worker
  */
 
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -8,7 +12,16 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import { GlobalExceptionFilter, customQueryParser } from '@hydrabyte/base';
 
+const MODE = process.env.MODE || process.argv[2] || 'api';
+
 async function bootstrap() {
+  if (MODE === 'emb') {
+    const { bootstrapKbWorker } = await import('./bootstrap-kb-worker');
+    await bootstrapKbWorker();
+    return;
+  }
+
+  // API mode (default)
   const app = await NestFactory.create(AppModule);
 
   // Configure Express to use custom query parser

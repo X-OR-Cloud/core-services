@@ -6,7 +6,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { KbWorkerModule } from './kb-worker.module';
 
-async function bootstrap() {
+export async function bootstrapKbWorker() {
   const app = await NestFactory.createApplicationContext(KbWorkerModule, {
     logger: ['log', 'warn', 'error', 'debug'],
   });
@@ -27,7 +27,10 @@ async function bootstrap() {
   });
 }
 
-bootstrap().catch((err) => {
-  Logger.error(`KB Worker failed to start: ${err.message}`, err.stack, 'KbWorker');
-  process.exit(1);
-});
+// Only auto-run when executed directly (kb-worker.js entry point)
+if (require.main === module) {
+  bootstrapKbWorker().catch((err) => {
+    Logger.error(`KB Worker failed to start: ${err.message}`, err.stack, 'KbWorker');
+    process.exit(1);
+  });
+}
