@@ -602,6 +602,39 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
+      name: 'core.cbm.emb00',
+      script: './dist/services/cbm/main.js',
+      instances: 1,
+      exec_mode: 'fork',  // fork mode for workers
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Environment variables from .env file
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'emb',
+        SERVICE_NAME: 'cbm',
+      },
+
+      // Load .env file
+      env_file: '.env',
+
+      // Logging
+      error_file: './logs/cbm-emb-00-error.log',
+      out_file: './logs/cbm-emb-00-out.log',
+      merge_logs: true,
+
+      // Auto restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      // Advanced settings
+      kill_timeout: 15000,  // Allow graceful lock release + indexing completion
+      wait_ready: false,  // Worker doesn't listen on a port
+      listen_timeout: 10000,
+    },
+    {
       name: 'core.cbm.api01',
       script: './dist/services/cbm/main.js',
       instances: 1,
