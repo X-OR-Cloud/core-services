@@ -298,6 +298,42 @@ export class AgentController {
     return this.agentService.revokeAnonymousToken(resolvedId, tokenId, context);
   }
 
+  @Post(':id/stop')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Stop agent',
+    description: 'Suspend an agent. Allowed when status is idle or inactive. Returns 400 if agent is busy.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent suspended successfully' })
+  @ApiResponse({ status: 400, description: 'Agent is busy' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async stopAgent(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.stopAgent(resolvedId, context);
+  }
+
+  @Post(':id/start')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start agent',
+    description: 'Resume a suspended agent by setting status back to inactive. Only allowed when agent is suspended.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent set to inactive successfully' })
+  @ApiResponse({ status: 400, description: 'Agent is not suspended' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async startAgent(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.startAgent(resolvedId, context);
+  }
+
   @Post(':id/credentials/regenerate')
   @ApiOperation({
     summary: 'Regenerate agent credentials',

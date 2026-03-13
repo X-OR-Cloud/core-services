@@ -1284,6 +1284,62 @@ MEMORY CATEGORIES:
   }
 
   /**
+   * Stop agent — transitions status to suspended.
+   * Allowed from: idle, inactive. Blocked if busy.
+   */
+  async stopAgent(agentId: string, context: RequestContext): Promise<{ success: boolean; status: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.status === 'busy') {
+      throw new BadRequestException('Agent is busy. Please try again later.');
+    }
+
+    if (agent.status === 'suspended') {
+      return { success: true, status: 'suspended' };
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      { $set: { status: 'suspended', updatedBy: context.userId } }
+    );
+
+    this.logger.log('Agent stopped (suspended)', { agentId, name: agent.name, previousStatus: agent.status, by: context.userId });
+    return { success: true, status: 'suspended' };
+  }
+
+  /**
+   * Start agent — transitions status from suspended back to inactive.
+   * Only allowed when agent is suspended.
+   */
+  async startAgent(agentId: string, context: RequestContext): Promise<{ success: boolean; status: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.status !== 'suspended') {
+      throw new BadRequestException(`Agent is not suspended (current status: ${agent.status})`);
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      { $set: { status: 'inactive', updatedBy: context.userId } }
+    );
+
+    this.logger.log('Agent started (inactive)', { agentId, name: agent.name, by: context.userId });
+    return { success: true, status: 'inactive' };
+  }
+
+  /**
    * Regenerate agent credentials (admin only)
    * Returns new secret + env config + install script
    * Works for both assistant and engineer agents
