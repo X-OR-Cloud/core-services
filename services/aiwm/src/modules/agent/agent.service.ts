@@ -57,7 +57,7 @@ export class AgentService extends BaseService<Agent> {
     private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
     private readonly httpService: HttpService,
-    private readonly reminderService: ReminderService,
+    private readonly reminderService: ReminderService
   ) {
     super(agentModel as any);
   }
@@ -227,6 +227,9 @@ export class AgentService extends BaseService<Agent> {
     // Force initial status to inactive (agent must connect to become idle)
     createAgentDto.status = 'inactive';
 
+    // Generate unique code for this org
+    (createAgentDto as any).code = await this.generateCode(context.orgId);
+
     // BaseService handles permissions, ownership, save, and generic logging
     const saved = await super.create(createAgentDto, context);
 
@@ -303,7 +306,11 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
-    return this.buildInstructionObjectForAgent(agent, accessToken, systemPromptOverride);
+    return this.buildInstructionObjectForAgent(
+      agent,
+      accessToken,
+      systemPromptOverride
+    );
   }
 
   /**
@@ -335,11 +342,13 @@ export class AgentService extends BaseService<Agent> {
       throw new NotFoundException('Instruction not found');
     }
 
-    const updated = await this.instructionModel.findOneAndUpdate(
-      { _id: agent.instructionId, isDeleted: false },
-      { $set: { systemPrompt, updatedBy: context.userId } },
-      { new: true }
-    ).exec();
+    const updated = await this.instructionModel
+      .findOneAndUpdate(
+        { _id: agent.instructionId, isDeleted: false },
+        { $set: { systemPrompt, updatedBy: context.userId } },
+        { new: true }
+      )
+      .exec();
 
     if (!updated) {
       throw new NotFoundException('Instruction not found');
@@ -425,7 +434,10 @@ export class AgentService extends BaseService<Agent> {
     };
 
     // For autonomous and hosted agents, populate deployment info
-    if ((agent.type === 'autonomous' || agent.type === 'hosted') && agent.deploymentId) {
+    if (
+      (agent.type === 'autonomous' || agent.type === 'hosted') &&
+      agent.deploymentId
+    ) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -530,7 +542,9 @@ export class AgentService extends BaseService<Agent> {
     return this.buildConnectResponse(agent);
   }
 
-  private async buildConnectResponse(agent: AgentDocument): Promise<AgentConnectResponseDto> {
+  private async buildConnectResponse(
+    agent: AgentDocument
+  ): Promise<AgentConnectResponseDto> {
     const agentId = (agent as any)._id.toString();
 
     // Extract roles from agent.role field or settings (backward compatibility)
@@ -645,7 +659,10 @@ export class AgentService extends BaseService<Agent> {
     };
 
     // For autonomous and hosted agents, populate deployment info
-    if ((agent.type === 'autonomous' || agent.type === 'hosted') && agent.deploymentId) {
+    if (
+      (agent.type === 'autonomous' || agent.type === 'hosted') &&
+      agent.deploymentId
+    ) {
       try {
         // Use DeploymentService to build complete endpoint info
         const endpointInfo = await this.deploymentService.buildEndpointInfo(
@@ -763,7 +780,12 @@ export class AgentService extends BaseService<Agent> {
 
     const result: { id: string; systemPrompt: string; isPreview?: boolean } = {
       id: agentId,
-      systemPrompt: this.buildFinalSystemPrompt(corePrompt, contextBlocks, tools, agentId),
+      systemPrompt: this.buildFinalSystemPrompt(
+        corePrompt,
+        contextBlocks,
+        tools,
+        agentId
+      ),
     };
 
     if (systemPromptOverride !== undefined) {
@@ -1072,7 +1094,9 @@ MEMORY CATEGORIES:
 
       // No work found — check pending reminders
       try {
-        const reminders = await this.reminderService.getPendingForHeartbeat(agentId);
+        const reminders = await this.reminderService.getPendingForHeartbeat(
+          agentId
+        );
         if (reminders.length > 0) {
           const reminderList = reminders
             .map((r: any) => `- [${r._id || r.id}] ${r.content}`)
@@ -1082,7 +1106,10 @@ MEMORY CATEGORIES:
             systemMessage: `Bạn có ${reminders.length} reminder đang chờ xử lý:\n${reminderList}\n\nHãy xử lý từng reminder và gọi DoneReminder sau khi hoàn thành.`,
             systemTask: {
               type: 'reminders',
-              reminders: reminders.map((r: any) => ({ id: String(r._id || r.id), content: r.content })),
+              reminders: reminders.map((r: any) => ({
+                id: String(r._id || r.id),
+                content: r.content,
+              })),
             },
           };
         }
@@ -1179,7 +1206,9 @@ MEMORY CATEGORIES:
       const hasDependencies =
         Array.isArray(work.dependencies) && work.dependencies.length > 0;
       const dependencyStep = hasDependencies
-        ? `- Công việc này có dependencies: ${work.dependencies.map((d: string) => `@work:${d}`).join(', ')}. Trước khi bắt đầu, hãy:\n` +
+        ? `- Công việc này có dependencies: ${work.dependencies
+            .map((d: string) => `@work:${d}`)
+            .join(', ')}. Trước khi bắt đầu, hãy:\n` +
           `  1. Gọi mcp__Builtin__GetWork cho từng dependency để đọc thông tin và trường "result"\n` +
           `  2. Nếu dependency có "documentIds", gọi mcp__Builtin__GetDocumentContent cho từng document để đọc nội dung chi tiết\n` +
           `  3. Tổng hợp kết quả từ các dependencies làm đầu vào cho công việc này\n`
@@ -1672,6 +1701,104 @@ echo "Installation script placeholder - implement actual logic"
 `;
   }
 
+  /**
+   * Resolve an agent identifier (ObjectId or code) to a MongoDB ObjectId string.
+   * Code format: [a-z-]+ (only lowercase letters and hyphens)
+   */
+  async resolveAgentId(idOrCode: string, orgId: string): Promise<string> {
+    if (/^[a-f0-9]{24}$/.test(idOrCode)) {
+      return idOrCode;
+    }
+    const agent = await this.agentModel
+      .findOne({ code: idOrCode, 'owner.orgId': orgId, isDeleted: false })
+      .select('_id')
+      .lean();
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${idOrCode}`);
+    }
+    return (agent as any)._id.toString();
+  }
+
+  /**
+   * Generate a unique agent code for the given org using Fisher-Yates shuffle.
+   * Format: [name]-[adjective], e.g. "jack-bold"
+   */
+  private async generateCode(orgId: string): Promise<string> {
+    const NAMES = [
+      'jack',
+      'lena',
+      'nova',
+      'mila',
+      'tara',
+      'evan',
+      'zola',
+      'leon',
+      'aria',
+      'hugo',
+      'vera',
+      'niko',
+      'ella',
+      'oma',
+      'adam',
+      'kira',
+      'theo',
+      'yuna',
+      'cleo',
+      'elia',
+      'dane'
+    ];
+    const ADJS = [
+      'bold',
+      'cool',
+      'fast',
+      'gold',
+      'wild',
+      'calm',
+      'cat',
+      'soft',
+      'keen',
+      'blue',
+      'kind',
+      'slim',
+      'wam',
+      'live',
+      'pure',
+      'safe',
+      'mint',
+      'top',
+      'vip',
+      'pro',
+      'love',
+      'sun',
+      'mon',
+      'sea',
+      'red',
+    ];
+
+    const existing = await this.agentModel
+      .find({ 'owner.orgId': orgId, isDeleted: false })
+      .select('code')
+      .lean();
+    const usedSet = new Set(existing.map((a: any) => a.code).filter(Boolean));
+
+    const all: string[] = [];
+    for (const n of NAMES) for (const a of ADJS) all.push(`${n}-${a}`);
+
+    // Fisher-Yates shuffle
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+
+    const code = all.find((c) => !usedSet.has(c));
+    if (!code) {
+      throw new BadRequestException(
+        'Organization has reached the maximum number of agents (400)'
+      );
+    }
+    return code;
+  }
+
   async updateAgent(
     id: string,
     updateAgentDto: UpdateAgentDto,
@@ -1679,10 +1806,13 @@ echo "Installation script placeholder - implement actual logic"
   ): Promise<Partial<Agent> | null> {
     // Only organization.owner or universe.owner can set role to organization.owner
     if (updateAgentDto.role === 'organization.owner') {
-      const isOrgOwner = context.roles?.includes(PredefinedRole.OrganizationOwner) ||
+      const isOrgOwner =
+        context.roles?.includes(PredefinedRole.OrganizationOwner) ||
         context.roles?.includes(PredefinedRole.UniverseOwner);
       if (!isOrgOwner) {
-        throw new ForbiddenException('Only organization.owner can assign organization.owner role to an agent');
+        throw new ForbiddenException(
+          'Only organization.owner can assign organization.owner role to an agent'
+        );
       }
     }
 
@@ -1705,6 +1835,9 @@ echo "Installation script placeholder - implement actual logic"
         await this.validateHostedDeployment(updateAgentDto.deploymentId);
       }
     }
+
+    // Strip code — immutable after creation
+    delete (updateAgentDto as any).code;
 
     // Convert string to ObjectId for BaseService
     const objectId = new Types.ObjectId(id);
@@ -1825,15 +1958,19 @@ echo "Installation script placeholder - implement actual logic"
   async generateAnonymousToken(
     agentId: string,
     dto: AnonymousTokenDto,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<AnonymousTokenResponseDto> {
-    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    const agent = await this.findById(
+      new Types.ObjectId(agentId) as any,
+      context
+    );
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
     const anonymousId = dto.anonymousId || uuidv4();
-    const expiresIn = dto.expiresIn && dto.expiresIn > 0 ? dto.expiresIn : 86400;
+    const expiresIn =
+      dto.expiresIn && dto.expiresIn > 0 ? dto.expiresIn : 86400;
     const tokenId = uuidv4();
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
@@ -1858,12 +1995,20 @@ echo "Installation script placeholder - implement actual logic"
             expiresAt,
           },
         },
-      },
+      }
     );
 
-    this.logger.log(`Generated anonymous token for agent ${agentId}, tokenId=${tokenId}, anonymousId=${anonymousId}, expiresIn=${expiresIn}s`);
+    this.logger.log(
+      `Generated anonymous token for agent ${agentId}, tokenId=${tokenId}, anonymousId=${anonymousId}, expiresIn=${expiresIn}s`
+    );
 
-    return { token, anonymousId, expiresIn, expiresAt: expiresAt.toISOString(), tokenId };
+    return {
+      token,
+      anonymousId,
+      expiresIn,
+      expiresAt: expiresAt.toISOString(),
+      tokenId,
+    };
   }
 
   /**
@@ -1871,9 +2016,12 @@ echo "Installation script placeholder - implement actual logic"
    */
   async listAnonymousTokens(
     agentId: string,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<AnonymousTokenListResponseDto> {
-    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    const agent = await this.findById(
+      new Types.ObjectId(agentId) as any,
+      context
+    );
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
@@ -1883,16 +2031,16 @@ echo "Installation script placeholder - implement actual logic"
       .select('anonymousTokens')
       .lean();
 
-    const tokens: AnonymousTokenEntryDto[] = ((agentWithTokens as any)?.anonymousTokens || []).map(
-      (t: any) => ({
-        tokenId: t.tokenId,
-        createdAt: t.createdAt,
-        lastConnectedAt: t.lastConnectedAt,
-        expiresAt: t.expiresAt,
-        revokedAt: t.revokedAt,
-        isActive: !t.revokedAt && new Date(t.expiresAt) > new Date(),
-      }),
-    );
+    const tokens: AnonymousTokenEntryDto[] = (
+      (agentWithTokens as any)?.anonymousTokens || []
+    ).map((t: any) => ({
+      tokenId: t.tokenId,
+      createdAt: t.createdAt,
+      lastConnectedAt: t.lastConnectedAt,
+      expiresAt: t.expiresAt,
+      revokedAt: t.revokedAt,
+      isActive: !t.revokedAt && new Date(t.expiresAt) > new Date(),
+    }));
 
     return { items: tokens, total: tokens.length };
   }
@@ -1903,20 +2051,29 @@ echo "Installation script placeholder - implement actual logic"
   async revokeAnonymousToken(
     agentId: string,
     tokenId: string,
-    context: RequestContext,
+    context: RequestContext
   ): Promise<void> {
-    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    const agent = await this.findById(
+      new Types.ObjectId(agentId) as any,
+      context
+    );
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
 
     const result = await this.model.updateOne(
-      { _id: agentId, 'anonymousTokens.tokenId': tokenId, 'anonymousTokens.revokedAt': { $exists: false } },
-      { $set: { 'anonymousTokens.$.revokedAt': new Date() } },
+      {
+        _id: agentId,
+        'anonymousTokens.tokenId': tokenId,
+        'anonymousTokens.revokedAt': { $exists: false },
+      },
+      { $set: { 'anonymousTokens.$.revokedAt': new Date() } }
     );
 
     if (result.matchedCount === 0) {
-      throw new NotFoundException(`Token ${tokenId} not found or already revoked`);
+      throw new NotFoundException(
+        `Token ${tokenId} not found or already revoked`
+      );
     }
 
     this.logger.log(`Revoked anonymous token ${tokenId} for agent ${agentId}`);
@@ -1926,7 +2083,10 @@ echo "Installation script placeholder - implement actual logic"
    * Validate an anonymous token is active (not revoked) and update lastConnectedAt.
    * Returns false if token is revoked or not found.
    */
-  async validateAndTouchAnonymousToken(agentId: string, tokenId: string): Promise<boolean> {
+  async validateAndTouchAnonymousToken(
+    agentId: string,
+    tokenId: string
+  ): Promise<boolean> {
     const agentWithToken = await this.agentModel
       .findOne({ _id: agentId, 'anonymousTokens.tokenId': tokenId })
       .select('anonymousTokens.$')
@@ -1939,7 +2099,7 @@ echo "Installation script placeholder - implement actual logic"
 
     await this.agentModel.updateOne(
       { _id: agentId, 'anonymousTokens.tokenId': tokenId },
-      { $set: { 'anonymousTokens.$.lastConnectedAt': new Date() } },
+      { $set: { 'anonymousTokens.$.lastConnectedAt': new Date() } }
     );
 
     return true;
@@ -1949,15 +2109,23 @@ echo "Installation script placeholder - implement actual logic"
    * Validate that a deployment exists, is not deleted, and has status=running.
    * Used for hosted agent create/update operations.
    */
-  private async validateHostedDeployment(deploymentId: string | undefined): Promise<void> {
+  private async validateHostedDeployment(
+    deploymentId: string | undefined
+  ): Promise<void> {
     if (!deploymentId) {
-      throw new BadRequestException('deploymentId is required for hosted agents');
+      throw new BadRequestException(
+        'deploymentId is required for hosted agents'
+      );
     }
 
-    const deployment = await this.deploymentService.findByObjectId(deploymentId);
+    const deployment = await this.deploymentService.findByObjectId(
+      deploymentId
+    );
 
     if (!deployment) {
-      throw new BadRequestException(`Deployment with ID ${deploymentId} not found`);
+      throw new BadRequestException(
+        `Deployment with ID ${deploymentId} not found`
+      );
     }
 
     if (deployment.status !== 'running') {

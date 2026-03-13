@@ -35,6 +35,9 @@ export type AgentDocument = Agent & Document;
  */
 @Schema({ timestamps: true })
 export class Agent extends BaseSchema {
+  @Prop({ type: String, index: true })
+  code?: string;
+
   @Prop({ required: true })
   name: string;
 

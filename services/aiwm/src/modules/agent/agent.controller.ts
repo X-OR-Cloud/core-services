@@ -50,7 +50,7 @@ export class AgentController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get agent by ID', description: 'Retrieve a single agent by ID. Use ?populate=instruction to include instruction details.' })
+  @ApiOperation({ summary: 'Get agent by ID or code', description: 'Retrieve a single agent by ObjectId or code (e.g. jack-bold). Use ?populate=instruction to include instruction details.' })
   @ApiResponse({ status: 200, description: 'Agent found' })
   @ApiReadErrors()
   @UseGuards(JwtAuthGuard)
@@ -59,15 +59,16 @@ export class AgentController {
     @Query() query: any,
     @CurrentUser() context: RequestContext,
   ) {
-    const agent = await this.agentService.findById(new Types.ObjectId(id) as any, context, query);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    const agent = await this.agentService.findById(new Types.ObjectId(resolvedId), context, query);
     if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
+      throw new NotFoundException(`Agent not found: ${id}`);
     }
     return agent;
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update agent', description: 'Update agent information' })
+  @ApiOperation({ summary: 'Update agent', description: 'Update agent information. Accepts ObjectId or code.' })
   @ApiResponse({ status: 200, description: 'Agent updated successfully' })
   @ApiUpdateErrors()
   @UseGuards(JwtAuthGuard)
@@ -76,15 +77,16 @@ export class AgentController {
     @Body() updateAgentDto: UpdateAgentDto,
     @CurrentUser() context: RequestContext,
   ) {
-    const updated = await this.agentService.updateAgent(id, updateAgentDto, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    const updated = await this.agentService.updateAgent(resolvedId, updateAgentDto, context);
     if (!updated) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
+      throw new NotFoundException(`Agent not found: ${id}`);
     }
     return updated;
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete agent', description: 'Soft delete an agent' })
+  @ApiOperation({ summary: 'Delete agent', description: 'Soft delete an agent. Accepts ObjectId or code.' })
   @ApiResponse({ status: 200, description: 'Agent deleted successfully' })
   @ApiDeleteErrors()
   @UseGuards(JwtAuthGuard)
@@ -92,7 +94,8 @@ export class AgentController {
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ) {
-    await this.agentService.remove(id, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    await this.agentService.remove(resolvedId, context);
     return { message: 'Agent deleted successfully' };
   }
 
@@ -107,10 +110,12 @@ export class AgentController {
   async getInstruction(
     @Param('id') id: string,
     @Query() query: PreviewInstructionQueryDto,
+    @CurrentUser() context: RequestContext,
     @Req() req: any,
   ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     const token = req.headers?.authorization?.replace('Bearer ', '') || '';
-    return this.agentService.getAgentInstruction(id, token, query.systemPrompt);
+    return this.agentService.getAgentInstruction(resolvedId, token, query.systemPrompt);
   }
 
   @Patch(':id/instruction')
@@ -127,7 +132,8 @@ export class AgentController {
     @Body() dto: UpdateAgentInstructionDto,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.agentService.updateAgentInstruction(id, dto.systemPrompt, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.updateAgentInstruction(resolvedId, dto.systemPrompt, context);
   }
 
   @Get(':id/config')
@@ -148,8 +154,9 @@ export class AgentController {
     @CurrentUser() context: RequestContext,
     @Req() req: any,
   ): Promise<AgentConnectResponseDto> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     const token = req.headers?.authorization?.replace('Bearer ', '') || '';
-    return this.agentService.getAgentConfig(id, context, token);
+    return this.agentService.getAgentConfig(resolvedId, context, token);
   }
 
   @Post(':id/connect')
@@ -168,6 +175,7 @@ export class AgentController {
     @Param('id') id: string,
     @Body() connectDto: AgentConnectDto,
   ): Promise<AgentConnectResponseDto> {
+    // connect is public (no JwtAuthGuard) — resolve by ObjectId only, code not supported here
     return this.agentService.connect(id, connectDto);
   }
 
@@ -252,7 +260,8 @@ export class AgentController {
     @Body() dto: AnonymousTokenDto,
     @CurrentUser() context: RequestContext,
   ): Promise<AnonymousTokenResponseDto> {
-    return this.agentService.generateAnonymousToken(id, dto, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.generateAnonymousToken(resolvedId, dto, context);
   }
 
   @Get(':id/anonymous-tokens')
@@ -267,7 +276,8 @@ export class AgentController {
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ): Promise<AnonymousTokenListResponseDto> {
-    return this.agentService.listAnonymousTokens(id, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.listAnonymousTokens(resolvedId, context);
   }
 
   @Delete(':id/anonymous-tokens/:tokenId')
@@ -284,7 +294,8 @@ export class AgentController {
     @Param('tokenId') tokenId: string,
     @CurrentUser() context: RequestContext,
   ): Promise<void> {
-    return this.agentService.revokeAnonymousToken(id, tokenId, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.revokeAnonymousToken(resolvedId, tokenId, context);
   }
 
   @Post(':id/credentials/regenerate')
@@ -303,6 +314,7 @@ export class AgentController {
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ): Promise<AgentCredentialsResponseDto> {
-    return this.agentService.regenerateCredentials(id, context);
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.regenerateCredentials(resolvedId, context);
   }
 }
