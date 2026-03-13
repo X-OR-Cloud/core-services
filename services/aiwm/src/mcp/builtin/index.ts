@@ -7,6 +7,7 @@ import {
   DocumentManagementTools,
   WorkManagementTools,
   ProjectManagementTools,
+  KnowledgeBaseTools,
 } from './cbm';
 import { UserManagementTools } from './iam';
 import { AgentManagementTools, InstructionManagementTools, MemoryManagementTools, ReminderManagementTools } from './aiwm';
@@ -18,6 +19,7 @@ export const BuiltInTools: ToolDefinition[] = [
   ...DocumentManagementTools,
   ...WorkManagementTools,
   ...ProjectManagementTools,
+  ...KnowledgeBaseTools,
   ...UserManagementTools,
   ...AgentManagementTools,
   ...InstructionManagementTools,

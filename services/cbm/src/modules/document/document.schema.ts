@@ -33,6 +33,16 @@ export class Document extends BaseSchema {
   @Prop({ enum: ['private', 'organization'], default: 'private' })
   shareMode?: string; // Sharing mode: 'private' (creator/leads/admins only) or 'organization' (all org members can view)
 
+  // ── Knowledge Base (RAG) extension fields ──
+  @Prop({ type: Boolean, default: false })
+  embeddingEnabled?: boolean; // Enable/disable RAG embedding for this document
+
+  @Prop({ type: String })
+  knowledgeCollectionId?: string; // Link to KnowledgeCollection
+
+  @Prop({ enum: ['pending', 'processing', 'ready', 'error'], type: String, default: null })
+  embeddingStatus?: string | null; // null = not enrolled in KB
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
 }

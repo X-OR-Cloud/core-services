@@ -14,6 +14,9 @@ import { DocumentModule } from '../modules/document/document.module';
 import { ContentModule } from '../modules/content/content.module';
 import { ProjectModule } from '../modules/project/project.module';
 import { WorkModule } from '../modules/work/work.module';
+import { KnowledgeCollectionModule } from '../modules/knowledge-collection/knowledge-collection.module';
+import { KnowledgeFileModule } from '../modules/knowledge-file/knowledge-file.module';
+import { KnowledgeChunkModule } from '../modules/knowledge-chunk/knowledge-chunk.module';
 
 @Module({
   imports: [
@@ -27,6 +30,9 @@ import { WorkModule } from '../modules/work/work.module';
     ContentModule,
     ProjectModule,
     WorkModule,
+    KnowledgeCollectionModule,
+    KnowledgeFileModule,
+    KnowledgeChunkModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

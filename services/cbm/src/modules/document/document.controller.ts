@@ -287,4 +287,41 @@ export class DocumentController {
   ) {
     return this.documentService.softDelete(new Types.ObjectId(id) as any, context);
   }
+
+  @Patch(':id/embedding')
+  @ApiOperation({
+    summary: 'Enable/disable RAG embedding for a document, assign to a KnowledgeCollection',
+  })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async updateEmbedding(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      embeddingEnabled: boolean;
+      knowledgeCollectionId?: string;
+    },
+    @CurrentUser() context: RequestContext,
+  ) {
+    const updateData: Record<string, any> = {
+      embeddingEnabled: body.embeddingEnabled,
+    };
+
+    if (body.embeddingEnabled) {
+      if (body.knowledgeCollectionId) {
+        updateData.knowledgeCollectionId = body.knowledgeCollectionId;
+      }
+      updateData.embeddingStatus = 'pending';
+    } else {
+      // Disabling: clear embedding fields
+      updateData.embeddingStatus = null;
+      updateData.knowledgeCollectionId = null;
+    }
+
+    return this.documentService.update(
+      new Types.ObjectId(id) as any,
+      updateData,
+      context,
+    );
+  }
 }
