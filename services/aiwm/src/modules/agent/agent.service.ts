@@ -1856,7 +1856,8 @@ echo "Installation script placeholder - implement actual logic"
 
     // Strip code — immutable after creation
     delete (updateAgentDto as any).code;
-
+    // Strip status updates from this endpoint — status is managed by the agent itself and heartbeat
+    delete (updateAgentDto as any).status;
     // Convert string to ObjectId for BaseService
     const objectId = new Types.ObjectId(id);
     const updated = await super.update(
