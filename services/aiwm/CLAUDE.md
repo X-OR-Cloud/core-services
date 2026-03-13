@@ -20,7 +20,7 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 
 | Module | Path | Description |
 |--------|------|-------------|
-| Agent | `src/modules/agent/` | AI agent management (managed/autonomous/hosted types) |
+| Agent | `src/modules/agent/` | AI agent management (assistant/engineer types) |
 | Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) |
 | Node | `src/modules/node/` | Worker node management + WebSocket gateway (`/ws/node`) |
 | Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) |
@@ -66,9 +66,8 @@ When working on a specific module, read the corresponding docs:
 - **ChatGateway** (`/ws/chat`): User/Agent/Anonymous chat. JWT auth in `handleConnection`. Redis-based presence tracking. Redis pub/sub for cross-instance communication.
 
 ### Agent Types
-- **managed**: System-deployed to nodes via WebSocket commands (agent.start/update/delete). Has `nodeId` and `secret` for auth.
-- **autonomous**: User self-deploys. Has `secret` for auth. Uses user's own environment.
-- **hosted**: System-deployed, runs in `MODE=agt` worker. Connects to `/ws/chat` for autonomous operation.
+- **assistant**: In-process agent run by `MODE=agt` worker. No environment access. Connects to `/ws/chat` for autonomous operation. Has `secret` for auth.
+- **engineer**: Agent with environment access (bash, file system, etc). Two deployment modes: with `nodeId` = system-deployed to node via WebSocket (agent.start/update/delete); without `nodeId` = user self-deploys. Has `secret` for auth.
 - See `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` for full details.
 
 ### Authentication Token Types

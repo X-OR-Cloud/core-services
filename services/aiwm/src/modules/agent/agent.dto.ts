@@ -68,23 +68,23 @@ export class CreateAgentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI), hosted = in-process agent run by AIWM agt mode',
-    enum: ['managed', 'autonomous', 'hosted'],
-    example: 'autonomous',
+    description: 'Agent type: assistant = in-process agent run by AIWM agt mode (no env access), engineer = self-deployed or node-deployed agent with environment access',
+    enum: ['assistant', 'engineer'],
+    example: 'engineer',
     required: false
   })
   @IsOptional()
-  @IsEnum(['managed', 'autonomous', 'hosted'])
+  @IsEnum(['assistant', 'engineer'])
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine). Not used for hosted agents.',
+    description: 'Agent framework (determines runtime engine). Not used for assistant agents.',
     enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
     example: 'claude-agent-sdk',
     required: false
   })
   @IsOptional()
-  @ValidateIf((o) => o.type !== 'hosted')
+  @ValidateIf((o) => o.type !== 'assistant')
   @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
   framework?: string;
 
@@ -99,15 +99,15 @@ export class CreateAgentDto {
   guardrailId?: string;
 
   @ApiPropertyOptional({
-    description: 'Deployment ID (required for hosted agents, must be status=running)',
+    description: 'Deployment ID (required for assistant agents, must be status=running)',
     required: false
   })
-  @ValidateIf((o) => o.type === 'hosted')
+  @ValidateIf((o) => o.type === 'assistant')
   @IsNotEmpty()
   @IsString()
   deploymentId?: string;
 
-  @ApiPropertyOptional({ description: 'Node ID where agent runs (required for managed agents)', required: false })
+  @ApiPropertyOptional({ description: 'Node ID where agent runs (engineer agents with nodeId are system-managed via node WebSocket)', required: false })
   @IsString()
   @IsOptional()
   nodeId?: string;
@@ -196,21 +196,21 @@ export class UpdateAgentDto {
   status?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent type: managed = system-managed (deployed to node), autonomous = user-controlled (via UI), hosted = in-process agent run by AIWM agt mode',
-    enum: ['managed', 'autonomous', 'hosted'],
+    description: 'Agent type: assistant = in-process agent run by AIWM agt mode (no env access), engineer = self-deployed or node-deployed agent with environment access',
+    enum: ['assistant', 'engineer'],
     required: false
   })
   @IsOptional()
-  @IsEnum(['managed', 'autonomous', 'hosted'])
+  @IsEnum(['assistant', 'engineer'])
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine). Not used for hosted agents.',
+    description: 'Agent framework (determines runtime engine). Not used for assistant agents.',
     enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
     required: false
   })
   @IsOptional()
-  @ValidateIf((o) => o.type !== 'hosted')
+  @ValidateIf((o) => o.type !== 'assistant')
   @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
   framework?: string;
 
@@ -225,10 +225,10 @@ export class UpdateAgentDto {
   guardrailId?: string;
 
   @ApiPropertyOptional({
-    description: 'Deployment ID (required for hosted agents, must be status=running)',
+    description: 'Deployment ID (required for assistant agents, must be status=running)',
     required: false
   })
-  @ValidateIf((o) => o.type === 'hosted')
+  @ValidateIf((o) => o.type === 'assistant')
   @IsNotEmpty()
   @IsString()
   deploymentId?: string;
@@ -378,7 +378,7 @@ export class AgentConnectResponseDto {
   channels: ChannelConfigDto[];
 
   @ApiPropertyOptional({
-    description: 'Deployment configuration (for autonomous agents only)',
+    description: 'Deployment configuration (for engineer agents only)',
     required: false,
     example: {
       id: '507f1f77bcf86cd799439011',
