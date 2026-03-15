@@ -35,14 +35,14 @@ import { WorkflowModule } from '../modules/workflow/workflow.module';
 import { WorkflowStepModule } from '../modules/workflow-step/workflow-step.module';
 import { QueueModule } from '../queues/queue.module';
 import { ProcessorsModule } from '../queues/processors.module';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    MongooseModule.forRoot(`${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`),
+    MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`)),
     PassportModule,
     EventEmitterModule.forRoot(), // NEW: Enable event emitter for workflow events
     HealthModule,

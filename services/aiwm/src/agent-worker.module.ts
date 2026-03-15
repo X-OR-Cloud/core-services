@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { AgentWorkerModule as AgentWorkerFeatureModule } from './modules/agent-worker/agent-worker.module';
 
 /**
@@ -19,7 +19,7 @@ import { AgentWorkerModule as AgentWorkerFeatureModule } from './modules/agent-w
     }),
 
     MongooseModule.forRoot(
-      `${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`,
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`),
     ),
 
     HttpModule,

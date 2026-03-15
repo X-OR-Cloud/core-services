@@ -8,7 +8,7 @@ import {
   JwtStrategy,
   CorrelationIdMiddleware,
 } from '@hydrabyte/base';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MetricsModule } from '../modules/metrics/metrics.module';
@@ -22,7 +22,7 @@ import { ProcessorsModule } from '../queues/processors.module';
       isGlobal: true,
     }),
     MongooseModule.forRoot(
-      `${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.mona.name}`
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.mona.name}`)
     ),
     ThrottlerModule.forRoot([
       {

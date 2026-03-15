@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { KnowledgeWorkerModule } from './modules/knowledge-worker/knowledge-worker.module';
 
 /**
@@ -14,7 +14,7 @@ import { KnowledgeWorkerModule } from './modules/knowledge-worker/knowledge-work
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(
-      `${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.cbm.name}`,
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.cbm.name}`),
     ),
     KnowledgeWorkerModule,
   ],

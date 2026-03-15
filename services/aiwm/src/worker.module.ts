@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 
 // Import only modules needed for worker
 import { ExecutionModule } from './modules/execution/execution.module';
@@ -25,7 +25,7 @@ import { InstructionModule } from './modules/instruction/instruction.module';
 
     // Database
     MongooseModule.forRoot(
-      `${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`,
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`),
       {
         connectionFactory: (connection) => {
           console.log('MongoDB connected for Worker');

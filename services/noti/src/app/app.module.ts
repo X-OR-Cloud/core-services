@@ -11,7 +11,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { NotificationModule } from '../modules/notification/notification.module';
 import { QueueModule } from '../queues/queue.module';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 
 @Module({
   imports: [
@@ -19,7 +19,7 @@ import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
       isGlobal: true,
     }),
     MongooseModule.forRoot(
-      `${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.noti.name}`
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.noti.name}`)
     ),
     PassportModule,
     HealthModule,

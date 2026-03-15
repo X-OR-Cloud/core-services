@@ -1,6 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { SERVICE_CONFIG, COMMON_CONFIG } from '@hydrabyte/shared';
+import { SERVICE_CONFIG, COMMON_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { HealthModule, JwtStrategy, CorrelationIdMiddleware } from '@hydrabyte/base';
@@ -16,7 +16,7 @@ import { IamQueueModule } from './queues/queue.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(`${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.iam.name}`),
+    MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.iam.name}`)),
     PassportModule,
     HealthModule,
     IamQueueModule,

@@ -7,14 +7,14 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter, customQueryParser } from '@hydrabyte/base';
-import { SERVICE_CONFIG } from '@hydrabyte/shared';
+import { SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { AppModule } from './app.module';
 import { validateEnvironment } from './core/utils/env-validator.util';
 
 async function bootstrap() {
 
   // initialize SERVICE_CONFIG from environment variables
-  SERVICE_CONFIG.iam.mongodbUri = `${process.env.MONGODB_URI}/${SERVICE_CONFIG.iam.name}`;
+  SERVICE_CONFIG.iam.mongodbUri = buildMongoUri(SERVICE_CONFIG.iam.name);
 
   const app = await NestFactory.create(AppModule);
 

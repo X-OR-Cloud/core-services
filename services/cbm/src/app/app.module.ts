@@ -7,7 +7,7 @@ import {
   JwtStrategy,
   CorrelationIdMiddleware,
 } from '@hydrabyte/base';
-import { COMMON_CONFIG, SERVICE_CONFIG } from '@hydrabyte/shared';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DocumentModule } from '../modules/document/document.module';
@@ -23,7 +23,7 @@ import { KnowledgeChunkModule } from '../modules/knowledge-chunk/knowledge-chunk
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    MongooseModule.forRoot(`${process.env.MONGODB_URI}/${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.cbm.name}`),
+    MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.cbm.name}`)),
     PassportModule,
     HealthModule,
     DocumentModule,

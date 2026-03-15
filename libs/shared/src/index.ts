@@ -9,6 +9,7 @@ export * from './lib/type/service';
 export * from './lib/types/permission.types';
 export * from './lib/types/jwt-payload.types';
 export * from './lib/util/auth';
+export * from './lib/util/mongodb';
 export * from './utils/logger.util';
 
 // WebSocket Protocol Types
