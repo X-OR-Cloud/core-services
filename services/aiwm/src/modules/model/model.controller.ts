@@ -12,14 +12,12 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
-  UniverseRoleGuard,
   CurrentUser,
   PaginationQueryDto,
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
-  RequireUniverseRole,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -79,8 +77,6 @@ export class ModelController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update a model' })
   @ApiUpdateErrors()
-  @RequireUniverseRole()
-  @UseGuards(JwtAuthGuard, UniverseRoleGuard)
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateModelDto,
@@ -93,8 +89,6 @@ export class ModelController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Delete a model (soft delete)' })
   @ApiDeleteErrors()
-  @RequireUniverseRole()
-  @UseGuards(JwtAuthGuard, UniverseRoleGuard)
   async delete(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext
