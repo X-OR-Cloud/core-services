@@ -42,6 +42,8 @@ export interface AgentRunnerConfig {
   heartbeatInternal: (agentId: string, status: 'idle' | 'busy') => Promise<void>;
   /** In-process history fetch — direct DB query, avoids HTTP round-trip */
   getHistoryInternal: (conversationId: string) => Promise<Array<{ role: string; content: string }>>;
+  /** In-process log append — writes to agent.logs (max 100, auto-rotate) */
+  addLogInternal: (agentId: string, message: string, data?: Record<string, unknown>) => Promise<void>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -78,6 +80,11 @@ export class AgentRunner {
     this.heartbeatIntervalMs = Number(config.settings['assistant_heartbeatIntervalMs'] ?? config.settings['hosted_heartbeatIntervalMs'] ?? 30_000);
   }
 
+  /** Fire-and-forget log to agent.logs (never throws) */
+  private writeLog(message: string, data?: Record<string, unknown>) {
+    this.config.addLogInternal(this.config.agentId, message, data).catch(() => {/* silent */});
+  }
+
   start() {
     this.connect();
     this.startHeartbeat();
@@ -97,6 +104,7 @@ export class AgentRunner {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.writeLog('Runner stopped');
     this.logger.log('Stopped');
   }
 
@@ -150,15 +158,18 @@ export class AgentRunner {
     });
 
     this.socket.on('connect', () => {
+      this.writeLog('WebSocket connected', { socketId: this.socket?.id });
       this.logger.log(`Connected | socketId=${this.socket?.id}`);
     });
 
     this.socket.on('connect_error', (err) => {
+      this.writeLog('WebSocket connection error', { error: err.message });
       this.logger.error(`Connection error: ${err.message}`);
       this.scheduleReconnect();
     });
 
     this.socket.on('disconnect', (reason) => {
+      this.writeLog('WebSocket disconnected', { reason });
       this.logger.warn(`Disconnected: ${reason}`);
       if (!this.isShuttingDown) {
         this.scheduleReconnect();
@@ -215,6 +226,7 @@ export class AgentRunner {
       const controller = this.abortMap.get(conversationId);
       if (controller) {
         controller.abort();
+        this.writeLog('/stop — aborted generation', { conversationId });
         this.logger.log(`/stop received — aborted generation for ${conversationId}`);
         this.emitSystemMessage(conversationId, 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.');
       } else {
@@ -231,6 +243,7 @@ export class AgentRunner {
       }
       this.emitSystemMessage(conversationId, 'Đang reload instruction và MCP tools...');
       const ok = await this.reload();
+      this.writeLog(ok ? '/reload succeeded' : '/reload failed', { conversationId });
       this.emitSystemMessage(conversationId, ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.');
       return;
     }
@@ -238,6 +251,7 @@ export class AgentRunner {
     // Concurrency guard
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
     if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
+      this.writeLog('Max concurrency reached — message dropped', { conversationId, activeCount, maxConcurrency: this.maxConcurrency });
       this.logger.warn(`Skipping — conversation ${conversationId} busy or at max concurrency`);
       return;
     }
@@ -296,7 +310,9 @@ export class AgentRunner {
       this.logger.debug(`[model] deployment=${this.config.deployment?.id} model=${this.config.deployment?.model}`);
 
       const { tools, clients: mcpClients } = await this.resolveMcpTools();
-      this.logger.debug(`[tools] resolved=${Object.keys(tools).length} names=[${Object.keys(tools).join(', ')}]`);
+      const toolNames = Object.keys(tools);
+      this.writeLog('MCP tools loaded', { count: toolNames.length, tools: toolNames });
+      this.logger.debug(`[tools] resolved=${toolNames.length} names=[${toolNames.join(', ')}]`);
 
       try {
         this.logger.debug(`[llm] calling generateText conv=${conversationId}`);
@@ -336,6 +352,7 @@ export class AgentRunner {
       if (e?.name === 'AbortError' || abortController.signal.aborted) {
         // Already handled by /stop — no duplicate message
       } else {
+        this.writeLog('Generation error', { conversationId, error: e.message, errorName: e.name });
         this.logger.error(`AI generation error: ${e.message}`, e.stack);
         const isLlmError = e.name === 'AI_APICallError' || e.message?.includes('deployment') || e.message?.includes('Not Found') || e.message?.includes('API key');
         this.emitSystemMessage(
