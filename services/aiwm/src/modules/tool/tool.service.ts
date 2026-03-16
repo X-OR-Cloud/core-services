@@ -121,6 +121,24 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__DoneReminder',
     'mcp__Builtin__DeleteReminder',
   ],
+  BrowserAutomation: [
+    'mcp__Browser__OpenTab',
+    'mcp__Browser__CloseTab',
+    'mcp__Browser__ListTabs',
+    'mcp__Browser__GetTab',
+    'mcp__Browser__Navigate',
+    'mcp__Browser__GetSnapshot',
+    'mcp__Browser__GetText',
+    'mcp__Browser__Screenshot',
+    'mcp__Browser__ExecuteAction',
+    'mcp__Browser__ExecuteActions',
+    'mcp__Browser__Evaluate',
+    'mcp__Browser__GetCookies',
+    'mcp__Browser__SetCookies',
+    'mcp__Browser__ExportPdf',
+    'mcp__Browser__LockTab',
+    'mcp__Browser__UnlockTab',
+  ],
 };
 
 /**

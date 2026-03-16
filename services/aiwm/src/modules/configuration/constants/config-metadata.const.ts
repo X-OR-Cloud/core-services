@@ -384,4 +384,19 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     },
     example: 'http://localhost:3000',
   },
+
+  // =========================================================================
+  // Browser Automation (1 key)
+  // =========================================================================
+  [ConfigKey.PINCHTAB_API_URL]: {
+    key: ConfigKey.PINCHTAB_API_URL,
+    displayName: 'PinchTab API URL',
+    description: 'URL của PinchTab browser automation service. Bật tính năng browser automation cho hosted agents.',
+    dataType: 'url',
+    isRequired: false,
+    validation: {
+      pattern: '^https?://.+',
+    },
+    example: 'http://pinchtab:4000',
+  },
 };

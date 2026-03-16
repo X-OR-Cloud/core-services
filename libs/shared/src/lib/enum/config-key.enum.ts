@@ -59,4 +59,9 @@ export enum ConfigKey {
   CBM_BASE_API_URL = 'cbm.base_api_url',
   IAM_BASE_API_URL = 'iam.base_api_url',
   MONA_BASE_API_URL = 'mona.base_api_url',
+
+  // ==========================================
+  // Browser Automation (1 key)
+  // ==========================================
+  PINCHTAB_API_URL = 'pinchtab.api_url',
 }

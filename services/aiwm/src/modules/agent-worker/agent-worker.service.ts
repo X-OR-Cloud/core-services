@@ -2,9 +2,11 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { createHash } from 'crypto';
+import { ConfigKey } from '@hydrabyte/shared';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
 import { ActionService } from '../action/action.service';
+import { ConfigService } from '../configuration/config.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
 
@@ -48,6 +50,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly lockService: AgentLockService,
     private readonly agentService: AgentService,
     private readonly actionService: ActionService,
+    private readonly configService: ConfigService,
   ) {
     this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
     this.agentIdFilter = process.env.AGENT_IDS
@@ -126,6 +129,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
       );
 
+      const browserApiUrl = await this.configService.getString(ConfigKey.PINCHTAB_API_URL);
+
       const runner = new AgentRunner({
         agentId,
         agentName: agent.name,
@@ -136,6 +141,26 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         mcpServers: mcpServers || {},
         allowedFunctions: allowedFunctions || [],
         wsChatUrl: this.wsChatUrl,
+        browserApiUrl: browserApiUrl ?? undefined,
+        sendFileInternal: async (conversationId, filePath, caption) => {
+          try {
+            const { readFile } = await import('fs/promises');
+            const buf = await readFile(filePath);
+            const base64 = buf.toString('base64');
+            const ext = filePath.split('.').pop() ?? 'bin';
+            const mimeType = ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
+            this.logger.debug(`[browser] sendFile conv=${conversationId} file=${filePath}`);
+            // Emit via runner's socket — runner exposes emitMessage for this purpose
+            this.runners.get(agentId)?.emitMessage(conversationId, {
+              role: 'assistant',
+              type: 'file',
+              content: caption,
+              file: { data: base64, mimeType, filename: filePath.split('/').pop() ?? 'file' },
+            });
+          } catch (err) {
+            this.logger.warn(`sendFileInternal failed: ${(err as Error).message}`);
+          }
+        },
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
           this.agentService.heartbeat(id, { status }, accessToken).then((_r) => _r as unknown as void),

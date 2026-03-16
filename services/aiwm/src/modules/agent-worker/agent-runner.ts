@@ -4,6 +4,9 @@ import { generateText, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createMCPClient } from '@ai-sdk/mcp';
+import { BrowserContext } from './browser/browser.types';
+import { BrowserInstanceManager } from './browser/browser-instance.manager';
+import { createBrowserTools, BROWSER_TOOL_FUNCTIONS } from './browser/browser-mcp.server';
 
 
 export interface McpServerConfig {
@@ -44,6 +47,10 @@ export interface AgentRunnerConfig {
   getHistoryInternal: (conversationId: string) => Promise<Array<{ role: string; content: string }>>;
   /** In-process log append — writes to agent.logs (max 100, auto-rotate) */
   addLogInternal: (agentId: string, level: 'info' | 'warn' | 'error', message: string, data?: Record<string, unknown>) => Promise<void>;
+  /** PinchTab API URL — read from Configuration org-level, provided by AgentWorkerService */
+  browserApiUrl?: string;
+  /** Callback to send file (screenshot/PDF) back to conversation */
+  sendFileInternal?: (conversationId: string, filePath: string, caption: string) => Promise<void>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -72,12 +79,55 @@ export class AgentRunner {
   private readonly heartbeatIntervalMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
+  private browserCtx: BrowserContext | null = null;
+  private browserInstanceManager: BrowserInstanceManager | null = null;
+
   constructor(private config: AgentRunnerConfig) {
     this.logger = new Logger(`AgentRunner[${config.agentName}]`);
     this.maxConcurrency = Number(config.settings['assistant_maxConcurrency'] ?? config.settings['hosted_maxConcurrency'] ?? 5);
     this.reconnectDelayMs = Number(config.settings['assistant_reconnectDelayMs'] ?? config.settings['hosted_reconnectDelayMs'] ?? 5_000);
     this.maxSteps = Number(config.settings['assistant_maxSteps'] ?? config.settings['hosted_maxSteps'] ?? 10);
     this.heartbeatIntervalMs = Number(config.settings['assistant_heartbeatIntervalMs'] ?? config.settings['hosted_heartbeatIntervalMs'] ?? 30_000);
+
+    this.initBrowser();
+  }
+
+  private initBrowser() {
+    if (!this.config.browserApiUrl) return;
+
+    const hasBrowserFunction = this.config.allowedFunctions.some((f) =>
+      (BROWSER_TOOL_FUNCTIONS as readonly string[]).includes(f),
+    );
+    if (!hasBrowserFunction) return;
+
+    this.browserCtx = {
+      instanceId: null,
+      conversationId: null,
+      config: {
+        apiUrl: this.config.browserApiUrl,
+        mode: 'headless',
+        width: 1280,
+        height: 720,
+        navigateTimeout: 30,
+        blockImages: false,
+        screenshotQuality: 80,
+        snapshotDepth: 3,
+        snapshotMaxTokens: 2000,
+        lockTtl: 60,
+      },
+      sendFile: async (conversationId, filePath, caption) => {
+        if (this.config.sendFileInternal) {
+          await this.config.sendFileInternal(conversationId, filePath, caption);
+        }
+      },
+    };
+
+    this.browserInstanceManager = new BrowserInstanceManager(this.browserCtx);
+    // Non-blocking — agent continues while browser starts
+    this.browserInstanceManager.start().catch((err) => {
+      this.logger.warn(`Browser init error: ${(err as Error).message}`);
+    });
+    this.logger.log('Browser automation enabled (PinchTab)');
   }
 
   /** Fire-and-forget log to agent.logs (never throws) */
@@ -103,6 +153,9 @@ export class AgentRunner {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+    }
+    if (this.browserInstanceManager) {
+      this.browserInstanceManager.stop().catch(() => {/* silent */});
     }
     this.writeLog('info', 'Runner stopped');
     this.logger.log('Stopped');
@@ -138,6 +191,12 @@ export class AgentRunner {
       type: 'system',
       content,
     });
+  }
+
+  /** Emit an arbitrary message payload — used by sendFileInternal callback */
+  emitMessage(conversationId: string, payload: Record<string, unknown>) {
+    if (!this.socket?.connected) return;
+    this.socket.emit('message:send', { conversationId, ...payload });
   }
 
   reconnect() {
@@ -306,6 +365,11 @@ export class AgentRunner {
         return;
       }
 
+      // Sync conversationId into browserCtx so Screenshot/PDF tools know where to send files
+      if (this.browserCtx) {
+        this.browserCtx.conversationId = conversationId;
+      }
+
       const model = this.buildModel();
       this.logger.debug(`[model] deployment=${this.config.deployment?.id} model=${this.config.deployment?.model}`);
 
@@ -437,6 +501,15 @@ export class AgentRunner {
         }
       }),
     );
+
+    // Merge in-process browser tools if browser automation is enabled and instance is ready
+    if (this.browserCtx?.instanceId) {
+      const browserTools = createBrowserTools(this.browserCtx);
+      for (const [toolName, toolDef] of Object.entries(browserTools)) {
+        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        toolMap[toolName] = toolDef;
+      }
+    }
 
     return { tools: toolMap, clients };
   }
