@@ -76,20 +76,38 @@ export class RoutingService {
   }
 
   private _matchRoute(msg: NormalizedInbound, routes: ConnectionRoute[]): ConnectionRoute | null {
-    for (const route of routes) {
+    this.logger.debug(
+      `Matching msg: provider=${msg.provider} guildId=${msg.guildId} channelId=${msg.channelId} isMention=${msg.isMention} against ${routes.length} route(s)`,
+    );
+
+    for (let i = 0; i < routes.length; i++) {
+      const route = routes[i];
+
       // guildId filter (Discord only)
-      if (route.guildId && msg.guildId !== route.guildId) continue;
+      if (route.guildId && msg.guildId !== route.guildId) {
+        this.logger.debug(`Route[${i}] skip: guildId mismatch (route=${route.guildId}, msg=${msg.guildId})`);
+        continue;
+      }
 
       // channelId filter
-      if (route.channelId && msg.channelId !== route.channelId) continue;
+      if (route.channelId && msg.channelId !== route.channelId) {
+        this.logger.debug(`Route[${i}] skip: channelId mismatch (route=${route.channelId}, msg=${msg.channelId})`);
+        continue;
+      }
 
       // requireMention filter
-      if (route.requireMention && !msg.isMention) continue;
+      if (route.requireMention && !msg.isMention) {
+        this.logger.debug(`Route[${i}] skip: requireMention=true but isMention=false`);
+        continue;
+      }
 
+      this.logger.debug(`Route[${i}] matched: agentId=${route.agentId}`);
       return route;
     }
 
     // Fallback: first route with no filters (catch-all)
-    return routes.find((r) => !r.guildId && !r.channelId) ?? null;
+    const catchAll = routes.find((r) => !r.guildId && !r.channelId) ?? null;
+    this.logger.debug(catchAll ? `Fallback catch-all matched: agentId=${catchAll.agentId}` : 'No catch-all route found');
+    return catchAll;
   }
 }
