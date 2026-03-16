@@ -556,3 +556,40 @@ export class AnonymousTokenListResponseDto {
   @ApiProperty({ description: 'Total number of tokens' })
   total!: number;
 }
+
+/**
+ * DTO for adding a debug log entry to an agent
+ */
+export class AddAgentLogDto {
+  @ApiProperty({ description: 'Log message', example: 'Agent started task execution' })
+  @IsString()
+  @IsNotEmpty()
+  message!: string;
+
+  @ApiPropertyOptional({ description: 'Additional structured data', example: { taskId: 'abc123', step: 1 } })
+  @IsOptional()
+  @IsObject()
+  data?: Record<string, any>;
+}
+
+/**
+ * Single log entry response
+ */
+export class AgentLogEntryDto {
+  @ApiProperty({ description: 'Log message' })
+  message!: string;
+
+  @ApiProperty({ description: 'Log timestamp' })
+  time!: Date;
+
+  @ApiPropertyOptional({ description: 'Additional structured data' })
+  data?: Record<string, any>;
+}
+
+/**
+ * Response DTO for agent logs
+ */
+export class AgentLogsResponseDto {
+  @ApiProperty({ type: [AgentLogEntryDto] })
+  logs!: AgentLogEntryDto[];
+}

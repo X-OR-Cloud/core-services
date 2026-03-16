@@ -25,6 +25,12 @@ export interface AnonymousTokenEntry {
   revokedAt?: Date;
 }
 
+export interface AgentLog {
+  message: string;
+  time: Date;
+  data?: Record<string, any>;
+}
+
 
 export type AgentDocument = Agent & Document;
 
@@ -160,6 +166,20 @@ export class Agent extends BaseSchema {
     select: false,
   })
   anonymousTokens: AnonymousTokenEntry[];
+
+  // Debug logs (max 100, rotate via $push + $slice)
+  @Prop({
+    type: [
+      {
+        message: { type: String, required: true },
+        time: { type: Date, required: true },
+        data: { type: Object },
+      },
+    ],
+    default: [],
+    select: false,
+  })
+  logs: AgentLog[];
 
   // Connection tracking
   @Prop()

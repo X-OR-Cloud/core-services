@@ -17,6 +17,8 @@ import {
   AnonymousTokenListResponseDto,
   PreviewInstructionQueryDto,
   UpdateAgentInstructionDto,
+  AddAgentLogDto,
+  AgentLogsResponseDto,
 } from './agent.dto';
 
 @ApiTags('agents')
@@ -352,5 +354,34 @@ export class AgentController {
   ): Promise<AgentCredentialsResponseDto> {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     return this.agentService.regenerateCredentials(resolvedId, context);
+  }
+
+  // ─── Debug Logs ──────────────────────────────────────────────────────────────
+
+  @Post(':id/logs')
+  @ApiOperation({ summary: 'Add agent log', description: 'Append a debug log entry to an agent (max 100, auto-rotate)' })
+  @ApiResponse({ status: 201, description: 'Log entry added' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async addLog(
+    @Param('id') id: string,
+    @Body() dto: AddAgentLogDto,
+    @CurrentUser() context: RequestContext,
+  ): Promise<{ success: boolean }> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.addLog(resolvedId, dto, context);
+  }
+
+  @Get(':id/logs')
+  @ApiOperation({ summary: 'Get agent logs', description: 'Retrieve debug logs of an agent (not included in GET /agents or GET /agents/:id)' })
+  @ApiResponse({ status: 200, description: 'Agent logs', type: AgentLogsResponseDto })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async getLogs(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<AgentLogsResponseDto> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.getLogs(resolvedId, context);
   }
 }

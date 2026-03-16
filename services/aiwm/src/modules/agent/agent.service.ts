@@ -35,6 +35,8 @@ import {
   AnonymousTokenResponseDto,
   AnonymousTokenEntryDto,
   AnonymousTokenListResponseDto,
+  AddAgentLogDto,
+  AgentLogsResponseDto,
 } from './agent.dto';
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -2122,6 +2124,60 @@ echo "Installation script placeholder - implement actual logic"
     );
 
     return true;
+  }
+
+  /**
+   * Append a debug log entry to an agent (max 100, auto-rotate)
+   */
+  async addLog(
+    agentId: string,
+    dto: AddAgentLogDto,
+    context: RequestContext
+  ): Promise<{ success: boolean }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    this.checkPermission(agent, context);
+
+    await this.agentModel.updateOne(
+      { _id: new Types.ObjectId(agentId) },
+      {
+        $push: {
+          logs: {
+            $each: [{ message: dto.message, time: new Date(), data: dto.data }],
+            $slice: -100,
+          },
+        },
+      }
+    );
+
+    return { success: true };
+  }
+
+  /**
+   * Get all debug logs of an agent
+   */
+  async getLogs(
+    agentId: string,
+    context: RequestContext
+  ): Promise<AgentLogsResponseDto> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .select('+logs')
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    this.checkPermission(agent, context);
+
+    return { logs: agent.logs ?? [] };
   }
 
   /**
