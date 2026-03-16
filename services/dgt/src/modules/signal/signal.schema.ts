@@ -86,6 +86,16 @@ export class Signal extends BaseSchema {
 
 export const SignalSchema = SchemaFactory.createForClass(Signal);
 
+// Virtual fields for FE compatibility (spec uses `symbol` and `action`)
+SignalSchema.virtual('symbol').get(function () {
+  return this.asset;
+});
+SignalSchema.virtual('action').get(function () {
+  return this.signalType;
+});
+SignalSchema.set('toJSON', { virtuals: true });
+SignalSchema.set('toObject', { virtuals: true });
+
 SignalSchema.index({ accountId: 1, asset: 1, timeframe: 1, status: 1 });
 SignalSchema.index({ accountId: 1, createdAt: -1 });
 SignalSchema.index({ status: 1, expiresAt: 1 });

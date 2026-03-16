@@ -8,9 +8,35 @@ import { Bot, BotStatus } from './bot.schema';
 @Injectable()
 export class BotService extends BaseService<Bot> {
   constructor(
-    @InjectModel(Bot.name) botModel: Model<Bot>,
+    @InjectModel(Bot.name) private readonly botModel: Model<Bot>,
   ) {
     super(botModel as any);
+  }
+
+  async getStats(userId: string): Promise<{
+    activeBots: number;
+    totalPnl: number;
+    activeVolume: number;
+    totalVolume: number;
+  }> {
+    const bots = await this.botModel
+      .find({ 'owner.userId': userId, isDeleted: false })
+      .lean()
+      .exec();
+
+    const activeBots = bots.filter((b) => b.status === BotStatus.RUNNING).length;
+    const totalPnl = bots.reduce((s, b) => s + (b.stats?.totalPnl || 0), 0);
+    const activeVolume = bots
+      .filter((b) => b.status === BotStatus.RUNNING)
+      .reduce((s, b) => s + (b.totalCapital || 0), 0);
+    const totalVolume = bots.reduce((s, b) => s + (b.stats?.totalTrades || 0) * (b.maxEntrySize || 0), 0);
+
+    return {
+      activeBots,
+      totalPnl: Math.round(totalPnl * 100) / 100,
+      activeVolume: Math.round(activeVolume * 100) / 100,
+      totalVolume: Math.round(totalVolume * 100) / 100,
+    };
   }
 
   validateTransition(currentStatus: BotStatus, newStatus: BotStatus): void {

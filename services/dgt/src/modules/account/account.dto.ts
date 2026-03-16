@@ -34,6 +34,16 @@ export class CreateAccountDto {
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+
+  @ApiProperty({ required: false, description: 'API Key from exchange (required for live accounts)' })
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @ApiProperty({ required: false, description: 'API Secret from exchange — encrypted at rest, never returned' })
+  @IsString()
+  @IsOptional()
+  apiSecret?: string;
 }
 
 export class NotificationsConfigDto {
@@ -78,6 +88,16 @@ export class UpdateAccountDto {
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+
+  @ApiProperty({ required: false, description: 'New API Key — must be provided together with apiSecret' })
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @ApiProperty({ required: false, description: 'New API Secret — must be provided together with apiKey' })
+  @IsString()
+  @IsOptional()
+  apiSecret?: string;
 
   @ApiProperty({ required: false, type: NotificationsConfigDto })
   @ValidateNested()

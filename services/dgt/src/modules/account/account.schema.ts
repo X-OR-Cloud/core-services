@@ -47,6 +47,12 @@ export class Account extends BaseSchema {
   @Prop({ required: true, default: false })
   isDefault: boolean;
 
+  @Prop({ default: '' })
+  apiKey: string;
+
+  @Prop({ default: '' })
+  apiSecret: string;
+
   @Prop({
     type: {
       discordWebhookUrl: { type: String, default: '' },

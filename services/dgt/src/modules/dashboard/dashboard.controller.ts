@@ -38,4 +38,47 @@ export class DashboardController {
   ) {
     return this.dashboardService.getPortfolioHistory(ctx.userId, range);
   }
+
+  @Get('ai-signal')
+  @ApiOperation({ summary: 'AI Trend Signal widget — BULLISH/BEARISH/NEUTRAL with confidence' })
+  @ApiQuery({ name: 'timeframe', required: false, enum: ['1h', '4h', '12h', '24h'], example: '4h' })
+  @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
+  getAiSignal(
+    @CurrentUser() ctx: RequestContext,
+    @Query('timeframe') timeframe = '4h',
+    @Query('symbol') symbol = 'PAXGUSDT',
+  ) {
+    return this.dashboardService.getAiSignal(ctx.userId, symbol, timeframe);
+  }
+
+  @Get('market-status')
+  @ApiOperation({ summary: 'Market Status widget — trend, volatility, liquidity' })
+  @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
+  getMarketStatus(@Query('symbol') symbol = 'PAXGUSDT') {
+    return this.dashboardService.getMarketStatus(symbol);
+  }
+
+  @Get('macro-context')
+  @ApiOperation({ summary: 'Macro Context widget — DXY, VIX, Real Yield, Trade Gate' })
+  getMacroContext() {
+    return this.dashboardService.getMacroContext();
+  }
+
+  @Get('market-indicators')
+  @ApiOperation({ summary: 'Market Indicators widget — RSI, Fear & Greed, Support/Resistance' })
+  @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
+  getMarketIndicators(@Query('symbol') symbol = 'PAXGUSDT') {
+    return this.dashboardService.getMarketIndicators(symbol);
+  }
+
+  @Get('ai-activity')
+  @ApiOperation({ summary: 'AI Activity Feed — recent bot activity logs (poll every 30s)' })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'since', required: false, description: 'ISO 8601 timestamp for incremental updates' })
+  getAiActivity(
+    @Query('limit') limit = '20',
+    @Query('since') since?: string,
+  ) {
+    return this.dashboardService.getAiActivity(parseInt(limit, 10) || 20, since);
+  }
 }

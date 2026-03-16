@@ -4,6 +4,10 @@ import { Model, Types } from 'mongoose';
 import { Account, AccountDocument, AccountStatus } from '../account/account.schema';
 import { Position, PositionDocument, PositionStatus } from '../position/position.schema';
 import { MarketPrice, MarketPriceDocument } from '../market-price/market-price.schema';
+import { TechnicalIndicator, TechnicalIndicatorDocument } from '../technical-indicator/technical-indicator.schema';
+import { MacroIndicator, MacroIndicatorDocument } from '../macro-indicator/macro-indicator.schema';
+import { Signal, SignalDocument, SignalStatus, SignalType } from '../signal/signal.schema';
+import { BotActivityLog, BotActivityLogDocument } from '../bot-activity-log/bot-activity-log.schema';
 import { PortfolioSnapshotService } from '../portfolio-snapshot/portfolio-snapshot.service';
 import { PortfolioSnapshot } from '../portfolio-snapshot/portfolio-snapshot.schema';
 
@@ -15,6 +19,10 @@ export class DashboardService {
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(Position.name) private readonly positionModel: Model<PositionDocument>,
     @InjectModel(MarketPrice.name) private readonly marketPriceModel: Model<MarketPriceDocument>,
+    @InjectModel(TechnicalIndicator.name) private readonly technicalIndicatorModel: Model<TechnicalIndicatorDocument>,
+    @InjectModel(MacroIndicator.name) private readonly macroIndicatorModel: Model<MacroIndicatorDocument>,
+    @InjectModel(Signal.name) private readonly signalModel: Model<SignalDocument>,
+    @InjectModel(BotActivityLog.name) private readonly botActivityLogModel: Model<BotActivityLogDocument>,
     private readonly snapshotService: PortfolioSnapshotService,
   ) {}
 
@@ -121,6 +129,206 @@ export class DashboardService {
         changePct,
       },
     };
+  }
+
+  async getAiSignal(userId: string, symbol: string, timeframe: string) {
+    const account = await this.getDefaultAccount(userId);
+    const accountId = account._id as Types.ObjectId;
+
+    const signal = await this.signalModel
+      .findOne({ accountId, asset: symbol, timeframe, status: SignalStatus.ACTIVE })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    if (!signal) {
+      return {
+        signal: 'NEUTRAL',
+        confidence: 0,
+        timeframe,
+        symbol,
+        updatedAt: new Date(),
+        components: { technicalSignal: 'NEUTRAL', liquiditySignal: 'NEUTRAL', volumeSignal: 'NEUTRAL' },
+      };
+    }
+
+    const signalLabel = signal.signalType === SignalType.BUY ? 'BULLISH'
+      : signal.signalType === SignalType.SELL ? 'BEARISH'
+      : 'NEUTRAL';
+
+    const ti = await this.technicalIndicatorModel
+      .findOne({ symbol, timeframe })
+      .sort({ timestamp: -1 })
+      .lean()
+      .exec();
+
+    const technicalSignal = ti
+      ? (ti.rsi14 > 60 ? 'BULLISH' : ti.rsi14 < 40 ? 'BEARISH' : 'NEUTRAL')
+      : 'NEUTRAL';
+    const volumeSignal = ti
+      ? (ti.volumeRatio > 1.2 ? 'BULLISH' : ti.volumeRatio < 0.8 ? 'BEARISH' : 'NEUTRAL')
+      : 'NEUTRAL';
+
+    return {
+      signal: signalLabel,
+      confidence: signal.confidence,
+      timeframe,
+      symbol,
+      updatedAt: signal.createdAt || new Date(),
+      components: {
+        technicalSignal,
+        liquiditySignal: 'NEUTRAL',
+        volumeSignal,
+      },
+    };
+  }
+
+  async getMarketStatus(symbol: string) {
+    const ti = await this.technicalIndicatorModel
+      .findOne({ symbol, timeframe: '1h' })
+      .sort({ timestamp: -1 })
+      .lean()
+      .exec();
+
+    if (!ti) {
+      return { symbol, trend: 'RANGING', volatilityLevel: 'MEDIUM', volatilityScore: 50, liquidityScore: 50, liquidityLabel: 'MEDIUM', bidAskSpread: 0, slippageEstimate: 0, updatedAt: new Date() };
+    }
+
+    const atrPct = ti.atr14Pct || 0;
+    const volatilityScore = Math.min(100, Math.round(atrPct * 50));
+    const volatilityLevel = atrPct > 2 ? 'HIGH' : atrPct > 1 ? 'MEDIUM' : 'LOW';
+
+    const volumeRatio = ti.volumeRatio || 1;
+    const liquidityScore = Math.min(100, Math.round(volumeRatio * 50));
+    const liquidityLabel = liquidityScore > 65 ? 'HIGH' : liquidityScore > 35 ? 'MEDIUM' : 'LOW';
+
+    const macdHist = ti.macdHistogram || 0;
+    const trend = atrPct > 2 ? 'VOLATILE' : Math.abs(macdHist) > 0.5 ? 'TRENDING' : 'RANGING';
+
+    const bidAskSpread = Math.round(atrPct * 0.05 * 100) / 100;
+    const slippageEstimate = Math.round(atrPct * 0.03 * 100) / 100;
+
+    return {
+      symbol,
+      trend,
+      volatilityLevel,
+      volatilityScore,
+      liquidityScore,
+      liquidityLabel,
+      bidAskSpread,
+      slippageEstimate,
+      updatedAt: ti.timestamp,
+    };
+  }
+
+  async getMacroContext() {
+    const seriesIds = ['DXY', 'VIXCLS', 'DFII10'];
+    const indicators = await Promise.all(
+      seriesIds.map((id) =>
+        this.macroIndicatorModel.findOne({ seriesId: id }).sort({ timestamp: -1 }).lean().exec(),
+      ),
+    );
+
+    const [dxy, vix, realYield] = indicators;
+
+    const vixValue = vix?.value || 0;
+    const vixLevel = vixValue > 30 ? 'HIGH' : vixValue > 20 ? 'MODERATE' : 'LOW';
+
+    const macroRiskScore = Math.min(100, Math.round((vixValue / 50) * 100));
+    const macroRiskLabel = macroRiskScore > 75 ? 'EXTREME' : macroRiskScore > 50 ? 'HIGH' : macroRiskScore > 25 ? 'MODERATE' : 'LOW';
+    const tradeGate = macroRiskScore > 75 ? 'BLOCKED' : 'OPEN';
+
+    return {
+      tradeGate,
+      macroRiskScore,
+      macroRiskLabel,
+      indicators: {
+        dxy: { value: dxy?.value || null, change24h: null, label: 'USD Index' },
+        vix: { value: vix?.value || null, level: vixLevel, label: 'Market Stress (VIX)' },
+        realYield10y: { value: realYield?.value || null, label: 'US 10Y Real Yield' },
+      },
+      upcomingEvents: [],
+      updatedAt: new Date(),
+    };
+  }
+
+  async getMarketIndicators(symbol: string) {
+    const ti = await this.technicalIndicatorModel
+      .findOne({ symbol, timeframe: '1h' })
+      .sort({ timestamp: -1 })
+      .lean()
+      .exec();
+
+    const rsi14 = ti?.rsi14 || 50;
+    const rsiLevel = rsi14 > 70 ? 'OVERBOUGHT'
+      : rsi14 > 60 ? 'APPROACHING_OVERBOUGHT'
+      : rsi14 < 30 ? 'OVERSOLD'
+      : 'NEUTRAL';
+
+    const atrPct = ti?.atr14Pct || 0;
+
+    // Fear & Greed approximation from RSI + volume
+    const fearGreedIndex = Math.min(100, Math.max(0, Math.round((rsi14 - 30) * (100 / 40))));
+    const fearGreedLabel = fearGreedIndex > 75 ? 'Extreme Greed'
+      : fearGreedIndex > 55 ? 'Greed'
+      : fearGreedIndex > 45 ? 'Neutral'
+      : fearGreedIndex > 25 ? 'Fear'
+      : 'Extreme Fear';
+
+    const support = ti?.bbLower || null;
+    const resistance = ti?.bbUpper || null;
+
+    return {
+      symbol,
+      timeframe: '24h',
+      volatility24hPct: Math.round(atrPct * 100) / 100,
+      rsi14: Math.round(rsi14 * 10) / 10,
+      rsiLevel,
+      fearGreedIndex,
+      fearGreedLabel,
+      support,
+      resistance,
+      updatedAt: ti?.timestamp || new Date(),
+    };
+  }
+
+  async getAiActivity(limit: number, since?: string) {
+    const query: any = {};
+    if (since) {
+      query.createdAt = { $gt: new Date(since) };
+    }
+
+    const logs = await this.botActivityLogModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec();
+
+    const agentMap: Record<string, string> = {
+      buy: 'TREND',
+      sell: 'TREND',
+      info: 'NEURAL',
+      warning: 'RISK',
+      error: 'RISK',
+    };
+    const severityMap: Record<string, string> = {
+      SUCCESS: 'INFO',
+      INFO: 'INFO',
+      WARNING: 'WARNING',
+      ERROR: 'ALERT',
+    };
+
+    const entries = logs.map((log) => ({
+      id: (log._id as Types.ObjectId).toString(),
+      timestamp: log.createdAt,
+      agent: agentMap[log.actionType] || 'NEURAL',
+      message: log.action,
+      severity: severityMap[log.status] || 'INFO',
+      metadata: log.metadata || {},
+    }));
+
+    return { entries, hasMore: false };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

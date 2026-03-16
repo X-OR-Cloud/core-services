@@ -1,10 +1,13 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { BullModule } from '@nestjs/bullmq';
 import { PassportModule } from '@nestjs/passport';
 import { HealthModule, JwtStrategy, CorrelationIdMiddleware } from '@hydrabyte/base';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { redisConfig } from '../config/redis.config';
+import { IamEventsModule } from '../queues/iam-events.module';
 
 // Group 1: User & Account
 import { AccountModule } from '../modules/account/account.module';
@@ -42,8 +45,10 @@ import { SignalModule } from '../modules/signal/signal.module';
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
       { dbName: 'core_dgt' },
     ),
+    BullModule.forRoot({ connection: redisConfig }),
     PassportModule,
     HealthModule,
+    IamEventsModule,
 
     // Group 1: User & Account
     AccountModule,

@@ -58,6 +58,14 @@ export class BotController {
     return this.botService.findAll(options, context);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: 'Aggregate stats across all bots for current user' })
+  @ApiResponse({ status: 200, description: 'Bot stats retrieved successfully' })
+  @UseGuards(JwtAuthGuard)
+  async getStats(@CurrentUser() context: RequestContext) {
+    return this.botService.getStats(context.userId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get bot by ID' })
   @ApiResponse({ status: 200, description: 'Bot found' })
