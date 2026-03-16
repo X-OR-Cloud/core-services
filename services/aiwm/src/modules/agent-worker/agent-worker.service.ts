@@ -9,6 +9,7 @@ import { ActionService } from '../action/action.service';
 import { ConfigService } from '../configuration/config.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
+import { CbmKnowledgeService } from './cbm-knowledge.service';
 
 /** Hash the fields that actually affect runner behavior */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +52,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly agentService: AgentService,
     private readonly actionService: ActionService,
     private readonly configService: ConfigService,
+    private readonly cbmKnowledgeService: CbmKnowledgeService,
   ) {
     this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
     this.agentIdFilter = process.env.AGENT_IDS
@@ -123,7 +125,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
       const connectResp = await this.agentService.connectInternal(agentId);
 
-      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions } = connectResp;
+      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections } = connectResp;
 
       this.logger.debug(
         `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
@@ -179,6 +181,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         },
         addLogInternal: (id, level, message, data) =>
           this.agentService.addLog(id, { level, message, data }).then(() => undefined),
+        ragEnabled: ragEnabled ?? false,
+        ragCollections: ragCollections ?? [],
+        searchKnowledgeInternal: (collectionId, query, topK, minScore) =>
+          this.cbmKnowledgeService.search(collectionId, query, topK, minScore, accessToken),
       });
 
       runner.start();

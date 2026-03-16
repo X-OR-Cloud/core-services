@@ -30,7 +30,7 @@ import { ConnectionService } from './connection.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { ConnectionRouteDto } from './dto/create-connection.dto';
-import { Connection } from './connection.schema';
+import { Connection, ConnectionLog } from './connection.schema';
 
 @ApiTags('Connections')
 @Controller('connections')
@@ -88,6 +88,17 @@ export class ConnectionController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.connectionService.softDelete(id, context);
+  }
+
+  @Get(':id/logs')
+  @ApiOperation({ summary: 'Get connection logs', description: 'Retrieve lifecycle debug logs (max 200, auto-rotated)' })
+  @ApiReadErrors()
+  async getLogs(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<{ logs: ConnectionLog[] }> {
+    const logs = await this.connectionService.getLogs(id, context);
+    return { logs };
   }
 
   @Post(':id/routes')

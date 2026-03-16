@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { BaseSchema } from '@hydrabyte/base';
 
 export type ChannelPlatform = 'discord' | 'telegram';
@@ -184,6 +184,25 @@ export class Agent extends BaseSchema {
     select: false,
   })
   logs: AgentLog[];
+
+  // RAG configuration
+  @Prop({ default: false })
+  ragEnabled: boolean;
+
+  @Prop({ type: [{ type: Types.ObjectId }], default: [] })
+  ragCollectionIds: Types.ObjectId[];
+
+  @Prop({
+    type: {
+      topK: { type: Number, default: 5 },
+      minScore: { type: Number, default: 0.7 },
+    },
+    default: () => ({ topK: 5, minScore: 0.7 }),
+  })
+  ragSettings: {
+    topK: number;
+    minScore: number;
+  };
 
   // Connection tracking
   @Prop()

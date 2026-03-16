@@ -434,6 +434,12 @@ export class AgentService extends BaseService<Agent> {
       framework: agent.framework,
       settings: agent.settings || {},
       channels: agent.channels || [],
+      ragEnabled: agent.ragEnabled ?? false,
+      ragCollections: (agent.ragCollectionIds || []).map((id) => ({
+        collectionId: id.toString(),
+        topK: agent.ragSettings?.topK ?? 5,
+        minScore: agent.ragSettings?.minScore ?? 0.7,
+      })),
     };
 
     // For autonomous and hosted agents, populate deployment info
@@ -644,6 +650,13 @@ export class AgentService extends BaseService<Agent> {
     };
 
     // Prepare response
+    // Build RAG collections config
+    const ragCollections = (agent.ragCollectionIds || []).map((id) => ({
+      collectionId: id.toString(),
+      topK: agent.ragSettings?.topK ?? 5,
+      minScore: agent.ragSettings?.minScore ?? 0.7,
+    }));
+
     const response: AgentConnectResponseDto = {
       id: agentId,
       name: agent.name,
@@ -659,6 +672,8 @@ export class AgentService extends BaseService<Agent> {
       framework: agent.framework,
       settings: agent.settings || {},
       channels: agent.channels || [],
+      ragEnabled: agent.ragEnabled ?? false,
+      ragCollections,
     };
 
     // For autonomous and hosted agents, populate deployment info

@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Connection } from './connection.schema';
+import { Connection, ConnectionLog, ConnectionLogLevel } from './connection.schema';
 
 @Injectable()
 export class ConnectionService extends BaseService<Connection> {
@@ -86,6 +86,38 @@ export class ConnectionService extends BaseService<Connection> {
     await (connection as any).save();
 
     return connection;
+  }
+
+  async addLog(
+    id: string,
+    level: ConnectionLogLevel,
+    message: string,
+    data?: Record<string, any>,
+  ): Promise<void> {
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(id), isDeleted: false },
+      {
+        $push: {
+          logs: {
+            $each: [{ level, message, time: new Date(), data }],
+            $slice: -200,
+          },
+        },
+      },
+    );
+  }
+
+  async getLogs(id: string, context: RequestContext): Promise<ConnectionLog[]> {
+    const connection = await this.model
+      .findOne({ _id: new Types.ObjectId(id), isDeleted: false, 'owner.orgId': context.orgId })
+      .select('+logs')
+      .exec();
+
+    if (!connection) {
+      throw new NotFoundException(`Connection ${id} not found`);
+    }
+
+    return connection.logs ?? [];
   }
 
   async removeRoute(id: string, routeIndex: number, context: RequestContext): Promise<Connection> {

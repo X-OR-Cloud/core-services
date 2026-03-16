@@ -6,6 +6,14 @@ export type ConnectionDocument = Connection & Document;
 
 export type ConnectionProvider = 'discord' | 'telegram';
 export type ConnectionStatus = 'active' | 'inactive' | 'error';
+export type ConnectionLogLevel = 'info' | 'warn' | 'error';
+
+export interface ConnectionLog {
+  level: ConnectionLogLevel;
+  message: string;
+  time: Date;
+  data?: Record<string, any>;
+}
 
 export interface ConnectionConfig {
   botToken: string;
@@ -50,6 +58,20 @@ export class Connection extends BaseSchema {
 
   @Prop({ type: [Object], default: [] })
   routes: ConnectionRoute[];
+
+  @Prop({
+    type: [
+      {
+        level: { type: String, enum: ['info', 'warn', 'error'], required: true, default: 'info' },
+        message: { type: String, required: true },
+        time: { type: Date, required: true },
+        data: { type: Object },
+      },
+    ],
+    default: [],
+    select: false,
+  })
+  logs: ConnectionLog[];
 
   // owner.orgId, owner.userId from BaseSchema
 }

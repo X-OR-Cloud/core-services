@@ -6,6 +6,7 @@ import { ActionModule } from '../action/action.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { AgentWorkerService } from './agent-worker.service';
 import { AgentLockService } from './agent-lock.service';
+import { CbmKnowledgeService } from './cbm-knowledge.service';
 
 @Module({
   imports: [
@@ -14,6 +15,6 @@ import { AgentLockService } from './agent-lock.service';
     ActionModule,
     ConfigurationModule,
   ],
-  providers: [AgentLockService, AgentWorkerService],
+  providers: [AgentLockService, AgentWorkerService, CbmKnowledgeService],
 })
 export class AgentWorkerModule {}

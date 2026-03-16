@@ -22,6 +22,8 @@ export interface AgentConnectResult {
   settings: Record<string, unknown>;
   mcpServers?: Record<string, McpServerConfig>;
   allowedFunctions?: string[];
+  ragEnabled?: boolean;
+  ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
 }
 
 export interface AgentRunnerConfig {
@@ -51,6 +53,12 @@ export interface AgentRunnerConfig {
   browserApiUrl?: string;
   /** Callback to send file (screenshot/PDF) back to conversation */
   sendFileInternal?: (conversationId: string, filePath: string, caption: string) => Promise<void>;
+  /** Whether RAG is enabled for this agent */
+  ragEnabled?: boolean;
+  /** RAG collection configs to search for context before LLM call */
+  ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
+  /** In-process RAG search callback — calls CBM knowledge search API */
+  searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string }>>;
 }
 
 /** Slash commands supported by hosted agents */
@@ -352,6 +360,9 @@ export class AgentRunner {
         this.logger.debug(`  [history:${m.role}] "${preview}${String(m.content ?? '').length > 60 ? '...' : ''}"`);
       }
 
+      // RAG: inject knowledge context into the last user message before LLM call
+      history = await this.augmentWithRagContext(history, content);
+
       const systemPrompt = this.config.instruction?.systemPrompt ?? '';
       this.logger.debug(`[system] instructionId=${this.config.instruction?.id} promptLen=${systemPrompt.length} prompt="${systemPrompt.slice(0, 120).replace(/\n/g, '\\n')}..."`);
 
@@ -557,5 +568,61 @@ export class AgentRunner {
       this.logger.warn(`Failed to fetch history: ${(err as Error).message}`);
       return [];
     }
+  }
+
+  /**
+   * RAG: inject knowledge context into the last user message.
+   * Two-layer filter:
+   *   1. Heuristic — skip if RAG disabled, no collections, short message, or slash command
+   *   2. Vector search — minScore filter in CbmKnowledgeService acts as relevance gate
+   */
+  private async augmentWithRagContext(history: any[], userContent: string): Promise<any[]> {
+    // Tầng 1: Heuristic checks (0 cost)
+    if (!this.config.ragEnabled) return history;
+    if (!this.config.ragCollections?.length) return history;
+    if (!this.config.searchKnowledgeInternal) return history;
+    if (userContent.length < 15) return history;
+    if (userContent.startsWith('/')) return history;
+
+    // Tầng 2: Vector search across all collections
+    const allChunks: Array<{ score: number; content: string }> = [];
+    for (const col of this.config.ragCollections) {
+      const results = await this.config.searchKnowledgeInternal(
+        col.collectionId,
+        userContent,
+        col.topK,
+        col.minScore,
+      );
+      allChunks.push(...results);
+    }
+
+    if (!allChunks.length) return history;
+
+    // Sort by score desc, cap at max topK across collections
+    const maxTopK = Math.max(...this.config.ragCollections.map((c) => c.topK));
+    const topChunks = allChunks.sort((a, b) => b.score - a.score).slice(0, maxTopK);
+
+    // Build XML context block
+    const contextBlock = [
+      '<knowledge_context>',
+      ...topChunks.map(
+        (c, i) => `<source id="${i + 1}" score="${c.score.toFixed(2)}">\n${c.content}\n</source>`,
+      ),
+      '</knowledge_context>',
+    ].join('\n');
+
+    // Inject into last user message
+    const augmented = [...history];
+    const lastIdx = augmented.length - 1;
+    if (augmented[lastIdx]?.role === 'user') {
+      augmented[lastIdx] = {
+        ...augmented[lastIdx],
+        content: `${contextBlock}\n\n${augmented[lastIdx].content}`,
+      };
+    }
+
+    this.writeLog('info', 'RAG context injected', { chunks: topChunks.length });
+    this.logger.debug(`[rag] injected chunks=${topChunks.length} scores=[${topChunks.map((c) => c.score.toFixed(2)).join(', ')}]`);
+    return augmented;
   }
 }

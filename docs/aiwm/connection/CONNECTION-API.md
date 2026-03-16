@@ -437,6 +437,121 @@ DELETE /connections/:id/routes/:routeIndex
 
 ---
 
+### 2.9 Get Connection Logs
+
+```
+GET /connections/:id/logs
+```
+
+**Mô tả:** Lấy danh sách debug log của một Connection — ghi lại lifecycle của runner trong `con` worker mode (kết nối/ngắt kết nối, routing, lỗi, v.v.). Tối đa **200 entries** theo kiểu FIFO (cũ nhất bị xóa khi đầy).
+
+> Log **không được trả về** trong `GET /connections` hay `GET /connections/:id` (field `logs` có `select: false`). Phải dùng endpoint này để đọc.
+
+**Authentication:** Bearer JWT (required)
+
+**Params:**
+
+| Param | Kiểu | Ý nghĩa |
+|-------|------|---------|
+| `id` | `string` (ObjectId) | ID của Connection |
+
+**Log Levels:**
+
+| Level | Ý nghĩa |
+|-------|---------|
+| `info` | Sự kiện bình thường (kết nối, routing thành công) |
+| `warn` | Cảnh báo (ngắt kết nối, không tìm thấy route) |
+| `error` | Lỗi (adapter error, inbound xử lý thất bại) |
+
+**Log Events (các message thường gặp):**
+
+| Event | Level | Message |
+|-------|-------|---------|
+| Runner khởi động | `info` | `Runner starting` |
+| Kết nối thành công | `info` | `Connected to discord` |
+| Ngắt kết nối | `warn` | `Disconnected from discord` |
+| Lỗi adapter | `error` | `Adapter error: <message>` |
+| Không khớp route | `info` | `No route matched for channel <channelId>` |
+| Tin nhắn được route | `info` | `Inbound message routed` |
+| Lỗi xử lý inbound | `error` | `Failed to handle inbound message: <message>` |
+| Runner dừng | `info` | `Runner stopped` |
+| Reconcile dừng runner | `info` | `Runner stopped by health check reconciliation` |
+
+**Response 200:**
+```json
+{
+  "logs": [
+    {
+      "level": "info",
+      "message": "Runner starting",
+      "time": "2026-03-17T07:00:00.000Z"
+    },
+    {
+      "level": "info",
+      "message": "Connected to discord",
+      "time": "2026-03-17T07:00:01.234Z"
+    },
+    {
+      "level": "info",
+      "message": "Inbound message routed",
+      "time": "2026-03-17T07:15:42.881Z",
+      "data": {
+        "provider": "discord",
+        "user": "john_doe#1234",
+        "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
+        "conversationId": "684a9f1b2c3d4e5f6a7b8c01"
+      }
+    },
+    {
+      "level": "warn",
+      "message": "No route matched for channel 123456789012345678",
+      "time": "2026-03-17T07:22:10.445Z",
+      "data": {
+        "provider": "discord",
+        "user": "alice#5678"
+      }
+    },
+    {
+      "level": "warn",
+      "message": "Disconnected from discord",
+      "time": "2026-03-17T08:01:05.002Z",
+      "data": {
+        "reason": "Session invalidated"
+      }
+    },
+    {
+      "level": "error",
+      "message": "Adapter error: Used disallowed intents",
+      "time": "2026-03-17T08:01:05.100Z"
+    }
+  ]
+}
+```
+
+**Response 200 — Connection chưa có log:**
+```json
+{
+  "logs": []
+}
+```
+
+**Response 404 — Connection không tồn tại:**
+```json
+{
+  "statusCode": 404,
+  "message": "Connection 684a1b2c3d4e5f6a7b8c9d0e not found",
+  "error": "Not Found"
+}
+```
+
+**curl example:**
+```bash
+curl -X GET "http://localhost:3003/connections/684a1b2c3d4e5f6a7b8c9d0e/logs" \
+  -H "Authorization: Bearer <JWT>"
+```
+
+---
+
 ## 3. Tóm tắt Endpoints
 
 | Method | URL | Mô tả |
@@ -446,6 +561,7 @@ DELETE /connections/:id/routes/:routeIndex
 | `GET` | `/connections/:id` | Chi tiết connection (có config/routes) |
 | `PUT` | `/connections/:id` | Cập nhật connection |
 | `DELETE` | `/connections/:id` | Xóa mềm connection |
+| `GET` | `/connections/:id/logs` | Xem debug logs của connection runner |
 | `POST` | `/connections/:id/routes` | Thêm route |
 | `PUT` | `/connections/:id/routes/:routeIndex` | Cập nhật route theo index |
 | `DELETE` | `/connections/:id/routes/:routeIndex` | Xóa route theo index |

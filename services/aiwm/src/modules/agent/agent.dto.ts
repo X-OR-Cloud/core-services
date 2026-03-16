@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf } from 'class-validator';
+import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf, IsNumber, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
@@ -43,6 +43,22 @@ export class ChannelConfigDto {
   @ApiProperty()
   @IsString()
   verboseLoggingTarget!: string;
+}
+
+export class RagSettingsDto {
+  @ApiPropertyOptional({ description: 'Number of chunks to retrieve per collection', example: 5, required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  topK?: number;
+
+  @ApiPropertyOptional({ description: 'Minimum similarity score (0-1) for chunk to be included', example: 0.7, required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  minScore?: number;
 }
 
 /**
@@ -162,6 +178,23 @@ export class CreateAgentDto {
   @IsOptional()
   @IsObject()
   settings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: 'Enable RAG: inject knowledge context into messages before LLM call', required: false })
+  @IsOptional()
+  @IsBoolean()
+  ragEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Knowledge Collection IDs (from CBM) to search for RAG context', required: false, type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ragCollectionIds?: string[];
+
+  @ApiPropertyOptional({ description: 'RAG retrieval settings', required: false, type: RagSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RagSettingsDto)
+  ragSettings?: RagSettingsDto;
 
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
@@ -284,6 +317,23 @@ export class UpdateAgentDto {
   @IsObject()
   settings?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ description: 'Enable RAG: inject knowledge context into messages before LLM call', required: false })
+  @IsOptional()
+  @IsBoolean()
+  ragEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Knowledge Collection IDs (from CBM) to search for RAG context', required: false, type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ragCollectionIds?: string[];
+
+  @ApiPropertyOptional({ description: 'RAG retrieval settings', required: false, type: RagSettingsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RagSettingsDto)
+  ragSettings?: RagSettingsDto;
+
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
   @IsOptional()
@@ -395,6 +445,20 @@ export class AgentConnectResponseDto {
     baseAPIEndpoint: string; // Base proxy endpoint: .../deployments/{id}/inference
     apiEndpoint: string; // Provider-specific endpoint with path
   };
+
+  @ApiProperty({ description: 'Whether RAG is enabled for this agent', example: false })
+  ragEnabled: boolean;
+
+  @ApiProperty({
+    description: 'RAG collection configs to search for context',
+    type: 'array',
+    example: [{ collectionId: '507f1f77bcf86cd799439011', topK: 5, minScore: 0.7 }]
+  })
+  ragCollections: Array<{
+    collectionId: string;
+    topK: number;
+    minScore: number;
+  }>;
 }
 
 /**

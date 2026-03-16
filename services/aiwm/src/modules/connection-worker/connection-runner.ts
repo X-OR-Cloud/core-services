@@ -1,11 +1,13 @@
 import { Logger } from '@nestjs/common';
-import { Connection } from '../connection/connection.schema';
+import { Connection, ConnectionLogLevel } from '../connection/connection.schema';
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
 import { RoutingService } from './routing.service';
 import { BaseAdapter, NormalizedInbound } from './adapters/base.adapter';
 import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
+
+export type AddLogFn = (level: ConnectionLogLevel, message: string, data?: Record<string, unknown>) => void;
 
 /**
  * ConnectionRunner — manages the full lifecycle of one Connection.
@@ -33,7 +35,13 @@ export class ConnectionRunner {
       content: string;
       externalUsername: string;
     }) => void,
+    private readonly addLogFn: AddLogFn,
   ) {}
+
+  /** Fire-and-forget log to connection.logs (never throws) */
+  private writeLog(level: ConnectionLogLevel, message: string, data?: Record<string, unknown>): void {
+    this.addLogFn(level, message, data);
+  }
 
   async start(): Promise<void> {
     this.adapter = this._createAdapter();
@@ -41,20 +49,25 @@ export class ConnectionRunner {
     this.adapter.on('message', (msg: NormalizedInbound) => this._handleInbound(msg));
     this.adapter.on('connected', () => {
       this.logger.log(`Connection [${this.connection.provider}] "${this.connection.name}" connected`);
+      this.writeLog('info', `Connected to ${this.connection.provider}`);
     });
     this.adapter.on('disconnected', (reason: string) => {
       this.logger.warn(`Connection [${this.connection.provider}] disconnected: ${reason}`);
+      this.writeLog('warn', `Disconnected from ${this.connection.provider}`, { reason });
     });
     this.adapter.on('error', (err: Error) => {
       this.logger.error(`Connection [${this.connection.provider}] error:`, err.message);
+      this.writeLog('error', `Adapter error: ${err.message}`);
     });
 
+    this.writeLog('info', 'Runner starting');
     await this.adapter.start();
     this.running = true;
   }
 
   async stop(): Promise<void> {
     this.running = false;
+    this.writeLog('info', 'Runner stopped');
     await this.adapter?.stop();
     this.adapter = null;
   }
@@ -74,7 +87,10 @@ export class ConnectionRunner {
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {
     try {
       const resolved = await this.routingService.resolve(msg, this.connection);
-      if (!resolved) return;
+      if (!resolved) {
+        this.writeLog('info', `No route matched for channel ${msg.channelId}`, { provider: msg.provider, user: msg.externalUsername });
+        return;
+      }
 
       const connectionId = String((this.connection as any)._id);
       const orgId = (this.connection as any).owner?.orgId || '';
@@ -116,8 +132,15 @@ export class ConnectionRunner {
       this.logger.debug(
         `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}`,
       );
+      this.writeLog('info', `Inbound message routed`, {
+        provider: msg.provider,
+        user: msg.externalUsername,
+        agentId: resolved.agentId,
+        conversationId: resolved.conversationId,
+      });
     } catch (err: any) {
       this.logger.error(`Failed to handle inbound message: ${err.message}`, err.stack);
+      this.writeLog('error', `Failed to handle inbound message: ${err.message}`);
     }
   }
 

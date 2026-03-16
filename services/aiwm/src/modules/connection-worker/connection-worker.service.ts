@@ -114,6 +114,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       (conversationId) => this.outboundHandlers.delete(conversationId),
       (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
       (payload) => this.publishMessageNew(payload),
+      (level, message, data) =>
+        this.connectionService.addLog(id, level, message, data as Record<string, any>).catch(() => undefined),
     );
 
     try {
@@ -141,6 +143,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
         await runner.stop();
         this.runners.delete(id);
         this.logger.log(`Runner stopped for deactivated connection ${id}`);
+        this.connectionService.addLog(id, 'info', 'Runner stopped by health check reconciliation').catch(() => undefined);
       }
     }
 
