@@ -323,7 +323,7 @@ npx ts-node services/aiwm/src/scripts/seed-resources.ts
 
 # 3. Verify in MongoDB
 mongosh
-use hydrabyte-aiwm
+use core_aiwm
 db.resources.countDocuments({ name: /^Demo / })
 # ✅ Should return 10
 ```

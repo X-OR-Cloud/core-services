@@ -7,7 +7,7 @@
 import { MongoClient } from 'mongodb';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://172.16.3.20:27017';
-const DATABASE_NAME = 'hydrabyte-aiwm';
+const DATABASE_NAME = 'core_aiwm';
 const COLLECTION_NAME = 'tools';
 
 // Base configuration for all CBM API tools

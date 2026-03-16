@@ -209,7 +209,7 @@ providers: [
 
 #### 5.4 Worker Testing - ✅ Complete
 - [x] Worker successfully connects to Redis (172.16.2.100:6379)
-- [x] Worker successfully connects to MongoDB (172.16.3.20:27017/hydrabyte-aiwm)
+- [x] Worker successfully connects to MongoDB (172.16.3.20:27017/core_aiwm)
 - [x] Worker picks up jobs from queue
 - [x] Worker processes workflow execution end-to-end
 - [x] Worker logs job completion
@@ -463,7 +463,7 @@ All core MVP requirements have been successfully implemented and tested:
 ### Environment Notes
 - Service running on port **3305** (not standard 3003)
 - Redis: `172.16.2.100:6379`
-- MongoDB: `172.16.3.20:27017/hydrabyte-aiwm`
+- MongoDB: `172.16.3.20:27017/core_aiwm`
 - Worker mode: `MODE=worker npx ts-node services/aiwm/src/bootstrap-worker.ts`
 - API mode: `npx nx serve aiwm`
 
