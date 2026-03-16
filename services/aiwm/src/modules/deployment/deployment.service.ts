@@ -50,6 +50,10 @@ export class DeploymentService extends BaseService<Deployment> {
     createData: Partial<Deployment>,
     context: RequestContext
   ): Promise<Deployment | null> {
+    // Normalize empty strings to undefined
+    if (createData.nodeId === '') createData.nodeId = undefined;
+    if (createData.resourceId === '') createData.resourceId = undefined;
+
     const { modelId, nodeId, resourceId } = createData;
 
     // 1. Validate Model exists and is active

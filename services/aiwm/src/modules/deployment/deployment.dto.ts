@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsNumber,
   IsMongoId,
+  ValidateIf,
   MinLength,
   MaxLength,
   Min,
@@ -52,6 +53,7 @@ export class CreateDeploymentDto {
     example: '507f1f77bcf86cd799439012',
   })
   @IsOptional()
+  @ValidateIf((o) => o.nodeId !== '')
   @IsMongoId()
   nodeId?: string;
 
@@ -62,6 +64,7 @@ export class CreateDeploymentDto {
     example: '507f1f77bcf86cd799439013',
   })
   @IsOptional()
+  @ValidateIf((o) => o.resourceId !== '')
   @IsMongoId()
   resourceId?: string;
 
