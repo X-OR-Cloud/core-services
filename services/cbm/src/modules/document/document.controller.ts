@@ -149,7 +149,7 @@ export class DocumentController {
   @ApiResponse({ status: 404, description: 'Document not found' })
   async viewShared(
     @Param('token') token: string,
-    @Query('render') render: string,
+    @Query('render') render: string, // raw → trả raw content; mặc định render HTML
     @Res() res: Response,
   ) {
     let payload: { documentId: string; purpose: string };
@@ -174,9 +174,20 @@ export class DocumentController {
       throw new NotFoundException('Document not found');
     }
 
-    const shouldRender = render === 'true';
+    // raw=true → trả raw content, mặc định render HTML
+    const isRaw = render === 'raw';
 
-    if (shouldRender) {
+    if (isRaw) {
+      const mimeTypeMap: Record<string, string> = {
+        html: 'text/html',
+        text: 'text/plain',
+        markdown: 'text/markdown',
+        json: 'application/json',
+      };
+      const mimeType = mimeTypeMap[document.type] || 'text/plain';
+      res.setHeader('Content-Type', `${mimeType}; charset=utf-8`);
+      res.send(document.content);
+    } else {
       let bodyHtml: string;
 
       switch (document.type) {
@@ -194,16 +205,6 @@ export class DocumentController {
       const html = wrapInHtmlPage(document.summary, bodyHtml);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
-    } else {
-      const mimeTypeMap: Record<string, string> = {
-        html: 'text/html',
-        text: 'text/plain',
-        markdown: 'text/markdown',
-        json: 'application/json',
-      };
-      const mimeType = mimeTypeMap[document.type] || 'text/plain';
-      res.setHeader('Content-Type', `${mimeType}; charset=utf-8`);
-      res.send(document.content);
     }
   }
 
