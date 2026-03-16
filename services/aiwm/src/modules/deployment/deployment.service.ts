@@ -907,9 +907,10 @@ export class DeploymentService extends BaseService<Deployment> {
     guide += `This deployment uses ${modelInfo}.\n\n`;
 
     guide += `### Authentication\n`;
-    guide += `- Use \`ACCESS_TOKEN\` which can be either:\n`;
-    guide += `  - **USER_ACCESS_TOKEN**: Personal user token from IAM login\n`;
-    guide += `  - **APP_ACCESS_TOKEN**: Application service token\n\n`;
+    guide += `Use one of the following in the \`Authorization: Bearer <token>\` header:\n`;
+    guide += `- **API Key** (recommended for server-to-server): \`xai_xxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\` — create via API Keys Management Page\n`;
+    guide += `- **User Access Token**: Personal JWT from IAM login\n`;
+    guide += `- **App Access Token**: Application service token\n\n`;
 
     if (providerDocsUrl) {
       guide += `### Provider Documentation\n`;
