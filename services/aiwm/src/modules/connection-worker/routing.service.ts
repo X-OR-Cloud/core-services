@@ -10,6 +10,9 @@ export interface ResolvedRoute {
   agentId: string;
   conversationId: string;
   actor: Actor;
+  iamUserId?: string;
+  iamUsername?: string;
+  iamFullname?: string;
 }
 
 @Injectable()
@@ -39,11 +42,15 @@ export class RoutingService {
 
     // Lookup IAM user by external identity
     let iamUserId: string | undefined;
+    let iamUsername: string | undefined;
+    let iamFullname: string | undefined;
     let iamUserType: 'anonymous' | 'authenticated' = 'anonymous';
     if (msg.provider === 'discord' && msg.externalUserId) {
       const iamUser = await this.iamLookupService.findByDiscordId(msg.externalUserId);
       if (iamUser) {
         iamUserId = iamUser.id;
+        iamUsername = iamUser.username;
+        iamFullname = iamUser.fullname;
         iamUserType = 'authenticated';
         this.logger.debug(`Linked Discord user ${msg.externalUserId} → IAM ${iamUser.id} (${iamUser.username})`);
       }
@@ -72,6 +79,9 @@ export class RoutingService {
       agentId: route.agentId,
       conversationId: String((conversation as any)._id),
       actor,
+      iamUserId,
+      iamUsername,
+      iamFullname,
     };
   }
 

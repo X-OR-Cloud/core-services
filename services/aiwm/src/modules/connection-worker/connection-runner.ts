@@ -33,6 +33,9 @@ export class ConnectionRunner {
       orgId: string;
       role: string;
       content: string;
+      userId?: string;
+      username?: string;
+      fullname?: string;
       externalUsername: string;
       externalUserId: string;
       channelId: string;
@@ -129,6 +132,9 @@ export class ConnectionRunner {
         orgId,
         role: 'user',
         content: msg.text,
+        userId: resolved.iamUserId,
+        username: resolved.iamUsername,
+        fullname: resolved.iamFullname,
         externalUsername: msg.externalUsername,
         externalUserId: msg.externalUserId,
         channelId: msg.channelId,

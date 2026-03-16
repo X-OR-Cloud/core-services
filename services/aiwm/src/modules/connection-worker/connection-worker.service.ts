@@ -71,6 +71,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     orgId: string;
     role: string;
     content: string;
+    userId?: string;
+    username?: string;
+    fullname?: string;
     externalUsername: string;
     externalUserId: string;
     channelId: string;

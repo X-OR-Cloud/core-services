@@ -295,6 +295,7 @@ export class AgentRunner {
     const userInfoLines: string[] = [];
     if (message.userId) {
       userInfoLines.push(`User ID: ${message.userId}`);
+      if (message.fullname) userInfoLines.push(`Full Name: ${message.fullname}`);
       if (message.username) userInfoLines.push(`Username: ${message.username}`);
     }
     if (message.externalUserId && message.externalUsername !== message.externalUserId) {
@@ -307,7 +308,7 @@ export class AgentRunner {
     const userInfoBlock = userInfoLines.length > 0
       ? `<user_info>\n${userInfoLines.join('\n')}\n</user_info>\n\n`
       : '';
-    this.logger.debug(`[user_info] lines=${userInfoLines.length} block="${userInfoBlock.slice(0, 120).replace(/\n/g, '\\n')}" raw=userId=${message.userId} username=${message.username} externalUserId=${message.externalUserId} channelId=${message.channelId}`);
+    this.logger.debug(`[user_info] lines=${userInfoLines.length} block="${userInfoBlock.slice(0, 120).replace(/\n/g, '\\n')}" raw=userId=${message.userId} fullname=${message.fullname} username=${message.username} externalUserId=${message.externalUserId} channelId=${message.channelId}`);
 
     // --- Slash command: /stop ---
     if (content === SLASH_STOP) {
