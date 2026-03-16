@@ -16,11 +16,11 @@ import { Types } from 'mongoose';
 import {
   JwtAuthGuard,
   CurrentUser,
-  PaginationQueryDto,
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
+  parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { ConversationService } from './conversation.service';
@@ -59,10 +59,10 @@ export class ConversationController {
   })
   @ApiReadErrors({ notFound: false })
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.conversationService.findAll(query, context);
+    return this.conversationService.findAll(parseQueryString(query), context);
   }
 
   @Get('my-conversations')

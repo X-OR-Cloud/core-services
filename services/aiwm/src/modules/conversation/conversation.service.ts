@@ -22,8 +22,16 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Conversation>> {
-    options.statisticFields = ['status', 'conversationType']; // Specify fields for statistics aggregation
-    options.sort = { updatedAt: -1 }; // Default sorting by updatedAt descending
+    options.statisticFields = ['status', 'conversationType'];
+    options.sort = { updatedAt: -1 };
+
+    // Support filtering by agentId via participants
+    if (options.filter?.agentId) {
+      const agentId = options.filter.agentId;
+      delete options.filter.agentId;
+      options.filter['participants'] = { $elemMatch: { type: 'agent', id: agentId } };
+    }
+
     return await super.findAll(options, context);
   }
 
