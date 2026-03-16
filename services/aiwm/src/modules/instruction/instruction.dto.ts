@@ -4,6 +4,9 @@ import {
   IsOptional,
   IsArray,
   IsEnum,
+  IsNumber,
+  Min,
+  Max,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -58,6 +61,24 @@ export class CreateInstructionDto {
   @IsOptional()
   @IsEnum(['active', 'inactive'])
   status?: string;
+}
+
+/**
+ * DTO for creating a share link for an instruction
+ */
+export class CreateInstructionShareLinkDto {
+  @ApiPropertyOptional({
+    description: 'Time-to-live in seconds (60–86400, default 3600)',
+    example: 3600,
+    minimum: 60,
+    maximum: 86400,
+    default: 3600,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(60)
+  @Max(86400)
+  ttl?: number;
 }
 
 /**

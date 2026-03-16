@@ -93,6 +93,16 @@ export class InstructionService extends BaseService<Instruction> {
   }
 
   /**
+   * Find instruction by ID for public share access (no ownership check)
+   */
+  async findByIdForShare(id: string): Promise<Instruction | null> {
+    return this.instructionModel
+      .findOne({ _id: id, isDeleted: false })
+      .lean()
+      .exec() as Promise<Instruction | null>;
+  }
+
+  /**
    * Helper method to check if instruction is being used by active agents
    * @param instructionId - Instruction ID to check
    * @returns Array of active agents using this instruction
