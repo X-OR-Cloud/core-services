@@ -307,6 +307,7 @@ export class AgentRunner {
     const userInfoBlock = userInfoLines.length > 0
       ? `<user_info>\n${userInfoLines.join('\n')}\n</user_info>\n\n`
       : '';
+    this.logger.debug(`[user_info] lines=${userInfoLines.length} block="${userInfoBlock.slice(0, 120).replace(/\n/g, '\\n')}" raw=userId=${message.userId} username=${message.username} externalUserId=${message.externalUserId} channelId=${message.channelId}`);
 
     // --- Slash command: /stop ---
     if (content === SLASH_STOP) {
