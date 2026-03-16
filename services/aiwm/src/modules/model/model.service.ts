@@ -24,6 +24,8 @@ export class ModelService extends BaseService<ModelEntity> {
       options: FindManyOptions,
       context: RequestContext
     ): Promise<FindManyResult<ModelEntity>> {
+      // Exclude sensitive apiConfig from list responses
+      options.selectFields = [...(options.selectFields || []), '-apiConfig'];
       const findResult = await super.findAll(options, context);
       // Aggregate statistics by status
       const statusStats = await super.aggregate(

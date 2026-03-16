@@ -20,7 +20,6 @@ import {
   ApiUpdateErrors,
   ApiDeleteErrors,
   RequireUniverseRole,
-  UniverseScopeOnly,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -41,8 +40,7 @@ export class ModelController {
   @Post()
   @ApiOperation({ summary: 'Create a new model' })
   @ApiCreateErrors()
-  @RequireUniverseRole()
-  @UseGuards(JwtAuthGuard, UniverseRoleGuard)
+  @UseGuards(JwtAuthGuard)
   async create(
     @Body() createDto: CreateModelDto,
     @CurrentUser() context: RequestContext

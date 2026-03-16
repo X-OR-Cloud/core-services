@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsNumber,
+  IsMongoId,
   MinLength,
   MaxLength,
   Min,
@@ -41,7 +42,7 @@ export class CreateDeploymentDto {
     description: 'Model ID to deploy (MongoDB ObjectId as string)',
     example: '507f1f77bcf86cd799439011',
   })
-  @IsString()
+  @IsMongoId()
   modelId!: string;
 
   @ApiPropertyOptional({
@@ -51,7 +52,7 @@ export class CreateDeploymentDto {
     example: '507f1f77bcf86cd799439012',
   })
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   nodeId?: string;
 
   @ApiPropertyOptional({
@@ -61,7 +62,7 @@ export class CreateDeploymentDto {
     example: '507f1f77bcf86cd799439013',
   })
   @IsOptional()
-  @IsString()
+  @IsMongoId()
   resourceId?: string;
 
   @ApiPropertyOptional({
