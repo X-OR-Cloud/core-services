@@ -8,6 +8,8 @@ import { Model, ModelSchema } from '../model/model.schema';
 import { Node, NodeSchema } from '../node/node.schema';
 import { Resource, ResourceSchema } from '../resource/resource.schema';
 import { ConfigurationModule } from '../configuration/configuration.module';
+import { ApiKeyModule } from '../api-key/api-key.module';
+import { CombinedAuthGuard } from '../../guards/combined-auth.guard';
 
 @Module({
   imports: [
@@ -18,9 +20,10 @@ import { ConfigurationModule } from '../configuration/configuration.module';
       { name: Resource.name, schema: ResourceSchema },
     ]),
     ConfigurationModule,
+    ApiKeyModule,
   ],
   controllers: [DeploymentController],
-  providers: [DeploymentService, ProxyService],
+  providers: [DeploymentService, ProxyService, CombinedAuthGuard],
   exports: [DeploymentService, MongooseModule],
 })
 export class DeploymentModule {}

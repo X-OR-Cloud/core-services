@@ -33,6 +33,7 @@ import { MemoryModule } from '../modules/memory/memory.module';
 import { ReminderModule } from '../modules/reminder/reminder.module';
 import { WorkflowModule } from '../modules/workflow/workflow.module';
 import { SetupModule } from '../modules/setup/setup.module';
+import { ApiKeyModule } from '../modules/api-key/api-key.module';
 import { WorkflowStepModule } from '../modules/workflow-step/workflow-step.module';
 import { QueueModule } from '../queues/queue.module';
 import { ProcessorsModule } from '../queues/processors.module';
@@ -72,6 +73,7 @@ import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared'
     MemoryModule,
     ReminderModule,
     SetupModule,
+    ApiKeyModule,
     ProcessorsModule,
   ],
   controllers: [AppController],

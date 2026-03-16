@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
+import { CombinedAuthGuard } from '../../guards/combined-auth.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Request, Response } from 'express';
 import { DeploymentService } from './deployment.service';
@@ -198,7 +199,7 @@ export class DeploymentController {
   }
 
   @All(':id/inference/*')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(CombinedAuthGuard)
   @ApiOperation({
     summary: 'Unified inference endpoint for both API-based and self-hosted deployments',
     description:
