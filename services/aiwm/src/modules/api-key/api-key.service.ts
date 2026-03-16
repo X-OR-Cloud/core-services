@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createRoleBasedPermissions } from '@hydrabyte/shared';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
@@ -37,6 +38,11 @@ export class ApiKeyService {
     dto: CreateApiKeyDto,
     context: RequestContext,
   ): Promise<CreateApiKeyResponseDto> {
+    const permissions = createRoleBasedPermissions(context);
+    if (!permissions.allowAdministrative) {
+      throw new ForbiddenException('Only organization owners can create API keys');
+    }
+
     const { fullKey, keyPrefix, keyHash } = this.generateKey();
 
     const created = await this.apiKeyModel.create({
