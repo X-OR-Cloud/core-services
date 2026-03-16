@@ -25,7 +25,10 @@ export interface AnonymousTokenEntry {
   revokedAt?: Date;
 }
 
+export type AgentLogLevel = 'info' | 'warn' | 'error';
+
 export interface AgentLog {
+  level: AgentLogLevel;
   message: string;
   time: Date;
   data?: Record<string, any>;
@@ -171,6 +174,7 @@ export class Agent extends BaseSchema {
   @Prop({
     type: [
       {
+        level: { type: String, enum: ['info', 'warn', 'error'], required: true, default: 'info' },
         message: { type: String, required: true },
         time: { type: Date, required: true },
         data: { type: Object },

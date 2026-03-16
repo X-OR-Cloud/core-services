@@ -561,6 +561,11 @@ export class AnonymousTokenListResponseDto {
  * DTO for adding a debug log entry to an agent
  */
 export class AddAgentLogDto {
+  @ApiPropertyOptional({ enum: ['info', 'warn', 'error'], default: 'info', description: 'Log severity level' })
+  @IsOptional()
+  @IsEnum(['info', 'warn', 'error'])
+  level?: 'info' | 'warn' | 'error';
+
   @ApiProperty({ description: 'Log message', example: 'Agent started task execution' })
   @IsString()
   @IsNotEmpty()
@@ -576,6 +581,9 @@ export class AddAgentLogDto {
  * Single log entry response
  */
 export class AgentLogEntryDto {
+  @ApiProperty({ enum: ['info', 'warn', 'error'], description: 'Log severity level' })
+  level!: 'info' | 'warn' | 'error';
+
   @ApiProperty({ description: 'Log message' })
   message!: string;
 

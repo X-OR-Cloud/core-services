@@ -2146,7 +2146,7 @@ echo "Installation script placeholder - implement actual logic"
       {
         $push: {
           logs: {
-            $each: [{ message: dto.message, time: new Date(), data: dto.data }],
+            $each: [{ level: dto.level ?? 'info', message: dto.message, time: new Date(), data: dto.data }],
             $slice: -100,
           },
         },

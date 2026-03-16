@@ -152,8 +152,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
               content: a.content,
             }));
         },
-        addLogInternal: (id, message, data) =>
-          this.agentService.addLog(id, { message, data }).then(() => undefined),
+        addLogInternal: (id, level, message, data) =>
+          this.agentService.addLog(id, { level, message, data }).then(() => undefined),
       });
 
       runner.start();
@@ -161,6 +161,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       this.runnerConfigHash.set(agentId, agentConfigHash(agent));
       this.logger.log(`Runner started: ${agent.name} (${agentId})`);
       await this.agentService.addLog(agentId, {
+        level: 'info',
         message: 'Runner spawned',
         data: {
           deployment: deployment?.id,
@@ -169,8 +170,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
           allowedFunctions: (allowedFunctions || []).length,
         },
       });
-    } catch (err) {
-      this.logger.error(`Failed to spawn runner for ${agent.name} (${agentId}): ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`Failed to spawn runner for ${agent.name} (${agentId}): ${(err as Error).message}`);
       // Release lock so another instance can pick it up
       await this.lockService.release(agentId);
     }
@@ -228,7 +229,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.log(`Agent ${agent.name} (${agentId}) config changed, restarting runner...`);
-      await this.agentService.addLog(agentId, { message: 'Runner restarted — config changed' });
+      await this.agentService.addLog(agentId, { level: 'info', message: 'Runner restarted — config changed' });
       runner.stop();
       this.runners.delete(agentId);
       this.runnerConfigHash.delete(agentId);
@@ -255,7 +256,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       const acquired = await this.lockService.tryAcquire(agentId);
       if (acquired) {
         this.logger.log(`Claimed unlocked agent: ${agent.name} (${agentId})`);
-        await this.agentService.addLog(agentId, { message: 'Runner claimed after unlock (failover or new agent)' });
+        await this.agentService.addLog(agentId, { level: 'info', message: 'Runner claimed after unlock (failover or new agent)' });
         await this.spawnRunner(agent as unknown as AgentDocument);
       }
     }
