@@ -2131,8 +2131,7 @@ echo "Installation script placeholder - implement actual logic"
    */
   async addLog(
     agentId: string,
-    dto: AddAgentLogDto,
-    context: RequestContext
+    dto: AddAgentLogDto
   ): Promise<{ success: boolean }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
@@ -2141,8 +2140,6 @@ echo "Installation script placeholder - implement actual logic"
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
-
-    this.checkPermission(agent, context);
 
     await this.agentModel.updateOne(
       { _id: new Types.ObjectId(agentId) },
@@ -2162,10 +2159,7 @@ echo "Installation script placeholder - implement actual logic"
   /**
    * Get all debug logs of an agent
    */
-  async getLogs(
-    agentId: string,
-    context: RequestContext
-  ): Promise<AgentLogsResponseDto> {
+  async getLogs(agentId: string): Promise<AgentLogsResponseDto> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .select('+logs')
@@ -2174,8 +2168,6 @@ echo "Installation script placeholder - implement actual logic"
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
     }
-
-    this.checkPermission(agent, context);
 
     return { logs: agent.logs ?? [] };
   }

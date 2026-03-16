@@ -369,7 +369,7 @@ export class AgentController {
     @CurrentUser() context: RequestContext,
   ): Promise<{ success: boolean }> {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
-    return this.agentService.addLog(resolvedId, dto, context);
+    return this.agentService.addLog(resolvedId, dto);
   }
 
   @Get(':id/logs')
@@ -382,6 +382,6 @@ export class AgentController {
     @CurrentUser() context: RequestContext,
   ): Promise<AgentLogsResponseDto> {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
-    return this.agentService.getLogs(resolvedId, context);
+    return this.agentService.getLogs(resolvedId);
   }
 }
