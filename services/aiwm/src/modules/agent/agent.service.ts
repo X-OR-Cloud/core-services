@@ -674,6 +674,7 @@ export class AgentService extends BaseService<Agent> {
       channels: agent.channels || [],
       ragEnabled: agent.ragEnabled ?? false,
       ragCollections,
+      agentCode: agent.code || undefined,
     };
 
     // For autonomous and hosted agents, populate deployment info
@@ -802,7 +803,8 @@ export class AgentService extends BaseService<Agent> {
         corePrompt,
         contextBlocks,
         tools,
-        agentId
+        agentId,
+        agent.code || undefined,
       ),
     };
 
@@ -943,7 +945,8 @@ export class AgentService extends BaseService<Agent> {
     corePrompt: string,
     contextBlocks: string[],
     tools: Tool[],
-    agentId: string
+    agentId: string,
+    agentCode?: string,
   ): string {
     const toolNames = new Set(tools.map((t) => t.name));
 
@@ -987,9 +990,9 @@ MEMORY CATEGORIES:
       parts.push(`<context>\n${contextBlocks.join('\n\n')}\n</context>`);
     }
 
-    parts.push(
-      `<runtime>\nDatetime: ${new Date().toISOString()}\nAgent ID: ${agentId}\n</runtime>`
-    );
+    const runtimeLines = [`Datetime: ${new Date().toISOString()}`, `Agent ID: ${agentId}`];
+    if (agentCode) runtimeLines.push(`Agent Code: ${agentCode}`);
+    parts.push(`<runtime>\n${runtimeLines.join('\n')}\n</runtime>`);
 
     return parts.join('\n\n---\n\n');
   }

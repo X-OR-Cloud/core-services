@@ -72,6 +72,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     role: string;
     content: string;
     externalUsername: string;
+    externalUserId: string;
+    channelId: string;
+    guildId?: string;
   }): Promise<void> {
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
     const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;

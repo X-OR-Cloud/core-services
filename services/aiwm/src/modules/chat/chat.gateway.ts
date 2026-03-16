@@ -92,7 +92,7 @@ export class ChatGateway
       if (channel === 'chat:message-new') {
         try {
           if (!this.server) return;
-          const { conversationId, agentId, orgId, role, content, externalUsername, msgNonce } = JSON.parse(message);
+          const { conversationId, agentId, orgId, role, content, externalUsername, externalUserId, channelId, msgNonce } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
           const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
@@ -110,7 +110,7 @@ export class ChatGateway
           }
           // Broadcast to room — no Message record needed, Action was already saved by con worker
           // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
-          const broadcastPayload = { conversationId, orgId, role, content, externalUsername };
+          const broadcastPayload = { conversationId, orgId, role, content, externalUsername, externalUserId, channelId };
           this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
             `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,
@@ -239,6 +239,7 @@ export class ChatGateway
 
     client.data.type = 'user';
     client.data.userId = userId;
+    client.data.username = payload.username;
     client.data.agentId = null;
     client.data.orgId = payload.orgId;
     client.data.roles = payload.roles || [];
@@ -516,7 +517,11 @@ export class ChatGateway
         `[WS-BROADCAST] room=conversation:${conversationId} | roomSize=${roomSize} | actionId=${actionId}`,
       );
 
-      const broadcastPayload = { ...messageDto, _id: actionId };
+      const broadcastPayload = {
+        ...messageDto,
+        _id: actionId,
+        ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username } : {}),
+      };
       this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
 
       // Bridge agent response back to con worker (Discord/Telegram outbound)

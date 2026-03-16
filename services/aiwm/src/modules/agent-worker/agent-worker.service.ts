@@ -125,7 +125,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
       const connectResp = await this.agentService.connectInternal(agentId);
 
-      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections } = connectResp;
+      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections, agentCode } = connectResp;
 
       this.logger.debug(
         `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
@@ -185,6 +185,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         ragCollections: ragCollections ?? [],
         searchKnowledgeInternal: (collectionId, query, topK, minScore) =>
           this.cbmKnowledgeService.search(collectionId, query, topK, minScore, accessToken),
+        agentCode: agentCode ?? undefined,
       });
 
       runner.start();

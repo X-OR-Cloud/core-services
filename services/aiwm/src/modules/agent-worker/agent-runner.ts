@@ -24,6 +24,7 @@ export interface AgentConnectResult {
   allowedFunctions?: string[];
   ragEnabled?: boolean;
   ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
+  agentCode?: string;
 }
 
 export interface AgentRunnerConfig {
@@ -59,6 +60,8 @@ export interface AgentRunnerConfig {
   ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
   /** In-process RAG search callback — calls CBM knowledge search API */
   searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string }>>;
+  /** Agent code identifier (optional) */
+  agentCode?: string;
 }
 
 /** Slash commands supported by hosted agents */
@@ -288,6 +291,23 @@ export class AgentRunner {
     const content: string = (message.content ?? '').trim();
     this.logger.debug(`[message:new] conv=${conversationId} role=${message.role} content="${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`);
 
+    // Build <user_info> block from message metadata
+    const userInfoLines: string[] = [];
+    if (message.userId) {
+      userInfoLines.push(`User ID: ${message.userId}`);
+      if (message.username) userInfoLines.push(`Username: ${message.username}`);
+    }
+    if (message.externalUserId && message.externalUsername !== message.externalUserId) {
+      // Discord: externalUserId is the Discord snowflake ID
+      userInfoLines.push(`Discord User ID: ${message.externalUserId}`);
+    }
+    if (message.channelId) {
+      userInfoLines.push(`Channel ID: ${message.channelId}`);
+    }
+    const userInfoBlock = userInfoLines.length > 0
+      ? `<user_info>\n${userInfoLines.join('\n')}\n</user_info>\n\n`
+      : '';
+
     // --- Slash command: /stop ---
     if (content === SLASH_STOP) {
       const controller = this.abortMap.get(conversationId);
@@ -358,6 +378,17 @@ export class AgentRunner {
       for (const m of history) {
         const preview = String(m.content ?? '').slice(0, 60).replace(/\n/g, '\\n');
         this.logger.debug(`  [history:${m.role}] "${preview}${String(m.content ?? '').length > 60 ? '...' : ''}"`);
+      }
+
+      // Inject <user_info> into the last user message
+      if (userInfoBlock) {
+        const lastIdx = history.length - 1;
+        if (history[lastIdx]?.role === 'user') {
+          history[lastIdx] = {
+            ...history[lastIdx],
+            content: `${userInfoBlock}${history[lastIdx].content}`,
+          };
+        }
       }
 
       // RAG: inject knowledge context into the last user message before LLM call

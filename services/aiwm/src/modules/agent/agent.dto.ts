@@ -459,6 +459,9 @@ export class AgentConnectResponseDto {
     topK: number;
     minScore: number;
   }>;
+
+  @ApiProperty({ description: 'Agent code identifier', example: 'PM-BOT-01', required: false })
+  agentCode?: string;
 }
 
 /**

@@ -34,6 +34,9 @@ export class ConnectionRunner {
       role: string;
       content: string;
       externalUsername: string;
+      externalUserId: string;
+      channelId: string;
+      guildId?: string;
     }) => void,
     private readonly addLogFn: AddLogFn,
   ) {}
@@ -127,6 +130,9 @@ export class ConnectionRunner {
         role: 'user',
         content: msg.text,
         externalUsername: msg.externalUsername,
+        externalUserId: msg.externalUserId,
+        channelId: msg.channelId,
+        guildId: msg.guildId,
       });
 
       this.logger.debug(
