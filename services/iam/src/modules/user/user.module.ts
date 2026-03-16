@@ -12,5 +12,6 @@ import { IamQueueModule } from '../../queues/queue.module';
   ],
   controllers: [UsersController],
   providers: [UsersService],
+  exports: [UsersService],
 })
 export class UsersModule {}

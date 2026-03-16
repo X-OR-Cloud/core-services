@@ -12,6 +12,7 @@ import { UsersModule } from './modules/user/user.module';
 import { LicenseModule } from './modules/license/license.module';
 import { IamAppModule } from './modules/app/app.module';
 import { IamQueueModule } from './queues/queue.module';
+import { SetupModule } from './modules/setup/setup.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { IamQueueModule } from './queues/queue.module';
     UsersModule,
     LicenseModule,
     IamAppModule,
+    SetupModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

@@ -43,6 +43,9 @@ export class WorkflowExecutionWorker implements OnModuleInit, OnModuleDestroy {
         connection: {
           host: redisHost,
           port: redisPort,
+          username: process.env.REDIS_USERNAME || undefined,
+          password: process.env.REDIS_PASSWORD || undefined,
+          db: parseInt(process.env.REDIS_DB || '0'),
         },
         concurrency: parseInt(process.env.WORKFLOW_WORKER_CONCURRENCY || '5'),
       }
