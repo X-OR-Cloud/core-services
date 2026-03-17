@@ -89,19 +89,21 @@ export async function executeListAgents(
 }
 
 /**
- * Create a new agent
+ * Create a new assistant agent (in-process, run by AIWM agt mode)
  */
-export async function executeCreateAgent(
+export async function executeCreateAssistantAgent(
   args: Record<string, any>,
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
-  logger.debug(`CreateAgent - URL: ${aiwmBaseUrl}`);
+  logger.debug(`CreateAssistantAgent - URL: ${aiwmBaseUrl}`);
+
+  const body = { ...args, type: 'assistant' };
 
   const response = await makeServiceRequest(`${aiwmBaseUrl}/agents`, {
     method: 'POST',
     context,
-    body: JSON.stringify(args),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) return formatToolResponse(response);

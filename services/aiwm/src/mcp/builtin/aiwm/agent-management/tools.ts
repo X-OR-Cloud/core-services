@@ -6,14 +6,14 @@ import { ToolDefinition } from '../../../types';
 import {
   executeGetAgent,
   executeListAgents,
-  executeCreateAgent,
+  executeCreateAssistantAgent,
   executeUpdateAgent,
   executeDeleteAgent,
 } from './executors';
 import {
   GetAgentSchema,
   ListAgentsSchema,
-  CreateAgentSchema,
+  CreateAssistantAgentSchema,
   UpdateAgentSchema,
   DeleteAgentSchema,
 } from './schemas';
@@ -39,13 +39,13 @@ export const AgentManagementTools: ToolDefinition[] = [
     inputSchema: ListAgentsSchema,
   },
   {
-    name: 'CreateAgent',
+    name: 'CreateAssistantAgent',
     description:
-      'Create a new AI agent. For claude-agent-sdk agents: set settings.claude_model (e.g. "claude-3-5-sonnet-latest"), settings.claude_maxTurns, settings.auth_roles, and channels[] for Discord/Telegram integration. Use type="managed" for system-deployed agents (requires nodeId), type="autonomous" for user-deployed agents.',
+      'Create a new assistant agent (in-process, run by AIWM). Requires a running deployment and an instruction. Use allowedToolIds to whitelist MCP tool sets, and allowedFunctions to restrict which functions the agent can call.',
     type: 'builtin',
     category: 'AgentManagement',
-    executor: executeCreateAgent,
-    inputSchema: CreateAgentSchema,
+    executor: executeCreateAssistantAgent,
+    inputSchema: CreateAssistantAgentSchema,
   },
   {
     name: 'UpdateAgent',

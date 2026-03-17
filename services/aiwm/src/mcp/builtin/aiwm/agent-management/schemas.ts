@@ -6,8 +6,8 @@ import * as z from 'zod';
 
 // Enums aligned with Agent schema
 const AgentStatusEnum = z.enum(['inactive', 'idle', 'busy', 'suspended']);
-const AgentTypeEnum = z.enum(['managed', 'autonomous']);
-const AgentFrameworkEnum = z.enum(['claude-agent-sdk']);
+const AgentTypeEnum = z.enum(['assistant', 'engineer']);
+const AgentFrameworkEnum = z.enum(['claude-agent-sdk', 'vercel-ai-sdk']);
 const AgentRoleEnum = z.enum(['organization.editor', 'organization.viewer']);
 const ChannelPlatformEnum = z.enum(['discord', 'telegram']);
 
@@ -92,25 +92,35 @@ export const CreateAgentSchema = z.object({
 });
 
 /**
- * Schema for updating an agent (all fields optional)
+ * Schema for creating an assistant agent (in-process, run by AIWM agt mode)
+ *
+ * Assistant agents run inside AIWM (no environment access).
+ * They require a deployment and instruction to operate.
+ */
+export const CreateAssistantAgentSchema = z.object({
+  name: z.string().describe('Agent name'),
+  description: z.string().describe('Agent description'),
+  deploymentId: z.string().describe('Deployment ID (must be status=running) — the model deployment this agent uses'),
+  instructionId: z.string().describe('Instruction ID — system prompt assigned to this agent'),
+  role: AgentRoleEnum.describe('RBAC role for MCP tool access (organization.editor or organization.viewer)'),
+  allowedToolIds: z.array(z.string()).describe('MCP tool set IDs this agent can use (whitelist)'),
+  allowedFunctions: z
+    .array(z.string())
+    .describe('Runtime function names this agent can call (e.g. ["mcp__cbm__create_document"]). Empty array = all allowed'),
+  tags: z.array(z.string()).optional().describe('Optional: Tags for categorization'),
+});
+
+/**
+ * Schema for updating an agent (works for both assistant and engineer types)
  */
 export const UpdateAgentSchema = z.object({
   id: z.string().describe('Agent ID to update'),
-  name: z.string().optional().describe('Optional: New agent name'),
-  description: z.string().optional().describe('Optional: New description'),
-  status: AgentStatusEnum.optional().describe('Optional: New status (inactive, idle, busy, suspended)'),
+  deploymentId: z.string().optional().describe('Optional: New deployment ID'),
   instructionId: z.string().optional().describe('Optional: New instruction ID'),
-  guardrailId: z.string().optional().describe('Optional: New guardrail ID'),
-  nodeId: z.string().optional().describe('Optional: New node ID (managed agents only)'),
-  role: AgentRoleEnum.optional().describe('Optional: New RBAC role'),
-  tags: z.array(z.string()).optional().describe('Optional: New tags (replaces existing)'),
+  role: AgentRoleEnum.optional().describe('Optional: New RBAC role (organization.editor or organization.viewer)'),
+  settings: z.record(z.string(), z.unknown()).optional().describe('Optional: Updated runtime settings'),
   allowedToolIds: z.array(z.string()).optional().describe('Optional: New allowed tool IDs (replaces existing)'),
   allowedFunctions: z.array(z.string()).optional().describe('Optional: New allowed function names (replaces existing)'),
-  settings: z.record(z.string(), z.unknown()).optional().describe('Optional: Updated runtime settings'),
-  channels: z
-    .array(ChannelConfigSchema)
-    .optional()
-    .describe('Optional: Updated channel configs (replaces entire channels array)'),
 });
 
 /**
