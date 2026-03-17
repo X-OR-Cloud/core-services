@@ -32,17 +32,18 @@ export class CombinedAuthGuard extends AuthGuard('jwt-auth') implements CanActiv
   override async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const authHeader: string | undefined = request.headers['authorization'];
+    const apiKeyHeader: string | undefined = request.headers['x-api-key'] || request.headers['X-API-KEY'] || request.headers['X-API-Key'];
 
-    if (!authHeader) {
-      throw new UnauthorizedException('Authorization header is required');
+    if (!authHeader && !apiKeyHeader) {
+      throw new UnauthorizedException('Authorization header or API key is required');
     }
 
-    const token = authHeader.startsWith('Bearer ')
+    const token = authHeader ?  (authHeader.startsWith('Bearer ')
       ? authHeader.slice(7)
-      : authHeader;
+      : authHeader) : apiKeyHeader || '';
 
     // ── API Key path ──────────────────────────────────────────────────────────
-    if (token.startsWith(API_KEY_PREFIX)) {
+    if (token!== '' && token.startsWith(API_KEY_PREFIX)) {
       // Extract deploymentId from URL param :id
       const deploymentId: string | undefined = request.params?.id;
 
