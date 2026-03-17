@@ -71,6 +71,41 @@ export class ActionAttachmentDto {
   mimeType?: string;
 }
 
+export class ActionReferenceDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  app?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  page?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  section?: string;
+
+  @ApiProperty({ enum: ['agent', 'document', 'project', 'work', 'instruction', 'user', 'text'] })
+  @IsEnum(['agent', 'document', 'project', 'work', 'instruction', 'user', 'text'])
+  resourceType: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  resourceId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiProperty()
+  @IsString()
+  label: string;
+}
+
 export class ActionMetadataDto {
   @ApiProperty({ required: false })
   @IsOptional()
@@ -107,6 +142,13 @@ export class ActionMetadataDto {
   @ValidateNested({ each: true })
   @Type(() => ActionAttachmentDto)
   attachments?: ActionAttachmentDto[];
+
+  @ApiProperty({ required: false, type: [ActionReferenceDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ActionReferenceDto)
+  references?: ActionReferenceDto[];
 
   @ApiProperty({ required: false })
   @IsOptional()

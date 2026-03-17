@@ -485,6 +485,7 @@ export class AgentService extends BaseService<Agent> {
               model: model.modelIdentifier,
               baseAPIEndpoint, // Base proxy endpoint without provider path
               apiEndpoint: endpointInfo.url, // Full inference endpoint with provider path
+              multimodal: (deployment.metadata as any)?.multimodal === true,
             };
           }
         }
@@ -720,6 +721,7 @@ export class AgentService extends BaseService<Agent> {
               model: model.modelIdentifier,
               baseAPIEndpoint, // Base proxy endpoint without provider path
               apiEndpoint: endpointInfo.url, // Full inference endpoint with provider path
+              multimodal: (deployment.metadata as any)?.multimodal === true,
             };
           }
         }

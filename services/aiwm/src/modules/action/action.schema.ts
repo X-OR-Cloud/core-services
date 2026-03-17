@@ -23,6 +23,16 @@ export interface ActionAttachment {
   mimeType?: string;
 }
 
+export interface ActionReference {
+  app?: string;           // e.g. 'XORStackAI'
+  page?: string;          // e.g. 'AIWMAgentsPage'
+  section?: string;       // e.g. 'AgentList'
+  resourceType: 'agent' | 'document' | 'project' | 'work' | 'instruction' | 'user' | 'text';
+  resourceId?: string;    // undefined if resourceType = 'text'
+  content?: string;       // selected text or resource snippet
+  label: string;          // display name shown in UI
+}
+
 export interface ActionMetadata {
   // tool_use
   toolName?: string;
@@ -38,6 +48,9 @@ export interface ActionMetadata {
 
   // attachments
   attachments?: ActionAttachment[];
+
+  // references — resources/text selected by user on UI
+  references?: ActionReference[];
 
   // inbound from external provider (Discord/Telegram)
   raw?: any;                  // raw platform event object

@@ -444,6 +444,7 @@ export class AgentConnectResponseDto {
     model: string;
     baseAPIEndpoint: string; // Base proxy endpoint: .../deployments/{id}/inference
     apiEndpoint: string; // Provider-specific endpoint with path
+    multimodal?: boolean; // Whether the model supports multimodal (image/file) input
   };
 
   @ApiProperty({ description: 'Whether RAG is enabled for this agent', example: false })

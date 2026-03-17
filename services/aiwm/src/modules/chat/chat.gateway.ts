@@ -465,7 +465,14 @@ export class ChatGateway
 
   @SubscribeMessage('message:send')
   async handleSendMessage(
-    @MessageBody() dto: { conversationId?: string; role: string; content: string; type?: string },
+    @MessageBody() dto: {
+      conversationId?: string;
+      role: string;
+      content: string;
+      type?: string;
+      attachments?: Array<{ type: string; url: string; filename?: string; mimeType?: string; size?: number }>;
+      references?: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }>;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     try {
@@ -495,6 +502,9 @@ export class ChatGateway
             displayName: isAgent ? agentId : (client.data.userId || 'user'),
           },
           content: dto.content,
+          metadata: (dto.attachments?.length || dto.references?.length)
+            ? { attachments: dto.attachments, references: dto.references }
+            : undefined,
         },
         { orgId, agentId, userId: client.data.userId || '' },
       );

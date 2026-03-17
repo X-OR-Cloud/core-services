@@ -18,7 +18,7 @@ export interface McpServerConfig {
 export interface AgentConnectResult {
   accessToken: string;
   instruction: { id: string; systemPrompt: string };
-  deployment?: { id: string; provider: string; model: string; baseAPIEndpoint: string };
+  deployment?: { id: string; provider: string; model: string; baseAPIEndpoint: string; multimodal?: boolean };
   settings: Record<string, unknown>;
   mcpServers?: Record<string, McpServerConfig>;
   allowedFunctions?: string[];
@@ -37,6 +37,7 @@ export interface AgentRunnerConfig {
     provider: string;
     model: string;
     baseAPIEndpoint: string;
+    multimodal?: boolean;
   };
   settings: Record<string, unknown>;
   mcpServers: Record<string, McpServerConfig>;
@@ -310,6 +311,26 @@ export class AgentRunner {
       : '';
     this.logger.debug(`[user_info] lines=${userInfoLines.length} block="${userInfoBlock.slice(0, 120).replace(/\n/g, '\\n')}" raw=userId=${message.userId} fullname=${message.fullname} username=${message.username} externalUserId=${message.externalUserId} channelId=${message.channelId}`);
 
+    // Build <references> block from message.references
+    const refs: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }> = message.references || [];
+    let referencesBlock = '';
+    if (refs.length > 0) {
+      const refLines = refs.map((r, i) => {
+        const attrs = [
+          `id="${i + 1}"`,
+          `type="${r.resourceType}"`,
+          r.resourceId ? `resourceId="${r.resourceId}"` : '',
+          `label="${r.label}"`,
+          r.app ? `app="${r.app}"` : '',
+          r.page ? `page="${r.page}"` : '',
+          r.section ? `section="${r.section}"` : '',
+        ].filter(Boolean).join(' ');
+        return `<ref ${attrs}>\n${r.content ?? ''}\n</ref>`;
+      });
+      referencesBlock = `<references>\n${refLines.join('\n\n')}\n</references>\n\n`;
+      this.logger.debug(`[references] count=${refs.length}`);
+    }
+
     // --- Slash command: /stop ---
     if (content === SLASH_STOP) {
       const controller = this.abortMap.get(conversationId);
@@ -382,14 +403,43 @@ export class AgentRunner {
         this.logger.debug(`  [history:${m.role}] "${preview}${String(m.content ?? '').length > 60 ? '...' : ''}"`);
       }
 
-      // Inject <user_info> into the last user message
-      if (userInfoBlock) {
+      // Inject <references> + <user_info> into the last user message (text prefix)
+      if (referencesBlock || userInfoBlock) {
         const lastIdx = history.length - 1;
         if (history[lastIdx]?.role === 'user') {
+          const currentContent = typeof history[lastIdx].content === 'string'
+            ? history[lastIdx].content
+            : history[lastIdx].content;
+          if (typeof currentContent === 'string') {
+            history[lastIdx] = {
+              ...history[lastIdx],
+              content: `${referencesBlock}${userInfoBlock}${currentContent}`,
+            };
+          }
+        }
+      }
+
+      // Handle attachments — only if deployment supports multimodal
+      const attachments: Array<{ type: string; url: string; filename?: string; mimeType?: string }> = message.attachments || [];
+      if (attachments.length > 0) {
+        if (!this.config.deployment?.multimodal) {
+          this.emitSystemMessage(conversationId, 'Model hiện tại không hỗ trợ xử lý file/ảnh. Vui lòng liên hệ quản trị viên để cấu hình model multimodal.');
+          return;
+        }
+        // Convert last user message to multimodal content array
+        const lastIdx = history.length - 1;
+        if (history[lastIdx]?.role === 'user') {
+          const textContent = typeof history[lastIdx].content === 'string'
+            ? history[lastIdx].content
+            : String(history[lastIdx].content ?? '');
+          const imageParts = attachments
+            .filter((a) => a.mimeType?.startsWith('image/'))
+            .map((a) => ({ type: 'image' as const, image: new URL(a.url), mimeType: a.mimeType }));
           history[lastIdx] = {
-            ...history[lastIdx],
-            content: `${userInfoBlock}${history[lastIdx].content}`,
+            role: 'user',
+            content: [...imageParts, { type: 'text' as const, text: textContent }],
           };
+          this.logger.debug(`[attachments] injected images=${imageParts.length}`);
         }
       }
 
