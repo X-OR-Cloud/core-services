@@ -490,7 +490,13 @@ export class ChatGateway
 
       // Save Action record
       const actionRole = isAgent ? ActorRole.AGENT : ActorRole.USER;
-      const actionType = dto.type === 'system' ? ActionType.NOTICE : ActionType.MESSAGE;
+      const actionTypeMap: Record<string, ActionType> = {
+        system: ActionType.NOTICE,
+        tool_use: ActionType.TOOL_USE,
+        tool_result: ActionType.TOOL_RESULT,
+        thinking: ActionType.THINKING,
+      };
+      const actionType = actionTypeMap[dto.type ?? ''] ?? ActionType.MESSAGE;
       const savedAction = await this.actionService.createActionDirect(
         {
           conversationId,

@@ -486,10 +486,32 @@ export class AgentRunner {
             this.logger.debug(`[step#${step.stepNumber}] toolCalls=${step.toolCalls?.length ?? 0} toolResults=${step.toolResults?.length ?? 0} finishReason=${step.finishReason}`);
             for (const call of step.toolCalls ?? []) {
               this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
+              this.socket?.emit('message:send', {
+                conversationId,
+                role: 'assistant',
+                type: 'tool_use',
+                content: call.toolName,
+                metadata: {
+                  toolName: call.toolName,
+                  toolInput: call.input,
+                  toolUseId: call.toolCallId,
+                },
+              });
             }
             for (const res of step.toolResults ?? []) {
-              const outputStr = JSON.stringify(res.output).slice(0, 120);
+              const outputStr = JSON.stringify(res.output).slice(0, 200);
               this.logger.debug(`  [tool:result] ${res.toolName} → ${outputStr}`);
+              this.socket?.emit('message:send', {
+                conversationId,
+                role: 'assistant',
+                type: 'tool_result',
+                content: outputStr,
+                metadata: {
+                  toolName: res.toolName,
+                  toolResult: res.output,
+                  toolResultId: res.toolCallId,
+                },
+              });
             }
           },
         });
