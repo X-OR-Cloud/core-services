@@ -161,11 +161,15 @@ export class AuthController {
   @ApiResponse({ status: 302, description: 'Redirect to Google' })
   async googleAuth(
     @Query('appId') appId: string,
+    @Query('callbackUrl') callbackUrl: string,
     @Res() res: Response,
   ): Promise<void> {
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
     const redirectUri = this.configService.get<string>('GOOGLE_REDIRECT_URI');
-    const state = appId ? Buffer.from(JSON.stringify({ appId })).toString('base64') : '';
+    const stateData: Record<string, string> = {};
+    if (appId) stateData.appId = appId;
+    if (callbackUrl) stateData.callbackUrl = callbackUrl;
+    const state = Object.keys(stateData).length > 0 ? Buffer.from(JSON.stringify(stateData)).toString('base64') : '';
     const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     googleAuthUrl.searchParams.set('client_id', clientId);
     googleAuthUrl.searchParams.set('redirect_uri', redirectUri);
@@ -187,25 +191,29 @@ export class AuthController {
     const feBaseUrl = this.configService.get<string>('FE_BASE_URL') || '';
 
     let appId: string | undefined;
+    let callbackUrl: string | undefined;
     if (state) {
       try {
         const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
         appId = decoded.appId;
+        callbackUrl = decoded.callbackUrl;
       } catch { /* state không phải format của chúng ta */ }
     }
+
+    const baseUrl = callbackUrl ? new URL(callbackUrl).origin : feBaseUrl;
 
     try {
       const result = await this.authService.handleGoogleCallback((req as any).user as any, appId);
       if ('error' in result) {
-        return res.redirect(`${feBaseUrl}/login?error=${result.error}`) as any;
+        return res.redirect(`${baseUrl}/login?error=${result.error}`) as any;
       }
-      const redirectUrl = new URL(`${feBaseUrl}/auth/callback`);
+      const redirectUrl = callbackUrl ? new URL(callbackUrl) : new URL(`${feBaseUrl}/auth/callback`);
       redirectUrl.searchParams.set('token', result.accessToken);
       redirectUrl.searchParams.set('refreshToken', result.refreshToken);
       return res.redirect(redirectUrl.toString()) as any;
     } catch (error) {
       this.logger.error('Google OAuth callback error', { message: error.message });
-      return res.redirect(`${feBaseUrl}/login?error=google_service_unavailable`) as any;
+      return res.redirect(`${baseUrl}/login?error=google_service_unavailable`) as any;
     }
   }
 }
