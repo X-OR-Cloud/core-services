@@ -1,250 +1,164 @@
 # CLAUDE.md
 
-This file provides guidance to AI Agent when working with code in this repository.
+Guidance for AI Agent when working with this repository.
 
-## Agent Info
-1. **Agent Name**: `backend-dev`
-
-## Project IDs
-Projects sử dụng `mcp__Builtin_CreateDocument` để tạo tài liệu:
-
-| Project ID | Services |
-|------------|----------|
-| `69a10fc73f11383f63de96e6` | dgt, iam |
-
-## Development Workflow Principles
+## Development Workflow
 
 ### Handling Change Requests
-When there are mandatory change requests, follow these steps:
-1. **Discuss** - Gather all necessary information and requirements
-2. **Propose** - Present implementation method and detailed plan
-3. **Approve** - Get confirmation before proceeding
-4. **Create Branch** - Create a new git branch for the implementation
-5. **Implement** - Execute the approved plan
-6. **Update** - Modify related documentation and tests
+
+1. **Discuss** — Gather all necessary information and requirements
+2. **Propose** — Create a plan document at `docs/<service>/<feature>/`
+3. **Approve** — Wait for confirmation before proceeding
+4. **Create Branch** — Create a new git branch for the feature/fix
+5. **Implement** — Execute the approved plan
+6. **Verify** — Build, test, and validate
 
 ### Task Management
-- **Use micro-task principle**: Break down complex tasks into small, manageable todos to avoid output token limits (6k limit)
-- Create granular todo items for each discrete action (e.g., separate todos for each file to edit, each function to implement)
+
+- Use **micro-task principle**: break complex tasks into small, granular todos
+- Each todo = one concrete action (one file, one function)
 - Mark todos as completed immediately after finishing each micro-task
-- Keep responses concise by focusing on one micro-task at a time
+- Keep responses concise, focused on one task at a time
 
-### Development Request Workflow
-When receiving new development requests, follow this workflow:
+### Response Guidelines
 
-1. **Discuss** - Clarify all requirements and constraints
-2. **Propose** - Create documentation in `docs/<service>/<feature>/` (or user-specified location)
-3. **Approve** - Wait for user review and confirmation
-4. **Implement** - Execute the approved plan
-5. **Verify** - Build, test, and validate changes
-
-#### Response Guidelines
-- Keep responses concise and focused
+- Keep responses short and focused on the specific question or task
 - Avoid lengthy explanations unless requested
 - Do not provide sample code unless specifically asked
-- Focus on addressing the specific question or task
-
-#### Common Request Types
-- API Development/Modification
-- Module Addition
-- Bug Investigation
-- New Service Creation
-
-## Common Development Commands
-
-### Build
-```bash
-# Build specific service
-nx run <service>:build
-
-# Examples
-nx run iam:build
-nx run aiwm:build
-nx run cbm:build
-```
-
-### Run Services
-```bash
-# API mode (REST API server)
-nx run <service>:api
-
-# MCP mode (for AIWM - MCP server, port 3355)
-nx run aiwm:mcp
-
-# Worker mode (microservices worker)
-nx run <service>:wrk
-
-# AIWM-specific modes
-nx run aiwm:agt   # Hosted agent worker
-nx run aiwm:con   # Connection worker (Discord/Telegram bridge)
-```
-
-## High-Level Architecture
-
-### Monorepo Structure
-This is an Nx monorepo using NestJS framework for microservices architecture with the following key components:
-
-**Services** (`/services/`):
-- **Template** (Service Template) - Port 3000
-  - Reference implementation for new services
-  - CRUD operations with event-driven architecture
-  - BullMQ queue processing examples
-  - See [`services/template/README.md`](services/template/README.md) for details
-
-- **IAM** (Identity & Access Management) - Port 3001
-  - User management with MongoDB/Mongoose
-  - Organization management
-  - JWT authentication strategy (local + Google OAuth 2.0 SSO)
-  - Password encryption utilities
-  - See [`services/iam/CLAUDE.md`](services/iam/CLAUDE.md) for Google SSO details
-
-- **NOTI** (Notification Service) - Port 3002
-  - Real-time notifications via WebSocket
-  - System events and agent actions
-  - REST API + WebSocket dual mode
-
-- **AIWM** (AI Workload Manager) - Port 3003
-  - Core service for AI operations at scale
-  - 22 modules: Agent, Node, Chat, Model, Deployment, Instruction, Tool, Guardrail, PII, Configuration, Conversation, Message, Execution, Workflow, Resource, Reports, Memory, Reminder, Action, Connection, Agent-Worker, Util
-  - Multi-mode: API, MCP, Worker (BullMQ), Agent runner (hosted agents), Connection (Discord/Telegram bridge)
-  - See [`services/aiwm/CLAUDE.md`](services/aiwm/CLAUDE.md) for detailed documentation
-
-- **CBM** (Core Business Management) - Port 3004
-  - Project management with member-based access control (project.lead / project.member roles)
-  - Work item management (epic/task/subtask) with state machine, recurring schedules, and next-work priority
-  - Document management with advanced content operations and time-limited share links
-  - See [`services/cbm/CLAUDE.md`](services/cbm/CLAUDE.md) and [`docs/cbm/CBM-ENTITIES-AND-API.md`](docs/cbm/CBM-ENTITIES-AND-API.md) for details
-
-- **MONA** (Monitoring & Analytics) - Port 3005
-  - Metrics aggregation and monitoring
-  - Dashboard data collection
-  - System health tracking
-
-- **AIVP** (AI Video Processing) - Port 3007
-  - AI-powered video processing and analysis
-  - See [`services/aivp/README.md`](services/aivp/README.md) for details
-
-- **DGT** (Digital Gold Trader) - Port 3008
-  - Paper trading and market data for gold & crypto assets
-  - 13 modules: Account, RiskProfile, MarketPrice, TechnicalIndicator, MacroIndicator, SentimentSignal, Order, Trade, Position, Signal, Bot, BotActivityLog, Analytics
-  - 9 data collectors (Binance, OKX, Bitfinex, Yahoo, GoldAPI, FRED, NewsAPI+LLM, ByteTree)
-  - AI signal generation via LLM (OpenAI-compatible endpoint, supports OpenAI/Gemini/Ollama/Groq/OpenRouter)
-  - Four worker modes: api, shd (scheduler), ing (data ingestion), sig (signal generation), mon (SL/TP monitoring)
-  - See [`services/dgt/CLAUDE.md`](services/dgt/CLAUDE.md) for details
-
-**Libraries** (`/libs/`):
-- **base** - Shared base classes and utilities
-  - Base DTOs, controllers, services, and schemas
-  - JWT strategy and auth guards
-  - Reusable NestJS components
-  
-- **shared** - Cross-service shared code
-  - Service configuration (ports, hosts, database URIs)
-  - Common constants and enums (roles, service names)
-  - Authentication utilities and logging helpers
-  - TypeScript types for auth and services
-
-### Service Communication Pattern
-- Services are configured to run on different ports (IAM: 3001, CBM: 3004)
-- Each service has its own MongoDB database with a common prefix pattern
-- Authentication is handled centrally through the IAM service
-- Shared libraries ensure consistent interfaces and utilities across services
-
-### Database Architecture
-- MongoDB with Mongoose ODM
-- Each service has its own database: `{COMMON_CONFIG.DatabaseNamePrefix}{serviceName}`
-- Base schemas provide common fields and patterns
-- Connection URI from environment variable: `MONGODB_URI`
-
-### Testing Strategy
-- Unit tests alongside source files (`*.spec.ts`)
-- E2E tests in separate projects (`*-e2e`)
-- Jest configuration with TypeScript support
-- Test setup includes global setup/teardown for E2E tests
-
-### Configuration Management
-- Environment variables via `@nestjs/config`
-- Service-specific configurations in `shared` library
-- Global configuration accessible across all services
-- MongoDB URI and other secrets via environment variables
 
 ---
 
-## 🚀 Creating New Services
+## Common Development Commands
 
-### Quick Reference
-When creating new microservices, use these prompt templates:
+```bash
+# Build service
+nx run <service>:build
 
-**📋 Detailed Guide:**
-- File: `docs/PROMPT-NEW-SERVICE-CREATION.md`
-- Use for: Complex services with multiple entities and special requirements
+# Run modes
+nx run <service>:api          # REST API server
+nx run <service>:wrk          # BullMQ worker
 
-**⚡ Quick Template:**
-- File: `docs/QUICK-PROMPT-NEW-SERVICE.md`
-- Use for: Simple services with standard CRUD operations
+# AIWM-specific modes
+nx run aiwm:mcp               # MCP server (port 3355)
+nx run aiwm:agt               # Hosted agent worker
+nx run aiwm:con               # Connection worker (Discord/Telegram)
 
-### Standard Service Template
-All new services MUST follow the **Template Service** pattern (`services/template/`):
+# DGT-specific modes
+nx run dgt:shd                # Scheduler
+nx run dgt:ing                # Data ingestion
+nx run dgt:sig                # Signal generation
+nx run dgt:mon                # SL/TP monitoring
 
-**✅ Required Features (All Mandatory):**
-1. **Health Check** - `/health` endpoint with database monitoring
-2. **Error Standardization** - GlobalExceptionFilter with correlation IDs
-3. **RBAC Integration** - BaseService with permission checks
-4. **Audit Trail** - createdBy/updatedBy tracking
-5. **Modern Controllers** - @CurrentUser decorator, no BaseController
-6. **Swagger Documentation** - Full OpenAPI specs with error decorators
-7. **JWT Authentication** - JwtStrategy + PassportModule
-8. **Pagination Support** - PaginationQueryDto for list endpoints
-9. **Soft Delete** - All entities support soft delete
-10. **Correlation ID** - CorrelationIdMiddleware for request tracking
+# TypeScript check
+npx tsc --noEmit -p services/<service>/tsconfig.app.json
 
-**📚 Reference Implementation:**
-- **Primary Reference:** `services/template/` - Production-ready example
-- **Upgraded Service:** `services/iam/` - Recently upgraded to new pattern
-- **Documentation:** `docs/TEMPLATE-SERVICE-UPGRADE.md` - Feature details
-- **Test Results:** `docs/TEST-RESULTS-PHASE2.md` - Example test scenarios
+# Lint / Test
+nx lint <service>
+nx test <service>
+```
 
-### Service Creation Workflow
-1. **Read Prompt Templates** - Review `docs/QUICK-PROMPT-NEW-SERVICE.md`
-2. **Customize Prompt** - Replace placeholders with service details
-3. **Submit to Agent** - Paste prompt to Claude Code
-4. **Confirm Understanding** - Wait for Agent to outline structure
-5. **Incremental Development** - Agent creates service step-by-step
-6. **Verify Build** - Run `npx nx build [SERVICE_NAME]`
-7. **Test Endpoints** - Verify health check and APIs
-8. **Review Documentation** - Check README has curl examples
+---
+
+## Architecture Overview
+
+### Monorepo Structure
+
+```
+core-services/
+├── services/     # Microservices (NestJS)
+├── libs/
+│   ├── base/     # @core/base  — BaseSchema, BaseService, guards, decorators
+│   └── shared/   # @core/shared — constants, enums, service config, logger
+└── docs/         # Architecture & API documentation
+```
+
+### Services
+
+| Service | Port (Dev) | Port (Prod) | Description |
+|---------|-----------|-------------|-------------|
+| **template** | 3000 | 3300–3309 | Reference implementation — CRUD, BullMQ, RBAC |
+| **iam** | 3001 | 3310–3319 | Identity & Access Management — JWT, Google SSO |
+| **noti** | 3002 | 3320–3329 | Notification — WebSocket, BullMQ events |
+| **aiwm** | 3003 | 3330–3339 | AI Workload Manager — 22 modules, MCP, hosted agents |
+| **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
+| **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
+| **aivp** | 3007 | 3370–3379 | AI Video Processing |
+| **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals |
+
+Next available ports: 3009, 3010, ...
+
+See [`services/<name>/CLAUDE.md`] and [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLOCATION.md) for details.
+
+### Libraries
+
+**`@core/base`** (`libs/base/`)
+- `BaseSchema` — base Mongoose schema (createdBy, updatedBy, orgId, isDeleted, timestamps)
+- `BaseService` — CRUD + automatic RBAC enforcement
+- `JwtAuthGuard`, `CombinedAuthGuard` — auth guards
+- `@CurrentUser()` — decorator to access request context
+- `parseQueryString` — parse query string into `FindManyOptions` (see operators below)
+- `GlobalExceptionFilter` — standardized error responses with correlationId
+- `CorrelationIdMiddleware` — request tracking
+- Swagger decorators: `ApiCreateErrors`, `ApiReadErrors`, etc.
+
+**`@core/shared`** (`libs/shared/`)
+- Service config (ports, hosts, DB URIs)
+- Common constants, enums (roles, service names)
+- Auth utilities, logging helpers (`createLogger`, `logInfo`, `logDebug`, `logWarn`, `logError`)
+
+### Database & Infrastructure
+
+- **MongoDB**: each service has its own database — `{DatabaseNamePrefix}{serviceName}`
+- **Redis**: shared instance — BullMQ queues, Socket.IO adapter, caching
+- **BullMQ**: async job processing, event-driven architecture
+
+---
+
+## Creating New Services
+
+### Required Features
+
+1. Health Check — `/health` endpoint with database monitoring
+2. Error Standardization — `GlobalExceptionFilter` with correlationId
+3. RBAC — `BaseService` with permission checks
+4. Audit Trail — `createdBy`/`updatedBy` tracking
+5. Modern Controllers — `@CurrentUser()`, no `BaseController`
+6. Swagger — Full OpenAPI specs
+7. JWT Auth — `JwtStrategy` + `PassportModule`
+8. Pagination — `PaginationQueryDto` for list endpoints
+9. Soft Delete — all entities must support it
+10. Correlation ID — `CorrelationIdMiddleware`
+
+Reference: [`services/template/`](services/template/) — production-ready example.
 
 ### Common Patterns
 
-**Schema Pattern:**
+**Schema:**
 ```typescript
-import { BaseSchema } from '@hydrabyte/base';
+import { BaseSchema } from '@core/base';
 
 @Schema({ timestamps: true })
 export class MyEntity extends BaseSchema {
   @Prop({ required: true })
   name: string;
-  // ... entity-specific fields
 }
 ```
 
-**Service Pattern:**
+**Service:**
 ```typescript
-import { BaseService } from '@hydrabyte/base';
+import { BaseService } from '@core/base';
 
 @Injectable()
 export class MyEntityService extends BaseService<MyEntity> {
   constructor(@InjectModel(MyEntity.name) model: Model<MyEntity>) {
     super(model);
   }
-  // Override methods if needed
 }
 ```
 
-**Controller Pattern (Modern - NO BaseController):**
+**Controller:**
 ```typescript
-import { JwtAuthGuard, CurrentUser, parseQueryString,
-         ApiCreateErrors, ApiReadErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, ApiReadErrors } from '@core/base';
 
 @Controller('my-entities')
 export class MyEntityController {
@@ -253,90 +167,43 @@ export class MyEntityController {
   @Get()
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
-  async findAll(
-    @Query() query: Record<string, any>,
-    @CurrentUser() context: RequestContext
-  ) {
-    const options = parseQueryString(query);
-    return this.service.findAll(options, context);
+  async findAll(@Query() query: Record<string, any>, @CurrentUser() context: RequestContext) {
+    return this.service.findAll(parseQueryString(query), context);
   }
 }
 ```
 
-**Query String Filtering (via `parseQueryString` utility):**
-
-`parseQueryString` from `@hydrabyte/base` parses query string into `FindManyOptions` with MongoDB operator support. Use this in modern controllers instead of `BaseController.handleQueryStringForFindMany`.
-
-Supported operators:
+**`parseQueryString` operators:**
 ```
-?field=value              → { field: "value" }           # Exact match
-?field:gt=18              → { field: { $gt: "18" } }     # Greater than
-?field:gte=18             → { field: { $gte: "18" } }    # Greater than or equal
-?field:lt=65              → { field: { $lt: "65" } }     # Less than
-?field:lte=65             → { field: { $lte: "65" } }    # Less than or equal
-?field:ne=inactive        → { field: { $ne: "inactive" } } # Not equal
-?field:in=a,b,c           → { field: { $in: ["a","b","c"] } } # In array
-?field:nin=a,b             → { field: { $nin: ["a","b"] } }   # Not in array
-?field:regex=john          → { field: { $regex: "john", $options: "i" } } # Regex
-?sort=createdAt:desc,name:asc  # Sorting
-?page=1&limit=20               # Pagination
+?field=value              → exact match
+?field:gt=18              → $gt
+?field:gte=18             → $gte
+?field:lt=65              → $lt
+?field:lte=65             → $lte
+?field:ne=inactive        → $ne
+?field:in=a,b,c           → $in array
+?field:nin=a,b            → $nin array
+?field:regex=john         → $regex (case-insensitive)
+?sort=createdAt:desc,name:asc
+?page=1&limit=20
 ```
-
-### Port Allocation
-
-**⚠️ See [docs/PORT-ALLOCATION.md](docs/PORT-ALLOCATION.md) for complete port allocation strategy.**
-
-#### Local Development Ports (30XX)
-Services are organized by priority: Template (reference) → Core services → Business services
-
-| Service | Port | Type | Description |
-|---------|------|------|-------------|
-| **Template** | 3000 | Reference | Service template (reference implementation) |
-| **IAM** | 3001 | Core | Identity & Access Management |
-| **NOTI** | 3002 | Core | Notification Service |
-| **AIWM** | 3003 | Business | AI Workload Manager |
-| **CBM** | 3004 | Business | Core Business Management |
-| **MONA** | 3005 | Business | Monitoring & Analytics |
-| **AIVP** | 3007 | Business | AI Video Processing |
-| **DGT** | 3008 | Business | Digital Gold Trader |
-
-**Next available ports:** 3009, 3010, etc.
-
-#### Production Ports (33XX-39XX)
-Each service gets 10 ports: 4 for API instances, 6 for MCP/WS/other modes
-
-| Service | API Instances | MCP/WS/Other | Total Range |
-|---------|---------------|--------------|-------------|
-| Template | 3300-3303 | 3304-3309 | 3300-3309 |
-| IAM | 3310-3313 | 3314-3319 | 3310-3319 |
-| NOTI | 3320-3323 | 3324-3329 | 3320-3329 |
-| AIWM | 3330-3333 | 3334-3339 | 3330-3339 |
-| CBM | 3340-3343 | 3344-3349 | 3340-3349 |
-| MONA | 3350-3353 | 3354-3359 | 3350-3359 |
-| AIVP | 3370-3373 | 3374-3379 | 3370-3379 |
-| DGT | 3380-3383 | 3384-3389 | 3380-3389 |
-
-**Example - AIWM Production Deployment:**
-- API: 3330, 3331, 3332, 3333 (4 instances)
-- MCP: 3334, 3335, 3336 (3 instances)
-- WebSocket: 3337, 3338 (2 instances)
-- Reserved: 3339
 
 ### Verification Checklist
-After service creation:
+
 ```bash
-# Build without errors
 npx nx build [SERVICE_NAME]
-
-# TypeScript compilation check
 npx tsc --noEmit -p services/[SERVICE_NAME]/tsconfig.app.json
-
-# Start service
-npx nx serve [SERVICE_NAME]
-
-# Test health endpoint
+nx run [SERVICE_NAME]:api
 curl http://localhost:[PORT]/health
-
-# View API documentation
 open http://localhost:[PORT]/api-docs
 ```
+
+---
+
+## Related Docs
+
+- [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLOCATION.md) — Port allocation strategy
+- [`docs/PROMPT-NEW-SERVICE-CREATION.md`](docs/PROMPT-NEW-SERVICE-CREATION.md) — Detailed prompt for new services
+- [`docs/QUICK-PROMPT-NEW-SERVICE.md`](docs/QUICK-PROMPT-NEW-SERVICE.md) — Quick prompt template
+- [`docs/TEMPLATE-SERVICE-UPGRADE.md`](docs/TEMPLATE-SERVICE-UPGRADE.md) — Template feature details
+- `services/<name>/CLAUDE.md` — Per-service detailed documentation

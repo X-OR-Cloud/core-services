@@ -1,82 +1,118 @@
-# Hydrabyte
+# Core Services
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Nx monorepo containing backend microservices for the core platform, built on NestJS.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is almost ready ✨.
+## Tech Stack
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/nest?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+- **Runtime**: Node.js 18+, TypeScript ~5.9
+- **Framework**: NestJS v11, Nx v21 (monorepo)
+- **Database**: MongoDB 8 + Mongoose (each service has its own database)
+- **Cache / Queue**: Redis + BullMQ (job queues, pub/sub)
+- **Auth**: JWT + Passport (local, Google OAuth 2.0)
+- **Real-time**: Socket.IO v4 + Redis adapter
+- **AI / MCP**: Vercel AI SDK, LangChain, Model Context Protocol SDK
+- **API Docs**: Swagger / OpenAPI
 
-## Finish your CI setup
+## Services
 
-[Click here to finish setting up your workspace!](https://cloud.nx.app/connect/zFdsKntpfu)
+| Service | Port (Dev) | Port (Prod) | Description |
+|---------|-----------|-------------|-------------|
+| **template** | 3000 | 3300–3309 | Reference implementation — CRUD, BullMQ, RBAC |
+| **iam** | 3001 | 3310–3319 | Identity & Access Management — JWT, Google SSO |
+| **noti** | 3002 | 3320–3329 | Notification — WebSocket, BullMQ events |
+| **aiwm** | 3003 | 3330–3339 | AI Workload Manager — 22 modules, MCP server, hosted agents |
+| **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
+| **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
+| **aivp** | 3007 | 3370–3379 | AI Video Processing |
+| **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals, 9 data collectors |
 
+Services in development: `schd` (Scheduler), `pag` (Personal Agent Gateway).
 
-## Run tasks
+### Run Modes
 
-To run the dev server for your app, use:
+Each service supports one or more run modes:
 
-```sh
-npx nx serve hydrabyte
+```bash
+nx run <service>:api    # REST API server
+nx run <service>:wrk    # BullMQ worker
+
+# AIWM-specific
+nx run aiwm:mcp         # MCP server (port 3355)
+nx run aiwm:agt         # Hosted agent worker
+nx run aiwm:con         # Connection worker (Discord / Telegram)
 ```
 
-To create a production bundle:
+## Libraries
 
-```sh
-npx nx build hydrabyte
+| Library | Path | Description |
+|---------|------|-------------|
+| `@core/base` | `libs/base` | BaseSchema, BaseService (CRUD + RBAC), JWT guard, pagination, Swagger decorators |
+| `@core/shared` | `libs/shared` | Constants, enums, service config, logger utilities |
+
+## Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Build a service
+nx run iam:build
+
+# Run a service in dev mode
+nx run iam:api
+
+# Health check
+curl http://localhost:3001/health
+
+# API docs
+open http://localhost:3001/api-docs
 ```
 
-To see all available targets to run for a project, run:
+## Environment Variables
 
-```sh
-npx nx show project hydrabyte
+```env
+MONGODB_URI=mongodb://localhost:27017
+REDIS_HOST=localhost
+REDIS_PORT=6379
+JWT_SECRET=your-secret
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+## Directory Structure
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-Use the plugin's generator to create new projects.
-
-To generate a new application, use:
-
-```sh
-npx nx g @nx/nest:app demo
+```
+hydra-services/
+├── services/           # Microservices
+│   ├── template/       # Reference implementation
+│   ├── iam/
+│   ├── noti/
+│   ├── aiwm/
+│   ├── cbm/
+│   ├── mona/
+│   ├── aivp/
+│   └── dgt/
+├── libs/
+│   ├── base/           # @core/base
+│   └── shared/         # @core/shared
+└── docs/               # Architecture & API documentation
 ```
 
-To generate a new library, use:
+## Documentation
 
-```sh
-npx nx g @nx/node:lib mylib
+- [CLAUDE.md](CLAUDE.md) — AI agent guidance and development workflow
+- [docs/PORT-ALLOCATION.md](docs/PORT-ALLOCATION.md) — Port allocation strategy
+- `services/<name>/CLAUDE.md` — Per-service detailed documentation
+- `docs/<service>/` — API specs and module design
+
+## Development Commands
+
+```bash
+# TypeScript check
+npx tsc --noEmit -p services/<service>/tsconfig.app.json
+
+# Dependency graph
+npx nx graph
+
+# Lint / Test
+nx lint <service>
+nx test <service>
 ```
-
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
-
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/nest?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
