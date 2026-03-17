@@ -1024,6 +1024,23 @@ MEMORY CATEGORIES:
     if (agentCode) runtimeLines.push(`Agent Code: ${agentCode}`);
     parts.push(`<runtime>\n${runtimeLines.join('\n')}\n</runtime>`);
 
+    parts.push(
+      `<message_format>
+User messages may contain optional metadata blocks prepended before the actual message content:
+
+- <user_info>: Identity metadata of the sender (User ID, Username, Discord ID, Channel ID, etc.).
+  → Read silently for context. Do NOT acknowledge, quote, or explain this block to the user.
+
+- <references>: Resources or text snippets the user selected in the UI (documents, notes, etc.).
+  → Treat as context the user wants you to use when answering. Do NOT describe or explain the XML structure itself — just use the referenced content naturally in your response.
+
+- <knowledge_context>: Relevant knowledge chunks retrieved from the knowledge base.
+  → Use as supporting information when formulating your answer.
+
+These blocks are system metadata, not questions. Never explain them. Never repeat them back. Focus solely on the user's actual message after the blocks.
+</message_format>`,
+    );
+
     return parts.join('\n\n---\n\n');
   }
 
