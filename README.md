@@ -71,16 +71,65 @@ open http://localhost:3001/api-docs
 ## Environment Variables
 
 ```env
+# Infrastructure
 MONGODB_URI=mongodb://localhost:27017
+REDIS_URL=redis://localhost:6379
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# Qdrant (Vector DB)
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+
+# IAM
 JWT_SECRET=your-secret
+INTERNAL_API_KEY=your-internal-api-key
+
+# Google OAuth 2.0 SSO
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3001/auth/google/callback
+FE_BASE_URL=http://localhost:5173
+
+# Service URLs (inter-service communication)
+IAM_SERVICE_URL=http://localhost:3001
+AIWM_SERVICE_URL=http://localhost:3003
+CBM_BASE_URL=http://localhost:3004
+
+# AIWM — agent worker (agt mode)
+WS_CHAT_URL=http://localhost:3003
+MCP_SERVER_URL=http://localhost:3355
+
+# CBM — Discord webhook
+CBM_DISCORD_WEBHOOK_URL=
+
+# CBM — Knowledge Base storage
+KB_STORAGE_PATH=/tmp/cbm/knowledge
+KB_WORKER_CONCURRENCY=3
+
+# CBM — Knowledge Base embedding
+KB_EMBEDDING_API_URL=
+KB_EMBEDDING_API_KEY=
+KB_EMBEDDING_MODEL=
+
+# CBM — Knowledge Base chunking
+KB_CHUNK_STRATEGY=sentence
+KB_CHUNK_SIZE=512
+KB_CHUNK_OVERLAP=64
+
+# CBM — Knowledge Base OCR
+KB_OCR_API_URL=
+KB_OCR_API_KEY=
+KB_OCR_MODEL=
+KB_OCR_MAX_PAGES=50
 ```
 
 ## Directory Structure
 
 ```
-hydra-services/
+core-services/
 ├── services/           # Microservices
 │   ├── template/       # Reference implementation
 │   ├── iam/
