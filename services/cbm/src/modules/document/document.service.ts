@@ -158,7 +158,7 @@ export class DocumentService extends BaseService<Document> {
         $or: [
           { summary: searchRegex },
           { content: searchRegex },
-          { labels: searchQuery },
+          { labels: searchRegex },
         ],
       });
       delete options.search;
