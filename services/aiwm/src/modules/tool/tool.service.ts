@@ -103,6 +103,10 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__ListTools',
     'mcp__Builtin__ListAvailableFunctions',
   ],
+  DeploymentManagement: [
+    'mcp__Builtin__ListDeployments',
+    'mcp__Builtin__GetDeployment',
+  ],
   InstructionManagement: [
     'mcp__Builtin__ListInstructions',
     'mcp__Builtin__GetInstruction',
