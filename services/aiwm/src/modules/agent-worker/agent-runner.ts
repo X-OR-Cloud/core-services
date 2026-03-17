@@ -312,6 +312,7 @@ export class AgentRunner {
     this.logger.debug(`[user_info] lines=${userInfoLines.length} block="${userInfoBlock.slice(0, 120).replace(/\n/g, '\\n')}" raw=userId=${message.userId} fullname=${message.fullname} username=${message.username} externalUserId=${message.externalUserId} channelId=${message.channelId}`);
 
     // Build <references> block from message.references
+    this.logger.debug(`[references] raw=${JSON.stringify(message.references)}`);
     const refs: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }> = message.references || [];
     let referencesBlock = '';
     if (refs.length > 0) {
