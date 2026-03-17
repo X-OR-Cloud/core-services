@@ -107,6 +107,10 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__ListDeployments',
     'mcp__Builtin__GetDeployment',
   ],
+  NodeManagement: [
+    'mcp__Builtin__ListNodes',
+    'mcp__Builtin__GetNode',
+  ],
   InstructionManagement: [
     'mcp__Builtin__ListInstructions',
     'mcp__Builtin__GetInstruction',
