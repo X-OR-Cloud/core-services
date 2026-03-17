@@ -145,7 +145,7 @@ export class DocumentService extends BaseService<Document> {
    * Documents belonging to projects the caller is not a member of are excluded globally.
    */
   async findAll(
-    options: FindManyOptions & { search?: string },
+    options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Document>> {
     const andConditions: any[] = [];

@@ -94,88 +94,24 @@ export class AgentService extends BaseService<Agent> {
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Agent>> {
-    if (options.filter) {
-      if (options.filter['name']) {
-        options.filter['name'] = {
-          $regex: options.filter['name'],
-          $options: 'i',
-        };
-      }
-      if (options.filter['description']) {
-        options.filter['description'] = {
-          $regex: options.filter['description'],
-          $options: 'i',
-        };
-      }
+    const andConditions: any[] = [];
+
+    // Handle search
+    const searchQuery = options.search;
+    if (searchQuery && typeof searchQuery === 'string') {
+      const searchRegex = new RegExp(searchQuery, 'i');
+      andConditions.push({
+        $or: [
+          { name: searchRegex },
+          { description: searchRegex },
+          { labels: searchRegex },
+        ],
+      });
+      delete options.search;
     }
+    options.selectFields = ['-secret', '-settings'];
+    options.statisticFields = ['type','status','framework'];
     const findResult = await super.findAll(options, context);
-
-    // Aggregate statistics by status
-    const statusStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Aggregate statistics by type
-    const typeStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$type',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Aggregate statistics by framework
-    const frameworkStats = await super.aggregate(
-      [
-        { $match: { ...options.filter } },
-        {
-          $group: {
-            _id: '$framework',
-            count: { $sum: 1 },
-          },
-        },
-      ],
-      context
-    );
-
-    // Build statistics object
-    const statistics: any = {
-      total: findResult.pagination.total,
-      byStatus: {},
-      byType: {},
-      byFramework: {},
-    };
-
-    // Map status statistics
-    statusStats.forEach((stat: any) => {
-      statistics.byStatus[stat._id] = stat.count;
-    });
-
-    // Map type statistics
-    typeStats.forEach((stat: any) => {
-      statistics.byType[stat._id] = stat.count;
-    });
-
-    // Map framework statistics
-    frameworkStats.forEach((stat: any) => {
-      statistics.byFramework[stat._id || 'claude-agent-sdk'] = stat.count;
-    });
-
-    findResult.statistics = statistics;
     return findResult;
   }
 
@@ -301,7 +237,12 @@ export class AgentService extends BaseService<Agent> {
     accessToken: string,
     systemPromptOverride?: string,
     mode?: 'rendered' | 'raw'
-  ): Promise<{ id: string; systemPrompt: string; isPreview?: boolean; mode?: string }> {
+  ): Promise<{
+    id: string;
+    systemPrompt: string;
+    isPreview?: boolean;
+    mode?: string;
+  }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -331,7 +272,12 @@ export class AgentService extends BaseService<Agent> {
     context: RequestContext,
     accessToken?: string,
     dryRun?: boolean
-  ): Promise<{ id: string; name?: string; systemPrompt: string; isPreview?: boolean }> {
+  ): Promise<{
+    id: string;
+    name?: string;
+    systemPrompt: string;
+    isPreview?: boolean;
+  }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -345,7 +291,11 @@ export class AgentService extends BaseService<Agent> {
     }
 
     if (dryRun) {
-      return this.buildInstructionObjectForAgent(agent, accessToken, systemPrompt);
+      return this.buildInstructionObjectForAgent(
+        agent,
+        accessToken,
+        systemPrompt
+      );
     }
 
     const updated = await this.instructionModel
@@ -809,7 +759,7 @@ export class AgentService extends BaseService<Agent> {
         contextBlocks,
         tools,
         agentId,
-        agent.code || undefined,
+        agent.code || undefined
       ),
     };
 
@@ -827,7 +777,11 @@ export class AgentService extends BaseService<Agent> {
     agent: Agent
   ): Promise<{ id: string; systemPrompt: string; mode: string }> {
     if (!agent.instructionId) {
-      return { id: '', systemPrompt: 'No instruction configured for this agent.', mode: 'raw' };
+      return {
+        id: '',
+        systemPrompt: 'No instruction configured for this agent.',
+        mode: 'raw',
+      };
     }
 
     const instruction = await this.instructionModel
@@ -976,7 +930,7 @@ export class AgentService extends BaseService<Agent> {
     contextBlocks: string[],
     tools: Tool[],
     agentId: string,
-    agentCode?: string,
+    agentCode?: string
   ): string {
     const toolNames = new Set(tools.map((t) => t.name));
 
@@ -1020,7 +974,10 @@ MEMORY CATEGORIES:
       parts.push(`<context>\n${contextBlocks.join('\n\n')}\n</context>`);
     }
 
-    const runtimeLines = [`Datetime: ${new Date().toISOString()}`, `Agent ID: ${agentId}`];
+    const runtimeLines = [
+      `Datetime: ${new Date().toISOString()}`,
+      `Agent ID: ${agentId}`,
+    ];
     if (agentCode) runtimeLines.push(`Agent Code: ${agentCode}`);
     parts.push(`<runtime>\n${runtimeLines.join('\n')}\n</runtime>`);
 
@@ -1038,7 +995,7 @@ User messages may contain optional metadata blocks prepended before the actual m
   → Use as supporting information when formulating your answer.
 
 These blocks are system metadata, not questions. Never explain them. Never repeat them back. Focus solely on the user's actual message after the blocks.
-</message_format>`,
+</message_format>`
     );
 
     return parts.join('\n\n---\n\n');
@@ -1354,7 +1311,10 @@ These blocks are system metadata, not questions. Never explain them. Never repea
    * Stop agent — transitions status to suspended.
    * Allowed from: idle, inactive. Blocked if busy.
    */
-  async stopAgent(agentId: string, context: RequestContext): Promise<{ success: boolean; status: string }> {
+  async stopAgent(
+    agentId: string,
+    context: RequestContext
+  ): Promise<{ success: boolean; status: string }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -1376,7 +1336,12 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       { $set: { status: 'suspended', updatedBy: context.userId } }
     );
 
-    this.logger.log('Agent stopped (suspended)', { agentId, name: agent.name, previousStatus: agent.status, by: context.userId });
+    this.logger.log('Agent stopped (suspended)', {
+      agentId,
+      name: agent.name,
+      previousStatus: agent.status,
+      by: context.userId,
+    });
     return { success: true, status: 'suspended' };
   }
 
@@ -1384,7 +1349,10 @@ These blocks are system metadata, not questions. Never explain them. Never repea
    * Start agent — transitions status from suspended back to inactive.
    * Only allowed when agent is suspended.
    */
-  async startAgent(agentId: string, context: RequestContext): Promise<{ success: boolean; status: string }> {
+  async startAgent(
+    agentId: string,
+    context: RequestContext
+  ): Promise<{ success: boolean; status: string }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -1394,7 +1362,9 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     }
 
     if (agent.status !== 'suspended') {
-      throw new BadRequestException(`Agent is not suspended (current status: ${agent.status})`);
+      throw new BadRequestException(
+        `Agent is not suspended (current status: ${agent.status})`
+      );
     }
 
     await this.agentModel.updateOne(
@@ -1402,7 +1372,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       { $set: { status: 'inactive', updatedBy: context.userId } }
     );
 
-    this.logger.log('Agent started (inactive)', { agentId, name: agent.name, by: context.userId });
+    this.logger.log('Agent started (inactive)', {
+      agentId,
+      name: agent.name,
+      by: context.userId,
+    });
     return { success: true, status: 'inactive' };
   }
 
@@ -2211,7 +2185,14 @@ echo "Installation script placeholder - implement actual logic"
       {
         $push: {
           logs: {
-            $each: [{ level: dto.level ?? 'info', message: dto.message, time: new Date(), data: dto.data }],
+            $each: [
+              {
+                level: dto.level ?? 'info',
+                message: dto.message,
+                time: new Date(),
+                data: dto.data,
+              },
+            ],
             $slice: -100,
           },
         },

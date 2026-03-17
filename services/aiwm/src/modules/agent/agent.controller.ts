@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Put, Patch, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, QueryStringParams, parseQueryString } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { AgentService } from './agent.service';
@@ -45,10 +45,10 @@ export class AgentController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() paginationQuery: PaginationQueryDto,
+    @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.agentService.findAll(paginationQuery, context);
+    return this.agentService.findAll(parseQueryString(query), context);
   }
 
   @Get(':id')

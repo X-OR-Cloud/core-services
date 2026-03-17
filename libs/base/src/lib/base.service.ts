@@ -23,6 +23,7 @@ export interface FindManyOptions {
   sort?: Record<string, 1 | -1>;
   page?: number;
   limit?: number;
+  search?: string; // Optional search string for text search
   selectFields?: string[];
   statisticFields?: string[]; // Fields to include in statistics aggregation
 }
