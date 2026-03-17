@@ -299,14 +299,19 @@ export class AgentService extends BaseService<Agent> {
   async getAgentInstruction(
     agentId: string,
     accessToken: string,
-    systemPromptOverride?: string
-  ): Promise<{ id: string; systemPrompt: string; isPreview?: boolean }> {
+    systemPromptOverride?: string,
+    mode?: 'rendered' | 'raw'
+  ): Promise<{ id: string; systemPrompt: string; isPreview?: boolean; mode?: string }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
 
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    if (mode === 'raw') {
+      return this.buildRawInstructionForAgent(agent);
     }
 
     return this.buildInstructionObjectForAgent(
@@ -323,8 +328,10 @@ export class AgentService extends BaseService<Agent> {
   async updateAgentInstruction(
     agentId: string,
     systemPrompt: string,
-    context: RequestContext
-  ): Promise<{ id: string; name: string; systemPrompt: string }> {
+    context: RequestContext,
+    accessToken?: string,
+    dryRun?: boolean
+  ): Promise<{ id: string; name?: string; systemPrompt: string; isPreview?: boolean }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
       .exec();
@@ -337,12 +344,8 @@ export class AgentService extends BaseService<Agent> {
       throw new BadRequestException('Agent has no instruction configured');
     }
 
-    const instruction = await this.instructionModel
-      .findOne({ _id: agent.instructionId, isDeleted: false })
-      .exec();
-
-    if (!instruction) {
-      throw new NotFoundException('Instruction not found');
+    if (dryRun) {
+      return this.buildInstructionObjectForAgent(agent, accessToken, systemPrompt);
     }
 
     const updated = await this.instructionModel
@@ -358,7 +361,7 @@ export class AgentService extends BaseService<Agent> {
     }
 
     return {
-      id: (updated as any)._id.toString(),
+      id: (updated._id as Types.ObjectId).toString(),
       name: updated.name,
       systemPrompt: updated.systemPrompt,
     };
@@ -813,6 +816,31 @@ export class AgentService extends BaseService<Agent> {
     }
 
     return result;
+  }
+
+  /**
+   * Return the raw (non-injected) systemPrompt of the agent's instruction.
+   */
+  private async buildRawInstructionForAgent(
+    agent: Agent
+  ): Promise<{ id: string; systemPrompt: string; mode: string }> {
+    if (!agent.instructionId) {
+      return { id: '', systemPrompt: 'No instruction configured for this agent.', mode: 'raw' };
+    }
+
+    const instruction = await this.instructionModel
+      .findOne({ _id: agent.instructionId, isDeleted: false })
+      .exec();
+
+    if (!instruction) {
+      return { id: '', systemPrompt: 'Instruction not found.', mode: 'raw' };
+    }
+
+    return {
+      id: (instruction._id as Types.ObjectId).toString(),
+      systemPrompt: instruction.systemPrompt,
+      mode: 'raw',
+    };
   }
 
   /**

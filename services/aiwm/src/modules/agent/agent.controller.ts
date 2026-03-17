@@ -117,15 +117,15 @@ export class AgentController {
   ) {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     const token = req.headers?.authorization?.replace('Bearer ', '') || '';
-    return this.agentService.getAgentInstruction(resolvedId, token, query.systemPrompt);
+    return this.agentService.getAgentInstruction(resolvedId, token, query.systemPrompt, query.mode);
   }
 
   @Patch(':id/instruction')
   @ApiOperation({
     summary: 'Update agent instruction systemPrompt',
-    description: "Update the systemPrompt of the agent's current instruction. The instruction record is updated in place."
+    description: "Update the systemPrompt of the agent's current instruction. Pass dryRun=true to preview the fully rendered (injected) result without saving to DB — useful for long prompts that exceed URL length limits."
   })
-  @ApiResponse({ status: 200, description: 'Instruction updated successfully' })
+  @ApiResponse({ status: 200, description: 'Instruction updated successfully (or preview if dryRun=true)' })
   @ApiResponse({ status: 400, description: 'Agent has no instruction configured' })
   @ApiResponse({ status: 404, description: 'Agent or instruction not found' })
   @UseGuards(JwtAuthGuard)
@@ -133,9 +133,11 @@ export class AgentController {
     @Param('id') id: string,
     @Body() dto: UpdateAgentInstructionDto,
     @CurrentUser() context: RequestContext,
+    @Req() req: any,
   ) {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
-    return this.agentService.updateAgentInstruction(resolvedId, dto.systemPrompt, context);
+    const token = req.headers?.authorization?.replace('Bearer ', '') || '';
+    return this.agentService.updateAgentInstruction(resolvedId, dto.systemPrompt, context, token, dto.dryRun);
   }
 
   @Get(':id/config')

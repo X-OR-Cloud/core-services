@@ -532,12 +532,21 @@ export class AgentDisconnectDto {
  */
 export class PreviewInstructionQueryDto {
   @ApiPropertyOptional({
-    description: 'Override systemPrompt for preview (does not modify the stored instruction)',
+    description: 'Override systemPrompt for preview (does not modify the stored instruction). Note: use PATCH with dryRun=true for long prompts to avoid HTTP/2 URL length limits.',
     required: false,
   })
   @IsOptional()
   @IsString()
   systemPrompt?: string;
+
+  @ApiPropertyOptional({
+    description: 'View mode: "rendered" (default) returns fully injected systemPrompt; "raw" returns original stored systemPrompt without any injection.',
+    enum: ['rendered', 'raw'],
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['rendered', 'raw'])
+  mode?: 'rendered' | 'raw';
 }
 
 /**
@@ -548,6 +557,14 @@ export class UpdateAgentInstructionDto {
   @IsString()
   @IsNotEmpty()
   systemPrompt: string;
+
+  @ApiPropertyOptional({
+    description: 'Dry run mode: if true, does not save to DB and returns the fully rendered (injected) preview instead.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
 }
 
 /**
