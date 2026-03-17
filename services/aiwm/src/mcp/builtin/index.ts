@@ -10,7 +10,15 @@ import {
   KnowledgeBaseTools,
 } from './cbm';
 import { UserManagementTools } from './iam';
-import { AgentManagementTools, InstructionManagementTools, MemoryManagementTools, ReminderManagementTools } from './aiwm';
+import {
+  AgentManagementTools,
+  InstructionManagementTools,
+  MemoryManagementTools,
+  ReminderManagementTools,
+  ToolManagementTools,
+  DeploymentManagementTools,
+  NodeManagementTools,
+} from './aiwm';
 
 /**
  * All builtin tools from all services
@@ -25,6 +33,9 @@ export const BuiltInTools: ToolDefinition[] = [
   ...InstructionManagementTools,
   ...MemoryManagementTools,
   ...ReminderManagementTools,
+  ...ToolManagementTools,
+  ...DeploymentManagementTools,
+  ...NodeManagementTools,
 ];
 
 /**
