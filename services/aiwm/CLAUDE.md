@@ -43,6 +43,32 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 | Connection | `src/modules/connection/` | Discord/Telegram connection config |
 | Util | `src/modules/util/` | AI utilities (text generation via OpenAI Responses API) |
 
+## Agent Types
+
+AIWM hỗ trợ hai loại agent với cơ chế vận hành khác nhau:
+
+### `assistant` — In-process agent
+- Chạy **bên trong** AIWM Agent Worker (`MODE=agt`) qua `AgentRunner`
+- Không có quyền truy cập môi trường (không bash, không file system)
+- Tự động connect vào `/ws/chat` khi worker khởi động
+- Nhận message qua `message:new`, phản hồi qua `message:send`
+- Heartbeat qua `agent:heartbeat` WS event
+- Scale ngang bằng Redis lock (mỗi agentId chỉ có một runner active)
+
+### `engineer` — External self-deployed agent
+- Chạy **bên ngoài** hệ thống, do người dùng tự deploy (hoặc deploy lên Node)
+- Có quyền truy cập môi trường đầy đủ (bash, file system, v.v.)
+- Tự gọi `POST /agents/:id/connect` để lấy JWT token + config
+- Tự connect vào `/ws/chat` bằng JWT đó, emit `conversation:join` để vào room
+- **Phải tự filter `message:new`** — skip `role=assistant`, `type=system/tool_use/tool_result/thinking`, `skipAgent=true`, và dedup theo `_id`
+- Heartbeat qua `agent:heartbeat` WS (preferred) hoặc `POST /agents/:id/heartbeat`
+- Khi có `nodeId`: AIWM quản lý lifecycle qua WebSocket Node (`agent.start/update/delete`)
+- Khi không có `nodeId`: người dùng tự quản lý hoàn toàn
+
+> Tài liệu chi tiết: `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` và `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md`
+
+---
+
 ## Module-Specific Documentation
 
 When working on a specific module, read the corresponding docs:
