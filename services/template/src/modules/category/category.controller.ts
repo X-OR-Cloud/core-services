@@ -1,86 +1,54 @@
-import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Types } from 'mongoose';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './category.dto';
 
 @ApiTags('categories')
-@ApiBearerAuth('JWT-auth')
+@ApiBearerAuth()
 @Controller('categories')
+@UseGuards(JwtAuthGuard)
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create category', description: 'Create a new category' })
+  @ApiOperation({ summary: 'Create category' })
   @ApiResponse({ status: 201, description: 'Category created successfully' })
   @ApiCreateErrors()
-  @UseGuards(JwtAuthGuard)
-  async create(
-    @Body() createCategoryDto: CreateCategoryDto,
-    @CurrentUser() context: RequestContext,
-  ) {
-    return this.categoryService.create(createCategoryDto, context);
+  async create(@Body() createDto: CreateCategoryDto, @CurrentUser() context: RequestContext) {
+    return this.categoryService.create(createDto, context);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all categories', description: 'Retrieve list of all categories with pagination' })
+  @ApiOperation({ summary: 'List categories' })
   @ApiResponse({ status: 200, description: 'Categories retrieved successfully' })
   @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
-  async findAll(
-    @Query() paginationQuery: PaginationQueryDto,
-    @CurrentUser() context: RequestContext,
-  ) {
-    // Call BaseService.findAll directly
-    return this.categoryService.findAll(paginationQuery, context);
+  async findAll(@Query() query: QueryStringParams, @CurrentUser() context: RequestContext) {
+    return this.categoryService.findAll(parseQueryString(query), context);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get category by ID', description: 'Retrieve a single category by ID' })
+  @ApiOperation({ summary: 'Get category by ID' })
   @ApiResponse({ status: 200, description: 'Category found' })
   @ApiReadErrors()
-  @UseGuards(JwtAuthGuard)
-  async findOne(
-    @Param('id') id: string,
-    @CurrentUser() context: RequestContext,
-  ) {
-    // Call BaseService.findById directly
-    const category = await this.categoryService.findById(new Types.ObjectId(id) as any, context);
-    if (!category) {
-      throw new NotFoundException(`Category with ID ${id} not found`);
-    }
-    return category;
+  async findOne(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.categoryService.findById(id as any, context);
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update category', description: 'Update category information' })
+  @ApiOperation({ summary: 'Update category' })
   @ApiResponse({ status: 200, description: 'Category updated successfully' })
   @ApiUpdateErrors()
-  @UseGuards(JwtAuthGuard)
-  async update(
-    @Param('id') id: string,
-    @Body() updateCategoryDto: UpdateCategoryDto,
-    @CurrentUser() context: RequestContext,
-  ) {
-    const updated = await this.categoryService.updateCategory(id, updateCategoryDto, context);
-    if (!updated) {
-      throw new NotFoundException(`Category with ID ${id} not found`);
-    }
-    return updated;
+  async update(@Param('id') id: string, @Body() updateDto: UpdateCategoryDto, @CurrentUser() context: RequestContext) {
+    return this.categoryService.update(id, updateDto, context);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete category', description: 'Soft delete a category' })
+  @ApiOperation({ summary: 'Delete category' })
   @ApiResponse({ status: 200, description: 'Category deleted successfully' })
   @ApiDeleteErrors()
-  @UseGuards(JwtAuthGuard)
-  async remove(
-    @Param('id') id: string,
-    @CurrentUser() context: RequestContext,
-  ) {
-    await this.categoryService.remove(id, context);
-    return { message: 'Category deleted successfully' };
+  async remove(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.categoryService.softDelete(id, context);
   }
 }

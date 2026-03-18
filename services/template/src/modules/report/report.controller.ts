@@ -1,29 +1,22 @@
-import { Controller, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Post, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard, ApiCreateErrors } from '@hydrabyte/base';
 import { ProductSummaryReportDto } from './report.dto';
 import { ReportProducer } from '../../queues/producers/report.producer';
-import { createLogger } from '@hydrabyte/shared';
 
 @ApiTags('reports')
+@ApiBearerAuth()
 @Controller('reports')
+@UseGuards(JwtAuthGuard)
 export class ReportController {
-  private readonly logger = createLogger('ReportController');
-
   constructor(private readonly reportProducer: ReportProducer) {}
 
   @Post('product-summary')
-  @ApiOperation({
-    summary: 'Generate product summary report',
-    description: 'Queue a job to generate product summary report and save to local file'
-  })
+  @ApiOperation({ summary: 'Queue product summary report generation' })
   @ApiResponse({ status: 201, description: 'Report generation queued successfully', type: ProductSummaryReportDto })
+  @ApiCreateErrors()
   async generateProductSummary(): Promise<ProductSummaryReportDto> {
-    this.logger.info('Report generation requested', { reportType: 'product-summary' });
-
     const job = await this.reportProducer.emitReportGenerate('product-summary');
-
-    this.logger.debug('Report job queued', { jobId: job.id });
-
     return {
       reportType: 'product-summary',
       status: 'queued',

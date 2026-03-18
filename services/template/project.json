@@ -59,6 +59,25 @@
           "buildTarget": "template:build:production"
         }
       }
+    },
+    "wrk": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "template:build",
+        "runBuildTargetDependencies": false,
+        "args": ["wrk"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "template:build:development"
+        },
+        "production": {
+          "buildTarget": "template:build:production"
+        }
+      }
     }
   },
   "tags": []

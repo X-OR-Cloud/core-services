@@ -9,13 +9,16 @@ import { CategoryModule } from '../modules/category/category.module';
 import { ProductModule } from '../modules/product/product.module';
 import { ReportModule } from '../modules/report/report.module';
 import { QueueModule } from '../queues/queue.module';
-import { ProcessorsModule } from '../queues/processors.module';
 
+/**
+ * API mode module — HTTP server + producers only.
+ * Processors run in worker mode (app-worker.module.ts).
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/template/.env',
+      envFilePath: '.env',
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
@@ -27,14 +30,12 @@ import { ProcessorsModule } from '../queues/processors.module';
     CategoryModule,
     ProductModule,
     ReportModule,
-    ProcessorsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Apply correlation ID middleware to all routes
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
   }
 }
