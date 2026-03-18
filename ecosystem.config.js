@@ -555,8 +555,8 @@ module.exports = {
 
       env_file: '.env',
 
-      error_file: './logs/aiwm-agt-00-error.log',
-      out_file: './logs/aiwm-agt-00-out.log',
+      error_file: './logs/aiwm-con-00-error.log',
+      out_file: './logs/aiwm-con-00-out.log',
       merge_logs: true,
 
       autorestart: true,
