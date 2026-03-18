@@ -153,6 +153,27 @@ export class ActionMetadataDto {
   @ApiProperty({ required: false })
   @IsOptional()
   raw?: any;
+
+  // /ignore flag — agent skips processing this message
+  @ApiProperty({ required: false })
+  @IsOptional()
+  skipAgent?: boolean;
+
+  // command metadata — for ActionType.COMMAND records
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  commandName?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  targetConversationId?: string;
 }
 
 export class ActionUsageDto {

@@ -21,9 +21,9 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 | Module | Path | Description |
 |--------|------|-------------|
 | Agent | `src/modules/agent/` | AI agent management (assistant/engineer types) |
-| Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) |
+| Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) — handles `agent:command` events |
 | Node | `src/modules/node/` | Worker node management + WebSocket gateway (`/ws/node`) |
-| Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) |
+| Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) — slash commands, heartbeat, presence |
 | Model | `src/modules/model/` | AI model metadata and lifecycle |
 | Deployment | `src/modules/deployment/` | Model deployment + inference proxy |
 | Instruction | `src/modules/instruction/` | System prompts and guidelines |
@@ -39,7 +39,7 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 | Reports | `src/modules/reports/` | Analytics and reporting |
 | Memory | `src/modules/memory/` | Agent memory/context storage |
 | Reminder | `src/modules/reminder/` | Scheduled reminders and notifications |
-| Action | `src/modules/action/` | Audit trail for chat actions |
+| Action | `src/modules/action/` | Audit trail for chat actions (types: message, notice, tool_use, tool_result, thinking, error, command, joined, left, handoff) |
 | Connection | `src/modules/connection/` | Discord/Telegram connection config |
 | Util | `src/modules/util/` | AI utilities (text generation via OpenAI Responses API) |
 
@@ -50,7 +50,7 @@ When working on a specific module, read the corresponding docs:
 - **Agent module**: Read `docs/aiwm/agents/` directory AND `docs/aiwm/agent/OVERVIEW.md` + `docs/aiwm/agent/ROADMAP.md`
 - **Node module**: Read `docs/aiwm/node/OVERVIEW.md` + `docs/aiwm/node/ROADMAP.md` AND `docs/aiwm/node-agent/` directory (client integration)
 - **Instruction module**: Read `docs/aiwm/instruction/OVERVIEW.md` + `docs/aiwm/instruction/ROADMAP.md`
-- **Chat/WebSocket**: Read `docs/aiwm/CHAT-WEBSOCKET-ARCHITECTURE.md`
+- **Chat/WebSocket**: Read `docs/aiwm/CHAT-WEBSOCKET-EVENTS.md` (full event + payload reference) and `docs/aiwm/CHAT-WEBSOCKET-ARCHITECTURE.md` (architecture overview)
 - **Deployment**: Read `docs/aiwm/DEPLOYMENT-INFERENCE-PLAN.md`
 - **Tool module**: Read `docs/aiwm/tool/OVERVIEW.md` + `docs/aiwm/tool/ROADMAP.md` AND `docs/aiwm/tools/TOOL-TYPES-AND-EXECUTION.md`
 - **Workflow**: Read `docs/aiwm/workflow-feature/` directory
@@ -65,6 +65,24 @@ When working on a specific module, read the corresponding docs:
 - **NodeGateway** (`/ws/node`): Node worker connections. JWT auth in `afterInit` middleware. In-memory connection tracking via `NodeConnectionService`.
 - **ChatGateway** (`/ws/chat`): User/Agent/Anonymous chat. JWT auth in `handleConnection`. Redis-based presence tracking. Redis pub/sub for cross-instance communication.
 
+### Chat Slash Commands
+Slash commands are intercepted at the gateway — they are **not** processed as plain text messages in `AgentRunner`.
+
+| User types | Mechanism | Agent receives |
+|-----------|-----------|---------------|
+| `/stop [reason]` | `command:send` → `agent:command { type: 'stop' }` | Aborts current LLM generation |
+| `/reload` | `command:send` → `agent:command { type: 'reload' }` | Re-fetches config from AIWM via `connectInternal` |
+| `/inspect` | `command:send` → `agent:command { type: 'inspect' }` | Emits sanitized runtime config as system message |
+| `/ignore <text>` | Intercepted in `message:send`, `metadata.skipAgent: true` set | Skips message entirely |
+
+- `command:send` is **user-only** (anonymous clients are rejected)
+- `agent:command` is emitted directly to agent socket(s) — not broadcast to the conversation room
+- `/stop` and `/reload` are saved to DB as `ActionType.COMMAND` for audit trail
+- See `docs/aiwm/CHAT-WEBSOCKET-EVENTS.md` for full payload reference
+
+### Agent Heartbeat (WebSocket)
+Agents connected to `/ws/chat` use `agent:heartbeat` event (not `POST /agents/heartbeat`) to send keep-alive + status updates. The gateway delegates to `AgentService.heartbeat()` — same logic, same response shape including work assignment and reminder injection when `status: 'idle'`.
+
 ### Agent Types
 - **assistant**: In-process agent run by `MODE=agt` worker. No environment access. Connects to `/ws/chat` for autonomous operation. Has `secret` for auth.
 - **engineer**: Agent with environment access (bash, file system, etc). Two deployment modes: with `nodeId` = system-deployed to node via WebSocket (agent.start/update/delete); without `nodeId` = user self-deploys. Has `secret` for auth.
@@ -75,6 +93,22 @@ When working on a specific module, read the corresponding docs:
 - **Agent JWT**: `sub` (agentId), `orgId`, `type: 'agent'`, `roles: ['agent']`
 - **Anonymous Token**: `type: 'anonymous'`, `agentId`, `anonymousId`, `tokenId`, `expiresAt`
 - **Node JWT**: `sub` (nodeId), `type`, `username`, `status`, `orgId`
+
+### Action Types (DB)
+`ActionType` enum in `src/modules/action/action.enum.ts`:
+
+| Type | When saved |
+|------|-----------|
+| `message` | Regular chat message (user or agent) |
+| `notice` | System message (`type: 'system'` in message:send) |
+| `tool_use` | Agent tool call step |
+| `tool_result` | Agent tool result step |
+| `thinking` | Agent thinking/reasoning block |
+| `error` | Error event |
+| `command` | Slash command with side effects (`/stop`, `/reload`) |
+| `joined` | Participant joined event |
+| `left` | Participant left event |
+| `handoff` | Conversation handoff |
 
 ### Queue System (BullMQ)
 - Producers in `src/queues/producers/` — emit events
@@ -90,8 +124,13 @@ When working on a specific module, read the corresponding docs:
 
 ### Distributed Architecture
 - Redis adapter for WebSocket horizontal scaling (`redis-io.adapter.ts`)
-- Redis pub/sub channels: `agent:join-room`, `chat:message-new`
-- Distributed locking: `lock:chat-msg:{nonce}` to prevent duplicate processing
+- Redis pub/sub channels:
+  - `agent:join-room` — force agent sockets to join a conversation room (published by Connection Worker)
+  - `chat:message-new` — broadcast inbound Discord/Telegram messages to room (published by Connection Worker)
+  - `outbound:message` — bridge agent responses back to Discord/Telegram (published by ChatGateway)
+- Distributed locking:
+  - `lock:chat-msg:{nonce}` — prevents duplicate inbound message processing across WS instances
+  - `lock:outbound:{actionId}` — prevents duplicate outbound bridging across WS instances
 
 ## Commands
 

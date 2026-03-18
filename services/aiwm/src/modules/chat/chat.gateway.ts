@@ -174,6 +174,11 @@ export class ChatGateway
     client.data.orgId = payload.orgId;
     client.data.userId = null;
     client.data.roles = payload.roles || [];
+    client.data.token =
+      client.handshake.auth?.token ||
+      client.handshake.headers?.authorization?.replace('Bearer ', '') ||
+      (client.handshake.query?.token as string) ||
+      '';
 
     await this.chatService.setAgentOnline(agentId, client.id);
 
@@ -482,6 +487,21 @@ export class ChatGateway
         throw new Error('No conversation found. Please emit agent:connect or conversation:join first.');
       }
 
+      // --- /ignore <text> intercept ---
+      const IGNORE_PREFIX = '/ignore ';
+      let skipAgent = false;
+      if (dto.content?.startsWith(IGNORE_PREFIX)) {
+        if (client.data.type === 'anonymous') {
+          return { success: false, error: 'Anonymous clients cannot use /ignore' };
+        }
+        const stripped = dto.content.slice(IGNORE_PREFIX.length).trim();
+        if (!stripped) {
+          return { success: false, error: '/ignore requires a message after the command' };
+        }
+        dto = { ...dto, content: stripped };
+        skipAgent = true;
+      }
+
       const messageDto = { ...dto, conversationId };
 
       const isAgent = client.data.type === 'agent';
@@ -508,8 +528,12 @@ export class ChatGateway
             displayName: isAgent ? agentId : (client.data.userId || 'user'),
           },
           content: dto.content,
-          metadata: (dto.attachments?.length || dto.references?.length)
-            ? { attachments: dto.attachments, references: dto.references }
+          metadata: (dto.attachments?.length || dto.references?.length || skipAgent)
+            ? {
+                ...(dto.attachments?.length ? { attachments: dto.attachments } : {}),
+                ...(dto.references?.length ? { references: dto.references } : {}),
+                ...(skipAgent ? { skipAgent: true } : {}),
+              }
             : undefined,
         },
         { orgId, agentId, userId: client.data.userId || '' },
@@ -536,6 +560,7 @@ export class ChatGateway
       const broadcastPayload = {
         ...messageDto,
         _id: actionId,
+        ...(skipAgent ? { skipAgent: true } : {}),
         ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username } : {}),
       };
       this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
@@ -621,6 +646,94 @@ export class ChatGateway
       this.logger.error('Error getting online users:', (error as Error).message);
       return { success: false, error: (error as Error).message };
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event: agent:heartbeat — agent-only, mirrors POST /agents/heartbeat
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('agent:heartbeat')
+  async handleHeartbeat(
+    @MessageBody() data: { status: 'idle' | 'busy'; metrics?: Record<string, unknown> },
+    @ConnectedSocket() client: Socket,
+  ) {
+    if (client.data.type !== 'agent') {
+      return { success: false, error: 'agent:heartbeat is only for agent clients' };
+    }
+
+    try {
+      const { agentId, token } = client.data;
+      client.data.lastHeartbeatAt = Date.now();
+      return await this.agentService.heartbeat(agentId, data, token);
+    } catch (error) {
+      this.logger.error('Error handling agent:heartbeat:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event: command:send — authorized users only
+  // Dispatches stop/reload/inspect as agent:command directly to agent socket(s)
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('command:send')
+  async handleCommandSend(
+    @MessageBody() data: { command: 'stop' | 'reload' | 'inspect'; conversationId?: string; reason?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    // Anonymous clients cannot issue commands
+    if (client.data.type === 'anonymous') {
+      return { success: false, error: 'Unauthorized: anonymous clients cannot issue commands' };
+    }
+
+    const { command, conversationId, reason } = data;
+    const agentId: string = client.data.agentId || '';
+    const orgId: string = client.data.orgId || '';
+    const userId: string = client.data.userId || '';
+
+    if (!agentId) {
+      return { success: false, error: 'No agent associated with this connection' };
+    }
+
+    // Resolve agent socket IDs
+    const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+    if (agentSocketIds.length === 0) {
+      // /reload still gets a DB write for audit even when agent is offline
+      if (command === 'reload') {
+        await this.actionService.createActionDirect(
+          {
+            conversationId: conversationId || '',
+            type: ActionType.COMMAND,
+            actor: { role: ActorRole.USER, userId, displayName: client.data.username || userId },
+            content: `/${command}`,
+            metadata: { commandName: command, ...(reason ? { reason } : {}), ...(conversationId ? { targetConversationId: conversationId } : {}) },
+          },
+          { orgId, userId },
+        );
+      }
+      return { success: false, error: 'Agent is not connected' };
+    }
+
+    // Save DB Action for commands with side effects
+    if (command === 'stop' || command === 'reload') {
+      await this.actionService.createActionDirect(
+        {
+          conversationId: conversationId || '',
+          type: ActionType.COMMAND,
+          actor: { role: ActorRole.USER, userId, displayName: client.data.username || userId },
+          content: `/${command}`,
+          metadata: { commandName: command, ...(reason ? { reason } : {}), ...(conversationId ? { targetConversationId: conversationId } : {}) },
+        },
+        { orgId, userId },
+      );
+    }
+
+    // Emit agent:command directly to agent socket(s) — not broadcast to room
+    this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
+
+    this.logger.log(`[WS-CMD] command=${command} agentId=${agentId} sockets=${agentSocketIds.length} conversationId=${conversationId || 'n/a'}`);
+
+    return { success: true, command };
   }
 
   // ---------------------------------------------------------------------------

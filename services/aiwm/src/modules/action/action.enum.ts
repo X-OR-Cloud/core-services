@@ -6,6 +6,9 @@ export enum ActionType {
   TOOL_RESULT = 'tool_result',
   ERROR = 'error',
 
+  // Command actions
+  COMMAND = 'command',
+
   // Event actions
   JOINED = 'joined',
   LEFT = 'left',

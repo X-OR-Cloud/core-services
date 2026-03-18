@@ -65,10 +65,6 @@ export interface AgentRunnerConfig {
   agentCode?: string;
 }
 
-/** Slash commands supported by hosted agents */
-const SLASH_RELOAD = '/reload';
-const SLASH_STOP = '/stop';
-
 /**
  * AgentRunner — manages a single hosted agent's lifecycle:
  * - WebSocket connection to /ws/chat (as agent)
@@ -260,6 +256,71 @@ export class AgentRunner {
         this.logger.error(`handleMessage error: ${err.message}`, err.stack),
       );
     });
+
+    this.socket.on('agent:command', (cmd: { type: 'stop' | 'reload' | 'inspect'; conversationId?: string; reason?: string }) => {
+      this.handleCommand(cmd).catch((err) =>
+        this.logger.error(`handleCommand error: ${err.message}`, err.stack),
+      );
+    });
+  }
+
+  private async handleCommand(cmd: { type: 'stop' | 'reload' | 'inspect'; conversationId?: string; reason?: string }) {
+    const { type, conversationId, reason } = cmd;
+    this.logger.log(`[agent:command] type=${type} conversationId=${conversationId || 'n/a'}`);
+
+    if (type === 'stop') {
+      const convId = conversationId || this.conversationId;
+      if (!convId) {
+        this.logger.warn('/stop — no conversationId');
+        return;
+      }
+      const controller = this.abortMap.get(convId);
+      if (controller) {
+        controller.abort();
+        this.writeLog('info', '/stop — aborted generation', { conversationId: convId, reason });
+        this.logger.log(`/stop received — aborted generation for ${convId}${reason ? ` reason: ${reason}` : ''}`);
+        this.emitSystemMessage(convId, 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.');
+      } else {
+        this.emitSystemMessage(convId, 'Không có tác vụ nào đang chạy.');
+      }
+      return;
+    }
+
+    if (type === 'reload') {
+      const convId = conversationId || this.conversationId;
+      if (this.isReloading) {
+        this.emitSystemMessage(convId, 'Đang reload, vui lòng chờ...');
+        return;
+      }
+      this.emitSystemMessage(convId, 'Đang reload instruction và MCP tools...');
+      const ok = await this.reload();
+      this.writeLog(ok ? 'info' : 'error', ok ? '/reload succeeded' : '/reload failed', { conversationId: convId });
+      this.emitSystemMessage(convId, ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.');
+      return;
+    }
+
+    if (type === 'inspect') {
+      const convId = conversationId || this.conversationId;
+      const info = {
+        agentId: this.config.agentId,
+        agentName: this.config.agentName,
+        deployment: this.config.deployment
+          ? { model: this.config.deployment.model, provider: this.config.deployment.provider }
+          : null,
+        settings: {
+          maxConcurrency: this.maxConcurrency,
+          maxSteps: this.maxSteps,
+          heartbeatIntervalMs: this.heartbeatIntervalMs,
+          reconnectDelayMs: this.reconnectDelayMs,
+        },
+        allowedFunctionsCount: this.config.allowedFunctions.length,
+        isBusy: this.isBusy,
+        isConnected: this.isConnected,
+        isReloading: this.isReloading,
+      };
+      this.emitSystemMessage(convId, JSON.stringify(info, null, 2));
+      return;
+    }
   }
 
   private scheduleReconnect() {
@@ -332,30 +393,9 @@ export class AgentRunner {
       this.logger.debug(`[references] count=${refs.length}`);
     }
 
-    // --- Slash command: /stop ---
-    if (content === SLASH_STOP) {
-      const controller = this.abortMap.get(conversationId);
-      if (controller) {
-        controller.abort();
-        this.writeLog('info', '/stop — aborted generation', { conversationId });
-        this.logger.log(`/stop received — aborted generation for ${conversationId}`);
-        this.emitSystemMessage(conversationId, 'Đã dừng. Bạn có thể tiếp tục nhắn tin bất cứ lúc nào.');
-      } else {
-        this.emitSystemMessage(conversationId, 'Không có tác vụ nào đang chạy.');
-      }
-      return;
-    }
-
-    // --- Slash command: /reload ---
-    if (content === SLASH_RELOAD) {
-      if (this.isReloading) {
-        this.emitSystemMessage(conversationId, 'Đang reload, vui lòng chờ...');
-        return;
-      }
-      this.emitSystemMessage(conversationId, 'Đang reload instruction và MCP tools...');
-      const ok = await this.reload();
-      this.writeLog(ok ? 'info' : 'error', ok ? '/reload succeeded' : '/reload failed', { conversationId });
-      this.emitSystemMessage(conversationId, ok ? 'Reload thành công. Sẵn sàng!' : 'Reload thất bại, giữ nguyên cấu hình cũ.');
+    // --- /ignore: skip messages flagged by gateway ---
+    if (message.skipAgent === true) {
+      this.logger.debug(`[message:new] skipped (skipAgent) conv=${conversationId}`);
       return;
     }
 
