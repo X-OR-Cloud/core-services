@@ -292,8 +292,12 @@ export class DashboardService {
     };
   }
 
-  async getAiActivity(limit: number, since?: string) {
-    const query: any = {};
+  async getAiActivity(userId: string, limit: number, since?: string) {
+    const accountIds = await this.accountModel
+      .find({ 'owner.userId': userId, isDeleted: false })
+      .distinct('_id');
+
+    const query: any = { accountId: { $in: accountIds } };
     if (since) {
       query.createdAt = { $gt: new Date(since) };
     }

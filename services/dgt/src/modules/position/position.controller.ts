@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, parseQueryString, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { IsMongoId, IsString, IsNumber, IsOptional } from 'class-validator';
@@ -39,9 +39,10 @@ class DebugCreatePositionDto {
   takeProfitPrice?: number;
 }
 
+// DEBUG context: uses 'system' as userId (not a real user ID) — safe for debug endpoints
 const SYSTEM_CONTEXT = {
-  userId: '69b0f09eb7a006e7927080c9',
-  orgId: '69b0f096b37fe2f00470be18',
+  userId: 'system',
+  orgId: 'system',
   groupId: '',
   agentId: '',
   appId: '',
@@ -50,15 +51,14 @@ const SYSTEM_CONTEXT = {
 
 @ApiTags('positions')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('positions')
 export class PositionController {
   constructor(private readonly positionService: PositionService) {}
 
   @Post()
   @ApiOperation({ summary: 'Create position' })
-  @ApiResponse({ status: 201, description: 'Position created successfully' })
   @ApiCreateErrors()
-  @UseGuards(JwtAuthGuard)
   async create(
     @Body() dto: CreatePositionDto,
     @CurrentUser() context: RequestContext,
@@ -68,15 +68,12 @@ export class PositionController {
 
   @Get()
   @ApiOperation({ summary: 'Get all positions' })
-  @ApiResponse({ status: 200, description: 'Positions retrieved successfully' })
   @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: Record<string, any>,
+    @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
-    const options = parseQueryString(query);
-    return this.positionService.findAll(options, context);
+    return this.positionService.findAll(parseQueryString(query), context);
   }
 
   @Post('debug-create')
@@ -105,29 +102,25 @@ export class PositionController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get position by ID' })
-  @ApiResponse({ status: 200, description: 'Position found' })
   @ApiReadErrors()
-  @UseGuards(JwtAuthGuard)
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ) {
-    const position = await this.positionService.findById(new Types.ObjectId(id) as any, context);
+    const position = await this.positionService.findById(id, context);
     if (!position) throw new NotFoundException(`Position ${id} not found`);
     return position;
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update position' })
-  @ApiResponse({ status: 200, description: 'Position updated successfully' })
   @ApiUpdateErrors()
-  @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdatePositionDto,
     @CurrentUser() context: RequestContext,
   ) {
-    const updated = await this.positionService.update(new Types.ObjectId(id) as any, dto, context);
+    const updated = await this.positionService.update(id, dto, context);
     if (!updated) throw new NotFoundException(`Position ${id} not found`);
     return updated;
   }

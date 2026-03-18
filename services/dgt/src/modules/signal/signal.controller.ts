@@ -1,9 +1,9 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, parseQueryString, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors } from '@hydrabyte/base';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Types } from 'mongoose';
 import { IsMongoId, IsString, IsOptional } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { SignalService } from './signal.service';
 import { CreateSignalDto, UpdateSignalDto } from './signal.dto';
 import { SignalStatus } from './signal.schema';
@@ -27,6 +27,7 @@ class TriggerSignalDto {
 
 @ApiTags('signals')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(JwtAuthGuard)
 @Controller('signals')
 export class SignalController {
   constructor(
@@ -34,6 +35,7 @@ export class SignalController {
     private readonly signalLlmCollector: SignalLlmCollector,
   ) {}
 
+  // DEBUG — no auth guard (class guard applies, but this is intentionally left for debug use)
   @Post('trigger-generation')
   @ApiOperation({ summary: '[DEBUG] Trigger LLM signal generation for an account (no auth)' })
   @ApiResponse({ status: 201, description: 'Signal generation triggered' })
@@ -46,9 +48,7 @@ export class SignalController {
 
   @Post()
   @ApiOperation({ summary: 'Create signal' })
-  @ApiResponse({ status: 201, description: 'Signal created successfully' })
   @ApiCreateErrors()
-  @UseGuards(JwtAuthGuard)
   async create(
     @Body() dto: CreateSignalDto,
     @CurrentUser() context: RequestContext,
@@ -58,24 +58,19 @@ export class SignalController {
 
   @Get()
   @ApiOperation({ summary: 'Get all signals' })
-  @ApiResponse({ status: 200, description: 'Signals retrieved successfully' })
   @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: Record<string, any>,
+    @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
-    const options = parseQueryString(query);
-    return this.signalService.findAll(options, context);
+    return this.signalService.findAll(parseQueryString(query), context);
   }
 
   @Get('latest')
   @ApiOperation({ summary: 'Get latest ACTIVE signal per asset x timeframe' })
-  @ApiResponse({ status: 200, description: 'Latest active signals retrieved successfully' })
   @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
   async findLatest(
-    @Query() query: Record<string, any>,
+    @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
     const options = parseQueryString({
@@ -89,32 +84,24 @@ export class SignalController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get signal by ID' })
-  @ApiResponse({ status: 200, description: 'Signal found' })
   @ApiReadErrors()
-  @UseGuards(JwtAuthGuard)
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ) {
-    const signal = await this.signalService.findById(new Types.ObjectId(id) as any, context);
+    const signal = await this.signalService.findById(id, context);
     if (!signal) throw new NotFoundException(`Signal ${id} not found`);
     return signal;
   }
 
   @Patch(':id/ignore')
   @ApiOperation({ summary: 'Ignore a signal' })
-  @ApiResponse({ status: 200, description: 'Signal ignored successfully' })
   @ApiUpdateErrors()
-  @UseGuards(JwtAuthGuard)
   async ignore(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ) {
-    const updated = await this.signalService.update(
-      new Types.ObjectId(id) as any,
-      { status: SignalStatus.IGNORED } as any,
-      context,
-    );
+    const updated = await this.signalService.update(id, { status: SignalStatus.IGNORED } as any, context);
     if (!updated) throw new NotFoundException(`Signal ${id} not found`);
     return updated;
   }

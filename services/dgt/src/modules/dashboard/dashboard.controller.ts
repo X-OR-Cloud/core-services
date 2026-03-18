@@ -76,9 +76,10 @@ export class DashboardController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'since', required: false, description: 'ISO 8601 timestamp for incremental updates' })
   getAiActivity(
+    @CurrentUser() ctx: RequestContext,
     @Query('limit') limit = '20',
     @Query('since') since?: string,
   ) {
-    return this.dashboardService.getAiActivity(parseInt(limit, 10) || 20, since);
+    return this.dashboardService.getAiActivity(ctx.userId, parseInt(limit, 10) || 20, since);
   }
 }

@@ -3,10 +3,12 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PositionController } from './position.controller';
 import { PositionService } from './position.service';
 import { Position, PositionSchema } from './position.schema';
+import { AccountModule } from '../account/account.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Position.name, schema: PositionSchema }]),
+    AccountModule,
   ],
   controllers: [PositionController],
   providers: [PositionService],

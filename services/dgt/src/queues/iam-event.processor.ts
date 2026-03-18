@@ -34,6 +34,11 @@ export class IamEventProcessor extends WorkerHost {
   }
 
   private async handleUserCreated(event: IamUserCreatedEvent): Promise<void> {
+    if (process.env['DGT_AUTO_CREATE_ACCOUNT'] === 'false') {
+      this.logger.debug('Auto account creation disabled (DGT_AUTO_CREATE_ACCOUNT=false) — skipped');
+      return;
+    }
+
     const { userId, username, orgId, role } = event.data;
 
     // Idempotency: skip nếu user đã có account

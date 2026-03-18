@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, parseQueryString, ApiReadErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiReadErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { BotActivityLogService } from './bot-activity-log.service';
 
@@ -16,7 +16,7 @@ export class BotActivityLogController {
   @ApiResponse({ status: 200, description: 'Bot activity logs retrieved successfully' })
   @ApiReadErrors({ notFound: false })
   async findAll(
-    @Query() query: Record<string, any>,
+    @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
     const options = parseQueryString(query);

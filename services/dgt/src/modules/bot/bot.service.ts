@@ -1,8 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BaseService } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
+import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Bot, BotStatus } from './bot.schema';
 
 @Injectable()
@@ -11,6 +11,49 @@ export class BotService extends BaseService<Bot> {
     @InjectModel(Bot.name) private readonly botModel: Model<Bot>,
   ) {
     super(botModel as any);
+  }
+
+  private isOrgOwner(context: RequestContext): boolean {
+    return (
+      context.roles?.includes(PredefinedRole.OrganizationOwner) ||
+      context.roles?.includes(PredefinedRole.UniverseOwner)
+    );
+  }
+
+  private async verifyOwnership(id: any, context: RequestContext): Promise<void> {
+    const existing = await super.findById(id, context);
+    if (existing?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('Access denied');
+    }
+  }
+
+  async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Bot>> {
+    if (!this.isOrgOwner(context)) {
+      options.filter = { ...(options.filter || {}), 'owner.userId': context.userId };
+    }
+    return super.findAll(options, context);
+  }
+
+  async findById(id: any, context: RequestContext): Promise<Partial<Bot>> {
+    const result = await super.findById(id, context);
+    if (!this.isOrgOwner(context) && result?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('Access denied');
+    }
+    return result;
+  }
+
+  async update(id: any, dto: any, context: RequestContext): Promise<Partial<Bot>> {
+    if (!this.isOrgOwner(context)) {
+      await this.verifyOwnership(id, context);
+    }
+    return super.update(id, dto, context);
+  }
+
+  async softDelete(id: any, context: RequestContext): Promise<Partial<Bot>> {
+    if (!this.isOrgOwner(context)) {
+      await this.verifyOwnership(id, context);
+    }
+    return super.softDelete(id, context);
   }
 
   async getStats(userId: string): Promise<{
