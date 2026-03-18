@@ -22,6 +22,11 @@ export class ConnectionService extends BaseService<Connection> {
     return super.findAll(options, context);
   }
 
+  async findByIdInternal(id: string): Promise<Connection | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+  }
+
   async getActiveConnections(): Promise<Connection[]> {
     return this.model.find({ status: 'active', isDeleted: false }).exec();
   }

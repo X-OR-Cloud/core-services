@@ -5,7 +5,10 @@ export interface NormalizedInbound {
   externalUserId: string;
   externalUsername: string;
   channelId: string;
-  guildId?: string;       // Discord only
+  serverId?: string;          // Discord: guildId | Teams: teamId
+  tenantId?: string;          // Teams only
+  teamsServiceUrl?: string;   // Teams only — needed to reply via Bot connector
+  teamsConversationId?: string; // Teams only — conversation reference for replies
   text: string;
   attachments?: any[];
   isMention?: boolean;

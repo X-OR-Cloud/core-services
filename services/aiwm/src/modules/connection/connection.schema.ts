@@ -4,7 +4,7 @@ import { BaseSchema } from '@hydrabyte/base';
 
 export type ConnectionDocument = Connection & Document;
 
-export type ConnectionProvider = 'discord' | 'telegram';
+export type ConnectionProvider = 'discord' | 'telegram' | 'teams';
 export type ConnectionStatus = 'active' | 'inactive' | 'error';
 export type ConnectionLogLevel = 'info' | 'warn' | 'error';
 
@@ -16,17 +16,22 @@ export interface ConnectionLog {
 }
 
 export interface ConnectionConfig {
-  botToken: string;
-  applicationId?: string;  // Discord: application/client ID
-  webhookUrl?: string;     // Telegram: webhook mode public URL
-  pollingMode?: boolean;   // Telegram: use long-polling (default: true)
+  botToken?: string;            // Discord / Telegram
+  appId?: string;               // Discord: application/client ID | Teams: Microsoft App ID
+  appPassword?: string;         // Teams: Azure AD client secret
+  appToken?: string;            // Teams: cached OAuth bearer token (runtime)
+  appTokenExpiresAt?: Date;     // Teams: token expiry
+  tenantId?: string;            // Teams: Azure AD tenant ID
+  webhookUrl?: string;          // Telegram: webhook mode public URL
+  pollingMode?: boolean;        // Telegram: use long-polling (default: true)
 }
 
 export interface ConnectionRoute {
-  guildId?: string;         // Discord server ID
-  channelId?: string;       // Discord channel ID / Telegram chatId
+  serverId?: string;        // Discord: server/guild ID | Teams: teamId
+  channelId?: string;       // Discord channel ID / Telegram chatId / Teams channelId
   botId?: string;           // filter by specific bot ID
-  requireMention?: boolean; // only reply when @mentioned (Discord)
+  tenantId?: string;        // Teams: Azure tenant ID
+  requireMention?: boolean; // only reply when @mentioned (Discord / Teams)
   agentId: string;          // target agent
   allowAnonymous?: boolean; // allow users not in org (default: true)
 }
@@ -41,7 +46,7 @@ export class Connection extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['discord', 'telegram'],
+    enum: ['discord', 'telegram', 'teams'],
     index: true,
   })
   provider: ConnectionProvider;

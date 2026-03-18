@@ -80,7 +80,7 @@ export class DiscordAdapter extends BaseAdapter {
       externalUserId: msg.author.id,
       externalUsername: msg.author.username,
       channelId: msg.channelId,
-      guildId: msg.guildId ?? undefined,
+      serverId: msg.guildId ?? undefined,
       text: msg.content,
       attachments: msg.attachments.map((a) => ({
         url: a.url,
