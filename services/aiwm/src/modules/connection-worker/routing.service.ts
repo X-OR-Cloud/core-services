@@ -26,18 +26,18 @@ export class RoutingService {
 
   /**
    * Resolve incoming message to a target agent and conversation.
-   * Returns null if no matching route found.
+   * Returns null if no matching route found, along with skip reasons for debugging.
    */
   async resolve(
     msg: NormalizedInbound,
     connection: Connection,
-  ): Promise<ResolvedRoute | null> {
-    const route = this._matchRoute(msg, connection.routes);
+  ): Promise<{ resolved: ResolvedRoute; skipReasons: string[] } | { resolved: null; skipReasons: string[] }> {
+    const { route, skipReasons } = this._matchRoute(msg, connection.routes);
     if (!route) {
       this.logger.debug(
-        `No matching route for ${msg.provider}:${msg.channelId} in connection ${(connection as any)._id}`,
+        `No matching route for ${msg.provider}:${msg.channelId} in connection ${(connection as any)._id}. Skip reasons: ${skipReasons.join(' | ')}`,
       );
-      return null;
+      return { resolved: null, skipReasons };
     }
 
     // Lookup IAM user by external identity
@@ -76,48 +76,59 @@ export class RoutingService {
     };
 
     return {
-      agentId: route.agentId,
-      conversationId: String((conversation as any)._id),
-      actor,
-      iamUserId,
-      iamUsername,
-      iamFullname,
+      resolved: {
+        agentId: route.agentId,
+        conversationId: String((conversation as any)._id),
+        actor,
+        iamUserId,
+        iamUsername,
+        iamFullname,
+      },
+      skipReasons,
     };
   }
 
-  private _matchRoute(msg: NormalizedInbound, routes: ConnectionRoute[]): ConnectionRoute | null {
+  _matchRoute(msg: NormalizedInbound, routes: ConnectionRoute[]): { route: ConnectionRoute | null; skipReasons: string[] } {
     this.logger.debug(
       `Matching msg: provider=${msg.provider} guildId=${msg.guildId} channelId=${msg.channelId} isMention=${msg.isMention} against ${routes.length} route(s)`,
     );
+
+    const skipReasons: string[] = [];
 
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i];
 
       // guildId filter (Discord only)
       if (route.guildId && msg.guildId !== route.guildId) {
-        this.logger.debug(`Route[${i}] skip: guildId mismatch (route=${route.guildId}, msg=${msg.guildId})`);
+        const reason = `Route[${i}] skip: guildId mismatch (route=${route.guildId}, msg=${msg.guildId ?? 'undefined'})`;
+        this.logger.debug(reason);
+        skipReasons.push(reason);
         continue;
       }
 
       // channelId filter
       if (route.channelId && msg.channelId !== route.channelId) {
-        this.logger.debug(`Route[${i}] skip: channelId mismatch (route=${route.channelId}, msg=${msg.channelId})`);
+        const reason = `Route[${i}] skip: channelId mismatch (route=${route.channelId}, msg=${msg.channelId})`;
+        this.logger.debug(reason);
+        skipReasons.push(reason);
         continue;
       }
 
       // requireMention filter
       if (route.requireMention && !msg.isMention) {
-        this.logger.debug(`Route[${i}] skip: requireMention=true but isMention=false`);
+        const reason = `Route[${i}] skip: requireMention=true but isMention=false`;
+        this.logger.debug(reason);
+        skipReasons.push(reason);
         continue;
       }
 
       this.logger.debug(`Route[${i}] matched: agentId=${route.agentId}`);
-      return route;
+      return { route, skipReasons };
     }
 
     // Fallback: first route with no filters (catch-all)
     const catchAll = routes.find((r) => !r.guildId && !r.channelId) ?? null;
     this.logger.debug(catchAll ? `Fallback catch-all matched: agentId=${catchAll.agentId}` : 'No catch-all route found');
-    return catchAll;
+    return { route: catchAll, skipReasons };
   }
 }

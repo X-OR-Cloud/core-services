@@ -92,9 +92,17 @@ export class ConnectionRunner {
 
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {
     try {
-      const resolved = await this.routingService.resolve(msg, this.connection);
+      const { resolved, skipReasons } = await this.routingService.resolve(msg, this.connection);
       if (!resolved) {
-        this.writeLog('info', `No route matched for channel ${msg.channelId}`, { provider: msg.provider, user: msg.externalUsername });
+        this.writeLog('warn', `No route matched for channel ${msg.channelId}`, {
+          provider: msg.provider,
+          user: msg.externalUsername,
+          guildId: msg.guildId ?? null,
+          channelId: msg.channelId,
+          isMention: msg.isMention,
+          totalRoutes: this.connection.routes.length,
+          skipReasons,
+        });
         return;
       }
 
