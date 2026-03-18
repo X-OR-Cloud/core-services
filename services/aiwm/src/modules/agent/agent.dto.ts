@@ -351,6 +351,11 @@ export class AgentConnectDto {
   @IsNotEmpty()
   @IsString()
   secret: string;
+
+  @ApiPropertyOptional({ description: 'Agent version string', example: '1.2.3' })
+  @IsOptional()
+  @IsString()
+  version?: string;
 }
 
 /**

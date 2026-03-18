@@ -214,6 +214,9 @@ export class Agent extends BaseSchema {
   @Prop({ default: 0 })
   connectionCount: number;
 
+  @Prop({ type: String })
+  version?: string; // Last reported version by agent on connect
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
 }

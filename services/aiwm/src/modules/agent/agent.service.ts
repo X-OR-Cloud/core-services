@@ -502,11 +502,12 @@ export class AgentService extends BaseService<Agent> {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.buildConnectResponse(agent);
+    return this.buildConnectResponse(agent, connectDto.version);
   }
 
   private async buildConnectResponse(
-    agent: AgentDocument
+    agent: AgentDocument,
+    version?: string
   ): Promise<AgentConnectResponseDto> {
     const agentId = (agent as any)._id.toString();
 
@@ -561,10 +562,14 @@ export class AgentService extends BaseService<Agent> {
         : [...new Set([...agentFunctions, ...memoryFunctions])];
 
     // Update connection tracking + set status to idle
+    const connectionUpdate: Record<string, any> = { lastConnectedAt: new Date(), status: 'idle' };
+    if (version !== undefined) {
+      connectionUpdate.version = version;
+    }
     await this.agentModel.updateOne(
       { _id: agent._id },
       {
-        $set: { lastConnectedAt: new Date(), status: 'idle' },
+        $set: connectionUpdate,
         $inc: { connectionCount: 1 },
       }
     );
