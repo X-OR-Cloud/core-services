@@ -206,7 +206,11 @@ export class AgentService extends BaseService<Agent> {
             instructionId: saved.instructionId,
             guardrailId: saved.guardrailId,
             deploymentId: saved.deploymentId,
-            settings: saved.settings,
+            settings: await this.buildSettingsWithOAuthToken(
+              (saved.settings as Record<string, unknown>) || {},
+              saved.framework,
+              context.orgId
+            ),
           }
         );
         this.logger.log(
@@ -618,22 +622,11 @@ export class AgentService extends BaseService<Agent> {
     }));
 
     // Build settings, injecting claude_oauthToken for claude-agent-sdk framework
-    const agentSettings: Record<string, unknown> = { ...(agent.settings || {}) };
-    if (agent.framework === 'claude-agent-sdk') {
-      try {
-        const oauthTokenConfig = await this.configurationService.findByKey(
-          ConfigKey.ANTHROPIC_OAUTH_TOKEN as any,
-          { orgId: agent.owner.orgId } as RequestContext
-        );
-        if (oauthTokenConfig?.value) {
-          agentSettings.claude_oauthToken = oauthTokenConfig.value;
-        }
-      } catch (error) {
-        this.logger.warn('Failed to fetch anthropic oauth token from configuration', {
-          error: error.message,
-        });
-      }
-    }
+    const agentSettings = await this.buildSettingsWithOAuthToken(
+      (agent.settings as Record<string, unknown>) || {},
+      agent.framework,
+      agent.owner.orgId
+    );
 
     const response: AgentConnectResponseDto = {
       id: agentId,
@@ -708,6 +701,33 @@ export class AgentService extends BaseService<Agent> {
     }
 
     return response;
+  }
+
+  /**
+   * Build agent settings, injecting claude_oauthToken when framework is claude-agent-sdk.
+   */
+  private async buildSettingsWithOAuthToken(
+    baseSettings: Record<string, unknown>,
+    framework: string,
+    orgId: string
+  ): Promise<Record<string, unknown>> {
+    const settings = { ...baseSettings };
+    if (framework === 'claude-agent-sdk') {
+      try {
+        const config = await this.configurationService.findByKey(
+          ConfigKey.ANTHROPIC_OAUTH_TOKEN as any,
+          { orgId } as RequestContext
+        );
+        if (config?.value) {
+          settings.claude_oauthToken = config.value;
+        }
+      } catch (error) {
+        this.logger.warn('Failed to fetch anthropic oauth token from configuration', {
+          error: error.message,
+        });
+      }
+    }
+    return settings;
   }
 
   /**
@@ -1459,7 +1479,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
             instructionId: agent.instructionId,
             guardrailId: agent.guardrailId,
             deploymentId: agent.deploymentId,
-            settings: agent.settings,
+            settings: await this.buildSettingsWithOAuthToken(
+              (agent.settings as Record<string, unknown>) || {},
+              agent.framework ?? '',
+              context.orgId
+            ),
           }
         );
         this.logger.log(
@@ -1965,7 +1989,11 @@ echo "Installation script placeholder - implement actual logic"
               instructionId: updated.instructionId,
               guardrailId: updated.guardrailId,
               deploymentId: updated.deploymentId,
-              settings: updated.settings,
+              settings: await this.buildSettingsWithOAuthToken(
+                (updated.settings as Record<string, unknown>) || {},
+                updated.framework ?? '',
+                context.orgId
+              ),
             }
           );
           this.logger.log(
