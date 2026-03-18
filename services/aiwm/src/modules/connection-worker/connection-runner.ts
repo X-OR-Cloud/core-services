@@ -28,6 +28,7 @@ export class ConnectionRunner {
     private readonly offOutbound: (conversationId: string) => void,
     private readonly onAgentJoinRoom: (agentId: string, conversationId: string) => void,
     private readonly onMessageNew: (payload: {
+      actionId: string;
       conversationId: string;
       agentId: string;
       orgId: string;
@@ -110,7 +111,7 @@ export class ConnectionRunner {
       const orgId = (this.connection as any).owner?.orgId || '';
 
       // Log inbound action (full audit)
-      await this.actionService.createActionDirect(
+      const savedAction = await this.actionService.createActionDirect(
         {
           conversationId: resolved.conversationId,
           connectionId,
@@ -124,6 +125,7 @@ export class ConnectionRunner {
         },
         { orgId, agentId: resolved.agentId },
       );
+      const actionId = String((savedAction as any)._id);
 
       // Register outbound handler for this conversation
       this.onOutbound(resolved.conversationId, async (responseText: string) => {
@@ -133,8 +135,9 @@ export class ConnectionRunner {
       // Signal ChatGateway (any api instance) to force agent into the conversation room
       this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
 
-      // Publish message to ChatGateway so it saves Message record + broadcasts message:new to room
+      // Publish message to ChatGateway — actionId allows AgentRunner to deduplicate across multiple sockets
       this.onMessageNew({
+        actionId,
         conversationId: resolved.conversationId,
         agentId: resolved.agentId,
         orgId,

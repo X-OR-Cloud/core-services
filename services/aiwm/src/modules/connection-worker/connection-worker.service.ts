@@ -66,6 +66,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async publishMessageNew(payload: {
+    actionId: string;
     conversationId: string;
     agentId: string;
     orgId: string;
