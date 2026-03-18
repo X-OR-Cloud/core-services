@@ -8,6 +8,7 @@ import { redisConfig } from '../../config/redis.config';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL_OUTBOUND = 'outbound:message';
+const CHANNEL_OUTBOUND_TYPING = 'outbound:typing';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 
@@ -20,6 +21,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConnectionWorkerService.name);
   private readonly runners = new Map<string, ConnectionRunner>();
   private readonly outboundHandlers = new Map<string, OutboundHandler>();
+  private readonly typingChannels = new Map<string, string>(); // conversationId → channelId
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
@@ -34,7 +36,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisPub = new Redis(redisConfig);
     this.redisSub = new Redis(redisConfig);
 
-    await this.redisSub.subscribe(CHANNEL_OUTBOUND);
+    await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING);
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
         try {
@@ -42,6 +44,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
           await this.handleOutbound(conversationId, text);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:message: ${err.message}`);
+        }
+      }
+      if (channel === CHANNEL_OUTBOUND_TYPING) {
+        try {
+          const { conversationId } = JSON.parse(message);
+          await this.handleOutboundTyping(conversationId);
+        } catch (err: any) {
+          this.logger.error(`Failed to process outbound:typing: ${err.message}`);
         }
       }
     });
@@ -80,6 +90,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     channelId: string;
     guildId?: string;
   }): Promise<void> {
+    // Track channelId for this conversation — used to forward typing indicators
+    this.typingChannels.set(payload.conversationId, payload.channelId);
+
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
     const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
     this.redisPub?.publish(CHANNEL_MESSAGE_NEW, JSON.stringify({ ...payload, msgNonce })).catch((err: Error) =>
@@ -96,6 +109,16 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     if (handler) {
       await handler(text).catch((err) =>
         this.logger.error(`Failed to forward outbound to ${conversationId}: ${err.message}`),
+      );
+    }
+  }
+
+  async handleOutboundTyping(conversationId: string): Promise<void> {
+    const channelId = this.typingChannels.get(conversationId);
+    if (!channelId) return;
+    for (const runner of this.runners.values()) {
+      await runner.sendTyping(channelId).catch((err: Error) =>
+        this.logger.warn(`Failed to forward typing to ${channelId}: ${err.message}`),
       );
     }
   }

@@ -29,6 +29,7 @@ export abstract class BaseAdapter extends EventEmitter {
   abstract start(): Promise<void>;
   abstract stop(): Promise<void>;
   abstract send(target: AdapterTarget, text: string, options?: SendOptions): Promise<void>;
+  abstract sendTyping(target: AdapterTarget): Promise<void>;
 
   // Typed event emitters
   emitMessage(msg: NormalizedInbound): void {

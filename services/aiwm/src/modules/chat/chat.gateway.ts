@@ -624,6 +624,16 @@ export class ChatGateway
       timestamp: new Date(),
     });
 
+    // Bridge agent typing indicator to Discord/Telegram via Connection Worker
+    if (isAgent && isTyping && this.redisPub) {
+      this.redisPub.publish(
+        'outbound:typing',
+        JSON.stringify({ conversationId }),
+      ).catch((err: Error) =>
+        this.logger.error(`Failed to publish outbound:typing: ${err.message}`),
+      );
+    }
+
     this.logger.debug(
       `[WS-TYPING] ${eventName} | conversationId=${conversationId} | isTyping=${isTyping}`,
     );

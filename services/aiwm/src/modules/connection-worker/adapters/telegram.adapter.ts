@@ -42,6 +42,15 @@ export class TelegramAdapter extends BaseAdapter {
     this.emitDisconnected('stopped');
   }
 
+  async sendTyping(target: AdapterTarget): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.sendChatAction(target.channelId, 'typing');
+    } catch (err: any) {
+      this.logger.warn(`sendTyping failed for channel ${target.channelId}: ${err.message}`);
+    }
+  }
+
   async send(target: AdapterTarget, text: string, options?: SendOptions): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
 

@@ -42,6 +42,18 @@ export class DiscordAdapter extends BaseAdapter {
     this.emitDisconnected('stopped');
   }
 
+  async sendTyping(target: AdapterTarget): Promise<void> {
+    if (!this.client) return;
+    try {
+      const channel = await this.client.channels.fetch(target.channelId);
+      if (channel?.isTextBased()) {
+        await (channel as any).sendTyping();
+      }
+    } catch (err: any) {
+      this.logger.warn(`sendTyping failed for channel ${target.channelId}: ${err.message}`);
+    }
+  }
+
   async send(target: AdapterTarget, text: string, _options?: SendOptions): Promise<void> {
     if (!this.client) throw new Error('Discord client not connected');
 

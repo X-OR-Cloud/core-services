@@ -91,6 +91,11 @@ export class ConnectionRunner {
     await this.adapter.send({ channelId }, text);
   }
 
+  async sendTyping(channelId: string): Promise<void> {
+    if (!this.adapter) return;
+    await this.adapter.sendTyping({ channelId });
+  }
+
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {
     try {
       const { resolved, skipReasons } = await this.routingService.resolve(msg, this.connection);
