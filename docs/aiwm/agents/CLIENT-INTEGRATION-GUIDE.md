@@ -7,7 +7,8 @@ This guide explains how to integrate an AI agent client with AIWM (AI Workload M
 1. Agent connects to AIWM with agentId + secret
 2. AIWM validates credentials and returns JWT token + configuration
 3. Agent uses configuration to initialize Claude Code SDK
-4. Agent sends periodic heartbeat to report status
+4. Agent connects to `/ws/chat` WebSocket to receive messages and send responses
+5. Agent sends periodic heartbeat to report status
 
 ## Integration Architecture
 
@@ -34,8 +35,24 @@ This guide explains how to integrate an AI agent client with AIWM (AI Workload M
          │     - Claude Code SDK              │
          │     - Platform (Discord/Telegram)  │
          │                                    │
-         │  5. POST /agents/:id/heartbeat     │
-         │     (every 60 seconds)             │
+         │  5. Connect WebSocket /ws/chat     │
+         │     Authorization: Bearer {token} │
+         ├───────────────────────────────────>│
+         │                                    │
+         │  6. Emit conversation:join         │
+         │     { conversationId }             │
+         ├───────────────────────────────────>│
+         │                                    │
+         │  7. Listen message:new             │
+         │     (apply filter rules below)     │
+         │<───────────────────────────────────┤
+         │                                    │
+         │  8. Emit message:send (response)   │
+         │     { role: "assistant", ... }     │
+         ├───────────────────────────────────>│
+         │                                    │
+         │  9. agent:heartbeat (every 30s)    │
+         │     { status: "idle"|"busy" }      │
          ├───────────────────────────────────>│
          │                                    │
 ```
@@ -280,12 +297,107 @@ TELEGRAM_GROUP_ID=group-ids-comma-separated
 8. Agent is ready to operate
 ```
 
-**Step 3: Runtime Behavior**
+**Step 3: Connect to WebSocket `/ws/chat`**
 
-- **Heartbeat**: Send every 60 seconds with current status and metrics
-- **Token Refresh**: JWT expires in 24h, implement auto-reconnect every 23h
+After obtaining the token from the connect API, agent must connect to `/ws/chat` to receive and respond to messages:
+
+```ts
+import { io } from 'socket.io-client';
+
+// Parse WS URL correctly — origin and namespace must be split
+const wsUrl = process.env.AIWM_WS_URL; // e.g. wss://skt.x-or.cloud/ws/chat
+const u = new URL(wsUrl);
+const origin = `${u.protocol}//${u.host}`;
+const namespace = u.pathname; // '/ws/chat'
+
+const socket = io(`${origin}${namespace}`, {
+  auth: { token: connectResponse.token },
+  transports: ['websocket'],
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 5000,
+});
+
+socket.on('connect', () => {
+  // Join the conversation room
+  socket.emit('conversation:join', { conversationId }, (res) => {
+    if (!res.success) console.error('Failed to join conversation:', res.error);
+  });
+});
+
+// Dedup set — prevents processing same message twice (multi-socket delivery)
+const seenIds = new Set<string>();
+
+socket.on('message:new', (msg) => {
+  // 1. Dedup by actionId
+  if (msg._id && seenIds.has(msg._id)) return;
+  if (msg._id) {
+    seenIds.add(msg._id);
+    if (seenIds.size > 200) seenIds.delete(seenIds.values().next().value);
+  }
+
+  // 2. Skip non-user messages (agent echo, notices, internal steps)
+  if (msg.role === 'assistant') return;       // own response echoed back
+  if (msg.skipAgent === true) return;          // /ignore command
+  if (msg.type && msg.type !== 'message') return; // system/tool_use/tool_result/thinking
+
+  // 3. Process user message
+  handleUserMessage(msg);
+});
+
+socket.on('disconnect', (reason) => {
+  console.warn('WS disconnected:', reason);
+  // socket.io reconnection handles reconnect automatically
+});
+
+// Send response back
+async function handleUserMessage(msg: any) {
+  const response = await runAgent(msg.content); // your Claude SDK call
+  socket.emit('message:send', {
+    conversationId: msg.conversationId,
+    role: 'assistant',
+    content: response,
+  });
+}
+```
+
+**Why filtering is required:** The gateway broadcasts **all** `message:new` events to every socket in the room — including the agent's own responses (`role=assistant`), internal step notifications (`type=system/tool_use/tool_result/thinking`), and `/ignore` messages. Without filtering, the agent will receive and attempt to process its own output, causing cascading busy-rejects or duplicate LLM invocations.
+
+**Step 4: Heartbeat via WebSocket**
+
+Prefer `agent:heartbeat` over `POST /agents/:id/heartbeat` when connected to `/ws/chat` — it avoids an extra HTTP round-trip and triggers immediate CBM work assignment when the agent becomes idle:
+
+```ts
+// Periodic heartbeat (every 30 seconds)
+setInterval(() => {
+  socket.emit('agent:heartbeat', { status: isBusy ? 'busy' : 'idle' }, (res) => {
+    if (res.systemMessage) {
+      // Work assignment or reminder injected by server
+      console.log('Server system message:', res.systemMessage);
+    }
+  });
+}, 30_000);
+
+// Immediate idle heartbeat after finishing a task
+async function handleUserMessage(msg: any) {
+  isBusy = true;
+  try {
+    const response = await runAgent(msg.content);
+    socket.emit('message:send', { conversationId: msg.conversationId, role: 'assistant', content: response });
+  } finally {
+    isBusy = false;
+    // Notify server immediately — triggers next work assignment without waiting 30s
+    socket.emit('agent:heartbeat', { status: 'idle' });
+  }
+}
+```
+
+**Step 5: Runtime Behavior**
+
+- **Heartbeat**: `agent:heartbeat` every 30 seconds via WebSocket (fallback: `POST /agents/:id/heartbeat` every 60 seconds if WS unavailable)
+- **Token Refresh**: JWT expires in 24h, reconnect WS with new token every 23h
 - **Error Handling**: If AIWM connection fails, fallback to local configuration
-- **Graceful Shutdown**: Stop heartbeat on SIGINT/SIGTERM
+- **Graceful Shutdown**: Leave conversation room, disconnect socket, stop heartbeat on SIGINT/SIGTERM
 
 **Step 4: Configuration Updates**
 
@@ -299,9 +411,8 @@ When admin updates instruction/tools/settings in AIWM:
 ### Required Components
 
 1. **AIWM Client Module**
-   - Connect to AIWM (POST /agents/:id/connect)
-   - Send heartbeat (POST /agents/:id/heartbeat)
-   - Store JWT token
+   - Connect to AIWM (`POST /agents/:id/connect`)
+   - Store JWT token for WS auth and heartbeat
    - Handle errors (401, 404, timeout)
 
 2. **Configuration Manager**
@@ -310,21 +421,27 @@ When admin updates instruction/tools/settings in AIWM:
    - Merge AIWM settings with env vars (AIWM takes precedence)
    - Provide config to Claude SDK and platforms
 
-3. **Heartbeat Service**
-   - Send heartbeat every 60 seconds
-   - Report current status (online/busy/idle)
-   - Include optional metrics (cpu, memory, uptime)
-   - Handle heartbeat failures gracefully
+3. **WebSocket Client (`/ws/chat`)**
+   - Connect with agent JWT token
+   - Emit `conversation:join` on connect
+   - Listen to `message:new` with correct filter rules (see above)
+   - Emit `message:send` with `role: 'assistant'` for responses
+   - Emit `agent:heartbeat` every 30 seconds + immediately after each task completes
+   - Reconnect automatically on disconnect
 
-4. **Auto-Reconnect Service**
-   - Reconnect every 23 hours (before 24h token expiry)
-   - Update JWT token on reconnect
-   - Log reconnection status
+4. **Message Dedup Set**
+   - Track `_id` of received `message:new` events (max 200 entries, rotate oldest)
+   - Prevents double-processing when agent has multiple sockets across WS instances
 
-5. **Graceful Shutdown**
-   - Stop heartbeat on shutdown
+5. **Auto-Reconnect Service**
+   - Reconnect WS every 23 hours (before 24h token expiry) with fresh token from `connect` API
+   - Handle `disconnect` events and re-join conversation room after reconnect
+
+6. **Graceful Shutdown**
+   - Emit `conversation:leave` before disconnecting
+   - Disconnect WebSocket
+   - Stop heartbeat timer
    - Log final status
-   - Clean up resources
 
 ### Configuration Priority
 

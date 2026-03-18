@@ -339,6 +339,37 @@ The periodic timer heartbeat continues independently and handles the `idle → b
 
 > **Agent deduplication:** `AgentRunner` tracks `seenMessageIds` (max 200) to drop duplicates caused by multi-room membership. Messages where `role === 'assistant'` or `agentId === this.config.agentId` are also skipped.
 
+#### Filtering rules for agent clients
+
+Agent clients (both in-process `assistant` and external `engineer`) **must** apply the following filters on every `message:new` event before processing:
+
+| Condition | Action | Reason |
+|-----------|--------|--------|
+| `_id` already seen in local dedup set | skip | Multi-socket duplicate (same message delivered to multiple sockets in the same room) |
+| `role === 'assistant'` | skip | Agent's own response echoed back to room |
+| `skipAgent === true` | skip | User explicitly used `/ignore` to prevent agent processing |
+| `type === 'system'` | skip | Internal notices (e.g. "Agent is busy…", "Agent is ready") — not user input |
+| `type === 'tool_use'` / `'tool_result'` / `'thinking'` | skip | Agent internal steps, not user messages |
+
+Only messages with `role === 'user'` and `type` absent or `'message'` should trigger agent processing.
+
+```ts
+// Recommended filter for any agent client
+socket.on('message:new', (msg) => {
+  // 1. Dedup
+  if (msg._id && seenIds.has(msg._id)) return;
+  if (msg._id) seenIds.add(msg._id);
+
+  // 2. Skip non-user content
+  if (msg.role === 'assistant') return;
+  if (msg.skipAgent === true) return;
+  if (msg.type && msg.type !== 'message') return;
+
+  // 3. Process user message
+  handleUserMessage(msg);
+});
+```
+
 ---
 
 ### `message:sent`
