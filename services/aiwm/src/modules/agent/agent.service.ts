@@ -196,6 +196,7 @@ export class AgentService extends BaseService<Agent> {
           { type: 'agent', id: (saved as any)._id.toString() },
           {
             agentId: (saved as any)._id.toString(),
+            code: saved.code,
             name: saved.name,
             description: saved.description,
             status: saved.status,
@@ -1430,6 +1431,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
           { type: 'agent', id: agentId },
           {
             agentId,
+            code: agent.code,
             name: agent.name,
             description: agent.description,
             status: agent.status,
@@ -1936,6 +1938,7 @@ echo "Installation script placeholder - implement actual logic"
             { type: 'agent', id: (updated as any)._id.toString() },
             {
               agentId: (updated as any)._id.toString(),
+              code: updated.code,
               name: updated.name,
               description: updated.description,
               status: updated.status,
