@@ -1,6 +1,6 @@
 # DGT Frontend API Specification
 
-> **Version**: 3.0.0 | **Last Updated**: 2026-03-17
+> **Version**: 4.0.0 | **Last Updated**: 2026-03-18
 >
 > **Base URL (local)**: `http://localhost:3008`
 > **Base URL (prod)**: `https://xsai-api.x-or.cloud/dgt`
@@ -16,12 +16,13 @@
 | # | Trang | Sections |
 |---|-------|---------|
 | 1 | [Login / Auth](#1-login--auth) | Đăng nhập, Refresh Token |
-| 2 | [Dashboard](#2-dashboard) | Portfolio, Price Cards, Portfolio History, AI Signal, Market Status, Macro Context, Market Indicators, AI Activity Feed |
+| 2 | [Dashboard](#2-dashboard) | Portfolio, Price Cards, Portfolio History, AI Signal, AI Prediction, Market Status, Macro Context, Market Indicators, AI Activity Feed |
 | 3 | [Analytics](#3-analytics) | Summary, Open Positions, Trade History, PnL Chart, Equity Curve, Drawdown, CSV Export |
-| 4 | [AI Agent](#4-ai-agent) | CRUD Bot, Controls, Stats, Activity Logs |
+| 4 | [AI Agent](#4-ai-agent) | CRUD Bot, Controls, Stats, Stop All, Risk Profile Presets, Activity Logs |
 | 5 | [AI Intelligence](#5-ai-intelligence) | Signals, Execute Trade |
-| 6 | [Settings](#6-settings) | Profile, Exchange Accounts |
-| 7 | [Global](#7-global) | Error format, Pagination |
+| 6 | [Insights](#6-insights) | Macro Feed, Calendar, Monetary, Liquidity, Technical Indicators, Sentiment Volatility, Liquidity Heatmap, Advanced Metrics |
+| 7 | [Settings](#7-settings) | Profile, Exchange Accounts, Test Connection |
+| 8 | [Global](#8-global) | Error format, Pagination |
 
 ---
 
@@ -229,7 +230,21 @@ GET /dashboard/ai-signal
 
 ---
 
-### 2.5 Market Status Widget
+### 2.5 AI Prediction Widget
+
+**Mục đích**: Alias của `ai-signal` — cùng data, route riêng cho FE.
+
+```
+GET /dashboard/ai-prediction
+```
+
+**Query Parameters**: Giống 2.4 (`symbol`, `timeframe`)
+
+**Response 200**: Giống 2.4.
+
+---
+
+### 2.7 Market Status Widget
 
 **Mục đích**: Snapshot cấu trúc thị trường — trend, volatility, liquidity.
 
@@ -264,7 +279,7 @@ GET /dashboard/market-status
 
 ---
 
-### 2.6 Macro Context Widget
+### 2.8 Macro Context Widget
 
 **Mục đích**: Chỉ số vĩ mô (DXY, VIX, Real Yield) + Trade Gate.
 
@@ -298,7 +313,7 @@ GET /dashboard/macro-context
 
 ---
 
-### 2.7 Market Indicators Widget
+### 2.9 Market Indicators Widget
 
 **Mục đích**: RSI, Fear & Greed Index, Support/Resistance.
 
@@ -333,7 +348,7 @@ GET /dashboard/market-indicators
 
 ---
 
-### 2.8 AI Activity Feed Widget
+### 2.10 AI Activity Feed Widget
 
 **Mục đích**: Luồng log realtime từ các bot. FE **poll mỗi 30 giây**.
 
@@ -781,7 +796,77 @@ GET /bots/stats
 
 ---
 
-### 4.8 Activity Logs
+### 4.8 Dừng tất cả Bot
+
+**Mục đích**: Stop toàn bộ bot đang `RUNNING` hoặc `PAUSED` của user hiện tại.
+
+```
+POST /bots/stop-all
+```
+
+**Body**: _(không cần)_
+
+**Response 200**:
+```json
+{
+  "stoppedCount": 2,
+  "stoppedBotIds": ["69a1b2c3...", "69a1b2c4..."]
+}
+```
+
+> `stoppedCount: 0` nếu không có bot nào đang chạy — không phải lỗi.
+
+---
+
+### 4.9 Risk Profile Presets
+
+**Mục đích**: Lấy danh sách preset cấu hình rủi ro để FE pre-fill form tạo bot.
+
+```
+GET /bots/risk-profiles
+```
+
+**Response 200**:
+```json
+[
+  {
+    "id": "conservative",
+    "label": "Conservative",
+    "description": "Low risk, small positions, tight stop-loss",
+    "stopLoss": 1.5,
+    "takeProfit": 3.0,
+    "maxDrawdownLimit": 5,
+    "dailyStopLossUSD": 200,
+    "minConfidenceScore": 80
+  },
+  {
+    "id": "balanced",
+    "label": "Balanced",
+    "description": "Moderate risk, balanced reward/risk ratio",
+    "stopLoss": 2.5,
+    "takeProfit": 5.0,
+    "maxDrawdownLimit": 10,
+    "dailyStopLossUSD": 500,
+    "minConfidenceScore": 70
+  },
+  {
+    "id": "aggressive",
+    "label": "Aggressive",
+    "description": "Higher risk tolerance, larger position sizing",
+    "stopLoss": 4.0,
+    "takeProfit": 8.0,
+    "maxDrawdownLimit": 15,
+    "dailyStopLossUSD": 1000,
+    "minConfidenceScore": 60
+  }
+]
+```
+
+> Static data — không cần auth context, nhưng vẫn yêu cầu JWT để nhất quán.
+
+---
+
+### 4.10 Activity Logs
 
 **Mục đích**: Nhật ký hành động của bot — mua/bán, cảnh báo, lỗi. TTL 90 ngày.
 
@@ -930,13 +1015,265 @@ POST /trades/from-signal
 
 ---
 
-## 6. Settings
+## 6. Insights
+
+> Base: **DGT** · Route FE: `/insights`
+>
+> Tất cả endpoints đều read-only, aggregate từ data có sẵn — không filter theo userId. Cần JWT.
+
+---
+
+### 6.1 Macro Feed
+
+**Mục đích**: Latest macro indicators + key economic events từ FRED và SentimentSignal.
+
+```
+GET /insights/macro/feed
+```
+
+**Response 200**:
+```json
+{
+  "indicators": [
+    { "seriesId": "DXY", "name": "US Dollar Index", "value": 104.2, "unit": "Index", "timestamp": "2026-03-17T00:00:00Z", "source": "fred", "frequency": "daily" }
+  ],
+  "feed": [
+    { "timestamp": "2026-03-15T00:00:00Z", "source": "bytetree", "event": "ETF inflows surge +12oz", "summary": null }
+  ],
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+---
+
+### 6.2 Macro Calendar
+
+**Mục đích**: Lịch phát hành dữ liệu kinh tế sắp tới.
+
+```
+GET /insights/macro/calendar
+```
+
+**Response 200**:
+```json
+{
+  "events": [
+    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "releaseDate": "2026-03-19T18:00:00Z", "frequency": "monthly", "unit": "Percent", "lastValue": 5.25 }
+  ],
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+> Chỉ hiển thị events có `releaseDate` trong tương lai, sắp xếp gần nhất trước.
+
+---
+
+### 6.3 Monetary Policy
+
+**Mục đích**: Tổng hợp chính sách tiền tệ — Fed Funds, Real Yield, Yield Curve.
+
+```
+GET /insights/macro/monetary
+```
+
+**Response 200**:
+```json
+{
+  "stance": "RESTRICTIVE",
+  "fedFundsRate": 5.25,
+  "realYield10y": 1.85,
+  "yieldCurveSpread": -0.45,
+  "indicators": [
+    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "value": 5.25, "unit": "Percent", "timestamp": "2026-03-01T00:00:00Z", "frequency": "monthly" }
+  ],
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+| Field | Enum |
+|-------|------|
+| `stance` | `"RESTRICTIVE"` (>5%), `"NEUTRAL"` (3–5%), `"ACCOMMODATIVE"` (<3%) |
+
+---
+
+### 6.4 Gold Liquidity
+
+**Mục đích**: DXY + ETF flows + Futures funding rate.
+
+```
+GET /insights/macro/liquidity
+```
+
+**Response 200**:
+```json
+{
+  "dxy": { "value": 104.2, "signal": "BEARISH_GOLD", "timestamp": "2026-03-17T00:00:00Z" },
+  "etfFlows": { "flow7dOz": 12500.5, "aumUsd": 55000000000, "timestamp": "2026-03-17T00:00:00Z" },
+  "futures": { "fundingRateAnnualized": 8.4, "longShortRatio": 1.35, "openInterestUsd": 980000000, "timestamp": "2026-03-18T06:00:00Z" },
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+| Field | Enum / Notes |
+|-------|------|
+| `dxy.signal` | `"BULLISH_GOLD"` (DXY<100), `"NEUTRAL"` (100–105), `"BEARISH_GOLD"` (DXY>105) |
+| `etfFlows.flow7dOz` | `null` nếu chưa có data ByteTree |
+
+---
+
+### 6.5 Technical Indicators (Full)
+
+**Mục đích**: Snapshot đầy đủ tất cả indicators cho một symbol/timeframe.
+
+```
+GET /insights/data/technical-indicators
+```
+
+**Query Parameters**:
+
+| Param | Default |
+|-------|---------|
+| `symbol` | `PAXGUSDT` |
+| `timeframe` | `1h` |
+
+**Response 200**:
+```json
+{
+  "symbol": "PAXGUSDT",
+  "timeframe": "1h",
+  "data": {
+    "rsi14": 62.4,
+    "macd": { "line": 12.5, "signal": 10.2, "histogram": 2.3 },
+    "ema": { "ema9": 5180.0, "ema20": 5160.0, "ema50": 5100.0, "ema200": 4900.0 },
+    "sma20": 5155.0,
+    "bollingerBands": { "upper": 5300.0, "middle": 5155.0, "lower": 5010.0 },
+    "atr14": 45.2,
+    "atr14Pct": 0.87,
+    "volumeRatio": 1.24,
+    "hv30d": 18.5
+  },
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+> `data: null` nếu chưa có indicator data cho symbol/timeframe đó.
+
+---
+
+### 6.6 Sentiment & Volatility
+
+**Mục đích**: News sentiment + ATR volatility + Futures data.
+
+```
+GET /insights/data/sentiment-volatility
+```
+
+**Query Parameters**: `symbol` (default: `PAXGUSDT`)
+
+**Response 200**:
+```json
+{
+  "symbol": "PAXGUSDT",
+  "volatility": { "atr14Pct": 0.87, "hv30d": 18.5, "level": "MEDIUM" },
+  "sentiment": {
+    "score": 0.42,
+    "label": "BULLISH",
+    "geopoliticalRisk": 35.0,
+    "eventImpact": "medium",
+    "updatedAt": "2026-03-18T06:00:00Z"
+  },
+  "futures": { "fundingRateAnnualized": 8.4, "longShortRatio": 1.35, "openInterestUsd": 980000000 },
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+| Field | Enum |
+|-------|------|
+| `volatility.level` | `"LOW"`, `"MEDIUM"`, `"HIGH"` |
+| `sentiment.label` | `"BULLISH"` (score>0.3), `"BEARISH"` (score<−0.3), `"NEUTRAL"`, `"UNKNOWN"` |
+| `sentiment.eventImpact` | `"low"`, `"medium"`, `"high"` |
+
+---
+
+### 6.7 Liquidity Heatmap
+
+**Mục đích**: Phân phối volume theo giờ trong 24h qua.
+
+```
+GET /insights/data/liquidity-heatmap
+```
+
+**Query Parameters**: `symbol` (default: `PAXGUSDT`)
+
+**Response 200**:
+```json
+{
+  "symbol": "PAXGUSDT",
+  "volumeRatio": 1.24,
+  "liquidityLevel": "HIGH",
+  "heatmap": [
+    { "hour": "2026-03-17T08", "volume": 4521.5, "avgVolume": 452.15 },
+    { "hour": "2026-03-17T09", "volume": 6234.8, "avgVolume": 623.48 }
+  ],
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+| Field | Enum |
+|-------|------|
+| `liquidityLevel` | `"LOW"` (volumeRatio<0.8), `"MEDIUM"`, `"HIGH"` (>1.5) |
+| `hour` | ISO 8601 cắt tới giờ: `"2026-03-17T08"` |
+
+---
+
+### 6.8 Advanced Metrics
+
+**Mục đích**: RSI zone, MACD crossover, BB width + latest AI signal summary.
+
+```
+GET /insights/data/advanced-metrics
+```
+
+**Query Parameters**: `symbol` (default: `PAXGUSDT`), `timeframe` (default: `1h`)
+
+**Response 200**:
+```json
+{
+  "symbol": "PAXGUSDT",
+  "timeframe": "1h",
+  "data": {
+    "rsi": { "value": 62.4, "zone": "APPROACHING_OVERBOUGHT" },
+    "macd": { "line": 12.5, "signal": 10.2, "histogram": 2.3, "crossover": "BULLISH" },
+    "bollingerBands": { "upper": 5300.0, "middle": 5155.0, "lower": 5010.0, "width": 5.63 },
+    "ema": { "ema20": 5160.0, "ema50": 5100.0, "ema200": 4900.0 },
+    "atr": { "value": 45.2, "pct": 0.87 },
+    "volumeRatio": 1.24
+  },
+  "signal": {
+    "type": "BUY",
+    "confidence": 78,
+    "confidenceLabel": "high",
+    "expiresAt": "2026-03-18T12:00:00Z"
+  },
+  "updatedAt": "2026-03-18T08:00:00Z"
+}
+```
+
+| Field | Enum |
+|-------|------|
+| `rsi.zone` | `"OVERSOLD"`, `"APPROACHING_OVERSOLD"`, `"NEUTRAL"`, `"APPROACHING_OVERBOUGHT"`, `"OVERBOUGHT"` |
+| `macd.crossover` | `"BULLISH"` (macdLine > macdSignal), `"BEARISH"`, `"UNKNOWN"` |
+| `signal` | `null` nếu không có ACTIVE signal |
+
+---
+
+## 7. Settings
 
 > Route FE: `/settings`
 
 ---
 
-### 6.1 Xem hồ sơ người dùng
+### 7.1 Xem hồ sơ người dùng
 
 > Base: **IAM Service**
 
@@ -960,7 +1297,7 @@ GET /auth/profile
 
 ---
 
-### 6.2 Cập nhật hồ sơ
+### 7.2 Cập nhật hồ sơ
 
 > Base: **IAM Service**
 
@@ -974,7 +1311,7 @@ PATCH /auth/profile
 
 ---
 
-### 6.3 Danh sách Exchange Accounts
+### 7.3 Danh sách Exchange Accounts
 
 > Base: **DGT**
 
@@ -1005,6 +1342,7 @@ GET /accounts
 | `status` | `"active" \| "suspended" \| "closed"` | Trạng thái |
 | `isDefault` | `boolean` | Tài khoản mặc định cho các API |
 | `apiKey` | `string` | **Masked** — chỉ hiện phần cuối (`xxxx...abcd`). Rỗng nếu chưa set. |
+| `apiKeyStatus` | `"untested" \| "valid" \| "invalid"` | Trạng thái kiểm tra API key. Chỉ có ý nghĩa với LIVE account. |
 | `notifications.discordWebhookUrl` | `string` | Webhook Discord |
 | `notifications.telegramBotToken` | `string` | Bot token Telegram |
 | `notifications.telegramChatId` | `string` | Chat ID Telegram |
@@ -1017,7 +1355,7 @@ GET /accounts
 
 ---
 
-### 6.4 Chi tiết một Account
+### 7.4 Chi tiết một Account
 
 ```
 GET /accounts/:id
@@ -1028,7 +1366,7 @@ GET /accounts/:id
 
 ---
 
-### 6.5 Tạo Exchange Account mới
+### 7.5 Tạo Exchange Account mới
 
 ```
 POST /accounts
@@ -1053,7 +1391,7 @@ POST /accounts
 
 ---
 
-### 6.6 Cập nhật Account
+### 7.6 Cập nhật Account
 
 ```
 PUT /accounts/:id
@@ -1067,9 +1405,48 @@ PUT /accounts/:id
 
 ---
 
-## 7. Global
+### 7.7 Test API Key Connection
 
-### 7.1 Error Response Format
+**Mục đích**: Kiểm tra `apiKey`/`apiSecret` của LIVE account có kết nối được Binance không. Cập nhật `apiKeyStatus` sau khi test.
+
+```
+POST /accounts/:id/test-connection
+```
+
+**Body**: _(không cần)_
+
+**Response 200** (thành công):
+```json
+{
+  "status": "valid",
+  "permissions": ["SPOT", "MARGIN"]
+}
+```
+
+**Response 200** (thất bại — không throw 4xx):
+```json
+{
+  "status": "invalid",
+  "error": "Invalid API-key, IP, or permissions for action."
+}
+```
+
+| Field | Enum |
+|-------|------|
+| `status` | `"valid"` hoặc `"invalid"` |
+| `permissions` | Mảng quyền từ Binance, chỉ có khi `status: "valid"` |
+
+> ⚠️ Chỉ dùng cho LIVE account (`accountType: "live"`). Paper account → `400 Bad Request`.
+>
+> Account không có `apiKey`/`apiSecret` → trả `status: "invalid"` không throw lỗi.
+>
+> Sau khi gọi API này, FE nên re-fetch account để lấy `apiKeyStatus` mới nhất.
+
+---
+
+## 8. Global
+
+### 8.1 Error Response Format
 
 Tất cả error response theo format chuẩn:
 
@@ -1093,7 +1470,7 @@ Tất cả error response theo format chuẩn:
 
 ---
 
-### 7.2 Pagination chuẩn
+### 8.2 Pagination chuẩn
 
 Tất cả API trả list dùng format:
 
@@ -1111,7 +1488,7 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 
 ---
 
-### 7.3 Bảng tổng hợp tất cả Endpoints
+### 8.3 Bảng tổng hợp tất cả Endpoints
 
 | Trang | Method | Endpoint | Mô tả |
 |-------|--------|----------|-------|
@@ -1121,6 +1498,7 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 | **Dashboard** | GET | `/dashboard/price-cards` | Giá realtime + sparkline |
 | **Dashboard** | GET | `/dashboard/portfolio-history` | Biểu đồ lịch sử danh mục |
 | **Dashboard** | GET | `/dashboard/ai-signal` | AI Trend Signal widget |
+| **Dashboard** | GET | `/dashboard/ai-prediction` | AI Prediction widget (alias ai-signal) |
 | **Dashboard** | GET | `/dashboard/market-status` | Market Status widget |
 | **Dashboard** | GET | `/dashboard/macro-context` | Macro Context widget |
 | **Dashboard** | GET | `/dashboard/market-indicators` | Market Indicators widget |
@@ -1135,6 +1513,8 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 | **AI Agent** | GET | `/bots` | Danh sách bot |
 | **AI Agent** | POST | `/bots` | Tạo bot mới |
 | **AI Agent** | GET | `/bots/stats` | Stats tổng hợp toàn bộ bot |
+| **AI Agent** | GET | `/bots/risk-profiles` | Risk profile presets (Conservative/Balanced/Aggressive) |
+| **AI Agent** | POST | `/bots/stop-all` | Dừng tất cả bot đang chạy |
 | **AI Agent** | GET | `/bots/:id` | Chi tiết bot |
 | **AI Agent** | PUT | `/bots/:id` | Cập nhật cấu hình |
 | **AI Agent** | DELETE | `/bots/:id` | Xoá (soft delete) |
@@ -1148,9 +1528,18 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 | **AI Intelligence** | GET | `/signals/:id` | Chi tiết tín hiệu |
 | **AI Intelligence** | PATCH | `/signals/:id/ignore` | Bỏ qua tín hiệu |
 | **AI Intelligence** | POST | `/trades/from-signal` | Mở lệnh từ tín hiệu |
+| **Insights** | GET | `/insights/macro/feed` | Macro feed — indicators + events |
+| **Insights** | GET | `/insights/macro/calendar` | Lịch phát hành dữ liệu kinh tế |
+| **Insights** | GET | `/insights/macro/monetary` | Chính sách tiền tệ — Fed Funds, Yield |
+| **Insights** | GET | `/insights/macro/liquidity` | Gold liquidity — DXY, ETF flows, Funding |
+| **Insights** | GET | `/insights/data/technical-indicators` | Full technical indicators snapshot |
+| **Insights** | GET | `/insights/data/sentiment-volatility` | Sentiment + volatility tổng hợp |
+| **Insights** | GET | `/insights/data/liquidity-heatmap` | Volume heatmap 24h theo giờ |
+| **Insights** | GET | `/insights/data/advanced-metrics` | RSI zone, MACD crossover, BB + AI signal |
 | **Settings** | GET | `/auth/profile` _(IAM)_ | Xem hồ sơ người dùng |
 | **Settings** | PATCH | `/auth/profile` _(IAM)_ | Cập nhật hồ sơ |
 | **Settings** | GET | `/accounts` | Danh sách Exchange Accounts |
 | **Settings** | GET | `/accounts/:id` | Chi tiết một Account |
 | **Settings** | POST | `/accounts` | Tạo Exchange Account |
 | **Settings** | PUT | `/accounts/:id` | Cập nhật Account |
+| **Settings** | POST | `/accounts/:id/test-connection` | Test API key Binance (LIVE account only) |
