@@ -617,6 +617,24 @@ export class AgentService extends BaseService<Agent> {
       minScore: agent.ragSettings?.minScore ?? 0.7,
     }));
 
+    // Build settings, injecting claude_oauthToken for claude-agent-sdk framework
+    const agentSettings: Record<string, unknown> = { ...(agent.settings || {}) };
+    if (agent.framework === 'claude-agent-sdk') {
+      try {
+        const oauthTokenConfig = await this.configurationService.findByKey(
+          ConfigKey.ANTHROPIC_OAUTH_TOKEN as any,
+          { orgId: agent.owner.orgId } as RequestContext
+        );
+        if (oauthTokenConfig?.value) {
+          agentSettings.claude_oauthToken = oauthTokenConfig.value;
+        }
+      } catch (error) {
+        this.logger.warn('Failed to fetch anthropic oauth token from configuration', {
+          error: error.message,
+        });
+      }
+    }
+
     const response: AgentConnectResponseDto = {
       id: agentId,
       name: agent.name,
@@ -630,7 +648,7 @@ export class AgentService extends BaseService<Agent> {
       tools,
       allowedFunctions,
       framework: agent.framework,
-      settings: agent.settings || {},
+      settings: agentSettings,
       channels: agent.channels || [],
       ragEnabled: agent.ragEnabled ?? false,
       ragCollections,

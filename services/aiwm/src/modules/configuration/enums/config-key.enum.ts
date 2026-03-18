@@ -46,6 +46,7 @@ export enum ConfigKey {
   // ==========================================
   OPENAI_API_KEY = 'llm.openai.api_key',
   ANTHROPIC_API_KEY = 'llm.anthropic.api_key',
+  ANTHROPIC_OAUTH_TOKEN = 'llm.anthropic.oauth_token',
   GROQ_API_KEY = 'llm.groq.api_key',
   // ==========================================
   // Service Integrations

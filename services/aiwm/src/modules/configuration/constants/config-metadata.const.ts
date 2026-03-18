@@ -297,6 +297,15 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     example: 'sk-ant-api03-...',
   },
 
+  [ConfigKey.ANTHROPIC_OAUTH_TOKEN]: {
+    key: ConfigKey.ANTHROPIC_OAUTH_TOKEN,
+    displayName: 'Anthropic OAuth Token',
+    description: 'Anthropic OAuth token for Claude Agent SDK authentication. Injected automatically into agent settings when framework is claude-agent-sdk.',
+    dataType: 'string',
+    isRequired: false,
+    example: 'oauth-token-...',
+  },
+
   [ConfigKey.GROQ_API_KEY]: {
     key: ConfigKey.GROQ_API_KEY,
     displayName: 'Groq API Key',
