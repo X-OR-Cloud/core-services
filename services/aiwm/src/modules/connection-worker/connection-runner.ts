@@ -42,6 +42,7 @@ export class ConnectionRunner {
       channelId: string;
       guildId?: string;
     }) => void,
+    private readonly onCommand: (payload: { agentId: string; conversationId: string; command: string; reason?: string }) => void,
     private readonly addLogFn: AddLogFn,
   ) {}
 
@@ -114,6 +115,18 @@ export class ConnectionRunner {
 
       const connectionId = String((this.connection as any)._id);
       const orgId = (this.connection as any).owner?.orgId || '';
+
+      // Intercept slash commands — do not forward to agent as regular message
+      const slashMatch = msg.text.match(/^\/(\w+)(?:\s+(.*))?$/);
+      if (slashMatch) {
+        const command = slashMatch[1].toLowerCase();
+        const reason = slashMatch[2]?.trim();
+        if (['stop', 'reload', 'inspect'].includes(command)) {
+          this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason });
+          this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
+          return;
+        }
+      }
 
       // Log inbound action (full audit)
       const savedAction = await this.actionService.createActionDirect(

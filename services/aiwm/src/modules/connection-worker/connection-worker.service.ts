@@ -9,6 +9,7 @@ import { redisConfig } from '../../config/redis.config';
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL_OUTBOUND = 'outbound:message';
 const CHANNEL_OUTBOUND_TYPING = 'outbound:typing';
+const CHANNEL_OUTBOUND_COMMAND = 'outbound:command';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 
@@ -113,6 +114,12 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async publishCommand(payload: { agentId: string; conversationId: string; command: string; reason?: string }): Promise<void> {
+    this.redisPub?.publish(CHANNEL_OUTBOUND_COMMAND, JSON.stringify(payload)).catch((err: Error) =>
+      this.logger.error(`Failed to publish outbound:command: ${err.message}`),
+    );
+  }
+
   async handleOutboundTyping(conversationId: string): Promise<void> {
     const channelId = this.typingChannels.get(conversationId);
     if (!channelId) return;
@@ -144,6 +151,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       (conversationId) => this.outboundHandlers.delete(conversationId),
       (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
       (payload) => this.publishMessageNew(payload),
+      (payload) => this.publishCommand(payload),
       (level, message, data) =>
         this.connectionService.addLog(id, level, message, data as Record<string, any>).catch(() => undefined),
     );
