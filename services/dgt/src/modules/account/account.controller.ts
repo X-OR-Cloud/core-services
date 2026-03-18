@@ -57,6 +57,15 @@ export class AccountController {
     return updated;
   }
 
+  @Post(':id/test-connection')
+  @ApiOperation({ summary: 'Test Binance API key connection for a LIVE account' })
+  async testConnection(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.accountService.testConnection(id, context);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete account' })
   @ApiDeleteErrors()

@@ -56,6 +56,25 @@ export class BotService extends BaseService<Bot> {
     return super.softDelete(id, context);
   }
 
+  async stopAll(context: RequestContext): Promise<{ stoppedCount: number; stoppedBotIds: string[] }> {
+    const bots = await this.botModel
+      .find({
+        'owner.userId': context.userId,
+        status: { $in: [BotStatus.RUNNING, BotStatus.PAUSED] },
+        isDeleted: false,
+      })
+      .lean()
+      .exec();
+
+    const stoppedBotIds: string[] = [];
+    for (const bot of bots) {
+      await this.transitionStatus(bot._id as Types.ObjectId, BotStatus.STOPPED, context);
+      stoppedBotIds.push((bot._id as Types.ObjectId).toString());
+    }
+
+    return { stoppedCount: stoppedBotIds.length, stoppedBotIds };
+  }
+
   async getStats(userId: string): Promise<{
     activeBots: number;
     totalPnl: number;

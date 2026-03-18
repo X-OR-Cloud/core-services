@@ -53,6 +53,9 @@ export class Account extends BaseSchema {
   @Prop({ default: '' })
   apiSecret: string;
 
+  @Prop({ default: 'untested', enum: ['untested', 'valid', 'invalid'] })
+  apiKeyStatus: string;
+
   @Prop({
     type: {
       discordWebhookUrl: { type: String, default: '' },

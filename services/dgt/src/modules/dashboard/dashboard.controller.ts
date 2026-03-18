@@ -51,6 +51,18 @@ export class DashboardController {
     return this.dashboardService.getAiSignal(ctx.userId, symbol, timeframe);
   }
 
+  @Get('ai-prediction')
+  @ApiOperation({ summary: 'AI Prediction widget — alias for ai-signal' })
+  @ApiQuery({ name: 'timeframe', required: false, enum: ['1h', '4h', '12h', '24h'], example: '4h' })
+  @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
+  getAiPrediction(
+    @CurrentUser() ctx: RequestContext,
+    @Query('timeframe') timeframe = '4h',
+    @Query('symbol') symbol = 'PAXGUSDT',
+  ) {
+    return this.dashboardService.getAiSignal(ctx.userId, symbol, timeframe);
+  }
+
   @Get('market-status')
   @ApiOperation({ summary: 'Market Status widget — trend, volatility, liquidity' })
   @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })

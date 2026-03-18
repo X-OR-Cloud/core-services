@@ -1,10 +1,10 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { createHash, createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
-import { Account } from './account.schema';
+import { Account, AccountType } from './account.schema';
 import { CreateAccountDto } from './account.dto';
 
 const ENCRYPTION_KEY = process.env['API_SECRET_KEY'] || 'dgt-default-secret-key-32chars!!';
@@ -15,6 +15,14 @@ function encryptSecret(plain: string): string {
   const cipher = createCipheriv('aes-256-cbc', KEY, iv);
   const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
   return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decryptSecret(encrypted: string): string {
+  const [ivHex, encHex] = encrypted.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const enc = Buffer.from(encHex, 'hex');
+  const decipher = createDecipheriv('aes-256-cbc', KEY, iv);
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
 }
 
 function maskApiKey(key: string): string {
@@ -92,6 +100,60 @@ export class AccountService extends BaseService<Account> {
       await this.verifyOwnership(id, context);
     }
     return super.softDelete(id, context);
+  }
+
+  async testConnection(id: any, context: RequestContext): Promise<{ status: string; permissions?: string[]; error?: string }> {
+    const account = await this.findById(id, context);
+    if (!account) throw new NotFoundException(`Account ${id} not found`);
+    if (account.accountType !== AccountType.LIVE) {
+      throw new BadRequestException('test-connection is only available for LIVE accounts');
+    }
+
+    const rawAccount = await (this as any).model.findById(id).lean().exec();
+    const apiKey = rawAccount?.apiKey || '';
+    const encryptedSecret = rawAccount?.apiSecret || '';
+
+    if (!apiKey || !encryptedSecret) {
+      await super.update(id, { apiKeyStatus: 'invalid' }, context);
+      return { status: 'invalid', error: 'API key or secret not configured' };
+    }
+
+    let apiSecret: string;
+    try {
+      apiSecret = decryptSecret(encryptedSecret);
+    } catch {
+      await super.update(id, { apiKeyStatus: 'invalid' }, context);
+      return { status: 'invalid', error: 'Failed to decrypt API secret' };
+    }
+
+    const useTestnet = process.env['BINANCE_USE_TESTNET'] === 'true';
+    const baseUrl = useTestnet
+      ? 'https://testnet.binance.vision'
+      : 'https://api.binance.com';
+
+    try {
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+      const signature = createHmac('sha256', apiSecret).update(queryString).digest('hex');
+
+      const res = await fetch(`${baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+        headers: { 'X-MBX-APIKEY': apiKey },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        await super.update(id, { apiKeyStatus: 'invalid' }, context);
+        return { status: 'invalid', error: (body as any).msg || `HTTP ${res.status}` };
+      }
+
+      const data: any = await res.json();
+      const permissions: string[] = data.permissions || [];
+      await super.update(id, { apiKeyStatus: 'valid' }, context);
+      return { status: 'valid', permissions };
+    } catch (err: any) {
+      await super.update(id, { apiKeyStatus: 'invalid' }, context);
+      return { status: 'invalid', error: err?.message || 'Connection failed' };
+    }
   }
 
   private async verifyOwnership(id: any, context: RequestContext): Promise<void> {

@@ -35,6 +35,9 @@ import { AnalyticsModule } from '../modules/analytics/analytics.module';
 // Group 5: AI Signal
 import { SignalModule } from '../modules/signal/signal.module';
 
+// Group 6: Insights
+import { InsightsModule } from '../modules/insights/insights.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -75,6 +78,9 @@ import { SignalModule } from '../modules/signal/signal.module';
 
     // Group 5: AI Signal
     SignalModule,
+
+    // Group 6: Insights
+    InsightsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
