@@ -764,6 +764,79 @@ export class ChatGateway
   }
 
   // ---------------------------------------------------------------------------
+  // Event: conversation:history — fetch paginated message history for Chat UI
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('conversation:history')
+  async handleConversationHistory(
+    @MessageBody() data: {
+      conversationId: string;
+      page?: number;
+      limit?: number;
+      before?: string;
+      includeInternal?: boolean;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      if (client.data.type === 'agent') {
+        return { success: false, error: 'conversation:history is not available for agent clients' };
+      }
+
+      const { conversationId, page, limit, before, includeInternal } = data;
+
+      // Verify client has access to this conversation
+      const conversation = await this.conversationService.findById(
+        conversationId as any,
+        { userId: client.data.userId || '', roles: client.data.roles || [], orgId: client.data.orgId, groupId: '', agentId: '', appId: '' },
+      );
+
+      if (!conversation) {
+        return { success: false, error: `Conversation ${conversationId} not found` };
+      }
+
+      const result = await this.actionService.getConversationHistory(conversationId, {
+        page,
+        limit,
+        before,
+        includeInternal,
+      });
+
+      // Map Action documents to message:new-shaped objects for uniform rendering
+      const data_ = result.data.map((action: any) => {
+        const isAgentActor = action.actor?.role === 'agent';
+        return {
+          _id: action._id?.toString(),
+          conversationId: action.conversationId,
+          role: isAgentActor ? 'assistant' : 'user',
+          content: action.content,
+          type: action.type === 'notice' ? 'system' : 'message',
+          userId: action.actor?.userId,
+          username: isAgentActor ? undefined : action.actor?.displayName,
+          agentId: action.actor?.agentId,
+          attachments: action.metadata?.attachments,
+          references: action.metadata?.references,
+          skipAgent: action.metadata?.skipAgent,
+          createdAt: action.createdAt,
+        };
+      });
+
+      return {
+        success: true,
+        conversationId,
+        data: data_,
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        hasMore: result.hasMore,
+      };
+    } catch (error) {
+      this.logger.error('Error fetching conversation history:', (error as Error).message);
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Event: message:read
   // ---------------------------------------------------------------------------
 

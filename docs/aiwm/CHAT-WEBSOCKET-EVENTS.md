@@ -125,6 +125,82 @@ Side effects: joins `conversation:<id>` room, notifies room with `user:joined`.
 
 ---
 
+### `conversation:history`
+**Who:** `user`, `anonymous`
+**Purpose:** Fetch paginated message history for a conversation. Call this after `agent:connect` or `conversation:join` to populate the Chat UI on load.
+
+```json
+// emit
+{
+  "conversationId": "507f...",
+  "page": 1,               // optional, default: 1 (ignored when before is set)
+  "limit": 50,             // optional, default: 50, max: 100
+  "before": "<actionId>",  // optional: cursor — fetch messages older than this ID
+  "includeInternal": false // optional: include tool_use/tool_result/thinking types (default: false)
+}
+
+// ack (success)
+{
+  "success": true,
+  "conversationId": "507f...",
+  "data": [
+    {
+      "_id": "<actionId>",
+      "conversationId": "507f...",
+      "role": "user" | "assistant",
+      "content": "Hello!",
+      "type": "message" | "system",
+      "userId": "...",
+      "username": "john",
+      "agentId": "...",
+      "attachments": [...],
+      "references": [...],
+      "skipAgent": true,
+      "createdAt": "2026-03-18T..."
+    }
+  ],
+  "total": 120,
+  "page": 1,
+  "limit": 50,
+  "hasMore": true
+}
+
+// ack (error)
+{ "success": false, "error": "Conversation ... not found" }
+```
+
+**Usage pattern:**
+
+```ts
+// After agent:connect resolves with conversationId
+socket.emit('agent:connect', { agentId }, (res) => {
+  if (res.success) {
+    // Load initial history
+    socket.emit('conversation:history', { conversationId: res.conversationId, limit: 50 }, (hist) => {
+      if (hist.success) renderMessages(hist.data);
+    });
+  }
+});
+
+// Load older messages (infinite scroll)
+socket.emit('conversation:history', {
+  conversationId,
+  before: oldestMessageId,
+  limit: 50,
+}, (hist) => {
+  if (hist.success) prependMessages(hist.data);
+});
+```
+
+**Notes:**
+- Response payload shape mirrors `message:new` for uniform rendering.
+- By default only `message` and `notice` (system) types are returned. Pass `includeInternal: true` to also receive `tool_use`, `tool_result`, and `thinking` actions.
+- `hasMore: true` means older messages exist. Fetch them using cursor mode (`before: data[0]._id`).
+- Results are always returned in chronological order (oldest first).
+- Not stored in DB. No side effects.
+
+---
+
 ### `conversation:leave`
 **Who:** `user`, `anonymous`, `agent`
 **Purpose:** Leave a conversation room.
