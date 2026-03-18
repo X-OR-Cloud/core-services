@@ -155,12 +155,13 @@ export class ActionService extends BaseService<Action> {
     const filter = { conversationId, isDeleted: false, ...typeFilter };
     const skip = (page - 1) * limit;
 
+    // Fetch newest-first then reverse so the returned array is always chronological (oldest→newest)
     const [data, total] = await Promise.all([
-      this.model.find(filter).sort({ createdAt: 1, _id: 1 }).skip(skip).limit(limit).exec(),
+      this.model.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).exec(),
       this.model.countDocuments(filter).exec(),
     ]);
 
-    return { data: data as unknown as Action[], total, page, limit, hasMore: skip + data.length < total };
+    return { data: data.reverse() as unknown as Action[], total, page, limit, hasMore: skip + data.length < total };
   }
 
   /**
