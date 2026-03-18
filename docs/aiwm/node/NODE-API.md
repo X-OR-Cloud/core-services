@@ -346,7 +346,7 @@ The setup token is a JWT containing all necessary connection URLs so the install
 ```json
 {
   "os": "ubuntu",
-  "installCommand": "curl -fsSL http://releases.x-or.cloud/xor-stack-ai-node-agent-install.sh | bash -s -- --token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "installCommand": "curl -fsSL http://releases.x-or.cloud/xor-stack-ai-xnode-install.sh | bash -s -- --token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "instructions": [
     "1. Make sure you have curl installed: apt-get install -y curl",
     "2. Run the install command below as root or with sudo",

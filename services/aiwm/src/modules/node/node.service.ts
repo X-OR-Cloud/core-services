@@ -18,7 +18,7 @@ const NODE_TOKEN_REFRESH_GRACE_PERIOD = 300; // Allow refresh within 5 min after
 const SETUP_TOKEN_EXPIRES_IN = 86400; // 24 hours in seconds
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OBJECT_ID_REGEX = /^[0-9a-f]{24}$/i;
-const SETUP_SCRIPT_URL = 'http://releases.x-or.cloud/xor-stack-ai-node-agent-install.sh';
+const SETUP_SCRIPT_URL = 'http://releases.x-or.cloud/xor-stack-ai-xnode-install.sh';
 
 @Injectable()
 export class NodeService extends BaseService<Node> {
