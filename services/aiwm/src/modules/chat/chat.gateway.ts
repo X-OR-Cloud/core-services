@@ -494,6 +494,7 @@ export class ChatGateway
       type?: string;
       attachments?: Array<{ type: string; url: string; filename?: string; mimeType?: string; size?: number }>;
       references?: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }>;
+      workId?: string;
     },
     @ConnectedSocket() client: Socket,
   ) {
@@ -552,6 +553,7 @@ export class ChatGateway
                 ...(skipAgent ? { skipAgent: true } : {}),
               }
             : undefined,
+          ...(dto.workId ? { workId: dto.workId } : {}),
         },
         { orgId, agentId, userId: client.data.userId || '' },
       );

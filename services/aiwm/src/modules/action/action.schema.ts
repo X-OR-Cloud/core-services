@@ -100,6 +100,9 @@ export class Action extends BaseSchema {
 
   @Prop({ required: false, type: String, ref: 'Action' })
   parentId?: string;
+
+  @Prop({ required: false, type: String, index: true })
+  workId?: string;
 }
 
 export const ActionSchema = SchemaFactory.createForClass(Action);
@@ -110,3 +113,4 @@ ActionSchema.index({ conversationId: 1, type: 1 });
 ActionSchema.index({ connectionId: 1, createdAt: -1 });
 ActionSchema.index({ 'actor.externalId': 1, 'actor.externalProvider': 1 });
 ActionSchema.index({ parentId: 1 });
+ActionSchema.index({ workId: 1, createdAt: 1 });

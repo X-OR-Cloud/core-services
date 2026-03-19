@@ -130,7 +130,7 @@ export class ActionService extends BaseService<Action> {
   ): Promise<{ data: Action[]; total: number; page: number; limit: number; hasMore: boolean }> {
     const limit = Math.min(options.limit ?? 50, 100);
     const page = options.page ?? 1;
-    const typeFilter = options.includeInternal
+    const typeFilter = (options.includeInternal ?? true)
       ? {}
       : { type: { $in: ['message', 'notice'] } };
 
