@@ -16,6 +16,18 @@ export class InsightsController {
 
   // ── Macro endpoints ───────────────────────────────────────────────────────
 
+  @Get('macro/risk-score')
+  @ApiOperation({ summary: 'Macro risk score based on VIX — LOW / MEDIUM / HIGH' })
+  getRiskScore() {
+    return this.macroService.getRiskScore();
+  }
+
+  @Get('macro/trade-gate')
+  @ApiOperation({ summary: 'Trade gate status — OPEN or BLOCKED based on macro risk' })
+  getTradeGate() {
+    return this.macroService.getTradeGate();
+  }
+
   @Get('macro/feed')
   @ApiOperation({ summary: 'Macro feed — latest macro indicators + key economic events' })
   getMacroFeed() {

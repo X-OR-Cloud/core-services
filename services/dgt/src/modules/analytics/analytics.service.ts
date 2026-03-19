@@ -5,6 +5,8 @@ import { Account, AccountDocument, AccountStatus } from '../account/account.sche
 import { Position, PositionDocument, PositionStatus } from '../position/position.schema';
 import { Trade, TradeDocument } from '../trade/trade.schema';
 import { PortfolioSnapshot, PortfolioSnapshotDocument } from '../portfolio-snapshot/portfolio-snapshot.schema';
+import { MarketPrice, MarketPriceDocument } from '../market-price/market-price.schema';
+import { PortfolioSnapshotService } from '../portfolio-snapshot/portfolio-snapshot.service';
 
 type RangeKey = '24h' | '7d' | '30d' | '90d' | 'all';
 
@@ -15,6 +17,8 @@ export class AnalyticsService {
     @InjectModel(Position.name) private readonly positionModel: Model<PositionDocument>,
     @InjectModel(Trade.name) private readonly tradeModel: Model<TradeDocument>,
     @InjectModel(PortfolioSnapshot.name) private readonly snapshotModel: Model<PortfolioSnapshotDocument>,
+    @InjectModel(MarketPrice.name) private readonly marketPriceModel: Model<MarketPriceDocument>,
+    private readonly snapshotService: PortfolioSnapshotService,
   ) {}
 
   async getSummary(userId: string, range: RangeKey, accountId?: string) {
@@ -272,6 +276,102 @@ export class AnalyticsService {
       range,
       maxDrawdownPct: Math.round(maxDrawdownPct * 100) / 100,
       data,
+    };
+  }
+
+  async getPortfolioPerformance(userId: string, range: string, accountId?: string) {
+    const account = await this.resolveAccount(userId, accountId);
+    const accId = account._id as Types.ObjectId;
+    const snapshots = await this.snapshotService.findByRangeForPerformance(accId, range);
+
+    if (!snapshots.length) {
+      return {
+        range: range.toUpperCase(),
+        currency: account.currency || 'USDT',
+        summary: { startValue: 0, endValue: 0, changeUsd: 0, changePct: 0, isPositive: true, peakValue: 0, troughValue: 0 },
+        series: [],
+        updatedAt: new Date(),
+      };
+    }
+
+    const series = snapshots.map((s) => ({
+      timestamp: s.date.toISOString(),
+      value: s.totalValueUsd,
+    }));
+
+    const startValue = snapshots[0].totalValueUsd;
+    const endValue = snapshots[snapshots.length - 1].totalValueUsd;
+    const changeUsd = Math.round((endValue - startValue) * 100) / 100;
+    const changePct = startValue > 0 ? Math.round(((endValue - startValue) / startValue) * 10000) / 100 : 0;
+    const peakValue = Math.max(...snapshots.map((s) => s.totalValueUsd));
+    const troughValue = Math.min(...snapshots.map((s) => s.totalValueUsd));
+
+    return {
+      range: range.toUpperCase(),
+      currency: account.currency || 'USDT',
+      summary: {
+        startValue: Math.round(startValue * 100) / 100,
+        endValue: Math.round(endValue * 100) / 100,
+        changeUsd,
+        changePct,
+        isPositive: changeUsd >= 0,
+        peakValue: Math.round(peakValue * 100) / 100,
+        troughValue: Math.round(troughValue * 100) / 100,
+      },
+      series,
+      updatedAt: new Date(),
+    };
+  }
+
+  async getAssetPerformance(userId: string, range: string, accountId?: string) {
+    const account = await this.resolveAccount(userId, accountId);
+    const accId = account._id as Types.ObjectId;
+
+    const openPositions = await this.positionModel
+      .find({ accountId: accId, status: PositionStatus.OPEN })
+      .lean()
+      .exec();
+
+    const symbolMap: Record<string, { quantity: number; notionalUsd: number; unrealizedPnl: number }> = {};
+    for (const p of openPositions) {
+      if (!symbolMap[p.symbol]) symbolMap[p.symbol] = { quantity: 0, notionalUsd: 0, unrealizedPnl: 0 };
+      symbolMap[p.symbol].quantity += p.quantity;
+      symbolMap[p.symbol].notionalUsd += p.notionalUsd;
+      symbolMap[p.symbol].unrealizedPnl += p.unrealizedPnl || 0;
+    }
+
+    const symbols = Object.keys(symbolMap);
+    const priceMap: Record<string, number> = {};
+    await Promise.all(
+      symbols.map(async (sym) => {
+        const latest = await this.marketPriceModel.findOne({ symbol: sym }).sort({ timestamp: -1 }).lean().exec();
+        priceMap[sym] = latest?.close || 0;
+      }),
+    );
+
+    const assetList = symbols.map((sym) => {
+      const pos = symbolMap[sym];
+      const priceUsd = priceMap[sym] || 0;
+      const valueUsd = priceUsd > 0 ? pos.quantity * priceUsd : pos.notionalUsd;
+      const changeUsd = Math.round(pos.unrealizedPnl * 100) / 100;
+      const changePct = pos.notionalUsd > 0 ? Math.round((pos.unrealizedPnl / pos.notionalUsd) * 10000) / 100 : 0;
+      return { symbol: sym, quantity: Math.round(pos.quantity * 10000) / 10000, priceUsd: Math.round(priceUsd * 100) / 100, valueUsd: Math.round(valueUsd * 100) / 100, allocationPct: 0, changePct, changeUsd, isPositive: changeUsd >= 0, series: [] as never[] };
+    });
+
+    const cashValueUsd = account.balance || 0;
+    assetList.push({ symbol: account.currency || 'USDT', quantity: Math.round(cashValueUsd * 100) / 100, priceUsd: 1, valueUsd: Math.round(cashValueUsd * 100) / 100, allocationPct: 0, changePct: 0, changeUsd: 0, isPositive: true, series: [] });
+
+    const totalValue = assetList.reduce((s, a) => s + a.valueUsd, 0);
+    for (const a of assetList) {
+      a.allocationPct = totalValue > 0 ? Math.round((a.valueUsd / totalValue) * 1000) / 10 : 0;
+    }
+
+    return {
+      range: range.toUpperCase(),
+      currency: account.currency || 'USDT',
+      totalValue: Math.round(totalValue * 100) / 100,
+      assets: assetList,
+      updatedAt: new Date(),
     };
   }
 

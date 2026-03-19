@@ -36,6 +36,21 @@ export class PortfolioSnapshotService {
     return docs as unknown as PortfolioSnapshot[];
   }
 
+  async findByRangeForPerformance(accountId: Types.ObjectId, range: string): Promise<PortfolioSnapshot[]> {
+    const now = new Date();
+    const rangeMap: Record<string, number> = {
+      '24H': 1, '7D': 7, '30D': 30, '90D': 90, 'ALL': 365 * 10,
+    };
+    const days = rangeMap[range.toUpperCase()] ?? 7;
+    const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const docs = await this.model
+      .find({ accountId, date: { $gte: from, $lte: now } })
+      .sort({ date: 1 })
+      .lean()
+      .exec();
+    return docs as unknown as PortfolioSnapshot[];
+  }
+
   private truncateToDay(date: Date): Date {
     const d = new Date(date);
     d.setUTCHours(0, 0, 0, 0);

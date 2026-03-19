@@ -1,6 +1,6 @@
 # DGT Frontend API Specification
 
-> **Version**: 4.0.0 | **Last Updated**: 2026-03-18
+> **Version**: 5.0.0 | **Last Updated**: 2026-03-19
 >
 > **Base URL (local)**: `http://localhost:3008`
 > **Base URL (prod)**: `https://xsai-api.x-or.cloud/dgt`
@@ -17,10 +17,10 @@
 |---|-------|---------|
 | 1 | [Login / Auth](#1-login--auth) | Đăng nhập, Refresh Token |
 | 2 | [Dashboard](#2-dashboard) | Portfolio, Price Cards, Portfolio History, AI Signal, AI Prediction, Market Status, Macro Context, Market Indicators, AI Activity Feed |
-| 3 | [Analytics](#3-analytics) | Summary, Open Positions, Trade History, PnL Chart, Equity Curve, Drawdown, CSV Export |
+| 3 | [Analytics](#3-analytics) | Summary, Open Positions, Trade History, PnL Chart, Equity Curve, Drawdown, Portfolio Performance, Asset Performance, CSV Export |
 | 4 | [AI Agent](#4-ai-agent) | CRUD Bot, Controls, Stats, Stop All, Risk Profile Presets, Activity Logs |
 | 5 | [AI Intelligence](#5-ai-intelligence) | Signals, Execute Trade |
-| 6 | [Insights](#6-insights) | Macro Feed, Calendar, Monetary, Liquidity, Technical Indicators, Sentiment Volatility, Liquidity Heatmap, Advanced Metrics |
+| 6 | [Insights](#6-insights) | Risk Score, Trade Gate, Macro Feed, Calendar, Monetary, Liquidity, Technical Indicators, Sentiment Volatility, Liquidity Heatmap, Advanced Metrics |
 | 7 | [Settings](#7-settings) | Profile, Exchange Accounts, Test Connection |
 | 8 | [Global](#8-global) | Error format, Pagination |
 
@@ -119,7 +119,7 @@ GET /dashboard/price-cards
 
 | Param | Type | Default | Mô tả |
 |-------|------|---------|-------|
-| `symbols` | `string` | `PAXGUSDT,XAUTUSD,XAUUSD` | Danh sách symbols cách nhau dấu phẩy |
+| `symbols` | `string` | `PAXGUSDT,XAUTUSDT,XAUUSD` | Danh sách symbols cách nhau dấu phẩy |
 | `sparklinePoints` | `number` | `7` | Số điểm dữ liệu mini chart |
 
 **Response 200**:
@@ -203,7 +203,7 @@ GET /dashboard/ai-signal
 | Param | Type | Default | Enum |
 |-------|------|---------|------|
 | `timeframe` | `string` | `4h` | `"1h"`, `"4h"`, `"12h"`, `"24h"` |
-| `symbol` | `string` | `PAXGUSDT` | `"PAXGUSDT"`, `"XAUTUSD"` |
+| `symbol` | `string` | `PAXGUSDT` | `"PAXGUSDT"`, `"XAUTUSDT"` |
 
 **Response 200**:
 ```json
@@ -382,7 +382,7 @@ GET /dashboard/ai-activity
 
 | Field | Enum |
 |-------|------|
-| `agent` | `"TREND"`, `"LIQUIDITY"`, `"MACRO"`, `"NEURAL"`, `"RISK"` (map từ actionType của BotActivityLog) |
+| `agent` | `"TREND"` (buy/sell), `"NEURAL"` (info), `"RISK"` (warning/error) |
 | `severity` | `"INFO"`, `"WARNING"`, `"ALERT"` |
 
 ---
@@ -601,7 +601,118 @@ GET /analytics/drawdown
 
 ---
 
-### 3.7 Export Trade History (CSV)
+### 3.7 Portfolio Performance
+
+**Mục đích**: Equity curve tổng hợp kèm summary stats — dùng cho tab Performance của trang Analytics.
+
+```
+GET /analytics/portfolio-performance
+```
+
+**Query Parameters**:
+
+| Param | Type | Default | Enum |
+|-------|------|---------|------|
+| `range` | `string` | `7D` | `"24H"`, `"7D"`, `"30D"`, `"90D"`, `"ALL"` |
+| `accountId` | `string` | _(default account)_ | MongoDB ObjectId |
+
+> ⚠️ Range dùng chữ HOA (`7D`), khác với các endpoint Analytics khác dùng chữ thường (`7d`).
+
+**Response 200** (có data):
+```json
+{
+  "range": "7D",
+  "currency": "USDT",
+  "summary": {
+    "startValue": 10000.00,
+    "endValue": 12450.75,
+    "changeUsd": 2450.75,
+    "changePct": 24.51,
+    "isPositive": true,
+    "peakValue": 13000.00,
+    "troughValue": 9800.00
+  },
+  "series": [
+    { "timestamp": "2026-03-13T00:00:00.000Z", "value": 10000.00 },
+    { "timestamp": "2026-03-19T00:00:00.000Z", "value": 12450.75 }
+  ],
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+**Response 200** (chưa có snapshot):
+```json
+{
+  "range": "7D",
+  "currency": "USDT",
+  "summary": { "startValue": 0, "endValue": 0, "changeUsd": 0, "changePct": 0, "isPositive": true, "peakValue": 0, "troughValue": 0 },
+  "series": [],
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+> Data từ `PortfolioSnapshot`. `series: []` nếu account mới chưa có snapshot.
+
+---
+
+### 3.8 Asset Performance
+
+**Mục đích**: Breakdown danh mục theo từng asset — phân bổ + PnL từng tài sản.
+
+```
+GET /analytics/asset-performance
+```
+
+**Query Parameters**:
+
+| Param | Type | Default | Enum |
+|-------|------|---------|------|
+| `range` | `string` | `7D` | `"24H"`, `"7D"`, `"30D"`, `"90D"`, `"ALL"` |
+| `accountId` | `string` | _(default account)_ | MongoDB ObjectId |
+
+**Response 200**:
+```json
+{
+  "range": "7D",
+  "currency": "USDT",
+  "totalValue": 12450.75,
+  "assets": [
+    {
+      "symbol": "PAXGUSDT",
+      "quantity": 1.0125,
+      "priceUsd": 5184.39,
+      "valueUsd": 5249.19,
+      "allocationPct": 42.2,
+      "changePct": 1.67,
+      "changeUsd": 85.49,
+      "isPositive": true,
+      "series": []
+    },
+    {
+      "symbol": "USDT",
+      "quantity": 7200.00,
+      "priceUsd": 1,
+      "valueUsd": 7200.00,
+      "allocationPct": 57.8,
+      "changePct": 0,
+      "changeUsd": 0,
+      "isPositive": true,
+      "series": []
+    }
+  ],
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `assets` | Mảng gồm các position đang mở (nhóm theo symbol) + 1 entry cash (currency của account) |
+| `series` | Luôn `[]` — không có per-asset historical snapshot |
+| `allocationPct` | % giá trị / tổng danh mục |
+
+---
+
+### 3.9 Export Trade History (CSV)
 
 **Mục đích**: Tải xuống file CSV lịch sử giao dịch.
 
@@ -943,6 +1054,8 @@ GET /signals
 | `confidence` | `number` (0–100) | Độ tin cậy |
 | `confidenceLabel` | `"low" \| "medium" \| "high" \| "very_high"` | Nhãn độ tin cậy |
 | `insight` | `string` | Diễn giải LLM |
+| `keyFactors` | `{ factor: string; weight: string }[]` | Các yếu tố chính ảnh hưởng tín hiệu |
+| `indicatorsUsed` | `string[]` | Danh sách indicators đã dùng |
 | `status` | `string` | Xem enum bên dưới |
 | `expiresAt` | `string (ISO 8601)` | Thời điểm signal hết hạn |
 | `priceAtCreation` | `number` | Giá tại thời điểm tạo signal |
@@ -1023,7 +1136,81 @@ POST /trades/from-signal
 
 ---
 
-### 6.1 Macro Feed
+### 6.1 Macro Risk Score
+
+**Mục đích**: Risk score tổng thể dựa trên VIX — hiển thị trên header của trang Insights.
+
+```
+GET /insights/macro/risk-score
+```
+
+**Response 200**:
+```json
+{
+  "riskScore": 37,
+  "riskLabel": "MEDIUM RISK",
+  "vix": 18.5,
+  "vixChange24h": 2.15,
+  "note": "Volatility moderate. Standard position sizing recommended.",
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `riskScore` | 0–100. Tính từ VIX: `min(100, round((vix / 50) × 100))` |
+| `riskLabel` | `"LOW RISK"` (≤33), `"MEDIUM RISK"` (34–66), `"HIGH RISK"` (>66) |
+| `vix` | Giá trị VIX mới nhất. `null` nếu chưa có data |
+| `vixChange24h` | % thay đổi so với record VIX trước đó. `null` nếu không đủ data |
+| `note` | Gợi ý giao dịch theo mức risk |
+
+---
+
+### 6.2 Trade Gate
+
+**Mục đích**: Trạng thái cổng giao dịch — OPEN hay BLOCKED dựa trên risk macro.
+
+```
+GET /insights/macro/trade-gate
+```
+
+**Response 200** (OPEN):
+```json
+{
+  "status": "OPEN",
+  "reason": null,
+  "nextEvent": {
+    "name": "Federal Funds Rate",
+    "date": "2026-03-20",
+    "window": null,
+    "inDays": 1
+  },
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+**Response 200** (BLOCKED):
+```json
+{
+  "status": "BLOCKED",
+  "reason": "VIX at 42.5 — high market stress detected.",
+  "nextEvent": null,
+  "updatedAt": "2026-03-19T08:00:00Z"
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `status` | `"OPEN"` hoặc `"BLOCKED"`. BLOCKED khi macroRiskScore > 75 (VIX > ~37.5) |
+| `reason` | `string` khi BLOCKED, `null` khi OPEN |
+| `nextEvent.name` | Tên sự kiện macro sắp tới (từ `MacroIndicator.releaseDate`) |
+| `nextEvent.date` | Ngày phát hành `YYYY-MM-DD` |
+| `nextEvent.window` | Luôn `null` (chưa có data window) |
+| `nextEvent.inDays` | Số ngày đến sự kiện (làm tròn) |
+
+---
+
+### 6.3 Macro Feed
 
 **Mục đích**: Latest macro indicators + key economic events từ FRED và SentimentSignal.
 
@@ -1035,7 +1222,7 @@ GET /insights/macro/feed
 ```json
 {
   "indicators": [
-    { "seriesId": "DXY", "name": "US Dollar Index", "value": 104.2, "unit": "Index", "timestamp": "2026-03-17T00:00:00Z", "source": "fred", "frequency": "daily" }
+    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "value": 5.25, "unit": "%", "timestamp": "2026-03-17T00:00:00Z", "source": "fred", "frequency": "daily" }
   ],
   "feed": [
     { "timestamp": "2026-03-15T00:00:00Z", "source": "bytetree", "event": "ETF inflows surge +12oz", "summary": null }
@@ -1046,9 +1233,9 @@ GET /insights/macro/feed
 
 ---
 
-### 6.2 Macro Calendar
+### 6.4 Macro Calendar
 
-**Mục đích**: Lịch phát hành dữ liệu kinh tế sắp tới.
+**Mục đích**: Lịch phát hành dữ liệu kinh tế sắp tới với impact level.
 
 ```
 GET /insights/macro/calendar
@@ -1057,18 +1244,35 @@ GET /insights/macro/calendar
 **Response 200**:
 ```json
 {
-  "events": [
-    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "releaseDate": "2026-03-19T18:00:00Z", "frequency": "monthly", "unit": "Percent", "lastValue": 5.25 }
+  "data": [
+    {
+      "id": "FEDFUNDS-2026-03-20",
+      "event": "Federal Funds Rate",
+      "scheduledAt": "2026-03-20T18:00:00.000Z",
+      "forecast": null,
+      "actual": null,
+      "impactDots": 3,
+      "beat": null
+    }
   ],
-  "updatedAt": "2026-03-18T08:00:00Z"
+  "updatedAt": "2026-03-19T08:00:00Z"
 }
 ```
 
-> Chỉ hiển thị events có `releaseDate` trong tương lai, sắp xếp gần nhất trước.
+| Field | Notes |
+|-------|-------|
+| `id` | Format `{seriesId}-{YYYY-MM-DD}` |
+| `scheduledAt` | `releaseDate` từ MacroIndicator. `null` nếu không có |
+| `forecast` | Giá trị dự báo. `null` nếu chưa có |
+| `actual` | Giá trị thực tế — chỉ có sau khi `releaseDate` đã qua. `null` nếu chưa release |
+| `impactDots` | `1` (low), `2` (medium), `3` (high) |
+| `beat` | Luôn `null` (chưa implement) |
+
+> Chỉ hiển thị events có `releaseDate` trong tương lai, sắp xếp gần nhất trước. Tối đa 20 events.
 
 ---
 
-### 6.3 Monetary Policy
+### 6.5 Monetary Policy
 
 **Mục đích**: Tổng hợp chính sách tiền tệ — Fed Funds, Real Yield, Yield Curve.
 
@@ -1084,7 +1288,7 @@ GET /insights/macro/monetary
   "realYield10y": 1.85,
   "yieldCurveSpread": -0.45,
   "indicators": [
-    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "value": 5.25, "unit": "Percent", "timestamp": "2026-03-01T00:00:00Z", "frequency": "monthly" }
+    { "seriesId": "FEDFUNDS", "name": "Federal Funds Rate", "value": 5.25, "unit": "%", "timestamp": "2026-03-01T00:00:00Z", "frequency": "monthly" }
   ],
   "updatedAt": "2026-03-18T08:00:00Z"
 }
@@ -1094,9 +1298,11 @@ GET /insights/macro/monetary
 |-------|------|
 | `stance` | `"RESTRICTIVE"` (>5%), `"NEUTRAL"` (3–5%), `"ACCOMMODATIVE"` (<3%) |
 
+> Series IDs dùng: FEDFUNDS (fallback DFF), DFII10, T10Y2Y.
+
 ---
 
-### 6.4 Gold Liquidity
+### 6.6 Gold Liquidity
 
 **Mục đích**: DXY + ETF flows + Futures funding rate.
 
@@ -1116,12 +1322,12 @@ GET /insights/macro/liquidity
 
 | Field | Enum / Notes |
 |-------|------|
-| `dxy.signal` | `"BULLISH_GOLD"` (DXY<100), `"NEUTRAL"` (100–105), `"BEARISH_GOLD"` (DXY>105) |
+| `dxy.signal` | `"BULLISH_GOLD"` (DXY<100), `"NEUTRAL"` (100–105), `"BEARISH_GOLD"` (DXY>105), `"UNKNOWN"` (null) |
 | `etfFlows.flow7dOz` | `null` nếu chưa có data ByteTree |
 
 ---
 
-### 6.5 Technical Indicators (Full)
+### 6.7 Technical Indicators (Full)
 
 **Mục đích**: Snapshot đầy đủ tất cả indicators cho một symbol/timeframe.
 
@@ -1160,7 +1366,7 @@ GET /insights/data/technical-indicators
 
 ---
 
-### 6.6 Sentiment & Volatility
+### 6.8 Sentiment & Volatility
 
 **Mục đích**: News sentiment + ATR volatility + Futures data.
 
@@ -1195,7 +1401,7 @@ GET /insights/data/sentiment-volatility
 
 ---
 
-### 6.7 Liquidity Heatmap
+### 6.9 Liquidity Heatmap
 
 **Mục đích**: Phân phối volume theo giờ trong 24h qua.
 
@@ -1226,7 +1432,7 @@ GET /insights/data/liquidity-heatmap
 
 ---
 
-### 6.8 Advanced Metrics
+### 6.10 Advanced Metrics
 
 **Mục đích**: RSI zone, MACD crossover, BB width + latest AI signal summary.
 
@@ -1305,7 +1511,7 @@ GET /auth/profile
 PATCH /auth/profile
 ```
 
-**Body**: Partial — bất kỳ field nào ở 6.1 trừ `_id`, `email`, `createdAt`, `updatedAt`.
+**Body**: Partial — bất kỳ field nào ở 7.1 trừ `_id`, `email`, `createdAt`, `updatedAt`.
 
 **Response 200**: Profile object đã cập nhật.
 
@@ -1361,7 +1567,7 @@ GET /accounts
 GET /accounts/:id
 ```
 
-**Response 200**: Account object (xem 6.3).
+**Response 200**: Account object (xem 7.3).
 **Response 404**: Account không tồn tại hoặc không thuộc user hiện tại.
 
 ---
@@ -1397,7 +1603,7 @@ POST /accounts
 PUT /accounts/:id
 ```
 
-**Body**: Partial — bất kỳ field nào trong 6.5 (trừ `_id`, `createdAt`).
+**Body**: Partial — bất kỳ field nào trong 7.5 (trừ `_id`, `createdAt`).
 
 > Khi cập nhật API Key: phải truyền **đồng thời** cả `apiKey` và `apiSecret` mới.
 
@@ -1509,6 +1715,8 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 | **Analytics** | GET | `/analytics/pnl-chart` | Biểu đồ PnL theo ngày |
 | **Analytics** | GET | `/analytics/equity-curve` | Biểu đồ Equity Curve |
 | **Analytics** | GET | `/analytics/drawdown` | Biểu đồ Max Drawdown |
+| **Analytics** | GET | `/analytics/portfolio-performance` | Portfolio performance + equity curve (range HOA: 7D) |
+| **Analytics** | GET | `/analytics/asset-performance` | Asset breakdown — phân bổ + PnL từng tài sản |
 | **Analytics** | GET | `/analytics/export/csv` | Download CSV (dùng axios blob) |
 | **AI Agent** | GET | `/bots` | Danh sách bot |
 | **AI Agent** | POST | `/bots` | Tạo bot mới |
@@ -1528,6 +1736,8 @@ Mặc định: `page=1`, `limit=20` nếu FE không truyền.
 | **AI Intelligence** | GET | `/signals/:id` | Chi tiết tín hiệu |
 | **AI Intelligence** | PATCH | `/signals/:id/ignore` | Bỏ qua tín hiệu |
 | **AI Intelligence** | POST | `/trades/from-signal` | Mở lệnh từ tín hiệu |
+| **Insights** | GET | `/insights/macro/risk-score` | Risk score dựa trên VIX (0–100) |
+| **Insights** | GET | `/insights/macro/trade-gate` | Trade gate — OPEN/BLOCKED |
 | **Insights** | GET | `/insights/macro/feed` | Macro feed — indicators + events |
 | **Insights** | GET | `/insights/macro/calendar` | Lịch phát hành dữ liệu kinh tế |
 | **Insights** | GET | `/insights/macro/monetary` | Chính sách tiền tệ — Fed Funds, Yield |

@@ -2,18 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { BaseCollector } from './base.collector';
 import { MacroIndicatorService } from '../modules/macro-indicator/macro-indicator.service';
 
-const SERIES_META: Record<string, { name: string; unit: string; frequency: string }> = {
-  FEDFUNDS: { name: 'Federal Funds Rate', unit: '%', frequency: 'daily' },
-  CPIAUCSL: { name: 'Consumer Price Index', unit: 'index', frequency: 'monthly' },
-  PCEPI: { name: 'PCE Price Index', unit: 'index', frequency: 'monthly' },
-  FEDTARMD: { name: 'Fed Target Rate (Midpoint)', unit: '%', frequency: 'daily' },
-  DFII10: { name: '10Y Real Interest Rate', unit: '%', frequency: 'daily' },
-  DTWEXBGS: { name: 'Trade Weighted US Dollar Index', unit: 'index', frequency: 'daily' },
-  M2SL: { name: 'M2 Money Supply', unit: 'USD billion', frequency: 'monthly' },
-  RRPONTSYD: { name: 'Overnight Reverse Repo', unit: 'USD billion', frequency: 'daily' },
-  BAMLH0A0HYM2: { name: 'High Yield Bond Spread', unit: '%', frequency: 'daily' },
-  DGS10: { name: '10Y Treasury Yield', unit: '%', frequency: 'daily' },
-  DGS2: { name: '2Y Treasury Yield', unit: '%', frequency: 'daily' },
+const SERIES_META: Record<string, { name: string; unit: string; frequency: string; impactLevel: 'low' | 'medium' | 'high' }> = {
+  FEDFUNDS: { name: 'Federal Funds Rate', unit: '%', frequency: 'daily', impactLevel: 'high' },
+  CPIAUCSL: { name: 'Consumer Price Index', unit: 'index', frequency: 'monthly', impactLevel: 'high' },
+  PCEPI: { name: 'PCE Price Index', unit: 'index', frequency: 'monthly', impactLevel: 'high' },
+  FEDTARMD: { name: 'Fed Target Rate (Midpoint)', unit: '%', frequency: 'daily', impactLevel: 'high' },
+  DFII10: { name: '10Y Real Interest Rate', unit: '%', frequency: 'daily', impactLevel: 'medium' },
+  DTWEXBGS: { name: 'Trade Weighted US Dollar Index', unit: 'index', frequency: 'daily', impactLevel: 'medium' },
+  M2SL: { name: 'M2 Money Supply', unit: 'USD billion', frequency: 'monthly', impactLevel: 'medium' },
+  RRPONTSYD: { name: 'Overnight Reverse Repo', unit: 'USD billion', frequency: 'daily', impactLevel: 'low' },
+  BAMLH0A0HYM2: { name: 'High Yield Bond Spread', unit: '%', frequency: 'daily', impactLevel: 'low' },
+  DGS10: { name: '10Y Treasury Yield', unit: '%', frequency: 'daily', impactLevel: 'medium' },
+  DGS2: { name: '2Y Treasury Yield', unit: '%', frequency: 'daily', impactLevel: 'medium' },
 };
 
 @Injectable()
@@ -67,6 +67,7 @@ export class FredCollector extends BaseCollector {
       name: seriesId,
       unit: 'unknown',
       frequency: 'daily',
+      impactLevel: 'low' as const,
     };
 
     await this.macroIndicatorService.upsert(
@@ -80,6 +81,8 @@ export class FredCollector extends BaseCollector {
         releaseDate: obs.realtime_start ? new Date(obs.realtime_start) : undefined,
         source: 'fred',
         frequency: meta.frequency,
+        actual: value,
+        impactLevel: meta.impactLevel,
       },
     );
 

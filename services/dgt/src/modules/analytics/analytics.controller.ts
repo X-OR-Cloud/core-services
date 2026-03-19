@@ -94,6 +94,30 @@ export class AnalyticsController {
     return this.analyticsService.getDrawdown(ctx.userId, range, accountId);
   }
 
+  @Get('portfolio-performance')
+  @ApiOperation({ summary: 'Portfolio performance over time — equity curve with summary stats' })
+  @ApiQuery({ name: 'range', required: false, enum: ['24H', '7D', '30D', '90D', 'ALL'], example: '7D' })
+  @ApiQuery({ name: 'accountId', required: false })
+  getPortfolioPerformance(
+    @CurrentUser() ctx: RequestContext,
+    @Query('range') range = '7D',
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.analyticsService.getPortfolioPerformance(ctx.userId, range, accountId);
+  }
+
+  @Get('asset-performance')
+  @ApiOperation({ summary: 'Asset breakdown — positions grouped by symbol with allocation' })
+  @ApiQuery({ name: 'range', required: false, enum: ['24H', '7D', '30D', '90D', 'ALL'], example: '7D' })
+  @ApiQuery({ name: 'accountId', required: false })
+  getAssetPerformance(
+    @CurrentUser() ctx: RequestContext,
+    @Query('range') range = '7D',
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.analyticsService.getAssetPerformance(ctx.userId, range, accountId);
+  }
+
   @Get('export/csv')
   @ApiOperation({ summary: 'Export trade history as CSV file download' })
   @ApiResponse({ status: 200, description: 'CSV file download' })

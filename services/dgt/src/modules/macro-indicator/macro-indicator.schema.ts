@@ -35,6 +35,15 @@ export class MacroIndicator {
 
   @Prop({ required: true, enum: MacroFrequency })
   frequency: string;
+
+  @Prop()
+  forecast: number;
+
+  @Prop()
+  actual: number;
+
+  @Prop({ enum: ['low', 'medium', 'high'] })
+  impactLevel: string;
 }
 
 export const MacroIndicatorSchema = SchemaFactory.createForClass(MacroIndicator);

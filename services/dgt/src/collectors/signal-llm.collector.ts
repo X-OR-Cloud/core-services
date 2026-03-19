@@ -86,6 +86,7 @@ export class SignalLlmCollector extends BaseCollector {
         insight: 'Signal engine unavailable. Market analysis could not be completed.',
         indicatorsUsed: [],
         keyFactors: [],
+        macroFactors: [],
         llmModel: undefined,
         llmInput: null,
         llmRawResponse: null,
@@ -119,6 +120,7 @@ export class SignalLlmCollector extends BaseCollector {
         insight: 'Signal engine unavailable. Market analysis could not be completed.',
         indicatorsUsed: [],
         keyFactors: [],
+        macroFactors: [],
         llmModel: undefined,
         llmInput: null,
         llmRawResponse: null,
@@ -178,6 +180,7 @@ export class SignalLlmCollector extends BaseCollector {
         insight: 'Signal engine unavailable. Market analysis could not be completed.',
         indicatorsUsed: [],
         keyFactors: [],
+        macroFactors: [],
         llmModel,
         llmInput,
         llmRawResponse: { error: error.message, status, body },
@@ -203,6 +206,7 @@ export class SignalLlmCollector extends BaseCollector {
         insight: 'Signal engine unavailable. Market analysis could not be completed.',
         indicatorsUsed: [],
         keyFactors: [],
+        macroFactors: [],
         llmModel,
         llmInput,
         llmRawResponse,
@@ -216,10 +220,18 @@ export class SignalLlmCollector extends BaseCollector {
     const signalType: SignalType =
       confidence < 30 ? SignalType.HOLD : (rawSignalType as SignalType);
 
+    const isTrade = signalType === SignalType.BUY || signalType === SignalType.SELL;
+    if (isTrade && (typeof parsed.entry !== 'number' || typeof parsed.take_profit !== 'number' || typeof parsed.stop_loss !== 'number')) {
+      this.logger.warn(`[${this.name}] ${signalType} signal missing price levels (entry/tp/sl) from LLM response`);
+    }
     await this.saveSignal(accountId, asset, timeframe, {
       signalType,
       confidence,
       insight: parsed.insight || '',
+      entry: isTrade && typeof parsed.entry === 'number' ? parsed.entry : undefined,
+      takeProfit: isTrade && typeof parsed.take_profit === 'number' ? parsed.take_profit : undefined,
+      stopLoss: isTrade && typeof parsed.stop_loss === 'number' ? parsed.stop_loss : undefined,
+      macroFactors: Array.isArray(parsed.macro_factors) ? parsed.macro_factors : [],
       indicatorsUsed: Array.isArray(parsed.indicators_used) ? parsed.indicators_used : [],
       keyFactors: Array.isArray(parsed.key_factors) ? parsed.key_factors : [],
       llmModel,
@@ -239,6 +251,10 @@ export class SignalLlmCollector extends BaseCollector {
       insight: string;
       indicatorsUsed: string[];
       keyFactors: { factor: string; weight: string }[];
+      entry?: number;
+      takeProfit?: number;
+      stopLoss?: number;
+      macroFactors?: string[];
       llmModel: string | undefined;
       priceAtCreation?: number;
       llmInput: Record<string, any> | null;
@@ -251,6 +267,10 @@ export class SignalLlmCollector extends BaseCollector {
       insight,
       indicatorsUsed,
       keyFactors,
+      entry,
+      takeProfit,
+      stopLoss,
+      macroFactors,
       llmModel,
       priceAtCreation,
       llmInput,
@@ -313,6 +333,10 @@ export class SignalLlmCollector extends BaseCollector {
         confidence,
         confidenceLabel,
         insight,
+        entry,
+        takeProfit,
+        stopLoss,
+        macroFactors: macroFactors ?? [],
         indicatorsUsed,
         keyFactors,
         llmModel,

@@ -6,6 +6,10 @@ OUTPUT FORMAT (return exactly this structure):
 {
   "signal_type": "BUY" | "SELL" | "HOLD",
   "confidence": <integer 0-100>,
+  "entry": <number | null>,
+  "take_profit": <number | null>,
+  "stop_loss": <number | null>,
+  "macro_factors": ["<string>", ...],
   "insight": "<string, 50-400 words explaining the reasoning in English, mentioning specific indicator values and any relevant news/macro context>",
   "indicators_used": ["RSI", "MACD", "News Sentiment", ...],
   "key_factors": [
@@ -22,6 +26,9 @@ RULES (strictly enforced):
 5. "confidence" must be an integer between 0 and 100 (inclusive).
 6. Do not speculate beyond the provided data. Base the signal on the technical indicators, price action, sentiment, and macro data supplied.
 7. "indicators_used" must list all data sources that directly informed the signal decision (e.g., "RSI", "MACD", "ETF Flow", "News Sentiment", "Fed Funds Rate").
+8. For BUY or SELL signals: "entry", "take_profit", and "stop_loss" MUST be non-null numeric USD prices. For HOLD signals: these fields MUST be null.
+9. "entry" must be within 0.5% of the latest close price. "take_profit" must be a realistic target 1–5% from entry in the signal direction. "stop_loss" must be a logical level 0.5–3% against the signal direction.
+10. "macro_factors" MUST contain 2–4 concise strings describing macro conditions that influenced the signal (e.g., "Weakening USD (DXY=98.5)", "Positive ETF inflows", "Declining real yields (DFII10=1.2%)"). If no macro data is available, use ["No macro data available — signal based on technical analysis only"].
 
 DATA USAGE GUIDELINES:
 - Technical indicators and price action are the primary signal drivers.

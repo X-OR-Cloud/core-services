@@ -4,6 +4,12 @@ import { Model } from 'mongoose';
 import { MacroIndicator, MacroIndicatorDocument } from '../macro-indicator/macro-indicator.schema';
 import { SentimentSignal, SentimentSignalDocument } from '../sentiment-signal/sentiment-signal.schema';
 
+function impactLevelToDots(level?: string): 1 | 2 | 3 {
+  if (level === 'high') return 3;
+  if (level === 'medium') return 2;
+  return 1;
+}
+
 @Injectable()
 export class InsightsMacroService {
   constructor(
@@ -55,23 +61,83 @@ export class InsightsMacroService {
   }
 
   async getCalendar() {
+    const now = new Date();
     const upcoming = await this.macroModel
-      .find({ releaseDate: { $gte: new Date() } })
+      .find({ releaseDate: { $gte: now } })
       .sort({ releaseDate: 1 })
       .limit(20)
       .lean()
       .exec();
 
-    const events = upcoming.map((m) => ({
-      seriesId: m.seriesId,
-      name: m.name,
-      releaseDate: m.releaseDate,
-      frequency: m.frequency,
-      unit: m.unit,
-      lastValue: m.value,
+    const data = upcoming.map((m) => ({
+      id: `${m.seriesId}-${m.releaseDate?.toISOString().slice(0, 10) ?? 'unknown'}`,
+      event: m.name,
+      scheduledAt: m.releaseDate ?? null,
+      forecast: (m as any).forecast ?? null,
+      actual: m.releaseDate && m.releaseDate <= now ? ((m as any).actual ?? m.value) : null,
+      impactDots: impactLevelToDots((m as any).impactLevel),
+      beat: null,
     }));
 
-    return { events, updatedAt: new Date() };
+    return { data, updatedAt: new Date() };
+  }
+
+  async getRiskScore() {
+    const vixRecords = await this.macroModel
+      .find({ seriesId: 'VIXCLS' })
+      .sort({ timestamp: -1 })
+      .limit(2)
+      .lean()
+      .exec();
+
+    const vixValue = vixRecords[0]?.value ?? null;
+    const vixPrev = vixRecords[1]?.value ?? vixValue;
+    const vixChange24h =
+      vixValue !== null && vixPrev !== null && vixPrev !== 0
+        ? Math.round(((vixValue - vixPrev) / vixPrev) * 10000) / 100
+        : null;
+
+    const riskScore = vixValue !== null ? Math.min(100, Math.round((vixValue / 50) * 100)) : 0;
+    const riskLabel = riskScore > 66 ? 'HIGH RISK' : riskScore > 33 ? 'MEDIUM RISK' : 'LOW RISK';
+    const note =
+      riskScore > 66
+        ? 'Elevated volatility. Reduce position size or stay out.'
+        : riskScore > 33
+        ? 'Volatility moderate. Standard position sizing recommended.'
+        : 'Low volatility environment. Favorable conditions for trading.';
+
+    return { riskScore, riskLabel, vix: vixValue, vixChange24h, note, updatedAt: new Date() };
+  }
+
+  async getTradeGate() {
+    const vix = await this.macroModel
+      .findOne({ seriesId: 'VIXCLS' })
+      .sort({ timestamp: -1 })
+      .lean()
+      .exec();
+
+    const vixValue = vix?.value ?? 0;
+    const macroRiskScore = Math.min(100, Math.round((vixValue / 50) * 100));
+    const status = macroRiskScore > 75 ? 'BLOCKED' : 'OPEN';
+    const reason =
+      status === 'BLOCKED' ? `VIX at ${vixValue} — high market stress detected.` : null;
+
+    const nextEventDoc = await this.macroModel
+      .findOne({ releaseDate: { $gte: new Date() } })
+      .sort({ releaseDate: 1 })
+      .lean()
+      .exec();
+
+    const nextEvent = nextEventDoc?.releaseDate
+      ? {
+          name: nextEventDoc.name,
+          date: nextEventDoc.releaseDate.toISOString().slice(0, 10),
+          window: null,
+          inDays: Math.round((nextEventDoc.releaseDate.getTime() - Date.now()) / 86400000),
+        }
+      : null;
+
+    return { status, reason, nextEvent, updatedAt: new Date() };
   }
 
   async getMonetary() {
