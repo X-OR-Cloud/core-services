@@ -61,6 +61,11 @@ export class AccountService extends BaseService<Account> {
     if (data.apiSecret) {
       data.apiSecret = encryptSecret(data.apiSecret);
     }
+    // count default accounts to set the first one as default
+    const existingCount = await this.model.countDocuments({ "owner.orgId": context.orgId, "owner.userId": context.userId, isDefault: true }).exec();
+    if (existingCount === 0) {
+      data.isDefault = true;
+    }
     const result = await super.create(data, context);
     return sanitizeAccount(result);
   }

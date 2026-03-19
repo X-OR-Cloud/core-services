@@ -10,7 +10,6 @@ import {
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
 import { CreateUserData, ChangePasswordDto, ChangeRoleDto, CreateGoogleUserData } from './user.dto';
-import { AuthProvider } from '../../core/enums/auth-provider.enum';
 import { IamEventProducer } from '../../queues/producers/iam-event.producer';
 
 @Injectable()

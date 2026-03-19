@@ -498,7 +498,7 @@ export class AuthService {
 
     // --- App-based SSO validation ---
     let defaultOrgId = '';
-    let defaultRole = 'organization.viewer';
+    let defaultRole = 'organization.editor';
 
     if (appId) {
       const appResult = await this.appService.validateSsoAccess(appId, googleUser.email);
