@@ -1292,6 +1292,9 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     } else if (priorityLevel === 4) {
       // Reporter = agent, work blocked → need to help resolve
       const reason = work.reason || 'Không rõ lý do';
+      if (reason.includes('[ESCALATED]')) {
+        return null;
+      }
       systemMessage =
         `Công việc @work:${workId} "${title}" đang bị block.\n` +
         `Lý do: "${reason}"\n\n` +
