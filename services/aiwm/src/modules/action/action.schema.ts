@@ -17,7 +17,8 @@ export interface Actor {
 
 export interface ActionAttachment {
   type: 'file' | 'image' | 'video' | 'audio' | 'document';
-  url: string;
+  url?: string;
+  fileId?: string;
   filename?: string;
   size?: number;
   mimeType?: string;

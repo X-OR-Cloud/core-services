@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import TelegramBot from 'node-telegram-bot-api';
-import { BaseAdapter, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
+import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
 import { ConnectionConfig } from '../../connection/connection.schema';
 
 export class TelegramAdapter extends BaseAdapter {
@@ -66,7 +66,10 @@ export class TelegramAdapter extends BaseAdapter {
 
   private _handleMessage(msg: TelegramBot.Message): void {
     const text = msg.text || msg.caption || '';
-    if (!text) return;
+    const attachments = this._extractAttachments(msg);
+
+    // Skip if no text and no attachments
+    if (!text && attachments.length === 0) return;
 
     const normalized: NormalizedInbound = {
       provider: 'telegram',
@@ -74,26 +77,45 @@ export class TelegramAdapter extends BaseAdapter {
       externalUsername: msg.from?.username || msg.from?.first_name || 'unknown',
       channelId: String(msg.chat.id),
       text,
-      attachments: this._extractAttachments(msg),
+      attachments,
       raw: msg,
     };
 
     this.emitMessage(normalized);
   }
 
-  private _extractAttachments(msg: TelegramBot.Message): any[] {
-    const attachments: any[] = [];
+  private _extractAttachments(msg: TelegramBot.Message): NormalizedAttachment[] {
+    const attachments: NormalizedAttachment[] = [];
     if (msg.photo) {
       const largest = msg.photo[msg.photo.length - 1];
       attachments.push({ type: 'image', fileId: largest.file_id });
+      this._resolveUrl(largest.file_id, attachments[attachments.length - 1]);
     }
     if (msg.document) {
-      attachments.push({ type: 'document', fileId: msg.document.file_id, filename: msg.document.file_name });
+      const att: NormalizedAttachment = { type: 'document', fileId: msg.document.file_id, filename: msg.document.file_name };
+      attachments.push(att);
+      this._resolveUrl(msg.document.file_id, att);
     }
     if (msg.voice) {
-      attachments.push({ type: 'audio', fileId: msg.voice.file_id });
+      const att: NormalizedAttachment = { type: 'audio', fileId: msg.voice.file_id };
+      attachments.push(att);
+      this._resolveUrl(msg.voice.file_id, att);
+    }
+    if (msg.video) {
+      const att: NormalizedAttachment = { type: 'video', fileId: msg.video.file_id };
+      attachments.push(att);
+      this._resolveUrl(msg.video.file_id, att);
     }
     return attachments;
+  }
+
+  private _resolveUrl(fileId: string, target: NormalizedAttachment): void {
+    if (!this.bot) return;
+    this.bot.getFileLink(fileId).then((url) => {
+      target.url = url;
+    }).catch((err: any) => {
+      this.logger.warn(`Failed to resolve Telegram fileId ${fileId}: ${err.message}`);
+    });
   }
 
   private _chunkText(text: string, maxLength: number): string[] {

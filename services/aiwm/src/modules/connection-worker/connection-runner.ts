@@ -3,7 +3,7 @@ import { Connection, ConnectionLogLevel } from '../connection/connection.schema'
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
 import { RoutingService } from './routing.service';
-import { BaseAdapter, NormalizedInbound } from './adapters/base.adapter';
+import { BaseAdapter, NormalizedAttachment, NormalizedInbound } from './adapters/base.adapter';
 import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
 
@@ -34,6 +34,7 @@ export class ConnectionRunner {
       orgId: string;
       role: string;
       content: string;
+      attachments?: NormalizedAttachment[];
       userId?: string;
       username?: string;
       fullname?: string;
@@ -161,6 +162,7 @@ export class ConnectionRunner {
         orgId,
         role: 'user',
         content: msg.text,
+        attachments: msg.attachments,
         userId: resolved.iamUserId,
         username: resolved.iamUsername,
         fullname: resolved.iamFullname,

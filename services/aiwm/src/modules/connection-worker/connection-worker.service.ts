@@ -83,6 +83,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     orgId: string;
     role: string;
     content: string;
+    attachments?: any[];
     userId?: string;
     username?: string;
     fullname?: string;

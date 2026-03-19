@@ -245,7 +245,14 @@ No side effects.
   "content": "Hello!",
   "type": "message" | "system" | "tool_use" | "tool_result" | "thinking",  // optional, default: message
   "attachments": [                    // optional
-    { "type": "image", "url": "https://...", "filename": "photo.png", "mimeType": "image/png", "size": 204800 }
+    {
+      "type": "image" | "audio" | "document" | "video" | "file",
+      "url": "https://...",            // Discord: permanent CDN URL | Telegram: expires ~1h
+      "fileId": "...",                 // Telegram only — use to re-resolve when url expires
+      "filename": "photo.png",
+      "mimeType": "image/png",
+      "size": 204800
+    }
   ],
   "references": [                     // optional
     { "resourceType": "document", "resourceId": "abc", "label": "Spec v2", "content": "..." }
@@ -408,7 +415,16 @@ The periodic timer heartbeat continues independently and handles the `idle → b
   "userId": "...",           // present if sender is user/anonymous
   "username": "john",        // present if sender is user
   "skipAgent": true,         // present only for /ignore messages
-  "attachments": [...],      // if any
+  "attachments": [           // if any — normalized across Discord and Telegram
+    {
+      "type": "image" | "audio" | "document" | "video" | "file",
+      "url": "https://...",  // Discord: permanent | Telegram: expires ~1h
+      "fileId": "...",       // Telegram only
+      "filename": "...",
+      "mimeType": "...",
+      "size": 0
+    }
+  ],
   "references": [...]        // if any
 }
 ```
