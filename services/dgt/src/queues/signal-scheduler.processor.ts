@@ -2,7 +2,7 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { OnModuleInit } from '@nestjs/common';
 import { Queue, Job } from 'bullmq';
 import { createLogger, RequestContext, PredefinedRole } from '@hydrabyte/shared';
-import { QUEUE_NAMES } from '../config/queue.config';
+import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../config/queue.config';
 import { AccountService } from '../modules/account/account.service';
 
 const SYSTEM_CONTEXT: RequestContext = {
@@ -50,55 +50,20 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
 
     for (const account of accounts) {
       const accountId = (account as any)._id.toString();
-
-      // 1h signal generation
-      await this.signalGenerationQueue.add(
-        'generate_signal',
-        { type: 'generate_signal', params: { accountId, asset: 'PAXGUSDT', timeframe: '1h' } },
-        {
-          repeat: { every: 3_600_000 },
-          removeOnComplete: 100,
-          removeOnFail: 50,
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 1000,
-          },
-        },
-      );
-
-      // 4h signal generation
-      await this.signalGenerationQueue.add(
-        'generate_signal',
-        { type: 'generate_signal', params: { accountId, asset: 'PAXGUSDT', timeframe: '4h' } },
-        {
-          repeat: { every: 14_400_000 },
-          removeOnComplete: 100,
-          removeOnFail: 50,
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 1000,
-          },
-        },
-      );
-
+      await this.registerJobsForAccount(accountId);
       registered += 2;
     }
 
     // Register global expiry job
     await this.signalGenerationQueue.add(
-      'expire_signals',
-      { type: 'expire_signals', params: {} },
+      SIGNAL_JOB_TYPES.EXPIRE_SIGNALS,
+      { type: SIGNAL_JOB_TYPES.EXPIRE_SIGNALS, params: {} },
       {
         repeat: { every: 60_000 },
         removeOnComplete: 100,
         removeOnFail: 50,
         attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 1000,
-        },
+        backoff: { type: 'exponential', delay: 1000 },
       },
     );
     registered++;
@@ -107,8 +72,52 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
   }
 
   async process(job: Job): Promise<void> {
-    // Signal scheduler processor doesn't process jobs itself
-    // It only registers repeatable jobs on init
+    if (job.name === SIGNAL_JOB_TYPES.SYNC_ACCOUNT_SIGNALS) {
+      const { accountId, action } = job.data.params as { accountId: string; action: 'upsert' | 'remove' };
+      if (action === 'upsert') {
+        await this.registerJobsForAccount(accountId);
+        this.logger.info(`[sync_account_signals] Registered jobs for account ${accountId}`);
+      } else {
+        await this.removeJobsForAccount(accountId);
+        this.logger.info(`[sync_account_signals] Removed jobs for account ${accountId}`);
+      }
+      return;
+    }
     this.logger.debug(`Signal scheduler heartbeat: ${job.name}`);
+  }
+
+  private async registerJobsForAccount(accountId: string): Promise<void> {
+    await this.signalGenerationQueue.add(
+      SIGNAL_JOB_TYPES.GENERATE_SIGNAL,
+      { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '1h' } },
+      {
+        repeat: { every: 3_600_000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      },
+    );
+
+    await this.signalGenerationQueue.add(
+      SIGNAL_JOB_TYPES.GENERATE_SIGNAL,
+      { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '4h' } },
+      {
+        repeat: { every: 14_400_000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      },
+    );
+  }
+
+  private async removeJobsForAccount(accountId: string): Promise<void> {
+    const repeatableJobs = await this.signalGenerationQueue.getRepeatableJobs();
+    for (const job of repeatableJobs) {
+      if (job.name === SIGNAL_JOB_TYPES.GENERATE_SIGNAL && job.key.includes(accountId)) {
+        await this.signalGenerationQueue.removeRepeatableByKey(job.key);
+      }
+    }
   }
 }

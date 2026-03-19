@@ -1,11 +1,14 @@
 import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Model } from 'mongoose';
+import { Queue } from 'bullmq';
 import { createHash, createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Account, AccountType } from './account.schema';
 import { CreateAccountDto } from './account.dto';
+import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../../config/queue.config';
 
 const ENCRYPTION_KEY = process.env['API_SECRET_KEY'] || 'dgt-default-secret-key-32chars!!';
 const KEY = createHash('sha256').update(ENCRYPTION_KEY).digest(); // 32 bytes for AES-256
@@ -42,8 +45,17 @@ function sanitizeAccount(account: any): any {
 export class AccountService extends BaseService<Account> {
   constructor(
     @InjectModel(Account.name) accountModel: Model<Account>,
+    @InjectQueue(QUEUE_NAMES.SIGNAL_SCHEDULER) private readonly signalSchedulerQueue: Queue,
   ) {
     super(accountModel as any);
+  }
+
+  private async publishSyncAccountSignals(accountId: string, action: 'upsert' | 'remove'): Promise<void> {
+    await this.signalSchedulerQueue.add(
+      SIGNAL_JOB_TYPES.SYNC_ACCOUNT_SIGNALS,
+      { type: SIGNAL_JOB_TYPES.SYNC_ACCOUNT_SIGNALS, params: { accountId, action } },
+      { removeOnComplete: 10, removeOnFail: 10 },
+    );
   }
 
   private isOrgOwner(context: RequestContext): boolean {
@@ -67,6 +79,10 @@ export class AccountService extends BaseService<Account> {
       data.isDefault = true;
     }
     const result = await super.create(data, context);
+    const accountId = (result as any)._id?.toString();
+    if (accountId && data.status === 'active') {
+      await this.publishSyncAccountSignals(accountId, 'upsert');
+    }
     return sanitizeAccount(result);
   }
 
@@ -78,6 +94,11 @@ export class AccountService extends BaseService<Account> {
       dto.apiSecret = encryptSecret(dto.apiSecret);
     }
     const result = await super.update(id, dto, context);
+    const accountId = (id as { toString(): string })?.toString();
+    if (accountId && 'status' in dto) {
+      const action = (dto as { status?: string }).status === 'active' ? 'upsert' : 'remove';
+      await this.publishSyncAccountSignals(accountId, action);
+    }
     return sanitizeAccount(result);
   }
 
@@ -104,7 +125,9 @@ export class AccountService extends BaseService<Account> {
     if (!this.isOrgOwner(context)) {
       await this.verifyOwnership(id, context);
     }
-    return super.softDelete(id, context);
+    const result = await super.softDelete(id, context);
+    await this.publishSyncAccountSignals((id as { toString(): string }).toString(), 'remove');
+    return result;
   }
 
   async testConnection(id: any, context: RequestContext): Promise<{ status: string; permissions?: string[]; error?: string }> {

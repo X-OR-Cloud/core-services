@@ -5,3 +5,9 @@ export const QUEUE_NAMES = {
   SIGNAL_GENERATION: 'dgt-signal-generation',
   IAM_EVENTS: 'iam.events.dgt',
 };
+
+export const SIGNAL_JOB_TYPES = {
+  GENERATE_SIGNAL: 'generate_signal',
+  EXPIRE_SIGNALS: 'expire_signals',
+  SYNC_ACCOUNT_SIGNALS: 'sync_account_signals',
+};
