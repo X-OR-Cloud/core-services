@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Client, GatewayIntentBits, Events, Message as DiscordMessage } from 'discord.js';
-import { BaseAdapter, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
+import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
 import { ConnectionConfig } from '../../connection/connection.schema';
 
 export class DiscordAdapter extends BaseAdapter {
@@ -82,9 +82,10 @@ export class DiscordAdapter extends BaseAdapter {
       channelId: msg.channelId,
       guildId: msg.guildId ?? undefined,
       text: msg.content,
-      attachments: msg.attachments.map((a) => ({
+      attachments: msg.attachments.map((a): NormalizedAttachment => ({
+        type: this._detectType(a.contentType ?? undefined),
         url: a.url,
-        filename: a.name,
+        filename: a.name ?? undefined,
         size: a.size,
         mimeType: a.contentType ?? undefined,
       })),
@@ -93,6 +94,15 @@ export class DiscordAdapter extends BaseAdapter {
     };
 
     this.emitMessage(normalized);
+  }
+
+  private _detectType(mimeType?: string): NormalizedAttachment['type'] {
+    if (!mimeType) return 'file';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType === 'application/pdf' || mimeType.startsWith('application/')) return 'document';
+    return 'file';
   }
 
   /**

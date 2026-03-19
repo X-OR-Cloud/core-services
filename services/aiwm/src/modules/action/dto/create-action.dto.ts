@@ -51,9 +51,15 @@ export class ActionAttachmentDto {
   @IsEnum(['file', 'image', 'video', 'audio', 'document'])
   type: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
-  url: string;
+  url?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  fileId?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

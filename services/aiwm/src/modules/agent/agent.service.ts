@@ -1292,11 +1292,24 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     } else if (priorityLevel === 4) {
       // Reporter = agent, work blocked → need to help resolve
       const reason = work.reason || 'Không rõ lý do';
+      if (reason.includes('[ESCALATED]')) {
+        return null;
+      }
       systemMessage =
-        `Công việc (Work) @work:${workId} "${title}" đang bị block với lý do: "${reason}".\n` +
-        `- Hãy xem xét và hỗ trợ xử lý vướng mắc\n` +
-        `- Gọi mcp__Builtin__UnblockWork nếu đã giải quyết được (kèm feedback)\n` +
-        `- Gọi mcp__Builtin__CancelWork nếu không thể tiếp tục`;
+        `Công việc @work:${workId} "${title}" đang bị block.\n` +
+        `Lý do: "${reason}"\n\n` +
+        `Hãy xử lý theo thứ tự sau:\n` +
+        `1. Đọc kỹ reason, phân tích nguyên nhân\n` +
+        `2. Nếu giải quyết được:\n` +
+        `   → Gọi UnblockWork (kèm feedback giải pháp cụ thể)\n` +
+        `3. Nếu KHÔNG giải quyết được:\n` +
+        `   a. Gọi ListUsers tìm human phụ trách\n` +
+        `      → Nếu tìm được: Gọi UpdateWork đổi assignee sang human đó\n` +
+        `      → Nếu không có human: bỏ qua bước này\n` +
+        `   b. Gọi BlockWork với reason: "[ESCALATED] <mô tả rõ vấn đề>"\n` +
+        `   c. Nếu có kênh chat: Notify human với đầy đủ context\n` +
+        `      → Nếu không có kênh: bỏ qua bước này\n` +
+        `⛔ KHÔNG dùng CancelWork — chỉ human mới được authorize cancel`;
     } else {
       // Priority 5: Reporter = agent, work in review → need to review
       systemMessage =

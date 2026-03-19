@@ -27,6 +27,24 @@ export interface AgentConnectResult {
   agentCode?: string;
 }
 
+export interface HeartbeatResponse {
+  success: boolean;
+  work?: {
+    id: string;
+    title: string;
+    type: string;
+    status: string;
+    priorityLevel: number;
+  };
+  systemMessage?: string;
+  systemTask?: {
+    type: 'work' | 'reminders' | 'inbox' | 'alert';
+    id?: string;
+    title?: string;
+    reminders?: { id: string; content: string }[];
+  };
+}
+
 export interface AgentRunnerConfig {
   agentId: string;
   agentName: string;
@@ -46,7 +64,7 @@ export interface AgentRunnerConfig {
   /** In-process connect callback — avoids HTTP round-trip through LB */
   connectInternal: (agentId: string) => Promise<AgentConnectResult>;
   /** In-process heartbeat callback */
-  heartbeatInternal: (agentId: string, status: 'idle' | 'busy') => Promise<void>;
+  heartbeatInternal: (agentId: string, status: 'idle' | 'busy') => Promise<HeartbeatResponse>;
   /** In-process history fetch — direct DB query, avoids HTTP round-trip */
   getHistoryInternal: (conversationId: string) => Promise<Array<{ role: string; content: string }>>;
   /** In-process log append — writes to agent.logs (max 100, auto-rotate) */
@@ -86,6 +104,7 @@ export class AgentRunner {
   private readonly maxSteps: number;
   private readonly heartbeatIntervalMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private currentWorkId: string | null = null;
 
   private browserCtx: BrowserContext | null = null;
   private browserInstanceManager: BrowserInstanceManager | null = null;
@@ -173,10 +192,42 @@ export class AgentRunner {
     if (this.heartbeatTimer) return;
     this.heartbeatTimer = setInterval(() => {
       const status = this.isBusy ? 'busy' : 'idle';
-      this.config.heartbeatInternal(this.config.agentId, status).catch((err) => {
-        this.logger.warn(`Heartbeat failed: ${(err as Error).message}`);
-      });
+      this.config.heartbeatInternal(this.config.agentId, status)
+        .then((res) => this.handleHeartbeatResponse(res))
+        .catch((err) => {
+          this.logger.warn(`Heartbeat failed: ${(err as Error).message}`);
+        });
     }, this.heartbeatIntervalMs);
+  }
+
+  private handleHeartbeatResponse(res: HeartbeatResponse) {
+    if (!res.systemMessage) return;
+
+    // Skip if busy — server will retry on next idle heartbeat
+    if (this.isBusy) {
+      this.logger.debug('[heartbeat] systemMessage received but agent is busy, skipping');
+      return;
+    }
+
+    const { systemTask } = res;
+    this.logger.log(`[heartbeat] systemMessage received type=${systemTask?.type ?? 'none'} id=${systemTask?.id ?? 'n/a'}`);
+
+    // Set workId for the duration of this work session
+    if (systemTask?.type === 'work' && systemTask.id) {
+      this.currentWorkId = systemTask.id;
+    }
+
+    // Synthesize a fake message object and process it directly
+    const fakeMessage = {
+      conversationId: this.conversationId,
+      role: 'user',
+      content: res.systemMessage,
+      _id: `heartbeat-${Date.now()}`,
+    };
+
+    this.handleMessage(fakeMessage).catch((err) =>
+      this.logger.error(`handleMessage (heartbeat) error: ${err.message}`, err.stack),
+    );
   }
 
   get isConnected() {
@@ -536,6 +587,7 @@ export class AgentRunner {
                   toolInput: call.input,
                   toolUseId: call.toolCallId,
                 },
+                ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }
             for (const res of step.toolResults ?? []) {
@@ -551,6 +603,7 @@ export class AgentRunner {
                   toolResult: res.output,
                   toolResultId: res.toolCallId,
                 },
+                ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }
           },
@@ -562,6 +615,7 @@ export class AgentRunner {
           conversationId,
           role: 'assistant',
           content: result.text,
+          ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
         });
         this.logger.debug(`[emit] message:send done`);
       } finally {
@@ -586,6 +640,7 @@ export class AgentRunner {
     } finally {
       this.processingMap.set(conversationId, false);
       this.abortMap.delete(conversationId);
+      this.currentWorkId = null;
       this.socket?.emit('message:typing', { conversationId, isTyping: false });
     }
   }
