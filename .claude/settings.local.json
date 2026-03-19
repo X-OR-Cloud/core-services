@@ -90,7 +90,16 @@
       "Bash(__NEW_LINE_8f1b080d0d924725__ echo \"\")",
       "Bash(npx nx run:*)",
       "Bash(nc:*)",
-      "Bash(nx run aiwm:build 2>&1 | tail -20)"
+      "Bash(nx run aiwm:build 2>&1 | tail -20)",
+      "Bash(WORKTREE=/Users/dzung/Code/hydra-byte/hydra-services/.claude/worktrees/agent-aa28428b)",
+      "Bash(MAIN=/Users/dzung/Code/hydra-byte/hydra-services)",
+      "Bash(__NEW_LINE_f8dd98ae97623ab2__ for:*)",
+      "Bash(cp \"$WORKTREE/$f\" \"$MAIN/$f\")",
+      "Bash(WORKTREE=/Users/dzung/Code/hydra-byte/hydra-services/.claude/worktrees/agent-abedfc96)",
+      "Bash(__NEW_LINE_c41f344d33f143f1__ for:*)",
+      "Bash(git worktree:*)",
+      "Bash(git --version)",
+      "Bash(gtimeout 30 nx run dgt:api)"
     ],
     "deny": [],
     "ask": [],

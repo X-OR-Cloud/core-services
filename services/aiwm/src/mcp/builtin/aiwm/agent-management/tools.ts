@@ -24,7 +24,8 @@ import {
 export const AgentManagementTools: ToolDefinition[] = [
   {
     name: 'GetAgent',
-    description: 'Get a specific agent by ID with full details including settings, channels, and configuration.',
+    description:
+      'Get a specific agent by ID or code with full details including settings, channels, and configuration. Each agent has a unique `code` (e.g. "jack-bold") that can be used as an alias for its ID.',
     type: 'builtin',
     category: 'AgentManagement',
     executor: executeGetAgent,
@@ -32,7 +33,8 @@ export const AgentManagementTools: ToolDefinition[] = [
   },
   {
     name: 'ListAgents',
-    description: 'List agents with pagination and filters (name, tags, description, status, type)',
+    description:
+      'List agents with pagination and filters (name, tags, description, status, type). Each agent has a unique `code` field — a human-readable alias (e.g. "jack-bold") that can be used instead of the ID when referencing agents.',
     type: 'builtin',
     category: 'AgentManagement',
     executor: executeListAgents,

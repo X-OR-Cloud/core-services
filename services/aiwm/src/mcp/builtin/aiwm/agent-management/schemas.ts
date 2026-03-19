@@ -127,7 +127,7 @@ export const UpdateAgentSchema = z.object({
  * Schema for getting a single agent by ID
  */
 export const GetAgentSchema = z.object({
-  id: z.string().describe('Agent ID to retrieve'),
+  id: z.string().describe('Agent ID or code to retrieve. `code` is a unique human-readable alias (e.g. "jack-bold") — accepted interchangeably with the MongoDB ObjectId.'),
 });
 
 /**
