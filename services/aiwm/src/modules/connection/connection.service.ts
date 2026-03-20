@@ -1,17 +1,43 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import Redis from 'ioredis';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Connection, ConnectionLog, ConnectionLogLevel } from './connection.schema';
+import { redisConfig } from '../../config/redis.config';
+
+export const CHANNEL_CONNECTION_CHANGED = 'connection:changed';
+
+export type ConnectionChangedAction = 'created' | 'updated' | 'deleted' | 'status_changed' | 'route_changed';
+
+export interface ConnectionChangedPayload {
+  connectionId: string;
+  action: ConnectionChangedAction;
+  status?: string;
+}
 
 @Injectable()
-export class ConnectionService extends BaseService<Connection> {
+export class ConnectionService extends BaseService<Connection> implements OnModuleDestroy {
+  private readonly connLogger = new Logger(ConnectionService.name);
+  private redisPub: Redis | null = null;
+
   constructor(
     @InjectModel(Connection.name)
     connectionModel: Model<Connection>,
   ) {
     super(connectionModel);
+    this.redisPub = new Redis(redisConfig);
+  }
+
+  onModuleDestroy(): void {
+    this.redisPub?.disconnect();
+  }
+
+  private publishChanged(payload: ConnectionChangedPayload): void {
+    this.redisPub
+      ?.publish(CHANNEL_CONNECTION_CHANGED, JSON.stringify(payload))
+      .catch((err: Error) => this.connLogger.error(`Failed to publish connection:changed: ${err.message}`));
   }
 
   async findAll(
@@ -22,8 +48,38 @@ export class ConnectionService extends BaseService<Connection> {
     return super.findAll(options, context);
   }
 
+  async create(dto: any, context: RequestContext): Promise<any> {
+    const connection = await super.create(dto, context);
+    this.publishChanged({
+      connectionId: String((connection as any)._id),
+      action: 'created',
+      status: (connection as any).status,
+    });
+    return connection;
+  }
+
+  async update(id: string, dto: any, context: RequestContext): Promise<any> {
+    const connection = await super.update(id, dto, context);
+    this.publishChanged({
+      connectionId: id,
+      action: 'updated',
+      status: (connection as any).status,
+    });
+    return connection;
+  }
+
+  async softDelete(id: string, context: RequestContext): Promise<any> {
+    const result = await super.softDelete(id, context);
+    this.publishChanged({ connectionId: id, action: 'deleted' });
+    return result;
+  }
+
   async getActiveConnections(): Promise<Connection[]> {
     return this.model.find({ status: 'active', isDeleted: false }).exec();
+  }
+
+  async getConnectionById(id: string): Promise<Connection | null> {
+    return this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
   }
 
   async setStatus(
@@ -43,6 +99,7 @@ export class ConnectionService extends BaseService<Connection> {
       throw new NotFoundException(`Connection ${id} not found`);
     }
 
+    this.publishChanged({ connectionId: id, action: 'status_changed', status });
     return connection;
   }
 
@@ -59,6 +116,7 @@ export class ConnectionService extends BaseService<Connection> {
       throw new NotFoundException(`Connection ${id} not found`);
     }
 
+    this.publishChanged({ connectionId: id, action: 'route_changed', status: connection.status });
     return connection;
   }
 
@@ -85,6 +143,7 @@ export class ConnectionService extends BaseService<Connection> {
     (connection as any).markModified('routes');
     await (connection as any).save();
 
+    this.publishChanged({ connectionId: id, action: 'route_changed', status: connection.status });
     return connection;
   }
 
@@ -133,6 +192,7 @@ export class ConnectionService extends BaseService<Connection> {
     (connection as any).updatedBy = context.userId;
     await (connection as any).save();
 
+    this.publishChanged({ connectionId: id, action: 'route_changed', status: connection.status });
     return connection;
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
-import { ConnectionService } from '../connection/connection.service';
+import { ConnectionService, CHANNEL_CONNECTION_CHANGED, ConnectionChangedPayload } from '../connection/connection.service';
 import { ActionService } from '../action/action.service';
 import { RoutingService } from './routing.service';
 import { ConnectionRunner, OutboundHandler } from './connection-runner';
@@ -37,7 +37,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisPub = new Redis(redisConfig);
     this.redisSub = new Redis(redisConfig);
 
-    await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING);
+    await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_CONNECTION_CHANGED);
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
         try {
@@ -53,6 +53,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
           await this.handleOutboundTyping(conversationId);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:typing: ${err.message}`);
+        }
+      }
+      if (channel === CHANNEL_CONNECTION_CHANGED) {
+        try {
+          const payload: ConnectionChangedPayload = JSON.parse(message);
+          await this.handleConnectionChanged(payload);
+        } catch (err: any) {
+          this.logger.error(`Failed to process connection:changed: ${err.message}`);
         }
       }
     });
@@ -192,6 +200,58 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       if (!this.runners.has(id)) {
         await this.spawnRunner(connection);
       }
+    }
+  }
+
+  private async handleConnectionChanged(payload: ConnectionChangedPayload): Promise<void> {
+    const { connectionId, action, status } = payload;
+    this.logger.log(`connection:changed [${action}] id=${connectionId} status=${status ?? '-'}`);
+
+    switch (action) {
+      case 'created':
+        if (status === 'active') {
+          const connection = await this.connectionService.getConnectionById(connectionId);
+          if (connection) await this.spawnRunner(connection);
+        }
+        break;
+
+      case 'status_changed':
+        if (status === 'active') {
+          const connection = await this.connectionService.getConnectionById(connectionId);
+          if (connection) await this.spawnRunner(connection);
+        } else {
+          await this.stopRunner(connectionId, 'status changed to inactive/error');
+        }
+        break;
+
+      case 'deleted':
+        await this.stopRunner(connectionId, 'connection deleted');
+        break;
+
+      case 'updated':
+      case 'route_changed':
+        if (this.runners.has(connectionId)) {
+          await this.restartRunner(connectionId);
+        }
+        break;
+    }
+  }
+
+  private async stopRunner(connectionId: string, reason: string): Promise<void> {
+    const runner = this.runners.get(connectionId);
+    if (!runner) return;
+    await runner.stop();
+    this.runners.delete(connectionId);
+    this.logger.log(`Runner stopped for connection ${connectionId}: ${reason}`);
+    this.connectionService.addLog(connectionId, 'info', `Runner stopped: ${reason}`).catch(() => undefined);
+  }
+
+  private async restartRunner(connectionId: string): Promise<void> {
+    await this.stopRunner(connectionId, 'config/route changed — restarting');
+    const connection = await this.connectionService.getConnectionById(connectionId);
+    if (connection && connection.status === 'active') {
+      await this.spawnRunner(connection);
+      this.logger.log(`Runner restarted for connection ${connectionId} after config change`);
     }
   }
 }
