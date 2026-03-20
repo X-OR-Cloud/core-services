@@ -92,7 +92,7 @@ export class ChatGateway
       if (channel === 'chat:message-new') {
         try {
           if (!this.server) return;
-          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, msgNonce } = JSON.parse(message);
+          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, msgNonce } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
           const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
@@ -111,7 +111,7 @@ export class ChatGateway
           // Broadcast to room — Action already saved by con worker.
           // _id = actionId allows AgentRunner to deduplicate when agent has multiple sockets across instances.
           // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
-          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId };
+          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform };
           this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
             `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,
@@ -262,6 +262,7 @@ export class ChatGateway
     client.data.type = 'user';
     client.data.userId = userId;
     client.data.username = payload.username;
+    client.data.fullname = payload.fullname;
     client.data.agentId = null;
     client.data.orgId = payload.orgId;
     client.data.roles = payload.roles || [];
@@ -579,8 +580,9 @@ export class ChatGateway
       const broadcastPayload = {
         ...messageDto,
         _id: actionId,
+        platform: 'portal',
         ...(skipAgent ? { skipAgent: true } : {}),
-        ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username } : {}),
+        ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username, fullname: client.data.fullname } : {}),
       };
       this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
 

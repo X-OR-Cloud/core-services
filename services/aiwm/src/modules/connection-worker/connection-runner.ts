@@ -43,6 +43,8 @@ export class ConnectionRunner {
       externalUserId: string;
       channelId: string;
       serverId?: string;
+      connectionId: string;
+      platform: string;
     }) => void,
     private readonly onCommand: (payload: { agentId: string; conversationId: string; command: string; reason?: string }) => void,
     private readonly addLogFn: AddLogFn,
@@ -189,6 +191,8 @@ export class ConnectionRunner {
         externalUserId: msg.externalUserId,
         channelId: msg.channelId,
         serverId: msg.serverId,
+        connectionId,
+        platform: this.connection.provider,
       });
 
       this.logger.debug(

@@ -128,6 +128,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     externalUserId: string;
     channelId: string;
     serverId?: string;
+    connectionId: string;
+    platform: string;
   }): Promise<void> {
     // Track channelId for this conversation — used to forward typing indicators
     this.typingChannels.set(payload.conversationId, payload.channelId);
