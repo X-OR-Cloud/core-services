@@ -877,6 +877,10 @@ export class ChatGateway
       return { success: false, error: 'connectionId, channelId and one of content, embed, or file are required' };
     }
 
+    if (file && !file.fileUrl) {
+      return { success: false, error: 'file.fileUrl is required — upload the file to S3 first via POST /files/upload, then pass the returned fileUrl' };
+    }
+
     if (!this.redisPub) {
       return { success: false, error: 'Internal error: Redis not available' };
     }
