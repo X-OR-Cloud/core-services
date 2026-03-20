@@ -68,7 +68,7 @@ export class AuthService {
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1h';
+    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '4h';
 
     // Fetch licenses for organization
     const orgId = user.owner?.orgId || '';
