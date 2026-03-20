@@ -422,6 +422,12 @@ export class AgentRunner {
       // Discord: externalUserId is the Discord snowflake ID
       userInfoLines.push(`Discord User ID: ${message.externalUserId}`);
     }
+    if (message.platform) {
+      userInfoLines.push(`Platform: ${message.platform}`);
+    }
+    if (message.connectionId) {
+      userInfoLines.push(`Connection ID: ${message.connectionId}`);
+    }
     if (message.channelId) {
       userInfoLines.push(`Channel ID: ${message.channelId}`);
     }
