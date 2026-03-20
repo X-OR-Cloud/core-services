@@ -203,21 +203,14 @@ export class ConfigService implements OnModuleInit {
       const configs = await this.configModel
         .find({
           isDeleted: false,
+          isActive: true,
+          value: { $nin: [null, ''] },
         })
         .exec();
 
       this.cache.clear();
 
-      // Load empty-value records first, non-empty last — so non-empty values win on duplicate keys
-      const sorted = [...configs].sort((a, b) => {
-        const aEmpty = !a.value || a.value.trim() === '';
-        const bEmpty = !b.value || b.value.trim() === '';
-        if (aEmpty && !bEmpty) return -1;
-        if (!aEmpty && bEmpty) return 1;
-        return 0;
-      });
-
-      for (const config of sorted) {
+      for (const config of configs) {
         const parsedValue = this.parseValue(
           config.key as ConfigKey,
           config.value
