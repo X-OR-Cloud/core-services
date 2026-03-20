@@ -888,7 +888,7 @@ export class ChatGateway
       );
 
       this.logger.log(
-        `[WS-CHANNEL-SEND] agentId=${client.data.agentId} connectionId=${connectionId} channelId=${channelId} contentLen=${content.length}`,
+        `[WS-CHANNEL-SEND] agentId=${client.data.agentId} connectionId=${connectionId} channelId=${channelId} type=${file ? 'file' : embed ? 'embed' : 'text'}`,
       );
 
       return { success: true, connectionId, channelId };

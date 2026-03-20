@@ -62,6 +62,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       if (channel === CHANNEL_OUTBOUND_DIRECT) {
         try {
           const { connectionId, channelId, content, embed, file } = JSON.parse(message);
+          this.logger.debug(`outbound:direct payload: ${JSON.stringify({ connectionId, channelId, hasContent: !!content, hasEmbed: !!embed, file })}`);
           await this.handleOutboundDirect(connectionId, channelId, content, embed, file);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:direct: ${err.message}`);
