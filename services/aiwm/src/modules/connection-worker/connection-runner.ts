@@ -6,6 +6,7 @@ import { RoutingService } from './routing.service';
 import { BaseAdapter, NormalizedAttachment, NormalizedInbound } from './adapters/base.adapter';
 import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
+import { TeamsAdapter } from './adapters/teams.adapter';
 
 export type AddLogFn = (level: ConnectionLogLevel, message: string, data?: Record<string, unknown>) => void;
 
@@ -41,7 +42,7 @@ export class ConnectionRunner {
       externalUsername: string;
       externalUserId: string;
       channelId: string;
-      guildId?: string;
+      serverId?: string;
     }) => void,
     private readonly onCommand: (payload: { agentId: string; conversationId: string; command: string; reason?: string }) => void,
     private readonly addLogFn: AddLogFn,
@@ -105,7 +106,7 @@ export class ConnectionRunner {
         this.writeLog('warn', `No route matched for channel ${msg.channelId}`, {
           provider: msg.provider,
           user: msg.externalUsername,
-          guildId: msg.guildId ?? null,
+          serverId: msg.serverId ?? null,
           channelId: msg.channelId,
           isMention: msg.isMention,
           totalRoutes: this.connection.routes.length,
@@ -169,7 +170,7 @@ export class ConnectionRunner {
         externalUsername: msg.externalUsername,
         externalUserId: msg.externalUserId,
         channelId: msg.channelId,
-        guildId: msg.guildId,
+        serverId: msg.serverId,
       });
 
       this.logger.debug(
@@ -193,8 +194,20 @@ export class ConnectionRunner {
         return new DiscordAdapter(this.connection.config);
       case 'telegram':
         return new TelegramAdapter(this.connection.config);
+      case 'teams':
+        return new TeamsAdapter(this.connection.config);
       default:
         throw new Error(`Unsupported provider: ${this.connection.provider}`);
+    }
+  }
+
+  /**
+   * Process a raw Teams Activity payload forwarded from Redis by ConnectionWorkerService.
+   * Delegates to TeamsAdapter.processActivity() which normalizes and emits 'message'.
+   */
+  handleTeamsActivity(body: Record<string, any>): void {
+    if (this.adapter instanceof TeamsAdapter) {
+      this.adapter.processActivity(body);
     }
   }
 }

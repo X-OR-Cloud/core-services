@@ -12,6 +12,7 @@ const CHANNEL_OUTBOUND_TYPING = 'outbound:typing';
 const CHANNEL_OUTBOUND_COMMAND = 'outbound:command';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
+const CHANNEL_INBOUND_TEAMS_PATTERN = 'inbound:teams:*';
 
 /**
  * ConnectionWorkerService — orchestrates all active ConnectionRunners.
@@ -38,6 +39,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisSub = new Redis(redisConfig);
 
     await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_CONNECTION_CHANGED);
+    await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN);
+
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
         try {
@@ -62,6 +65,22 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
         } catch (err: any) {
           this.logger.error(`Failed to process connection:changed: ${err.message}`);
         }
+      }
+    });
+
+    this.redisSub.on('pmessage', async (_pattern, channel, message) => {
+      // channel = inbound:teams:{connectionId}
+      const connectionId = channel.replace('inbound:teams:', '');
+      try {
+        const body = JSON.parse(message);
+        const runner = this.runners.get(connectionId);
+        if (runner) {
+          runner.handleTeamsActivity(body);
+        } else {
+          this.logger.warn(`No runner found for Teams inbound on connection ${connectionId}`);
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to process inbound:teams for ${connectionId}: ${err.message}`);
       }
     });
 
@@ -98,7 +117,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     externalUsername: string;
     externalUserId: string;
     channelId: string;
-    guildId?: string;
+    serverId?: string;
   }): Promise<void> {
     // Track channelId for this conversation — used to forward typing indicators
     this.typingChannels.set(payload.conversationId, payload.channelId);

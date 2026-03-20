@@ -90,7 +90,7 @@ export class RoutingService {
 
   _matchRoute(msg: NormalizedInbound, routes: ConnectionRoute[]): { route: ConnectionRoute | null; skipReasons: string[] } {
     this.logger.debug(
-      `Matching msg: provider=${msg.provider} guildId=${msg.guildId} channelId=${msg.channelId} isMention=${msg.isMention} against ${routes.length} route(s)`,
+      `Matching msg: provider=${msg.provider} serverId=${msg.serverId} channelId=${msg.channelId} isMention=${msg.isMention} against ${routes.length} route(s)`,
     );
 
     const skipReasons: string[] = [];
@@ -98,9 +98,9 @@ export class RoutingService {
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i];
 
-      // guildId filter (Discord only)
-      if (route.guildId && msg.guildId !== route.guildId) {
-        const reason = `Route[${i}] skip: guildId mismatch (route=${route.guildId}, msg=${msg.guildId ?? 'undefined'})`;
+      // serverId filter (Discord: guildId | Teams: teamId)
+      if (route.serverId && msg.serverId !== route.serverId) {
+        const reason = `Route[${i}] skip: serverId mismatch (route=${route.serverId}, msg=${msg.serverId ?? 'undefined'})`;
         this.logger.debug(reason);
         skipReasons.push(reason);
         continue;
@@ -127,7 +127,7 @@ export class RoutingService {
     }
 
     // Fallback: first route with no filters (catch-all)
-    const catchAll = routes.find((r) => !r.guildId && !r.channelId) ?? null;
+    const catchAll = routes.find((r) => !r.serverId && !r.channelId) ?? null;
     this.logger.debug(catchAll ? `Fallback catch-all matched: agentId=${catchAll.agentId}` : 'No catch-all route found');
     return { route: catchAll, skipReasons };
   }
