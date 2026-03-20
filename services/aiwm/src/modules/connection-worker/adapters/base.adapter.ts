@@ -35,6 +35,23 @@ export interface SendOptions {
   replyToId?: string;
 }
 
+export interface EmbedPayload {
+  title?: string;
+  description?: string;
+  color?: number;        // Discord: decimal color int (e.g. 0x5865F2); ignored on Telegram/Teams
+  url?: string;          // Clickable title URL
+  imageUrl?: string;     // Thumbnail/image URL
+  footer?: string;
+  fields?: Array<{ name: string; value: string; inline?: boolean }>;
+}
+
+export interface FilePayload {
+  fileUrl: string;
+  filename?: string;
+  mimeType?: string;
+  caption?: string;
+}
+
 export abstract class BaseAdapter extends EventEmitter {
   abstract readonly provider: string;
 
@@ -42,6 +59,8 @@ export abstract class BaseAdapter extends EventEmitter {
   abstract stop(): Promise<void>;
   abstract send(target: AdapterTarget, text: string, options?: SendOptions): Promise<void>;
   abstract sendTyping(target: AdapterTarget): Promise<void>;
+  abstract sendEmbed(target: AdapterTarget, embed: EmbedPayload): Promise<void>;
+  abstract sendFile(target: AdapterTarget, file: FilePayload): Promise<void>;
 
   // Typed event emitters
   emitMessage(msg: NormalizedInbound): void {

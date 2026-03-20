@@ -7,6 +7,7 @@ import { createMCPClient } from '@ai-sdk/mcp';
 import { BrowserContext } from './browser/browser.types';
 import { BrowserInstanceManager } from './browser/browser-instance.manager';
 import { createBrowserTools, BROWSER_TOOL_FUNCTIONS } from './browser/browser-mcp.server';
+import { createChannelSendTools } from './channel-send.tool';
 
 
 export interface McpServerConfig {
@@ -73,6 +74,8 @@ export interface AgentRunnerConfig {
   browserApiUrl?: string;
   /** Callback to send file (screenshot/PDF) back to conversation */
   sendFileInternal?: (conversationId: string, filePath: string, caption: string) => Promise<void>;
+  /** Upload base64 content to S3 and return public URL — used by assistant agents (no filesystem) */
+  uploadFileInternal?: (base64: string, filename: string, mimeType: string) => Promise<string>;
   /** Whether RAG is enabled for this agent */
   ragEnabled?: boolean;
   /** RAG collection configs to search for context before LLM call */
@@ -81,6 +84,10 @@ export interface AgentRunnerConfig {
   searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string }>>;
   /** Agent code identifier (optional) */
   agentCode?: string;
+  /** Agent type — affects how SendFile tool uploads files */
+  agentType?: 'assistant' | 'engineer';
+  /** Base URL of AIWM REST API — used by engineer agents for file upload */
+  apiBaseUrl?: string;
 }
 
 /**
@@ -719,6 +726,20 @@ export class AgentRunner {
       const browserTools = createBrowserTools(this.browserCtx);
       for (const [toolName, toolDef] of Object.entries(browserTools)) {
         if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        toolMap[toolName] = toolDef;
+      }
+    }
+
+    // Always inject Connection builtin tools (no allowedFunctions filter — always available to agent)
+    if (this.socket) {
+      const channelSendTools = createChannelSendTools({
+        socket: this.socket,
+        agentType: this.config.agentType ?? 'assistant',
+        uploadFileInternal: this.config.uploadFileInternal,
+        apiBaseUrl: this.config.apiBaseUrl,
+        accessToken: this.config.accessToken,
+      });
+      for (const [toolName, toolDef] of Object.entries(channelSendTools)) {
         toolMap[toolName] = toolDef;
       }
     }

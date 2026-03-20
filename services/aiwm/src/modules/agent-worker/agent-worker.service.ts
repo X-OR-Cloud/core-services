@@ -7,6 +7,7 @@ import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
 import { ActionService } from '../action/action.service';
 import { ConfigService } from '../configuration/config.service';
+import { FileService } from '../file/file.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
 import { CbmKnowledgeService } from './cbm-knowledge.service';
@@ -52,6 +53,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly agentService: AgentService,
     private readonly actionService: ActionService,
     private readonly configService: ConfigService,
+    private readonly fileService: FileService,
     private readonly cbmKnowledgeService: CbmKnowledgeService,
   ) {
     this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
@@ -132,6 +134,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       );
 
       const browserApiUrl = await this.configService.getString(ConfigKey.PINCHTAB_API_URL);
+      const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, this.wsChatUrl);
 
       const runner = new AgentRunner({
         agentId,
@@ -143,6 +146,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         mcpServers: mcpServers || {},
         allowedFunctions: allowedFunctions || [],
         wsChatUrl: this.wsChatUrl,
+        agentType: (agent.type as 'assistant' | 'engineer') ?? 'assistant',
+        apiBaseUrl: aiwmApiBaseUrl,
         browserApiUrl: browserApiUrl ?? undefined,
         sendFileInternal: async (conversationId, filePath, caption) => {
           try {
@@ -163,6 +168,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
             this.logger.warn(`sendFileInternal failed: ${(err as Error).message}`);
           }
         },
+        uploadFileInternal: (base64, filename, mimeType) =>
+          this.fileService.uploadBase64(base64, filename, mimeType).then((r) => r.fileUrl),
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
           this.agentService.heartbeat(id, { status }, accessToken),

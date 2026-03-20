@@ -92,6 +92,18 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     example: 'hydra-logs',
   },
 
+  [ConfigKey.S3_BUCKET_FILES]: {
+    key: ConfigKey.S3_BUCKET_FILES,
+    displayName: 'S3 Bucket for Files',
+    description: 'S3 bucket name for storing chat file uploads',
+    dataType: 'string',
+    isRequired: false,
+    validation: {
+      pattern: '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$',
+    },
+    example: 'hydra-files',
+  },
+
   [ConfigKey.S3_REGION]: {
     key: ConfigKey.S3_REGION,
     displayName: 'S3 Region',

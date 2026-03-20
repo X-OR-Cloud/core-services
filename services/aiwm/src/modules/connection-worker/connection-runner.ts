@@ -3,7 +3,7 @@ import { Connection, ConnectionLogLevel } from '../connection/connection.schema'
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
 import { RoutingService } from './routing.service';
-import { BaseAdapter, NormalizedAttachment, NormalizedInbound } from './adapters/base.adapter';
+import { BaseAdapter, EmbedPayload, FilePayload, NormalizedAttachment, NormalizedInbound } from './adapters/base.adapter';
 import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
 import { TeamsAdapter } from './adapters/teams.adapter';
@@ -92,6 +92,24 @@ export class ConnectionRunner {
   async sendResponse(channelId: string, text: string): Promise<void> {
     if (!this.adapter) return;
     await this.adapter.send({ channelId }, text);
+  }
+
+  /** Proactive send to a specific channel (no conversation context needed). */
+  async sendDirect(channelId: string, text: string): Promise<void> {
+    if (!this.adapter) throw new Error('Runner adapter is not running');
+    await this.adapter.send({ channelId }, text);
+  }
+
+  /** Proactive file send to a specific channel. */
+  async sendDirectFile(channelId: string, file: FilePayload): Promise<void> {
+    if (!this.adapter) throw new Error('Runner adapter is not running');
+    await this.adapter.sendFile({ channelId }, file);
+  }
+
+  /** Proactive embed send to a specific channel. */
+  async sendDirectEmbed(channelId: string, embed: EmbedPayload): Promise<void> {
+    if (!this.adapter) throw new Error('Runner adapter is not running');
+    await this.adapter.sendEmbed({ channelId }, embed);
   }
 
   async sendTyping(channelId: string): Promise<void> {

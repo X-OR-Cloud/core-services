@@ -839,6 +839,66 @@ export class ChatGateway
   }
 
   // ---------------------------------------------------------------------------
+  // Event: channel:send — agent-only, proactive message to a platform channel
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('channel:send')
+  async handleChannelSend(
+    @MessageBody() dto: {
+      connectionId: string;
+      channelId: string;
+      content?: string;
+      embed?: {
+        title?: string;
+        description?: string;
+        color?: number;
+        url?: string;
+        imageUrl?: string;
+        footer?: string;
+        fields?: Array<{ name: string; value: string; inline?: boolean }>;
+      };
+      file?: {
+        fileUrl: string;
+        filename?: string;
+        mimeType?: string;
+        caption?: string;
+      };
+      conversationId?: string;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    if (client.data.type !== 'agent') {
+      return { success: false, error: 'channel:send is only available for agent clients' };
+    }
+
+    const { connectionId, channelId, content, embed, file, conversationId } = dto;
+
+    if (!connectionId || !channelId || (!content && !embed && !file)) {
+      return { success: false, error: 'connectionId, channelId and one of content, embed, or file are required' };
+    }
+
+    if (!this.redisPub) {
+      return { success: false, error: 'Internal error: Redis not available' };
+    }
+
+    try {
+      await this.redisPub.publish(
+        'outbound:direct',
+        JSON.stringify({ connectionId, channelId, content, embed, file, conversationId: conversationId || null }),
+      );
+
+      this.logger.log(
+        `[WS-CHANNEL-SEND] agentId=${client.data.agentId} connectionId=${connectionId} channelId=${channelId} contentLen=${content.length}`,
+      );
+
+      return { success: true, connectionId, channelId };
+    } catch (err: any) {
+      this.logger.error(`channel:send failed: ${err.message}`);
+      return { success: false, error: `Failed to send: ${err.message}` };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Event: message:read
   // ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { Client, GatewayIntentBits, Events, Message as DiscordMessage } from 'discord.js';
-import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
+import { Client, GatewayIntentBits, Events, Message as DiscordMessage, EmbedBuilder } from 'discord.js';
+import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions, EmbedPayload, FilePayload } from './base.adapter';
 import { ConnectionConfig } from '../../connection/connection.schema';
 
 export class DiscordAdapter extends BaseAdapter {
@@ -66,6 +66,42 @@ export class DiscordAdapter extends BaseAdapter {
     for (const chunk of chunks) {
       await (channel as any).send(chunk);
     }
+  }
+
+  async sendEmbed(target: AdapterTarget, embed: EmbedPayload): Promise<void> {
+    if (!this.client) throw new Error('Discord client not connected');
+
+    const channel = await this.client.channels.fetch(target.channelId);
+    if (!channel || !channel.isTextBased()) {
+      throw new Error(`Channel ${target.channelId} not found or not text-based`);
+    }
+
+    const builder = new EmbedBuilder();
+    if (embed.title) builder.setTitle(embed.title);
+    if (embed.description) builder.setDescription(embed.description);
+    if (embed.color !== undefined) builder.setColor(embed.color);
+    if (embed.url) builder.setURL(embed.url);
+    if (embed.imageUrl) builder.setImage(embed.imageUrl);
+    if (embed.footer) builder.setFooter({ text: embed.footer });
+    if (embed.fields?.length) {
+      builder.addFields(embed.fields.map((f) => ({ name: f.name, value: f.value, inline: f.inline ?? false })));
+    }
+
+    await (channel as any).send({ embeds: [builder] });
+  }
+
+  async sendFile(target: AdapterTarget, file: FilePayload): Promise<void> {
+    if (!this.client) throw new Error('Discord client not connected');
+
+    const channel = await this.client.channels.fetch(target.channelId);
+    if (!channel || !channel.isTextBased()) {
+      throw new Error(`Channel ${target.channelId} not found or not text-based`);
+    }
+
+    await (channel as any).send({
+      content: file.caption || undefined,
+      files: [{ attachment: file.fileUrl, name: file.filename || 'file' }],
+    });
   }
 
   private _handleMessage(msg: DiscordMessage): void {

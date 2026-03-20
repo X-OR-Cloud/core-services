@@ -10,6 +10,7 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL_OUTBOUND = 'outbound:message';
 const CHANNEL_OUTBOUND_TYPING = 'outbound:typing';
 const CHANNEL_OUTBOUND_COMMAND = 'outbound:command';
+const CHANNEL_OUTBOUND_DIRECT = 'outbound:direct';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 const CHANNEL_INBOUND_TEAMS_PATTERN = 'inbound:teams:*';
@@ -38,7 +39,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisPub = new Redis(redisConfig);
     this.redisSub = new Redis(redisConfig);
 
-    await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_CONNECTION_CHANGED);
+    await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_OUTBOUND_DIRECT, CHANNEL_CONNECTION_CHANGED);
     await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN);
 
     this.redisSub.on('message', async (channel, message) => {
@@ -56,6 +57,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
           await this.handleOutboundTyping(conversationId);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:typing: ${err.message}`);
+        }
+      }
+      if (channel === CHANNEL_OUTBOUND_DIRECT) {
+        try {
+          const { connectionId, channelId, content, embed, file } = JSON.parse(message);
+          await this.handleOutboundDirect(connectionId, channelId, content, embed, file);
+        } catch (err: any) {
+          this.logger.error(`Failed to process outbound:direct: ${err.message}`);
         }
       }
       if (channel === CHANNEL_CONNECTION_CHANGED) {
@@ -146,6 +155,27 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisPub?.publish(CHANNEL_OUTBOUND_COMMAND, JSON.stringify(payload)).catch((err: Error) =>
       this.logger.error(`Failed to publish outbound:command: ${err.message}`),
     );
+  }
+
+  async handleOutboundDirect(connectionId: string, channelId: string, content?: string, embed?: object, file?: object): Promise<void> {
+    const runner = this.runners.get(connectionId);
+    if (!runner) {
+      this.logger.warn(`outbound:direct — no runner found for connectionId=${connectionId}`);
+      return;
+    }
+    if (file) {
+      await runner.sendDirectFile(channelId, file as any).catch((err: Error) =>
+        this.logger.error(`outbound:direct file failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
+      );
+    } else if (embed) {
+      await runner.sendDirectEmbed(channelId, embed as any).catch((err: Error) =>
+        this.logger.error(`outbound:direct embed failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
+      );
+    } else if (content) {
+      await runner.sendDirect(channelId, content).catch((err: Error) =>
+        this.logger.error(`outbound:direct failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
+      );
+    }
   }
 
   async handleOutboundTyping(conversationId: string): Promise<void> {

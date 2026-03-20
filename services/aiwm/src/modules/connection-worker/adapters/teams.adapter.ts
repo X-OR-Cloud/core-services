@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { BaseAdapter, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
+import { BaseAdapter, NormalizedInbound, AdapterTarget, SendOptions, EmbedPayload, FilePayload } from './base.adapter';
 import { ConnectionConfig } from '../../connection/connection.schema';
 
 const GRAPH_API = 'https://graph.microsoft.com/v1.0';
@@ -117,6 +117,29 @@ export class TeamsAdapter extends BaseAdapter {
       // For now log a warning — full proactive DM requires conversation reference
       this.logger.warn(`send() called without teamId for channelId=${channelId}; DM not yet supported`);
     }
+  }
+
+  async sendEmbed(target: AdapterTarget, embed: EmbedPayload): Promise<void> {
+    // Teams has no native embed via Graph API — format as HTML-like text (Teams supports basic HTML)
+    const lines: string[] = [];
+    if (embed.title) lines.push(embed.url ? `<a href="${embed.url}"><b>${embed.title}</b></a>` : `<b>${embed.title}</b>`);
+    if (embed.description) lines.push(embed.description);
+    if (embed.fields?.length) {
+      for (const f of embed.fields) {
+        lines.push(`<br><b>${f.name}</b><br>${f.value}`);
+      }
+    }
+    if (embed.imageUrl) lines.push(`<br><img src="${embed.imageUrl}" />`);
+    if (embed.footer) lines.push(`<br><i>${embed.footer}</i>`);
+
+    await this.send(target, lines.join('<br>'));
+  }
+
+  async sendFile(target: AdapterTarget, file: FilePayload): Promise<void> {
+    // Teams: send as a message with an inline image/link card
+    const caption = file.caption ? `${file.caption}\n` : '';
+    const name = file.filename || 'file';
+    await this.send(target, `${caption}<a href="${file.fileUrl}">${name}</a>`);
   }
 
   async sendTyping(target: AdapterTarget): Promise<void> {

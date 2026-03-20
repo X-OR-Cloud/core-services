@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import TelegramBot from 'node-telegram-bot-api';
-import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions } from './base.adapter';
+import { BaseAdapter, NormalizedAttachment, NormalizedInbound, AdapterTarget, SendOptions, EmbedPayload, FilePayload } from './base.adapter';
 import { ConnectionConfig } from '../../connection/connection.schema';
 
 export class TelegramAdapter extends BaseAdapter {
@@ -40,6 +40,39 @@ export class TelegramAdapter extends BaseAdapter {
     }
     this.logger.log('Telegram disconnected');
     this.emitDisconnected('stopped');
+  }
+
+  async sendEmbed(target: AdapterTarget, embed: EmbedPayload): Promise<void> {
+    // Telegram has no native embed — format as Markdown text
+    const lines: string[] = [];
+    if (embed.title) lines.push(embed.url ? `*[${embed.title}](${embed.url})*` : `*${embed.title}*`);
+    if (embed.description) lines.push(embed.description);
+    if (embed.fields?.length) {
+      for (const f of embed.fields) {
+        lines.push(`\n*${f.name}*\n${f.value}`);
+      }
+    }
+    if (embed.imageUrl) lines.push(embed.imageUrl);
+    if (embed.footer) lines.push(`_${embed.footer}_`);
+
+    await this.send(target, lines.join('\n'));
+  }
+
+  async sendFile(target: AdapterTarget, file: FilePayload): Promise<void> {
+    if (!this.bot) throw new Error('Telegram bot not connected');
+    const chatId = target.channelId;
+    const opts: any = file.caption ? { caption: file.caption } : {};
+    const mime = file.mimeType ?? '';
+
+    if (mime.startsWith('image/')) {
+      await this.bot.sendPhoto(chatId, file.fileUrl, opts);
+    } else if (mime.startsWith('video/')) {
+      await this.bot.sendVideo(chatId, file.fileUrl, opts);
+    } else if (mime.startsWith('audio/')) {
+      await this.bot.sendAudio(chatId, file.fileUrl, opts);
+    } else {
+      await this.bot.sendDocument(chatId, file.fileUrl, { ...opts, filename: file.filename });
+    }
   }
 
   async sendTyping(target: AdapterTarget): Promise<void> {

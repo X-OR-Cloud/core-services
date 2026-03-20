@@ -13,6 +13,7 @@ export enum ConfigKey {
   S3_SECRET_KEY = 's3.secret_key',
   S3_BUCKET_MODELS = 's3.bucket.models',
   S3_BUCKET_LOGS = 's3.bucket.logs',
+  S3_BUCKET_FILES = 's3.bucket.files',
   S3_REGION = 's3.region',
   S3_USE_SSL = 's3.use_ssl',
 
