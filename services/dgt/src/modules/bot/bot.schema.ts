@@ -64,6 +64,12 @@ export class Bot extends BaseSchema {
   @Prop({ required: true, default: 70 })
   minConfidenceScore: number;
 
+  @Prop({ default: 1 })
+  riskPerTrade: number;
+
+  @Prop({ default: 10 })
+  maxPositionExposure: number;
+
   @Prop()
   errorMessage: string;
 
