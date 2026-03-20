@@ -169,6 +169,13 @@ export class DashboardService {
       ? (ti.volumeRatio > 1.2 ? 'BULLISH' : ti.volumeRatio < 0.8 ? 'BEARISH' : 'NEUTRAL')
       : 'NEUTRAL';
 
+    // Build reasoning (Format A — structured metrics)
+    const atrPct = ti?.atr14Pct || 0;
+    const volumeRatio = ti?.volumeRatio || 1;
+    const trendStrength = signal.confidence >= 75 ? 'Strong' : signal.confidence >= 50 ? 'Moderate' : 'Weak';
+    const liquidityFlow = volumeRatio > 1.2 ? 'Positive' : volumeRatio < 0.8 ? 'Negative' : 'Neutral';
+    const volatilityRegime = atrPct > 2 ? 'High' : atrPct > 1 ? 'Elevated' : 'Stable';
+
     return {
       signal: signalLabel,
       confidence: signal.confidence,
@@ -179,6 +186,11 @@ export class DashboardService {
         technicalSignal,
         liquiditySignal: 'NEUTRAL',
         volumeSignal,
+      },
+      reasoning: {
+        trendStrength,
+        liquidityFlow,
+        volatilityRegime,
       },
     };
   }
@@ -238,6 +250,27 @@ export class DashboardService {
     const macroRiskLabel = macroRiskScore > 75 ? 'EXTREME' : macroRiskScore > 50 ? 'HIGH' : macroRiskScore > 25 ? 'MODERATE' : 'LOW';
     const tradeGate = macroRiskScore > 75 ? 'BLOCKED' : 'OPEN';
 
+    // Derive goldOutlook from macro indicators
+    const dxyValue = dxy?.value || 0;
+    const realYieldValue = realYield?.value || 0;
+    // Gold is bullish when: DXY weak (< 103), VIX moderate, real yields low/negative
+    let goldBiasScore = 50; // neutral baseline
+    if (dxyValue > 0 && dxyValue < 103) goldBiasScore += 15; // DXY weak → bullish gold
+    if (dxyValue > 0 && dxyValue > 106) goldBiasScore -= 15; // DXY strong → bearish gold
+    if (vixValue > 20) goldBiasScore += 10; // high VIX → fear → safe haven demand
+    if (realYieldValue < 1.5) goldBiasScore += 10; // low real yield → gold more attractive
+    if (realYieldValue > 2.5) goldBiasScore -= 10; // high real yield → gold less attractive
+
+    const goldBias = goldBiasScore >= 60 ? 'BULLISH' : goldBiasScore <= 40 ? 'BEARISH' : 'NEUTRAL';
+    const goldConfidence = Math.min(100, Math.max(0, Math.round(Math.abs(goldBiasScore - 50) * 2)));
+    const goldReasons: string[] = [];
+    if (dxyValue > 0 && dxyValue < 103) goldReasons.push('US Dollar weakening — bullish for gold');
+    if (dxyValue > 0 && dxyValue > 106) goldReasons.push('US Dollar strengthening — headwind for gold');
+    if (vixValue > 20) goldReasons.push(`VIX elevated at ${vixValue.toFixed(1)} — safe haven demand rising`);
+    if (realYieldValue < 1.5) goldReasons.push('Real yields low — gold relative attractiveness increasing');
+    if (realYieldValue > 2.5) goldReasons.push('Real yields elevated — opportunity cost of holding gold increases');
+    if (!goldReasons.length) goldReasons.push('Mixed macro signals — neutral gold outlook');
+
     return {
       tradeGate,
       macroRiskScore,
@@ -249,6 +282,11 @@ export class DashboardService {
       },
       upcomingEvents: [],
       updatedAt: new Date(),
+      goldOutlook: {
+        bias: goldBias,
+        confidence: goldConfidence,
+        reasons: goldReasons,
+      },
     };
   }
 
@@ -278,6 +316,26 @@ export class DashboardService {
     const support = ti?.bbLower || null;
     const resistance = ti?.bbUpper || null;
 
+    // Volatility zone label
+    const volatilityZone = atrPct > 2.5 ? 'HIGH' : atrPct > 1 ? 'MEDIUM' : 'LOW';
+
+    // Sentiment label from fearGreedIndex
+    const sentimentLabel = fearGreedIndex > 75 ? 'Strongly Bullish'
+      : fearGreedIndex > 55 ? 'Bullish'
+      : fearGreedIndex > 45 ? 'Neutral'
+      : fearGreedIndex > 25 ? 'Bearish'
+      : 'Strongly Bearish';
+
+    // Liquidity from volumeRatio
+    const volumeRatio = ti?.volumeRatio || 1;
+    const liquidityScore = Math.min(100, Math.round(volumeRatio * 50));
+    const liquidityLabel = liquidityScore > 65 ? 'High' : liquidityScore > 35 ? 'Medium' : 'Low';
+    const liquidityNote = liquidityScore > 65
+      ? 'Strong orderbook depth'
+      : liquidityScore > 35
+        ? 'Normal market liquidity'
+        : 'Thin orderbook — wider spreads expected';
+
     return {
       symbol,
       timeframe: '24h',
@@ -289,6 +347,11 @@ export class DashboardService {
       support,
       resistance,
       updatedAt: ti?.timestamp || new Date(),
+      volatilityZone,
+      sentimentLabel,
+      sentimentScore: fearGreedIndex,
+      liquidityLabel,
+      liquidityNote,
     };
   }
 

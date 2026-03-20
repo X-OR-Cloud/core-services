@@ -73,6 +73,20 @@ export class CreateBotDto {
   @Max(100)
   @IsOptional()
   minConfidenceScore?: number;
+
+  @ApiProperty({ required: false, example: 1, description: '% vốn tối đa cho mỗi lệnh đơn lẻ. Default: 1' })
+  @IsNumber()
+  @Min(0.1)
+  @Max(10)
+  @IsOptional()
+  riskPerTrade?: number;
+
+  @ApiProperty({ required: false, example: 10, description: '% vốn tối đa cho một vị thế đang mở. Default: 10' })
+  @IsNumber()
+  @Min(1)
+  @Max(50)
+  @IsOptional()
+  maxPositionExposure?: number;
 }
 
 export class UpdateBotDto {
@@ -120,6 +134,20 @@ export class UpdateBotDto {
   @IsNumber()
   @IsOptional()
   minConfidenceScore?: number;
+
+  @ApiProperty({ required: false, example: 1, description: '% vốn tối đa cho mỗi lệnh đơn lẻ' })
+  @IsNumber()
+  @Min(0.1)
+  @Max(10)
+  @IsOptional()
+  riskPerTrade?: number;
+
+  @ApiProperty({ required: false, example: 10, description: '% vốn tối đa cho một vị thế đang mở' })
+  @IsNumber()
+  @Min(1)
+  @Max(50)
+  @IsOptional()
+  maxPositionExposure?: number;
 
   @ApiProperty({ required: false, enum: BotStatus })
   @IsEnum(BotStatus)

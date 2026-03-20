@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
+import { PortfolioController } from './portfolio.controller';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsExportService } from './analytics-export.service';
 import { AccountModule } from '../account/account.module';
@@ -10,7 +11,7 @@ import { MarketPriceModule } from '../market-price/market-price.module';
 
 @Module({
   imports: [AccountModule, PositionModule, TradeModule, PortfolioSnapshotModule, MarketPriceModule],
-  controllers: [AnalyticsController],
+  controllers: [AnalyticsController, PortfolioController],
   providers: [AnalyticsService, AnalyticsExportService],
 })
 export class AnalyticsModule {}

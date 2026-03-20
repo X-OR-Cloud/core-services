@@ -77,6 +77,18 @@ export class Signal extends BaseSchema {
   @Prop()
   priceAtCreation: number;
 
+  @Prop()
+  entry: number;
+
+  @Prop()
+  takeProfit: number;
+
+  @Prop()
+  stopLoss: number;
+
+  @Prop({ type: [String], default: [] })
+  macroFactors: string[];
+
   @Prop({ type: Object })
   llmInput: Record<string, any>;
 
