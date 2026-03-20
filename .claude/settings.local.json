@@ -99,7 +99,8 @@
       "Bash(__NEW_LINE_c41f344d33f143f1__ for:*)",
       "Bash(git worktree:*)",
       "Bash(git --version)",
-      "Bash(gtimeout 30 nx run dgt:api)"
+      "Bash(gtimeout 30 nx run dgt:api)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": [],

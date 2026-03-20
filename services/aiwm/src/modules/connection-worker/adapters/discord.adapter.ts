@@ -98,9 +98,14 @@ export class DiscordAdapter extends BaseAdapter {
       throw new Error(`Channel ${target.channelId} not found or not text-based`);
     }
 
+    // Download file buffer first — discord.js struggles with external URLs in some environments
+    const res = await fetch(file.fileUrl);
+    if (!res.ok) throw new Error(`Failed to fetch file from ${file.fileUrl}: ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+
     await (channel as any).send({
       content: file.caption || undefined,
-      files: [{ attachment: file.fileUrl, name: file.filename || 'file' }],
+      files: [{ attachment: buffer, name: file.filename || 'file' }],
     });
   }
 
