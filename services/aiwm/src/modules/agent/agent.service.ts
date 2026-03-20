@@ -2063,6 +2063,7 @@ echo "Installation script placeholder - implement actual logic"
             { type: 'agent', id },
             {
               agentId: id,
+              code: agent.code,
               name: agent.name,
             }
           );
