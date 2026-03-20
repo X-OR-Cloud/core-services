@@ -410,6 +410,7 @@ export class AgentRunner {
 
     const content: string = (message.content ?? '').trim();
     this.logger.debug(`[message:new] conv=${conversationId} role=${message.role} content="${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`);
+    this.logger.debug(`[message:new] raw payload keys=${Object.keys(message).join(',')} platform=${message.platform} connectionId=${message.connectionId}`);
 
     // Build <user_info> block from message metadata
     const userInfoLines: string[] = [];
