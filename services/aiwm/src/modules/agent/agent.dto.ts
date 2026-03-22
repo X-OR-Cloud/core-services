@@ -468,6 +468,9 @@ export class AgentConnectResponseDto {
 
   @ApiProperty({ description: 'Agent code identifier', example: 'PM-BOT-01', required: false })
   agentCode?: string;
+
+  @ApiPropertyOptional({ description: 'Browser automation API URL (PinchTab)', example: 'https://pinchtab.example.com', required: false })
+  browserApiUrl?: string | null;
 }
 
 /**
