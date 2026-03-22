@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -24,6 +24,24 @@ export class BotService extends BaseService<Bot> {
     const existing = await super.findById(id, context);
     if (existing?.owner?.userId !== context.userId) {
       throw new ForbiddenException('Access denied');
+    }
+  }
+
+  async create(dto: any, context: RequestContext): Promise<Partial<Bot>> {
+    try {
+      return await super.create(dto, context);
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        const keyPattern = Object.keys(err?.keyPattern || {})[0];
+        if (keyPattern === 'accountId') {
+          throw new ConflictException('This account already has a bot. Each account can only have one bot.');
+        }
+        if (keyPattern?.includes('name')) {
+          throw new ConflictException('A bot with this name already exists. Please choose a different name.');
+        }
+        throw new ConflictException('Bot already exists (duplicate key).');
+      }
+      throw err;
     }
   }
 
