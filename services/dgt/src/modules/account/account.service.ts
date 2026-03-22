@@ -111,9 +111,9 @@ export class AccountService extends BaseService<Account> {
   }
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Account>> {
-    if (!this.isOrgOwner(context)) {
-      options.filter = { ...(options.filter || {}), 'owner.userId': context.userId };
-    }
+    // Accounts are personal exchange API connections — always scope to current user
+    // OrgOwner should NOT see accounts of other users in the same org
+    options.filter = { ...(options.filter || {}), 'owner.userId': context.userId };
     const result = await super.findAll(options, context);
     return {
       ...result,
