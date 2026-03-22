@@ -7,6 +7,7 @@ export type ConnectionDocument = Connection & Document;
 export type ConnectionProvider = 'discord' | 'telegram' | 'teams';
 export type ConnectionStatus = 'active' | 'inactive' | 'error';
 export type ConnectionLogLevel = 'info' | 'warn' | 'error';
+export type ConversationMode = 'user' | 'connection' | 'shared';
 
 export interface ConnectionLog {
   level: ConnectionLogLevel;
@@ -35,6 +36,7 @@ export interface ConnectionRoute {
   agentId: string;          // target agent
   allowAnonymous?: boolean; // allow users not in org (default: true)
   verboseActions?: string[]; // action types to forward: undefined/[] = message only, ['*'] = all, ['thinking','tool_use'] = selective
+  conversationMode?: ConversationMode; // conversation scoping: 'connection' (default) | 'user' | 'shared'
 }
 
 @Schema({ timestamps: true })

@@ -59,13 +59,19 @@ export class RoutingService {
 
     // Build conversation key: prefer IAM userId, fallback to external composite ID
     const conversationUserId = iamUserId ?? `${msg.provider}:${msg.externalUserId}`;
+    const connectionId = String((connection as any)._id);
+    const orgId = (connection as any).owner?.orgId || '';
+    const conversationMode = route.conversationMode ?? 'connection';
 
-    const conversation = await this.conversationService.findOrCreateForUser(
-      conversationUserId,
-      route.agentId,
-      (connection as any).owner?.orgId || '',
-      iamUserType,
-    );
+    let conversation: any;
+    if (conversationMode === 'shared') {
+      conversation = await this.conversationService.findOrCreateShared(connectionId, route.agentId, orgId);
+    } else if (conversationMode === 'user') {
+      conversation = await this.conversationService.findOrCreateForUser(conversationUserId, route.agentId, orgId, iamUserType);
+    } else {
+      // 'connection' (default)
+      conversation = await this.conversationService.findOrCreateForConnection(connectionId, conversationUserId, route.agentId, orgId, iamUserType);
+    }
 
     const actor: Actor = {
       role: ActorRole.USER,

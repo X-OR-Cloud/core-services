@@ -36,8 +36,8 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   /**
-   * Find or create a conversation for a specific (userId, agentId) pair.
-   * Works for both authenticated users and anonymous users.
+   * Find or create a conversation scoped to (userId, agentId) — 'user' mode.
+   * Same conversation across all connections for this user+agent pair.
    */
   async findOrCreateForUser(
     userId: string,
@@ -84,6 +84,112 @@ export class ConversationService extends BaseService<Conversation> {
     });
 
     this.logger.log(`Created new conversation ${newConversation._id} for user ${userId} + agent ${agentId}`);
+    return newConversation as Conversation;
+  }
+
+  /**
+   * Find or create a conversation scoped to (connectionId, userId, agentId) — 'connection' mode (default).
+   * Each user has a separate conversation per connection.
+   */
+  async findOrCreateForConnection(
+    connectionId: string,
+    userId: string,
+    agentId: string,
+    orgId: string,
+    userType: 'authenticated' | 'anonymous',
+  ): Promise<Conversation> {
+    const existing = await this.model.findOne({
+      agentId,
+      userId,
+      connectionId,
+      status: 'active',
+      isDeleted: false,
+    }).exec();
+
+    if (existing) {
+      this.logger.log(`Reusing existing conversation ${existing._id} for connection ${connectionId} + user ${userId} + agent ${agentId}`);
+      return existing as Conversation;
+    }
+
+    const newConversation = await this.model.create({
+      title: `Conversation with agent ${agentId}`,
+      description: '',
+      agentId,
+      userId,
+      connectionId,
+      userType,
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [
+        { type: 'user' as const, id: userId, joined: new Date() },
+        { type: 'agent' as const, id: agentId, joined: new Date() },
+      ],
+      owner: {
+        orgId,
+        userId: userType === 'authenticated' ? userId : '',
+        groupId: '',
+        agentId,
+        appId: '',
+      },
+      createdBy: userId || agentId,
+      updatedBy: userId || agentId,
+    });
+
+    this.logger.log(`Created new conversation ${newConversation._id} for connection ${connectionId} + user ${userId} + agent ${agentId}`);
+    return newConversation as Conversation;
+  }
+
+  /**
+   * Find or create a shared conversation scoped to (connectionId, agentId) — 'shared' mode.
+   * All users in the same connection share one conversation.
+   */
+  async findOrCreateShared(
+    connectionId: string,
+    agentId: string,
+    orgId: string,
+  ): Promise<Conversation> {
+    const existing = await this.model.findOne({
+      agentId,
+      connectionId,
+      status: 'active',
+      isDeleted: false,
+    }).exec();
+
+    if (existing) {
+      this.logger.log(`Reusing shared conversation ${existing._id} for connection ${connectionId} + agent ${agentId}`);
+      return existing as Conversation;
+    }
+
+    const newConversation = await this.model.create({
+      title: `Shared conversation with agent ${agentId}`,
+      description: '',
+      agentId,
+      userId: '',
+      connectionId,
+      userType: 'anonymous',
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [
+        { type: 'agent' as const, id: agentId, joined: new Date() },
+      ],
+      owner: {
+        orgId,
+        userId: '',
+        groupId: '',
+        agentId,
+        appId: '',
+      },
+      createdBy: agentId,
+      updatedBy: agentId,
+    });
+
+    this.logger.log(`Created shared conversation ${newConversation._id} for connection ${connectionId} + agent ${agentId}`);
     return newConversation as Conversation;
   }
 

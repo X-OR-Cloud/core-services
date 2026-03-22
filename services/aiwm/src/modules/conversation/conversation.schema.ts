@@ -68,6 +68,10 @@ export class Conversation extends BaseSchema {
   @Prop({ type: String, default: '', index: true })
   userId: string;
 
+  // Connection that originated this conversation (for 'connection' and 'shared' modes)
+  @Prop({ type: String, default: '', index: true })
+  connectionId: string;
+
   // User type for analytics and future cleanup
   @Prop({ type: String, enum: ['authenticated', 'anonymous'], default: 'authenticated' })
   userType: 'authenticated' | 'anonymous';
@@ -87,4 +91,6 @@ export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ agentId: 1, status: 1, createdAt: -1 });
 ConversationSchema.index({ 'participants.id': 1, status: 1 });
 ConversationSchema.index({ createdBy: 1, status: 1, createdAt: -1 });
-ConversationSchema.index({ agentId: 1, userId: 1, status: 1 }); // findOrCreate per (userId, agentId)
+ConversationSchema.index({ agentId: 1, userId: 1, status: 1 }); // findOrCreate per (userId, agentId) — 'user' mode
+ConversationSchema.index({ agentId: 1, userId: 1, connectionId: 1, status: 1 }); // findOrCreate — 'connection' mode
+ConversationSchema.index({ agentId: 1, connectionId: 1, status: 1 }); // findOrCreate — 'shared' mode
