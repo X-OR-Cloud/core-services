@@ -6,6 +6,7 @@ import {
   IsArray,
   ValidateNested,
 } from 'class-validator';
+import { ConversationMode } from '../connection.schema';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -59,6 +60,17 @@ export class ConnectionRouteDto {
   @IsOptional()
   @IsBoolean()
   allowAnonymous?: boolean;
+
+  @ApiProperty({ enum: ['user', 'connection', 'shared'], required: false })
+  @IsOptional()
+  @IsEnum(['user', 'connection', 'shared'])
+  conversationMode?: ConversationMode;
+
+  @ApiProperty({ description: "Action types to forward: [] = message only, ['*'] = all", required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  verboseActions?: string[];
 }
 
 export class CreateConnectionDto {
