@@ -64,14 +64,19 @@ export class NodeConnectionService {
   }
 
   /**
-   * Remove a node connection
+   * Remove a node connection, only if the socket ID matches (prevents race condition
+   * where a stale disconnect event removes a newly registered connection).
    */
-  removeConnection(nodeId: string): void {
+  removeConnection(nodeId: string, socketId: string): void {
     const connection = this.connections.get(nodeId);
-    if (connection) {
+    if (connection && connection.socketId === socketId) {
       connection.status = 'offline';
       this.connections.delete(nodeId);
       this.logger.log(`Node ${nodeId} disconnected (socket: ${connection.socketId})`);
+    } else if (connection) {
+      this.logger.log(
+        `Node ${nodeId} disconnect ignored: socket ${socketId} is stale (current: ${connection.socketId})`
+      );
     }
   }
 
