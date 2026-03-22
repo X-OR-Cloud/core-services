@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ChatService } from './chat.service';
 
 /**
  * ChatController - HTTP endpoints for WebSocket service
@@ -9,6 +10,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 @ApiTags('WebSocket')
 @Controller('ws')
 export class ChatController {
+  constructor(private readonly chatService: ChatService) {}
   /**
    * Health check endpoint for WebSocket service
    * Used to verify WebSocket gateway is running and accessible
@@ -64,5 +66,27 @@ export class ChatController {
       memory: process.memoryUsage(),
       timestamp: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Monitor: snapshot of all active conversations with socket/presence/agent status.
+   * Intended for internal debug tooling; FE polls every 10s.
+   */
+  @Get('monitor')
+  @ApiOperation({
+    summary: 'Active conversations monitor',
+    description: 'Returns active conversations with participant socket sessions, online status, agent heartbeat state, and last sent/received messages. Internal debug tool — no auth required.',
+  })
+  @ApiQuery({ name: 'agentId', required: false, description: 'Filter by agent ID' })
+  @ApiQuery({ name: 'connectionId', required: false, description: 'Filter by connection ID' })
+  @ApiResponse({ status: 200, description: 'Monitor snapshot' })
+  async getMonitor(
+    @Query('agentId') agentId?: string,
+    @Query('connectionId') connectionId?: string,
+  ) {
+    return this.chatService.getMonitorData({
+      ...(agentId && { agentId }),
+      ...(connectionId && { connectionId }),
+    });
   }
 }

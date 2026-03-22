@@ -198,6 +198,12 @@ export class ChatGateway
       '';
 
     await this.chatService.setAgentOnline(agentId, client.id);
+    await this.chatService.setSocketSession(client.id, {
+      type: 'agent',
+      actorId: agentId,
+      conversationId: '',
+      connectedAt: new Date().toISOString(),
+    });
 
     this.logger.log(
       `[WS-CONNECT] Agent connected | socketId=${client.id} | agentId=${agentId}`,
@@ -230,6 +236,12 @@ export class ChatGateway
     client.data.roles = [];
 
     await this.chatService.setUserOnline(anonymousId, client.id);
+    await this.chatService.setSocketSession(client.id, {
+      type: 'anonymous',
+      actorId: anonymousId,
+      conversationId: '',
+      connectedAt: new Date().toISOString(),
+    });
 
     // Anonymous always has agentId in token — auto findOrCreate
     const conversation = await this.conversationService.findOrCreateForUser(
@@ -268,6 +280,12 @@ export class ChatGateway
     client.data.roles = payload.roles || [];
 
     await this.chatService.setUserOnline(userId, client.id);
+    await this.chatService.setSocketSession(client.id, {
+      type: 'user',
+      actorId: userId,
+      conversationId: '',
+      connectedAt: new Date().toISOString(),
+    });
 
     this.logger.log(
       `[WS-CONNECT] User connected | socketId=${client.id} | userId=${userId}`,
@@ -297,6 +315,8 @@ export class ChatGateway
 
     const participantId = client.data.userId || client.data.agentId;
     await this.chatService.joinConversation(conversationId, participantId);
+    await this.chatService.updateSocketConversation(client.id, conversationId);
+    await this.chatService.addSocketToConversation(conversationId, client.id);
 
     // Cross-instance: force agent socket(s) to join this room via Redis Adapter
     const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
@@ -329,8 +349,12 @@ export class ChatGateway
   // ---------------------------------------------------------------------------
 
   async handleDisconnect(client: Socket) {
+    const conversationId = client.data.conversationId;
+
     if (client.data.type === 'agent' && client.data.agentId) {
       await this.chatService.setAgentOffline(client.data.agentId, client.id);
+      await this.chatService.clearAgentStatus(client.data.agentId);
+      await this.chatService.removeSocketSession(client.id, conversationId);
       this.logger.debug(
         `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${client.data.agentId}`,
       );
@@ -342,6 +366,7 @@ export class ChatGateway
       });
     } else if (client.data.userId) {
       await this.chatService.setUserOffline(client.data.userId, client.id);
+      await this.chatService.removeSocketSession(client.id, conversationId);
       this.logger.debug(
         `[WS-DISCONNECT] ${client.data.type} disconnected | socketId=${client.id} | userId=${client.data.userId}`,
       );
@@ -456,6 +481,8 @@ export class ChatGateway
         conversationId,
         client.data.userId || client.data.agentId,
       );
+      await this.chatService.removeSocketFromConversation(conversationId, client.id);
+      await this.chatService.updateSocketConversation(client.id, '');
 
       let roomSize = 0;
       try {
@@ -695,6 +722,14 @@ export class ChatGateway
     try {
       const { agentId, token } = client.data;
       client.data.lastHeartbeatAt = Date.now();
+
+      await this.chatService.setAgentStatus(agentId, {
+        status: data.status,
+        lastHeartbeat: new Date().toISOString(),
+        conversationId: client.data.conversationId || '',
+        metrics: data.metrics ? JSON.stringify(data.metrics) : undefined,
+      });
+
       return await this.agentService.heartbeat(agentId, data, token);
     } catch (error) {
       this.logger.error('Error handling agent:heartbeat:', (error as Error).message);
