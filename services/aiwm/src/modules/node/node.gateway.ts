@@ -182,16 +182,20 @@ export class NodeGateway
     if (nodeId) {
       this.logger.log(`Node ${nodeId} disconnecting (socket: ${client.id})`);
 
-      // Remove from connection tracking
-      this.connectionService.removeConnection(nodeId);
+      // Remove from connection tracking — pass socketId to guard against race condition
+      // where a new socket registers before this disconnect event fires
+      this.connectionService.removeConnection(nodeId, client.id);
 
-      // Update node status to offline
-      try {
-        await this.nodeService.updateStatus(nodeId, 'offline');
-      } catch (error) {
-        this.logger.error(
-          `Failed to update node status on disconnect: ${error.message}`
-        );
+      // Only update status to offline if this node is no longer tracked
+      // (i.e. not replaced by a new socket)
+      if (!this.connectionService.isNodeOnline(nodeId)) {
+        try {
+          await this.nodeService.updateStatus(nodeId, 'offline');
+        } catch (error) {
+          this.logger.error(
+            `Failed to update node status on disconnect: ${error.message}`
+          );
+        }
       }
 
       this.logger.log(`Node ${nodeId} disconnected`);
