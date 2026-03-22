@@ -44,8 +44,16 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
     options: FindManyOptions,
     context: RequestContext,
   ): Promise<FindManyResult<Connection>> {
-    options.selectFields = ['-config', '-routes'];
-    return super.findAll(options, context);
+    options.selectFields = ['-config'];
+    const result = await super.findAll(options, context);
+    result.data = result.data.map((conn) => {
+      const obj: Record<string, unknown> = (conn as unknown as { toObject: () => Record<string, unknown> }).toObject?.() ?? { ...(conn as object) };
+      const routeCount: number = Array.isArray(obj['routes']) ? (obj['routes'] as unknown[]).length : 0;
+      delete obj['routes'];
+      obj['routeCount'] = routeCount;
+      return obj as unknown as Connection;
+    });
+    return result;
   }
 
   async create(dto: any, context: RequestContext): Promise<any> {
