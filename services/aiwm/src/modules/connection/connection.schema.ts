@@ -34,6 +34,7 @@ export interface ConnectionRoute {
   requireMention?: boolean; // only reply when @mentioned (Discord / Teams)
   agentId: string;          // target agent
   allowAnonymous?: boolean; // allow users not in org (default: true)
+  verboseActions?: string[]; // action types to forward: undefined/[] = message only, ['*'] = all, ['thinking','tool_use'] = selective
 }
 
 @Schema({ timestamps: true })

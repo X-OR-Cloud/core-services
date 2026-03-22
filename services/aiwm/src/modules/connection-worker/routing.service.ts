@@ -13,6 +13,7 @@ export interface ResolvedRoute {
   iamUserId?: string;
   iamUsername?: string;
   iamFullname?: string;
+  verboseActions?: string[];
 }
 
 @Injectable()
@@ -83,6 +84,7 @@ export class RoutingService {
         iamUserId,
         iamUsername,
         iamFullname,
+        verboseActions: route.verboseActions,
       },
       skipReasons,
     };

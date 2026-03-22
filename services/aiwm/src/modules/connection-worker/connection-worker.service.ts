@@ -24,6 +24,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConnectionWorkerService.name);
   private readonly runners = new Map<string, ConnectionRunner>();
   private readonly outboundHandlers = new Map<string, OutboundHandler>();
+  private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
   private readonly typingChannels = new Map<string, string>(); // conversationId → channelId
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
@@ -45,8 +46,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
         try {
-          const { conversationId, text } = JSON.parse(message);
-          await this.handleOutbound(conversationId, text);
+          const { conversationId, text, actionType } = JSON.parse(message);
+          await this.handleOutbound(conversationId, text, actionType);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:message: ${err.message}`);
         }
@@ -144,8 +145,15 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   /**
    * Called by ChatGateway (or event listener) when agent emits a response.
    * Forwards the response to the correct external platform.
+   * actionType defaults to 'message' — only 'message' is forwarded unless verboseActions is configured.
    */
-  async handleOutbound(conversationId: string, text: string): Promise<void> {
+  async handleOutbound(conversationId: string, text: string, actionType = 'message'): Promise<void> {
+    const verboseActions = this.conversationVerboseActions.get(conversationId);
+    const isAllowed =
+      actionType === 'message' ||
+      (verboseActions && (verboseActions.includes('*') || verboseActions.includes(actionType)));
+    if (!isAllowed) return;
+
     const handler = this.outboundHandlers.get(conversationId);
     if (handler) {
       await handler(text).catch((err) =>
@@ -208,8 +216,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       connection,
       this.actionService,
       this.routingService,
-      (conversationId, handler) => this.outboundHandlers.set(conversationId, handler),
-      (conversationId) => this.outboundHandlers.delete(conversationId),
+      (conversationId, handler, verboseActions) => {
+        this.outboundHandlers.set(conversationId, handler);
+        if (verboseActions) this.conversationVerboseActions.set(conversationId, verboseActions);
+      },
+      (conversationId) => {
+        this.outboundHandlers.delete(conversationId);
+        this.conversationVerboseActions.delete(conversationId);
+      },
       (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
       (payload) => this.publishMessageNew(payload),
       (payload) => this.publishCommand(payload),
