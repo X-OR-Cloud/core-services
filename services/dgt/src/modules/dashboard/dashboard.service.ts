@@ -149,6 +149,7 @@ export class DashboardService {
         symbol,
         updatedAt: new Date(),
         components: { technicalSignal: 'NEUTRAL', liquiditySignal: 'NEUTRAL', volumeSignal: 'NEUTRAL' },
+        reasoning: { trendStrength: 'Weak', liquidityFlow: 'Neutral', volatilityRegime: 'Stable' },
       };
     }
 
