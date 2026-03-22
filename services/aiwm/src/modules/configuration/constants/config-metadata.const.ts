@@ -420,4 +420,13 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     },
     example: 'http://pinchtab:4000',
   },
+
+  [ConfigKey.PINCHTAB_API_KEY]: {
+    key: ConfigKey.PINCHTAB_API_KEY,
+    displayName: 'PinchTab API Key',
+    description: 'API key để xác thực với PinchTab browser automation service.',
+    dataType: 'string',
+    isRequired: false,
+    example: 'ce1f1a1da67dc5d031d4463d53f437fb...',
+  },
 };

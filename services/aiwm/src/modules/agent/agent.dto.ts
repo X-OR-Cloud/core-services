@@ -471,6 +471,9 @@ export class AgentConnectResponseDto {
 
   @ApiPropertyOptional({ description: 'Browser automation API URL (PinchTab)', example: 'https://pinchtab.example.com', required: false })
   browserApiUrl?: string | null;
+
+  @ApiPropertyOptional({ description: 'Browser automation API key (PinchTab)', required: false })
+  browserApiKey?: string | null;
 }
 
 /**

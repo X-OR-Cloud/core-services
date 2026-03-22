@@ -67,6 +67,7 @@ export enum ConfigKey {
   // Browser Automation
   // ==========================================
   PINCHTAB_API_URL = 'pinchtab.api_url',
+  PINCHTAB_API_KEY = 'pinchtab.api_key',
 
   // Example: 'https://cdn.x-or.cloud/agents'
   // Agents will download from: {baseUrl}/xora-cc-agent-latest.tar.gz

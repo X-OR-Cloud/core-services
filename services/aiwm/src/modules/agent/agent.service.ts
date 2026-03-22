@@ -650,6 +650,10 @@ export class AgentService extends BaseService<Agent> {
         ConfigKey.PINCHTAB_API_URL as any,
         { orgId: agent.owner.orgId } as RequestContext
       ))?.value ?? null,
+      browserApiKey: (await this.configurationService.findByKey(
+        ConfigKey.PINCHTAB_API_KEY as any,
+        { orgId: agent.owner.orgId } as RequestContext
+      ))?.value ?? null,
     };
 
     // For autonomous and hosted agents, populate deployment info

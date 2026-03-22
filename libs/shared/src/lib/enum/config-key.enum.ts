@@ -63,7 +63,8 @@ export enum ConfigKey {
   MONA_BASE_API_URL = 'mona.base_api_url',
 
   // ==========================================
-  // Browser Automation (1 key)
+  // Browser Automation (2 keys)
   // ==========================================
   PINCHTAB_API_URL = 'pinchtab.api_url',
+  PINCHTAB_API_KEY = 'pinchtab.api_key',
 }
