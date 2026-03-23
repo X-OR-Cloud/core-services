@@ -102,5 +102,8 @@ export class Bot extends BaseSchema {
 export const BotSchema = SchemaFactory.createForClass(Bot);
 
 BotSchema.index({ 'owner.userId': 1, status: 1 });
-BotSchema.index({ accountId: 1 }, { unique: true });
-BotSchema.index({ name: 1, 'owner.userId': 1 }, { unique: true });
+// Partial unique indexes: only enforce uniqueness on non-deleted documents.
+// Without partialFilterExpression, soft-deleted bots (isDeleted: true) would
+// permanently block re-creation of a bot for the same account/name.
+BotSchema.index({ accountId: 1 }, { unique: true, partialFilterExpression: { isDeleted: false } });
+BotSchema.index({ name: 1, 'owner.userId': 1 }, { unique: true, partialFilterExpression: { isDeleted: false } });
