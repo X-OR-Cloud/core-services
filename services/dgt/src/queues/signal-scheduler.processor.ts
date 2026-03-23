@@ -86,9 +86,19 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
     this.logger.debug(`Signal scheduler heartbeat: ${job.name}`);
   }
 
+  /**
+   * Job name includes accountId + timeframe to ensure each account gets its OWN
+   * BullMQ repeat entry. BullMQ deduplicates by (name + repeat-config hash), so
+   * using the same name for all accounts would collapse them into a single entry,
+   * causing only one account to ever receive generated signals.
+   */
+  private jobName(accountId: string, timeframe: string): string {
+    return `${SIGNAL_JOB_TYPES.GENERATE_SIGNAL}:${accountId}:${timeframe}`;
+  }
+
   private async registerJobsForAccount(accountId: string): Promise<void> {
     await this.signalGenerationQueue.add(
-      SIGNAL_JOB_TYPES.GENERATE_SIGNAL,
+      this.jobName(accountId, '1h'),
       { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '1h' } },
       {
         repeat: { every: 3_600_000 },
@@ -100,7 +110,7 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
     );
 
     await this.signalGenerationQueue.add(
-      SIGNAL_JOB_TYPES.GENERATE_SIGNAL,
+      this.jobName(accountId, '4h'),
       { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '4h' } },
       {
         repeat: { every: 14_400_000 },
@@ -115,7 +125,8 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
   private async removeJobsForAccount(accountId: string): Promise<void> {
     const repeatableJobs = await this.signalGenerationQueue.getRepeatableJobs();
     for (const job of repeatableJobs) {
-      if (job.name === SIGNAL_JOB_TYPES.GENERATE_SIGNAL && job.key.includes(accountId)) {
+      // Match jobs by accountId prefix in the unique job name
+      if (job.name.startsWith(`${SIGNAL_JOB_TYPES.GENERATE_SIGNAL}:${accountId}`)) {
         await this.signalGenerationQueue.removeRepeatableByKey(job.key);
       }
     }
