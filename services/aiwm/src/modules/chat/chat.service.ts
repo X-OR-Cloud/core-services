@@ -571,11 +571,43 @@ export class ChatService {
       const convSockets = allConvSocketIds.get(convId) || [];
       const lastActorMap = lastSentMap.get(convId) || new Map();
 
-      const participants: ParticipantMonitorItem[] = [];
+      // Build a unified participant map from 3 sources:
+      // 1. conv.participants (DB array)
+      // 2. Socket sessions in Redis (live connections not yet in DB)
+      // 3. Action history (e.g. Discord users with no WS socket)
+      const participantMap = new Map<string, { type: 'user' | 'agent'; joinedConversation: string }>();
 
       for (const p of (conv.participants || [])) {
-        const actorId: string = p.id;
-        const isAgent = p.type === 'agent';
+        participantMap.set(p.id, {
+          type: p.type,
+          joinedConversation: p.joined?.toISOString?.() ?? '',
+        });
+      }
+
+      for (const sid of convSockets) {
+        const s = socketSessionMap.get(sid);
+        if (!s) continue;
+        if (!participantMap.has(s.actorId)) {
+          participantMap.set(s.actorId, {
+            type: s.type === 'agent' ? 'agent' : 'user',
+            joinedConversation: s.connectedAt,
+          });
+        }
+      }
+
+      for (const actorId of lastActorMap.keys()) {
+        if (!participantMap.has(actorId)) {
+          participantMap.set(actorId, {
+            type: actorId === conv.agentId ? 'agent' : 'user',
+            joinedConversation: '',
+          });
+        }
+      }
+
+      const participants: ParticipantMonitorItem[] = [];
+
+      for (const [actorId, meta] of participantMap.entries()) {
+        const isAgent = meta.type === 'agent';
 
         // Find sockets belonging to this participant
         const participantSockets: SocketInfo[] = convSockets
@@ -614,9 +646,9 @@ export class ChatService {
         }
 
         const item: ParticipantMonitorItem = {
-          type: p.type,
+          type: meta.type,
           id: actorId,
-          joinedConversation: p.joined?.toISOString?.() ?? '',
+          joinedConversation: meta.joinedConversation,
           isOnline,
           sockets: participantSockets,
           ...(isAgent && { agentStatus, lastHeartbeat }),
