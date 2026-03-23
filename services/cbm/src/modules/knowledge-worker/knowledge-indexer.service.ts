@@ -12,10 +12,9 @@ import { ChunkingService } from '../knowledge-shared/chunking.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { OcrService } from '../knowledge-shared/ocr.service';
+import { PdfParserService } from '../knowledge-shared/pdf-parser.service';
 
 // Document loaders
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse');
 import * as mammoth from 'mammoth';
 import { DocxLoader } from '@langchain/community/document_loaders/fs/docx';
 import { TextLoader } from '@langchain/classic/document_loaders/fs/text';
@@ -37,6 +36,7 @@ export class KnowledgeIndexerService {
     private readonly embeddingService: EmbeddingService,
     private readonly qdrantService: QdrantService,
     private readonly ocrService: OcrService,
+    private readonly pdfParserService: PdfParserService,
   ) {}
 
   /**
@@ -197,19 +197,19 @@ export class KnowledgeIndexerService {
     try {
       if (mimeType === 'application/pdf') {
         const buffer = fs.readFileSync(absolutePath);
-        const data = await pdfParse(buffer);
+        const markdown = await this.pdfParserService.parseToMarkdown(buffer);
 
         // Fallback to OCR if text is insufficient (image-based PDF)
-        if (this.ocrService.isTextInsufficient(data.text)) {
+        if (this.ocrService.isTextInsufficient(markdown)) {
           if (this.ocrService.isConfigured()) {
-            this.logger.log(`PDF text insufficient (${data.text.trim().length} chars) — falling back to OCR: ${file.fileName}`);
+            this.logger.log(`PDF text insufficient (${markdown.trim().length} chars) — falling back to OCR: ${file.fileName}`);
             return this.ocrService.ocrPdf(absolutePath);
           } else {
             this.logger.warn(`PDF text insufficient for ${file.fileName} and OCR not configured (KB_OCR_API_URL not set)`);
           }
         }
 
-        return data.text;
+        return markdown;
       }
 
       if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {

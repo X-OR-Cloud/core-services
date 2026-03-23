@@ -10,7 +10,6 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Multer } from 'multer';
 import { KnowledgeFile } from './knowledge-file.schema';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { KnowledgeCollectionService } from '../knowledge-collection/knowledge-collection.service';
@@ -54,7 +53,7 @@ export class KnowledgeFileService extends BaseService<KnowledgeFile> {
    * Save uploaded file to disk and create DB record
    */
   async uploadFile(
-    file: Multer.File,
+    file: Express.Multer.File,
     collectionId: string,
     displayName: string | undefined,
     context: RequestContext,
