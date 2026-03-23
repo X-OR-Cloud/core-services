@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
@@ -8,6 +9,9 @@ import { ChatController } from './chat.controller';
 import { ConversationModule } from '../conversation/conversation.module';
 import { AgentModule } from '../agent/agent.module';
 import { ActionModule } from '../action/action.module';
+import { Conversation, ConversationSchema } from '../conversation/conversation.schema';
+import { Action, ActionSchema } from '../action/action.schema';
+import { Connection, ConnectionSchema } from '../connection/connection.schema';
 
 @Module({
   imports: [
@@ -43,6 +47,13 @@ import { ActionModule } from '../action/action.module';
       }),
       inject: [ConfigService],
     }),
+
+    // Models for ChatService monitor queries (direct inject — bypasses service RBAC)
+    MongooseModule.forFeature([
+      { name: Conversation.name, schema: ConversationSchema },
+      { name: Action.name, schema: ActionSchema },
+      { name: Connection.name, schema: ConnectionSchema },
+    ]),
 
     // Conversation module for auto-creating conversations
     ConversationModule,
