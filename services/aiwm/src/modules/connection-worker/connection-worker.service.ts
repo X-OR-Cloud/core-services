@@ -26,6 +26,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly outboundHandlers = new Map<string, OutboundHandler>();
   private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
+  private readonly conversationConnectionId = new Map<string, string>(); // conversationId → connectionId
   private readonly typingChannels = new Map<string, string>(); // conversationId → channelId
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
@@ -166,7 +167,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     // Forward ALL actions to verboseLogsChannelId if configured
     const verboseLogsChannelId = this.conversationVerboseLogsChannelId.get(conversationId);
     if (verboseLogsChannelId) {
-      for (const runner of this.runners.values()) {
+      const connectionId = this.conversationConnectionId.get(conversationId);
+      const runner = connectionId ? this.runners.get(connectionId) : undefined;
+      if (runner) {
         await runner.sendDirect(verboseLogsChannelId, text).catch((err: Error) =>
           this.logger.error(`Failed to forward verbose log to ${verboseLogsChannelId}: ${err.message}`),
         );
@@ -230,11 +233,13 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       this.routingService,
       (conversationId, handler, verboseActions, verboseLogsChannelId) => {
         this.outboundHandlers.set(conversationId, handler);
+        this.conversationConnectionId.set(conversationId, id);
         if (verboseActions) this.conversationVerboseActions.set(conversationId, verboseActions);
         if (verboseLogsChannelId) this.conversationVerboseLogsChannelId.set(conversationId, verboseLogsChannelId);
       },
       (conversationId) => {
         this.outboundHandlers.delete(conversationId);
+        this.conversationConnectionId.delete(conversationId);
         this.conversationVerboseActions.delete(conversationId);
         this.conversationVerboseLogsChannelId.delete(conversationId);
       },
