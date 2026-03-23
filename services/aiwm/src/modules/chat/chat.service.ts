@@ -463,11 +463,12 @@ export class ChatService {
    * Get full monitor snapshot: active conversations + participants + socket/agent status.
    * Combines Redis (socket sessions, presence, agent status) with MongoDB (conversations, actions, connections).
    */
-  async getMonitorData(filter?: { agentId?: string; connectionId?: string }): Promise<MonitorResponse> {
+  async getMonitorData(filter?: { orgId?: string; agentId?: string; connectionId?: string }): Promise<MonitorResponse> {
     // 1. Collect active conversationIds from two sources and merge
     const redisConvIds = await this.getAllActiveConversationIds();
 
     const dbQuery: any = { status: 'active', isDeleted: false };
+    if (filter?.orgId) dbQuery['owner.orgId'] = filter.orgId;
     if (filter?.agentId) dbQuery.agentId = filter.agentId;
     if (filter?.connectionId) dbQuery.connectionId = filter.connectionId;
 
@@ -486,8 +487,10 @@ export class ChatService {
     const missingIds = redisConvIds.filter((id) => !dbConvIds.includes(id));
     let allConvDocs: any[] = [...dbConvs];
     if (missingIds.length > 0) {
+      const missingQuery: any = { _id: { $in: missingIds }, isDeleted: false };
+      if (filter?.orgId) missingQuery['owner.orgId'] = filter.orgId;
       const extra = await this.conversationModel
-        .find({ _id: { $in: missingIds }, isDeleted: false })
+        .find(missingQuery)
         .lean()
         .exec();
       allConvDocs = [...allConvDocs, ...extra];

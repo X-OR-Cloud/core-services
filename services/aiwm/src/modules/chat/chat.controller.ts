@@ -1,5 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard, CurrentUser } from '@hydrabyte/base';
+import { RequestContext } from '@hydrabyte/shared';
 import { ChatService } from './chat.service';
 
 /**
@@ -69,22 +71,27 @@ export class ChatController {
   }
 
   /**
-   * Monitor: snapshot of all active conversations with socket/presence/agent status.
-   * Intended for internal debug tooling; FE polls every 10s.
+   * Monitor: snapshot of active conversations scoped to the caller's org.
+   * Requires JWT auth. FE polls every 10s for debug/observability.
    */
   @Get('monitor')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Active conversations monitor',
-    description: 'Returns active conversations with participant socket sessions, online status, agent heartbeat state, and last sent/received messages. Internal debug tool — no auth required.',
+    description: 'Returns active conversations (scoped to caller org) with participant socket sessions, online status, agent heartbeat state, and last sent/received messages.',
   })
   @ApiQuery({ name: 'agentId', required: false, description: 'Filter by agent ID' })
   @ApiQuery({ name: 'connectionId', required: false, description: 'Filter by connection ID' })
   @ApiResponse({ status: 200, description: 'Monitor snapshot' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getMonitor(
+    @CurrentUser() context: RequestContext,
     @Query('agentId') agentId?: string,
     @Query('connectionId') connectionId?: string,
   ) {
     return this.chatService.getMonitorData({
+      orgId: context.orgId,
       ...(agentId && { agentId }),
       ...(connectionId && { connectionId }),
     });

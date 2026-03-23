@@ -1,9 +1,9 @@
 # Chat Monitor API — Specification
 
-**Endpoint:** `GET /ws/monitor`
+**Endpoint:** `GET https://xsai-api.x-or.cloud/aiwm/ws/monitor`
 **Service:** AIWM
 **Module:** Chat
-**Auth:** None (internal debug tool)
+**Auth:** Bearer JWT (user access token) — scoped to caller's org
 
 ---
 
@@ -365,4 +365,4 @@ mode của 2 items khác nhau: "user" vs "connection"
 - `KEYS conversation:sockets:*` được dùng để scan active conversations từ Redis. Với số lượng lớn (>10.000 conversations active đồng thời), nên chuyển sang `SCAN` để tránh block Redis.
 - `lastSent` / `lastReceived` được tính từ Action collection — chỉ bao gồm `type=message`, không tính `tool_use`, `thinking`, `command`.
 - `agentStatus` chỉ available khi agent đang gửi heartbeat qua WS event `agent:heartbeat`. Agent không gửi heartbeat sẽ hiển thị `"unknown"`.
-- API không có auth — chỉ nên expose trên internal network hoặc thêm `X-Internal-Key` header nếu cần bảo mật.
+- API yêu cầu JWT user token (`Authorization: Bearer <token>`). Kết quả tự động scoped theo `orgId` của token — user chỉ thấy conversations thuộc org của mình.
