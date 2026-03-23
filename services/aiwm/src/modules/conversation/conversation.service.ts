@@ -194,6 +194,20 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   /**
+   * Find all active conversations for an agent (updated within last 24h).
+   * Used by ChatGateway to rejoin rooms on agent reconnect.
+   */
+  async findActiveByAgent(agentId: string): Promise<Conversation[]> {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return this.model.find({
+      agentId,
+      status: 'active',
+      isDeleted: false,
+      updatedAt: { $gte: cutoff },
+    }).lean().exec() as unknown as Conversation[];
+  }
+
+  /**
    * Create a new conversation
    */
   async createConversation(

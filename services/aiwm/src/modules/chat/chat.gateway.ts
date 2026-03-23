@@ -205,6 +205,25 @@ export class ChatGateway
       connectedAt: new Date().toISOString(),
     });
 
+    // Auto-rejoin active conversation rooms so agent can receive messages
+    // without waiting for a new inbound message to trigger agent:join-room
+    try {
+      const activeConvs = await this.conversationService.findActiveByAgent(agentId);
+      for (const conv of activeConvs) {
+        const convId = (conv as any)._id.toString();
+        client.join(`conversation:${convId}`);
+        await this.chatService.updateSocketConversation(client.id, convId);
+        await this.chatService.addSocketToConversation(convId, client.id);
+      }
+      if (activeConvs.length > 0) {
+        this.logger.log(
+          `[WS-CONNECT] Agent ${agentId} rejoined ${activeConvs.length} active conversation room(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`[WS-CONNECT] Failed to rejoin rooms for agent ${agentId}: ${(err as Error).message}`);
+    }
+
     this.logger.log(
       `[WS-CONNECT] Agent connected | socketId=${client.id} | agentId=${agentId}`,
     );
