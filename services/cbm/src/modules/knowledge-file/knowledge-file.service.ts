@@ -164,6 +164,16 @@ export class KnowledgeFileService extends BaseService<KnowledgeFile> {
     return { ...(file as any), embeddingStatus: 'pending', chunkCount: 0 };
   }
 
+  async reindexCollection(collectionId: string, context: RequestContext): Promise<{ queued: number }> {
+    const result = await this.fileModel.updateMany(
+      { collectionId, isDeleted: false },
+      { $set: { embeddingStatus: 'pending', errorMessage: undefined, chunkCount: 0 } },
+    );
+
+    this.logger.log(`Reindex all triggered for collection ${collectionId}: ${result.modifiedCount} files queued`);
+    return { queued: result.modifiedCount };
+  }
+
   /**
    * Find all pending files for worker processing
    */

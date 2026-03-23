@@ -4,6 +4,7 @@ import { KnowledgeCollectionController } from './knowledge-collection.controller
 import { KnowledgeCollectionService } from './knowledge-collection.service';
 import { KnowledgeCollection, KnowledgeCollectionSchema } from './knowledge-collection.schema';
 import { KnowledgeSharedModule } from '../knowledge-shared/knowledge-shared.module';
+import { KnowledgeFileModule } from '../knowledge-file/knowledge-file.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { KnowledgeSharedModule } from '../knowledge-shared/knowledge-shared.modu
       { name: KnowledgeCollection.name, schema: KnowledgeCollectionSchema },
     ]),
     KnowledgeSharedModule,
+    KnowledgeFileModule,
   ],
   controllers: [KnowledgeCollectionController],
   providers: [KnowledgeCollectionService],

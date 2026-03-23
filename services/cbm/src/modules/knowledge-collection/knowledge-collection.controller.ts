@@ -29,6 +29,7 @@ import {
 } from './knowledge-collection.dto';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
+import { KnowledgeFileService } from '../knowledge-file/knowledge-file.service';
 
 @ApiTags('Knowledge Collections')
 @ApiBearerAuth()
@@ -38,6 +39,7 @@ export class KnowledgeCollectionController {
     private readonly collectionService: KnowledgeCollectionService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingService: EmbeddingService,
+    private readonly fileService: KnowledgeFileService,
   ) {}
 
   @Post()
@@ -95,6 +97,16 @@ export class KnowledgeCollectionController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.collectionService.softDelete(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/reindex-all')
+  @ApiOperation({ summary: 'Reset all files in collection to pending — triggers full re-embedding' })
+  @UseGuards(JwtAuthGuard)
+  async reindexAll(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.fileService.reindexCollection(id, context);
   }
 
   @Post(':id/search')
