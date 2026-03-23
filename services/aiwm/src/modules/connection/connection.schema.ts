@@ -35,7 +35,8 @@ export interface ConnectionRoute {
   requireMention?: boolean; // only reply when @mentioned (Discord / Teams)
   agentId: string;          // target agent
   allowAnonymous?: boolean; // allow users not in org (default: true)
-  verboseActions?: string[]; // action types to forward: undefined/[] = message only, ['*'] = all, ['thinking','tool_use'] = selective
+  verboseActions?: string[]; // action types to forward to main channel: undefined/[] = message only, ['*'] = all, ['thinking','tool_use','notice'] = selective
+  verboseLogsChannelId?: string; // if set, ALL actions are forwarded to this channel regardless of verboseActions
   conversationMode?: ConversationMode; // conversation scoping: 'connection' (default) | 'user' | 'shared'
 }
 

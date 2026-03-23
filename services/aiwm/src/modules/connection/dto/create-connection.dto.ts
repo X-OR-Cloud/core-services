@@ -66,11 +66,16 @@ export class ConnectionRouteDto {
   @IsEnum(['user', 'connection', 'shared'])
   conversationMode?: ConversationMode;
 
-  @ApiProperty({ description: "Action types to forward: [] = message only, ['*'] = all", required: false })
+  @ApiProperty({ description: "Action types to forward to main channel: [] = message only, ['*'] = all, ['thinking','tool_use','notice'] = selective", required: false })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   verboseActions?: string[];
+
+  @ApiProperty({ description: 'Channel ID to receive ALL actions regardless of verboseActions. Leave empty to disable verbose log forwarding.', required: false })
+  @IsOptional()
+  @IsString()
+  verboseLogsChannelId?: string;
 }
 
 export class CreateConnectionDto {

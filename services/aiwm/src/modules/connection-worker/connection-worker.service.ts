@@ -25,6 +25,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly runners = new Map<string, ConnectionRunner>();
   private readonly outboundHandlers = new Map<string, OutboundHandler>();
   private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
+  private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
   private readonly typingChannels = new Map<string, string>(); // conversationId → channelId
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
@@ -152,13 +153,24 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     const isAllowed =
       actionType === 'message' ||
       (verboseActions && (verboseActions.includes('*') || verboseActions.includes(actionType)));
-    if (!isAllowed) return;
 
-    const handler = this.outboundHandlers.get(conversationId);
-    if (handler) {
-      await handler(text).catch((err) =>
-        this.logger.error(`Failed to forward outbound to ${conversationId}: ${err.message}`),
-      );
+    if (isAllowed) {
+      const handler = this.outboundHandlers.get(conversationId);
+      if (handler) {
+        await handler(text).catch((err) =>
+          this.logger.error(`Failed to forward outbound to ${conversationId}: ${err.message}`),
+        );
+      }
+    }
+
+    // Forward ALL actions to verboseLogsChannelId if configured
+    const verboseLogsChannelId = this.conversationVerboseLogsChannelId.get(conversationId);
+    if (verboseLogsChannelId) {
+      for (const runner of this.runners.values()) {
+        await runner.sendDirect(verboseLogsChannelId, text).catch((err: Error) =>
+          this.logger.error(`Failed to forward verbose log to ${verboseLogsChannelId}: ${err.message}`),
+        );
+      }
     }
   }
 
@@ -216,13 +228,15 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       connection,
       this.actionService,
       this.routingService,
-      (conversationId, handler, verboseActions) => {
+      (conversationId, handler, verboseActions, verboseLogsChannelId) => {
         this.outboundHandlers.set(conversationId, handler);
         if (verboseActions) this.conversationVerboseActions.set(conversationId, verboseActions);
+        if (verboseLogsChannelId) this.conversationVerboseLogsChannelId.set(conversationId, verboseLogsChannelId);
       },
       (conversationId) => {
         this.outboundHandlers.delete(conversationId);
         this.conversationVerboseActions.delete(conversationId);
+        this.conversationVerboseLogsChannelId.delete(conversationId);
       },
       (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
       (payload) => this.publishMessageNew(payload),

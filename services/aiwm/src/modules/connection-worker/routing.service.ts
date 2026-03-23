@@ -14,6 +14,7 @@ export interface ResolvedRoute {
   iamUsername?: string;
   iamFullname?: string;
   verboseActions?: string[];
+  verboseLogsChannelId?: string;
 }
 
 @Injectable()
@@ -91,6 +92,7 @@ export class RoutingService {
         iamUsername,
         iamFullname,
         verboseActions: route.verboseActions,
+        verboseLogsChannelId: route.verboseLogsChannelId,
       },
       skipReasons,
     };
