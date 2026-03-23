@@ -8,6 +8,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { UtilService } from '../util/util.service';
 import { GenerateTextRequestDto } from '../util/dto/text-generation.dto';
+import { AgentConversationMode } from '../agent/agent.schema';
 
 @Injectable()
 export class ConversationService extends BaseService<Conversation> {
@@ -191,6 +192,169 @@ export class ConversationService extends BaseService<Conversation> {
 
     this.logger.log(`Created shared conversation ${newConversation._id} for connection ${connectionId} + agent ${agentId}`);
     return newConversation as Conversation;
+  }
+
+  /**
+   * Find or create conversation scoped to (orgId, agentId) — 'shared' mode.
+   * All users across all channels share one conversation per org+agent.
+   */
+  async findOrCreateAgentShared(orgId: string, agentId: string): Promise<Conversation> {
+    const existing = await this.model.findOne({
+      'owner.orgId': orgId,
+      agentId,
+      status: 'active',
+      isDeleted: false,
+    }).exec();
+
+    if (existing) {
+      this.logger.log(`Reusing shared conversation ${existing._id} for org ${orgId} + agent ${agentId}`);
+      return existing as Conversation;
+    }
+
+    const newConversation = await this.model.create({
+      title: `Shared conversation with agent ${agentId}`,
+      agentId,
+      userId: '',
+      userType: 'anonymous',
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [{ type: 'agent' as const, id: agentId, joined: new Date() }],
+      owner: { orgId, userId: '', groupId: '', agentId, appId: '' },
+      createdBy: agentId,
+      updatedBy: agentId,
+    });
+
+    this.logger.log(`Created shared conversation ${newConversation._id} for org ${orgId} + agent ${agentId}`);
+    return newConversation as Conversation;
+  }
+
+  /**
+   * Find or create conversation scoped to (orgId, agentId, userId) — 'per-user' mode.
+   * Same conversation for a user across all channels.
+   */
+  async findOrCreatePerUser(
+    orgId: string,
+    agentId: string,
+    userId: string,
+    userType: 'authenticated' | 'anonymous',
+  ): Promise<Conversation> {
+    const existing = await this.model.findOne({
+      'owner.orgId': orgId,
+      agentId,
+      userId,
+      status: 'active',
+      isDeleted: false,
+    }).exec();
+
+    if (existing) {
+      this.logger.log(`Reusing per-user conversation ${existing._id} for user ${userId} + agent ${agentId}`);
+      return existing as Conversation;
+    }
+
+    const newConversation = await this.model.create({
+      title: `Conversation with agent ${agentId}`,
+      agentId,
+      userId,
+      userType,
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [
+        { type: 'user' as const, id: userId, joined: new Date() },
+        { type: 'agent' as const, id: agentId, joined: new Date() },
+      ],
+      owner: { orgId, userId: userType === 'authenticated' ? userId : '', groupId: '', agentId, appId: '' },
+      createdBy: userId || agentId,
+      updatedBy: userId || agentId,
+    });
+
+    this.logger.log(`Created per-user conversation ${newConversation._id} for user ${userId} + agent ${agentId}`);
+    return newConversation as Conversation;
+  }
+
+  /**
+   * Find or create conversation — 'per-session' mode.
+   * Reuses the most recent active conversation if still within sessionTimeoutMs,
+   * otherwise creates a new one.
+   */
+  async findOrCreatePerSession(
+    orgId: string,
+    agentId: string,
+    userId: string,
+    sessionTimeoutMs: number,
+    userType: 'authenticated' | 'anonymous',
+  ): Promise<Conversation> {
+    const existing = await this.model
+      .findOne({
+        'owner.orgId': orgId,
+        agentId,
+        userId,
+        status: 'active',
+        isDeleted: false,
+      })
+      .sort({ updatedAt: -1 })
+      .exec();
+
+    if (existing) {
+      const updatedAt = (existing as any).updatedAt as Date;
+      const isAlive = Date.now() - updatedAt.getTime() < sessionTimeoutMs;
+      if (isAlive) {
+        this.logger.log(`Reusing per-session conversation ${existing._id} for user ${userId} + agent ${agentId}`);
+        return existing as Conversation;
+      }
+      this.logger.log(`Session expired for conversation ${existing._id}, creating new one`);
+    }
+
+    const newConversation = await this.model.create({
+      title: `Conversation with agent ${agentId}`,
+      agentId,
+      userId,
+      userType,
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [
+        { type: 'user' as const, id: userId, joined: new Date() },
+        { type: 'agent' as const, id: agentId, joined: new Date() },
+      ],
+      owner: { orgId, userId: userType === 'authenticated' ? userId : '', groupId: '', agentId, appId: '' },
+      createdBy: userId || agentId,
+      updatedBy: userId || agentId,
+    });
+
+    this.logger.log(`Created per-session conversation ${newConversation._id} for user ${userId} + agent ${agentId}`);
+    return newConversation as Conversation;
+  }
+
+  /**
+   * Unified dispatcher — resolves the correct conversation based on agent's conversationMode.
+   * Called by ChatGateway (anonymous connect) and RoutingService (Connection Worker).
+   */
+  async resolveConversation(params: {
+    orgId: string;
+    agentId: string;
+    userId: string;
+    mode: AgentConversationMode;
+    sessionTimeoutMs: number;
+    userType: 'authenticated' | 'anonymous';
+  }): Promise<Conversation> {
+    const { orgId, agentId, userId, mode, sessionTimeoutMs, userType } = params;
+
+    if (mode === 'shared') {
+      return this.findOrCreateAgentShared(orgId, agentId);
+    }
+    if (mode === 'per-session') {
+      return this.findOrCreatePerSession(orgId, agentId, userId, sessionTimeoutMs, userType);
+    }
+    // default: 'per-user'
+    return this.findOrCreatePerUser(orgId, agentId, userId, userType);
   }
 
   /**

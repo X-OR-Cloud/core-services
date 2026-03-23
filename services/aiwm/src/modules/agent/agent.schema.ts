@@ -4,6 +4,7 @@ import { BaseSchema } from '@hydrabyte/base';
 
 export type ChannelPlatform = 'discord' | 'telegram';
 export type VerboseLoggingTarget = 'channel' | 'thread' | string;
+export type AgentConversationMode = 'per-user' | 'per-session' | 'shared';
 
 export interface ChannelConfig {
   platform: ChannelPlatform;
@@ -210,6 +211,19 @@ export class Agent extends BaseSchema {
 
   @Prop()
   lastHeartbeatAt?: Date;
+
+  // Conversation scoping mode — applies to anonymous WS clients and Connection Worker users
+  // Authenticated WS users select conversation manually and are not affected by this setting
+  @Prop({
+    type: String,
+    enum: ['per-user', 'per-session', 'shared'],
+    default: 'per-user',
+  })
+  conversationMode: AgentConversationMode;
+
+  // Session inactivity timeout in ms for per-session mode (default: 30 minutes)
+  @Prop({ type: Number, default: 1800000 })
+  sessionTimeoutMs: number;
 
   @Prop({ default: 0 })
   connectionCount: number;

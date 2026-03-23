@@ -262,13 +262,18 @@ export class ChatGateway
       connectedAt: new Date().toISOString(),
     });
 
-    // Anonymous always has agentId in token — auto findOrCreate
-    const conversation = await this.conversationService.findOrCreateForUser(
-      anonymousId,
-      agentId,
+    // Anonymous always has agentId in token — auto findOrCreate based on agent's conversationMode
+    const agent = await this.agentService.findById(agentId, {} as any);
+    const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
+    const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
+    const conversation = await this.conversationService.resolveConversation({
       orgId,
-      'anonymous',
-    );
+      agentId,
+      userId: anonymousId,
+      mode: conversationMode,
+      sessionTimeoutMs,
+      userType: 'anonymous',
+    });
     const conversationId = (conversation as any)._id.toString();
 
     await this._joinConversationRoom(client, conversationId, agentId);

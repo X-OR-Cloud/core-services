@@ -3,6 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
 import { Instruction } from '../instruction/instruction.schema';
+import { AgentConversationMode } from './agent.schema';
 
 /** @deprecated Use ConnectionRouteDto in Connection module instead. Kept for backward compatibility. */
 export class ChannelConfigDto {
@@ -196,6 +197,26 @@ export class CreateAgentDto {
   @Type(() => RagSettingsDto)
   ragSettings?: RagSettingsDto;
 
+  @ApiPropertyOptional({
+    description: 'Conversation scoping mode for anonymous WS clients and Connection Worker users. Authenticated WS users select conversation manually and are not affected.',
+    enum: ['per-user', 'per-session', 'shared'],
+    default: 'per-user',
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['per-user', 'per-session', 'shared'])
+  conversationMode?: AgentConversationMode;
+
+  @ApiPropertyOptional({
+    description: 'Session inactivity timeout in ms for per-session mode (default: 1800000 = 30 minutes)',
+    required: false,
+    example: 1800000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(60000)
+  sessionTimeoutMs?: number;
+
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
   @IsOptional()
@@ -333,6 +354,25 @@ export class UpdateAgentDto {
   @ValidateNested()
   @Type(() => RagSettingsDto)
   ragSettings?: RagSettingsDto;
+
+  @ApiPropertyOptional({
+    description: 'Conversation scoping mode for anonymous WS clients and Connection Worker users. Authenticated WS users select conversation manually and are not affected.',
+    enum: ['per-user', 'per-session', 'shared'],
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['per-user', 'per-session', 'shared'])
+  conversationMode?: AgentConversationMode;
+
+  @ApiPropertyOptional({
+    description: 'Session inactivity timeout in ms for per-session mode (default: 1800000 = 30 minutes)',
+    required: false,
+    example: 1800000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(60000)
+  sessionTimeoutMs?: number;
 
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
