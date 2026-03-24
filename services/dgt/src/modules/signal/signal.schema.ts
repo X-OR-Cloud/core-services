@@ -94,6 +94,17 @@ export class Signal extends BaseSchema {
 
   @Prop({ type: Object })
   llmRawResponse: Record<string, any>;
+
+  /**
+   * Thời điểm bot đã pick up signal này để execute trade.
+   * Dùng làm atomic idempotency guard: chỉ set 1 lần, không reset.
+   */
+  @Prop({ type: Date })
+  botExecutedAt: Date;
+
+  /** Bot đã thực hiện execute signal này */
+  @Prop({ type: Types.ObjectId, ref: 'Bot' })
+  executedByBotId: Types.ObjectId;
 }
 
 export const SignalSchema = SchemaFactory.createForClass(Signal);
@@ -111,3 +122,5 @@ SignalSchema.set('toObject', { virtuals: true });
 SignalSchema.index({ accountId: 1, asset: 1, timeframe: 1, status: 1 });
 SignalSchema.index({ accountId: 1, createdAt: -1 });
 SignalSchema.index({ status: 1, expiresAt: 1 });
+// BotExecutionWorker dùng index này để query signal chưa bị execute bởi bot
+SignalSchema.index({ status: 1, botExecutedAt: 1 });

@@ -7,6 +7,7 @@ import { Trade, TradeDocument } from './trade.schema';
 import { Position, PositionDocument } from '../position/position.schema';
 import { Account, AccountDocument } from '../account/account.schema';
 import { Signal, SignalDocument } from '../signal/signal.schema';
+import { ExchangeAdapterFactory } from '../../exchange/exchange-adapter.factory';
 
 export class ExecuteFromSignalDto {
   signalId: string;
@@ -22,6 +23,7 @@ export class TradeExecutionService {
     @InjectModel(Position.name) private readonly positionModel: Model<PositionDocument>,
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(Signal.name) private readonly signalModel: Model<SignalDocument>,
+    private readonly adapterFactory: ExchangeAdapterFactory,
   ) {}
 
   async executeFromSignal(
@@ -59,7 +61,7 @@ export class TradeExecutionService {
       throw new BadRequestException('Cannot execute a HOLD signal.');
     }
 
-    // 3. Find account
+    // 3. Find account (raw — cần apiKey/apiSecret chưa mask)
     const accountQuery: Record<string, any> = { 'owner.userId': userId };
     if (accountId) {
       accountQuery['_id'] = accountId;
@@ -77,51 +79,77 @@ export class TradeExecutionService {
       throw new BadRequestException(`Insufficient balance. Available: $${account.balance}`);
     }
 
-    // 6. Create Order (paper trading — simulate immediate market fill)
+    // 6. Get exchange adapter và đặt lệnh
+    const adapter = this.adapterFactory.createAdapter(account as any);
+
+    const orderResult = await adapter.placeMarketOrder({
+      symbol: signal.asset,
+      side: signal.signalType as 'BUY' | 'SELL',
+      type: 'MARKET',
+      quantity,
+      // Fallback price cho LocalSimulationAdapter
+      price: signal.priceAtCreation || 0,
+    });
+
+    // 7. Resolve filled price: dùng giá từ exchange, fallback về signal price
+    const filledPrice = orderResult.averageFilledPrice || signal.priceAtCreation || 0;
+    const filledQty = orderResult.filledQuantity || quantity;
+
+    // 8. Create Order record
     const order = await this.orderModel.create({
       accountId: account._id,
       symbol: signal.asset,
       side: signal.signalType === 'BUY' ? 'buy' : 'sell',
       orderType: 'market',
       quantity,
-      status: 'filled',
-      filledQuantity: quantity,
-      averageFilledPrice: signal.priceAtCreation || 0,
-      exchange: 'paper',
+      status: orderResult.status === 'filled' ? 'filled' : 'pending',
+      filledQuantity: filledQty,
+      averageFilledPrice: filledPrice,
+      exchange: account.exchange || 'binance',
+      exchangeOrderId: orderResult.exchangeOrderId,
+      fees: orderResult.fees,
+      feeAsset: orderResult.feeAsset,
       source: 'manual',
       signalId: signal._id,
-      filledAt: new Date(),
+      filledAt: orderResult.filledAt || new Date(),
       owner: { userId, orgId: context.orgId },
     });
 
-    // 7. Create Trade record
+    // 9. Create Trade record
     await this.tradeModel.create({
       accountId: account._id,
       orderId: order._id,
       symbol: signal.asset,
       side: order.side,
-      filledPrice: order.averageFilledPrice,
-      filledQuantity: quantity,
-      notionalUsd: (order.averageFilledPrice || 0) * quantity,
-      fees: 0,
+      filledPrice,
+      filledQuantity: filledQty,
+      notionalUsd: filledPrice * filledQty,
+      fees: orderResult.fees,
       executedAt: new Date(),
       owner: { userId, orgId: context.orgId },
     });
 
-    // 8. Calculate SL/TP prices from signal percentages
-    // TODO: use bot config when available
-    const entryPrice = order.averageFilledPrice || signal.priceAtCreation || 0;
-    const slPrice = signal.signalType === 'BUY' ? entryPrice * 0.98 : entryPrice * 1.02;
-    const tpPrice = signal.signalType === 'BUY' ? entryPrice * 1.04 : entryPrice * 0.96;
+    // 10. Calculate SL/TP từ bot config (fallback về % cố định nếu không có bot)
+    const entryPrice = filledPrice;
+    const slPct = signal.stopLoss || 2;   // % từ signal hoặc default 2%
+    const tpPct = signal.takeProfit || 4; // % từ signal hoặc default 4%
+    const slPrice =
+      signal.signalType === 'BUY'
+        ? entryPrice * (1 - slPct / 100)
+        : entryPrice * (1 + slPct / 100);
+    const tpPrice =
+      signal.signalType === 'BUY'
+        ? entryPrice * (1 + tpPct / 100)
+        : entryPrice * (1 - tpPct / 100);
 
-    // 9. Create Position
+    // 11. Create Position
     const position = await this.positionModel.create({
       accountId: account._id,
       symbol: signal.asset,
       side: signal.signalType === 'BUY' ? 'long' : 'short',
       entryPrice,
-      quantity,
-      notionalUsd: entryPrice * quantity,
+      quantity: filledQty,
+      notionalUsd: entryPrice * filledQty,
       currentPrice: entryPrice,
       unrealizedPnl: 0,
       unrealizedPnlPct: 0,
@@ -135,14 +163,14 @@ export class TradeExecutionService {
       owner: { userId, orgId: context.orgId },
     });
 
-    // 10. Update account balance (deduct for BUY)
+    // 12. Update account balance (deduct for BUY)
     if (signal.signalType === 'BUY') {
       await this.accountModel.findByIdAndUpdate(account._id, {
-        $inc: { balance: -(entryPrice * quantity) },
+        $inc: { balance: -(entryPrice * filledQty) },
       });
     }
 
-    // 11. Update signal status to EXECUTED
+    // 13. Update signal status to EXECUTED
     await this.signalModel.findByIdAndUpdate(signal._id, {
       status: 'EXECUTED',
       executedAt: new Date(),

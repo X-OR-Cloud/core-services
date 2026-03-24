@@ -8,6 +8,7 @@ import { OrderModule } from '../order/order.module';
 import { PositionModule } from '../position/position.module';
 import { AccountModule } from '../account/account.module';
 import { SignalModule } from '../signal/signal.module';
+import { ExchangeModule } from '../../exchange/exchange.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SignalModule } from '../signal/signal.module';
     PositionModule,
     AccountModule,
     SignalModule,
+    ExchangeModule,
   ],
   controllers: [TradeController],
   providers: [TradeService, TradeExecutionService],

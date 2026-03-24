@@ -12,11 +12,22 @@ import { AccountModule } from '../modules/account/account.module';
 import { MarketPriceModule } from '../modules/market-price/market-price.module';
 import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
 
+// Group 3: Trading (dùng bởi BotExecutionWorker)
+import { TradeModule } from '../modules/trade/trade.module';
+
 // Group 5: AI Signal
 import { SignalModule } from '../modules/signal/signal.module';
+import { BotModule } from '../modules/bot/bot.module';
+import { BotActivityLogModule } from '../modules/bot-activity-log/bot-activity-log.module';
 
 // Queue processors
 import { SignalProcessorsModule } from '../queues/signal-processors.module';
+
+// Workers
+import { BotExecutionWorker } from '../workers/bot-execution.worker';
+
+// Exchange adapter factory
+import { ExchangeModule } from '../exchange/exchange.module';
 
 @Module({
   imports: [
@@ -43,11 +54,20 @@ import { SignalProcessorsModule } from '../queues/signal-processors.module';
     MarketPriceModule,
     TechnicalIndicatorModule,
 
+    // Group 3: Trading (BotExecutionWorker → TradeExecutionService)
+    TradeModule,
+
     // Group 5: AI Signal
     SignalModule,
+    BotModule,
+    BotActivityLogModule,
+
+    // Exchange adapter factory
+    ExchangeModule,
 
     // Processors & Collectors
     SignalProcessorsModule,
   ],
+  providers: [BotExecutionWorker],
 })
 export class AppSignalModule {}
