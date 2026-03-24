@@ -65,7 +65,7 @@ export class RoutingService {
     const orgId = (connection as any).owner?.orgId || '';
 
     // Read conversationMode from agent (single source of truth across WS and Connection Worker)
-    const agent = await this.agentService.findById(route.agentId as any, {} as any);
+    const agent = await this.agentService.findByIdInternal(route.agentId);
     const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
     const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
 
