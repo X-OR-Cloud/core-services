@@ -13,6 +13,8 @@ import { ConfigurationModule } from '../configuration/configuration.module';
 import { DeploymentModule } from '../deployment/deployment.module';
 import { NodeModule } from '../node/node.module';
 import { ReminderModule } from '../reminder/reminder.module';
+import { ApiKeyModule } from '../api-key/api-key.module';
+import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 
 @Module({
   imports: [
@@ -36,9 +38,10 @@ import { ReminderModule } from '../reminder/reminder.module';
     DeploymentModule, // Import to access DeploymentService
     NodeModule, // Import to access NodeGateway for sending agent.start commands
     ReminderModule, // Import to access ReminderService for heartbeat reminder injection
+    ApiKeyModule,
   ],
   controllers: [AgentController],
-  providers: [AgentService],
+  providers: [AgentService, ApiKeyOrJwtGuard],
   exports: [AgentService, MongooseModule],
 })
 export class AgentModule {}
