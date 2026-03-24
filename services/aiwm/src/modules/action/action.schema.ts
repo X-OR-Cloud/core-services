@@ -34,6 +34,19 @@ export interface ActionReference {
   label: string;          // display name shown in UI
 }
 
+export interface ActionSource {
+  type: 'rag' | 'web' | 'tool' | 'memory';  // extensible source types
+  content: string;             // snippet used to augment the response
+  score?: number;              // relevance score (rag, web search)
+  label?: string;              // display name for UI
+  // rag-specific
+  collectionId?: string;
+  // web-specific
+  url?: string;
+  // tool-specific
+  toolName?: string;
+}
+
 export interface ActionMetadata {
   // tool_use
   toolName?: string;
@@ -52,6 +65,9 @@ export interface ActionMetadata {
 
   // references — resources/text selected by user on UI
   references?: ActionReference[];
+
+  // sources — context sources used to generate the response (rag, web, tool, memory)
+  sources?: ActionSource[];
 
   // inbound from external provider (Discord/Telegram)
   raw?: any;                  // raw platform event object

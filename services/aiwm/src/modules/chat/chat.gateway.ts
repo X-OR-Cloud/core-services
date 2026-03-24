@@ -546,6 +546,7 @@ export class ChatGateway
       type?: string;
       attachments?: Array<{ type: string; url: string; filename?: string; mimeType?: string; size?: number }>;
       references?: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }>;
+      sources?: Array<{ type: string; content: string; score?: number; label?: string; collectionId?: string; url?: string; toolName?: string }>;
       workId?: string;
     },
     @ConnectedSocket() client: Socket,
@@ -598,10 +599,11 @@ export class ChatGateway
             displayName: isAgent ? agentId : (client.data.userId || 'user'),
           },
           content: dto.content,
-          metadata: (dto.attachments?.length || dto.references?.length || skipAgent)
+          metadata: (dto.attachments?.length || dto.references?.length || dto.sources?.length || skipAgent)
             ? {
                 ...(dto.attachments?.length ? { attachments: dto.attachments } : {}),
                 ...(dto.references?.length ? { references: dto.references } : {}),
+                ...(dto.sources?.length ? { sources: dto.sources } : {}),
                 ...(skipAgent ? { skipAgent: true } : {}),
               }
             : undefined,
