@@ -263,7 +263,7 @@ export class ChatGateway
     });
 
     // Anonymous always has agentId in token — auto findOrCreate based on agent's conversationMode
-    const agent = await this.agentService.findById(agentId, {} as any);
+    const agent = await this.agentService.findByIdInternal(agentId);
     const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
     const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
     const conversation = await this.conversationService.resolveConversation({
