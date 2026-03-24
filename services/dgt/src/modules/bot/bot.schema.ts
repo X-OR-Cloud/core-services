@@ -14,7 +14,7 @@ export enum BotStatus {
 }
 
 export enum TradingMode {
-  SANDBOX = 'sandbox',
+  PAPER = 'paper',
   LIVE = 'live',
 }
 
@@ -34,7 +34,7 @@ export class Bot extends BaseSchema {
   @Prop({ required: true, enum: BotStatus, default: BotStatus.CREATED })
   status: BotStatus;
 
-  @Prop({ required: true, enum: TradingMode, default: TradingMode.SANDBOX })
+  @Prop({ required: true, enum: TradingMode, default: TradingMode.PAPER })
   tradingMode: TradingMode;
 
   @Prop({ required: true, default: 'PAXGUSDT' })

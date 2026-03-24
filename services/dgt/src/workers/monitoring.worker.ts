@@ -7,6 +7,7 @@ import { Account, AccountDocument } from '../modules/account/account.schema';
 import { Order, OrderDocument, OrderSide, OrderType, OrderStatus, OrderSource } from '../modules/order/order.schema';
 import { MarketPrice, MarketPriceDocument } from '../modules/market-price/market-price.schema';
 import { NotificationService } from '../shared/notification.service';
+import { ExchangeAdapterFactory } from '../exchange/exchange-adapter.factory';
 
 @Injectable()
 export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -20,6 +21,7 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     @InjectModel(MarketPrice.name) private readonly marketPriceModel: Model<MarketPriceDocument>,
     private readonly notificationService: NotificationService,
+    private readonly adapterFactory: ExchangeAdapterFactory,
   ) {}
 
   onApplicationBootstrap() {
@@ -111,7 +113,39 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
         ? (exitPrice - position.entryPrice) * position.quantity
         : (position.entryPrice - exitPrice) * position.quantity;
 
-    // Create close order
+    // Lấy account để tạo adapter đúng
+    const account = await this.accountModel.findById(position.accountId).lean().exec();
+
+    let exchangeOrderId: string | undefined;
+    let fees = 0;
+    let feeAsset = 'USDT';
+    const closeSide: 'BUY' | 'SELL' = position.side === 'long' ? 'SELL' : 'BUY';
+
+    if (account) {
+      try {
+        const adapter = this.adapterFactory.createAdapter(account as any);
+        const result = await adapter.placeMarketOrder({
+          symbol: position.symbol,
+          side: closeSide,
+          type: 'MARKET',
+          quantity: position.quantity,
+          price: exitPrice, // dùng cho LocalSimulationAdapter
+        });
+        exchangeOrderId = result.exchangeOrderId;
+        fees = result.fees;
+        feeAsset = result.feeAsset;
+        // Dùng giá thực tế từ exchange nếu có
+        if (result.averageFilledPrice > 0) {
+          exitPrice = result.averageFilledPrice;
+        }
+      } catch (err: any) {
+        this.logger.error(
+          `[Monitor] Failed to place close order via exchange for position ${position._id}: ${err?.message}. Closing locally.`,
+        );
+      }
+    }
+
+    // Create close order record
     await this.orderModel.create({
       accountId: position.accountId,
       symbol: position.symbol,
@@ -121,7 +155,10 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
       status: OrderStatus.FILLED,
       filledQuantity: position.quantity,
       averageFilledPrice: exitPrice,
-      exchange: 'paper',
+      exchange: account?.exchange || 'binance',
+      exchangeOrderId,
+      fees,
+      feeAsset,
       source: OrderSource.SYSTEM,
       filledAt: new Date(),
       owner: { userId: 'system', orgId: 'system' },
@@ -139,10 +176,12 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
     });
 
     // Update account balance (add proceeds for long, deduct for short)
-    const proceeds = exitPrice * position.quantity;
-    await this.accountModel.findByIdAndUpdate(position.accountId, {
-      $inc: { balance: proceeds },
-    });
+    if (account) {
+      const proceeds = exitPrice * position.quantity;
+      await this.accountModel.findByIdAndUpdate(position.accountId, {
+        $inc: { balance: proceeds },
+      });
+    }
 
     this.logger.info(
       `[Monitor] Closed position ${position._id} (${closeReason}) at ${exitPrice}, PnL: ${realizedPnl.toFixed(2)}`,

@@ -7,6 +7,7 @@ import { OrderModule } from '../modules/order/order.module';
 import { PositionModule } from '../modules/position/position.module';
 import { MarketPriceModule } from '../modules/market-price/market-price.module';
 import { MonitoringWorker } from '../workers/monitoring.worker';
+import { ExchangeModule } from '../exchange/exchange.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { MonitoringWorker } from '../workers/monitoring.worker';
     OrderModule,
     PositionModule,
     MarketPriceModule,
+    ExchangeModule,
   ],
   providers: [MonitoringWorker],
 })

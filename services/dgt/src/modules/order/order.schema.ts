@@ -64,10 +64,10 @@ export class Order extends BaseSchema {
   @Prop()
   averageFilledPrice: number;
 
-  @Prop({ required: true, default: 'paper' })
+  @Prop({ required: true, default: 'binance' })
   exchange: string;
 
-  @Prop({ required: true, enum: OrderSource, default: OrderSource.PAPER })
+  @Prop({ required: true, enum: OrderSource, default: OrderSource.MANUAL })
   source: string;
 
   @Prop({ type: Date })
@@ -78,6 +78,18 @@ export class Order extends BaseSchema {
 
   @Prop()
   rejectionReason: string;
+
+  /** ID lệnh trả về từ sàn (null với LocalSimulationAdapter) */
+  @Prop()
+  exchangeOrderId: string;
+
+  /** Phí giao dịch (tính bằng feeAsset) */
+  @Prop({ default: 0 })
+  fees: number;
+
+  /** Asset dùng để trả phí, e.g. 'USDT', 'BNB' */
+  @Prop({ default: 'USDT' })
+  feeAsset: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Bot' })
   botId: Types.ObjectId;
