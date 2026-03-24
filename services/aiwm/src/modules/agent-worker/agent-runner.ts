@@ -832,7 +832,7 @@ export class AgentRunner {
       conversationId,
       role: 'assistant',
       type: 'tool_use',
-      content: 'knowledge_search',
+      content: userContent,
       metadata: {
         toolName: 'knowledge_search',
         toolInput: { query: userContent, collectionIds },
