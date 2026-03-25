@@ -262,13 +262,18 @@ export class ChatGateway
       connectedAt: new Date().toISOString(),
     });
 
-    // Anonymous always has agentId in token — auto findOrCreate
-    const conversation = await this.conversationService.findOrCreateForUser(
-      anonymousId,
-      agentId,
+    // Anonymous always has agentId in token — auto findOrCreate based on agent's conversationMode
+    const agent = await this.agentService.findByIdInternal(agentId);
+    const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
+    const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
+    const conversation = await this.conversationService.resolveConversation({
       orgId,
-      'anonymous',
-    );
+      agentId,
+      userId: anonymousId,
+      mode: conversationMode,
+      sessionTimeoutMs,
+      userType: 'anonymous',
+    });
     const conversationId = (conversation as any)._id.toString();
 
     await this._joinConversationRoom(client, conversationId, agentId);
@@ -541,6 +546,7 @@ export class ChatGateway
       type?: string;
       attachments?: Array<{ type: string; url: string; filename?: string; mimeType?: string; size?: number }>;
       references?: Array<{ app?: string; page?: string; section?: string; resourceType: string; resourceId?: string; content?: string; label: string }>;
+      sources?: Array<{ type: string; content: string; score?: number; label?: string; collectionId?: string; url?: string; toolName?: string }>;
       workId?: string;
     },
     @ConnectedSocket() client: Socket,
@@ -593,10 +599,11 @@ export class ChatGateway
             displayName: isAgent ? agentId : (client.data.userId || 'user'),
           },
           content: dto.content,
-          metadata: (dto.attachments?.length || dto.references?.length || skipAgent)
+          metadata: (dto.attachments?.length || dto.references?.length || dto.sources?.length || skipAgent)
             ? {
                 ...(dto.attachments?.length ? { attachments: dto.attachments } : {}),
                 ...(dto.references?.length ? { references: dto.references } : {}),
+                ...(dto.sources?.length ? { sources: dto.sources } : {}),
                 ...(skipAgent ? { skipAgent: true } : {}),
               }
             : undefined,

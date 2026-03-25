@@ -10,7 +10,6 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Multer } from 'multer';
 import { KnowledgeFile } from './knowledge-file.schema';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { KnowledgeCollectionService } from '../knowledge-collection/knowledge-collection.service';
@@ -54,7 +53,7 @@ export class KnowledgeFileService extends BaseService<KnowledgeFile> {
    * Save uploaded file to disk and create DB record
    */
   async uploadFile(
-    file: Multer.File,
+    file: Express.Multer.File,
     collectionId: string,
     displayName: string | undefined,
     context: RequestContext,
@@ -163,6 +162,16 @@ export class KnowledgeFileService extends BaseService<KnowledgeFile> {
 
     this.logger.log(`Reindex triggered for file: ${id}`);
     return { ...(file as any), embeddingStatus: 'pending', chunkCount: 0 };
+  }
+
+  async reindexCollection(collectionId: string, context: RequestContext): Promise<{ queued: number }> {
+    const result = await this.fileModel.updateMany(
+      { collectionId, isDeleted: false },
+      { $set: { embeddingStatus: 'pending', errorMessage: undefined, chunkCount: 0 } },
+    );
+
+    this.logger.log(`Reindex all triggered for collection ${collectionId}: ${result.modifiedCount} files queued`);
+    return { queued: result.modifiedCount };
   }
 
   /**

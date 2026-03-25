@@ -5,6 +5,7 @@ import { Actor } from '../action/action.schema';
 import { ActorRole } from '../action/action.enum';
 import { ConversationService } from '../conversation/conversation.service';
 import { IamLookupService } from './iam-lookup.service';
+import { AgentService } from '../agent/agent.service';
 
 export interface ResolvedRoute {
   agentId: string;
@@ -24,6 +25,7 @@ export class RoutingService {
   constructor(
     private readonly conversationService: ConversationService,
     private readonly iamLookupService: IamLookupService,
+    private readonly agentService: AgentService,
   ) {}
 
   /**
@@ -60,19 +62,21 @@ export class RoutingService {
 
     // Build conversation key: prefer IAM userId, fallback to external composite ID
     const conversationUserId = iamUserId ?? `${msg.provider}:${msg.externalUserId}`;
-    const connectionId = String((connection as any)._id);
     const orgId = (connection as any).owner?.orgId || '';
-    const conversationMode = route.conversationMode ?? 'connection';
 
-    let conversation: any;
-    if (conversationMode === 'shared') {
-      conversation = await this.conversationService.findOrCreateShared(connectionId, route.agentId, orgId);
-    } else if (conversationMode === 'user') {
-      conversation = await this.conversationService.findOrCreateForUser(conversationUserId, route.agentId, orgId, iamUserType);
-    } else {
-      // 'connection' (default)
-      conversation = await this.conversationService.findOrCreateForConnection(connectionId, conversationUserId, route.agentId, orgId, iamUserType);
-    }
+    // Read conversationMode from agent (single source of truth across WS and Connection Worker)
+    const agent = await this.agentService.findByIdInternal(route.agentId);
+    const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
+    const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
+
+    const conversation = await this.conversationService.resolveConversation({
+      orgId,
+      agentId: route.agentId,
+      userId: conversationUserId,
+      mode: conversationMode,
+      sessionTimeoutMs,
+      userType: iamUserType,
+    });
 
     const actor: Actor = {
       role: ActorRole.USER,

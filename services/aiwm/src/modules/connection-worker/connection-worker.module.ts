@@ -5,12 +5,14 @@ import { IamLookupService } from './iam-lookup.service';
 import { ConnectionModule } from '../connection/connection.module';
 import { ActionModule } from '../action/action.module';
 import { ConversationModule } from '../conversation/conversation.module';
+import { AgentModule } from '../agent/agent.module';
 
 @Module({
   imports: [
     ConnectionModule,
     ActionModule,
     ConversationModule,
+    AgentModule,
   ],
   providers: [ConnectionWorkerService, RoutingService, IamLookupService],
   exports: [ConnectionWorkerService],

@@ -2242,6 +2242,15 @@ echo "Installation script placeholder - implement actual logic"
   }
 
   /**
+   * Fetch agent by id without RBAC — for internal/system use only (e.g. anonymous WS connect).
+   */
+  async findByIdInternal(agentId: string): Promise<any> {
+    return this.agentModel
+      .findOne({ _id: agentId, isDeleted: false })
+      .lean();
+  }
+
+  /**
    * Append a debug log entry to an agent (max 100, auto-rotate)
    */
   async addLog(

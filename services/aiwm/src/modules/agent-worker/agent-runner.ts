@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { io, Socket } from 'socket.io-client';
 import { generateText, stepCountIs } from 'ai';
+import { ActionSource } from '../action/action.schema';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createMCPClient } from '@ai-sdk/mcp';
@@ -550,7 +551,9 @@ export class AgentRunner {
       }
 
       // RAG: inject knowledge context into the last user message before LLM call
-      history = await this.augmentWithRagContext(history, content);
+      const ragResult = await this.augmentWithRagContext(history, content, conversationId, this.currentWorkId);
+      history = ragResult.history;
+      const ragSources = ragResult.sources;
 
       const systemPrompt = this.config.instruction?.systemPrompt ?? '';
       this.logger.debug(`[system] instructionId=${this.config.instruction?.id} promptLen=${systemPrompt.length} prompt="${systemPrompt.slice(0, 120).replace(/\n/g, '\\n')}..."`);
@@ -629,6 +632,7 @@ export class AgentRunner {
           conversationId,
           role: 'assistant',
           content: result.text,
+          ...(ragSources.length ? { sources: ragSources } : {}),
           ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
         });
         this.logger.debug(`[emit] message:send done`);
@@ -805,16 +809,40 @@ export class AgentRunner {
    *   1. Heuristic — skip if RAG disabled, no collections, short message, or slash command
    *   2. Vector search — minScore filter in CbmKnowledgeService acts as relevance gate
    */
-  private async augmentWithRagContext(history: any[], userContent: string): Promise<any[]> {
+  private async augmentWithRagContext(
+    history: any[],
+    userContent: string,
+    conversationId: string,
+    workId?: string | null,
+  ): Promise<{ history: any[]; sources: ActionSource[] }> {
+    const empty = { history, sources: [] };
+
     // Tầng 1: Heuristic checks (0 cost)
-    if (!this.config.ragEnabled) return history;
-    if (!this.config.ragCollections?.length) return history;
-    if (!this.config.searchKnowledgeInternal) return history;
-    if (userContent.length < 15) return history;
-    if (userContent.startsWith('/')) return history;
+    if (!this.config.ragEnabled) return empty;
+    if (!this.config.ragCollections?.length) return empty;
+    if (!this.config.searchKnowledgeInternal) return empty;
+    if (userContent.length < 15) return empty;
+    if (userContent.startsWith('/')) return empty;
+
+    const toolUseId = `rag_${Date.now()}`;
+    const collectionIds = this.config.ragCollections.map((c) => c.collectionId);
+
+    // Emit tool_use — RAG search started
+    this.socket?.emit('message:send', {
+      conversationId,
+      role: 'assistant',
+      type: 'tool_use',
+      content: `🧠 **Knowledge Search**\n${userContent}`,
+      metadata: {
+        toolName: 'knowledge_search',
+        toolInput: { query: userContent, collectionIds },
+        toolUseId,
+      },
+      ...(workId ? { workId } : {}),
+    });
 
     // Tầng 2: Vector search across all collections
-    const allChunks: Array<{ score: number; content: string }> = [];
+    const allChunks: Array<{ score: number; content: string; collectionId: string }> = [];
     for (const col of this.config.ragCollections) {
       const results = await this.config.searchKnowledgeInternal(
         col.collectionId,
@@ -822,14 +850,51 @@ export class AgentRunner {
         col.topK,
         col.minScore,
       );
-      allChunks.push(...results);
+      allChunks.push(...results.map((r) => ({ ...r, collectionId: col.collectionId })));
     }
 
-    if (!allChunks.length) return history;
+    if (!allChunks.length) {
+      // Emit tool_result — no results found
+      this.socket?.emit('message:send', {
+        conversationId,
+        role: 'assistant',
+        type: 'tool_result',
+        content: 'No relevant knowledge found.',
+        metadata: {
+          toolName: 'knowledge_search',
+          toolResult: { chunks: [] },
+          toolResultId: toolUseId,
+        },
+        ...(workId ? { workId } : {}),
+      });
+      return empty;
+    }
 
     // Sort by score desc, cap at max topK across collections
     const maxTopK = Math.max(...this.config.ragCollections.map((c) => c.topK));
     const topChunks = allChunks.sort((a, b) => b.score - a.score).slice(0, maxTopK);
+
+    // Build ActionSource records for audit trail
+    const sources: ActionSource[] = topChunks.map((c) => ({
+      type: 'rag',
+      content: c.content,
+      score: c.score,
+      collectionId: c.collectionId,
+    }));
+
+    // Emit tool_result — chunks retrieved
+    this.socket?.emit('message:send', {
+      conversationId,
+      role: 'assistant',
+      type: 'tool_result',
+      content: `Retrieved ${topChunks.length} knowledge chunk(s).`,
+      metadata: {
+        toolName: 'knowledge_search',
+        toolResult: { chunks: topChunks.length, sources },
+        toolResultId: toolUseId,
+      },
+      ...(workId ? { workId } : {}),
+    });
 
     // Build XML context block
     const contextBlock = [
@@ -852,6 +917,6 @@ export class AgentRunner {
 
     this.writeLog('info', 'RAG context injected', { chunks: topChunks.length });
     this.logger.debug(`[rag] injected chunks=${topChunks.length} scores=[${topChunks.map((c) => c.score.toFixed(2)).join(', ')}]`);
-    return augmented;
+    return { history: augmented, sources };
   }
 }

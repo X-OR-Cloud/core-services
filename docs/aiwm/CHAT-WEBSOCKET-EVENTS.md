@@ -155,6 +155,7 @@ Side effects: joins `conversation:<id>` room, notifies room with `user:joined`.
       "agentId": "...",
       "attachments": [...],
       "references": [...],
+      "sources": [...],
       "skipAgent": true,
       "createdAt": "2026-03-18T..."
     }
@@ -254,8 +255,11 @@ No side effects.
       "size": 204800
     }
   ],
-  "references": [                     // optional
+  "references": [                     // optional — user-provided context
     { "resourceType": "document", "resourceId": "abc", "label": "Spec v2", "content": "..." }
+  ],
+  "sources": [                        // optional — system-generated sources (agent only)
+    { "type": "rag", "content": "...", "score": 0.92, "collectionId": "507f..." }
   ]
 }
 
@@ -425,7 +429,18 @@ The periodic timer heartbeat continues independently and handles the `idle → b
       "size": 0
     }
   ],
-  "references": [...]        // if any
+  "references": [...],       // if any — user-provided context
+  "sources": [               // if any — system-generated sources used to produce the response
+    {
+      "type": "rag" | "web" | "tool" | "memory",
+      "content": "...",      // snippet used
+      "score": 0.92,         // relevance score (rag/web)
+      "collectionId": "...", // rag only
+      "url": "...",          // web only
+      "toolName": "...",     // tool only
+      "label": "..."         // optional display name
+    }
+  ]
 }
 ```
 

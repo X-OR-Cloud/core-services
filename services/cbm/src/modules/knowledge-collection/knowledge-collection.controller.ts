@@ -27,8 +27,11 @@ import {
   UpdateKnowledgeCollectionDto,
   SearchKnowledgeCollectionDto,
 } from './knowledge-collection.dto';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
+import { KnowledgeFile } from '../knowledge-file/knowledge-file.schema';
 
 @ApiTags('Knowledge Collections')
 @ApiBearerAuth()
@@ -38,6 +41,7 @@ export class KnowledgeCollectionController {
     private readonly collectionService: KnowledgeCollectionService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingService: EmbeddingService,
+    @InjectModel(KnowledgeFile.name) private readonly fileModel: Model<KnowledgeFile>,
   ) {}
 
   @Post()
@@ -95,6 +99,19 @@ export class KnowledgeCollectionController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.collectionService.softDelete(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/reindex-all')
+  @ApiOperation({ summary: 'Reset all files in collection to pending — triggers full re-embedding' })
+  @UseGuards(JwtAuthGuard)
+  async reindexAll(
+    @Param('id') id: string,
+  ) {
+    const result = await this.fileModel.updateMany(
+      { collectionId: id, isDeleted: false },
+      { $set: { embeddingStatus: 'pending', errorMessage: undefined, chunkCount: 0 } },
+    );
+    return { queued: result.modifiedCount };
   }
 
   @Post(':id/search')
