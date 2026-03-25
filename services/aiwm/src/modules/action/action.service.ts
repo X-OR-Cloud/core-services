@@ -31,7 +31,7 @@ export class ActionService extends BaseService<Action> {
     context: RequestContext
   ): Promise<FindManyResult<Action>> {
     options.statisticFields = ['status', 'type', 'actor']; // Specify fields for statistics aggregation
-    options.sort = { createdAt: -1 }; // Default sorting by updatedAt descending
+    if (!options.sort) options.sort = { createdAt: -1 }; // Default sorting by updatedAt descending
     return await super.findAll(options, context);
   }
 
@@ -127,12 +127,19 @@ export class ActionService extends BaseService<Action> {
       before?: string;
       includeInternal?: boolean;
     } = {}
-  ): Promise<{ data: Action[]; total: number; page: number; limit: number; hasMore: boolean }> {
+  ): Promise<{
+    data: Action[];
+    total: number;
+    page: number;
+    limit: number;
+    hasMore: boolean;
+  }> {
     const limit = Math.min(options.limit ?? 50, 100);
     const page = options.page ?? 1;
-    const typeFilter = (options.includeInternal ?? true)
-      ? {}
-      : { type: { $in: ['message', 'notice'] } };
+    const typeFilter =
+      options.includeInternal ?? true
+        ? {}
+        : { type: { $in: ['message', 'notice'] } };
 
     if (options.before) {
       const filter = {
@@ -147,9 +154,17 @@ export class ActionService extends BaseService<Action> {
         .limit(limit)
         .exec();
 
-      const total = await this.model.countDocuments({ conversationId, isDeleted: false, ...typeFilter }).exec();
+      const total = await this.model
+        .countDocuments({ conversationId, isDeleted: false, ...typeFilter })
+        .exec();
       const reversed = data.reverse();
-      return { data: reversed as unknown as Action[], total, page: 1, limit, hasMore: data.length === limit };
+      return {
+        data: reversed as unknown as Action[],
+        total,
+        page: 1,
+        limit,
+        hasMore: data.length === limit,
+      };
     }
 
     const filter = { conversationId, isDeleted: false, ...typeFilter };
@@ -157,11 +172,22 @@ export class ActionService extends BaseService<Action> {
 
     // Fetch newest-first then reverse so the returned array is always chronological (oldest→newest)
     const [data, total] = await Promise.all([
-      this.model.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).exec(),
+      this.model
+        .find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
       this.model.countDocuments(filter).exec(),
     ]);
 
-    return { data: data.reverse() as unknown as Action[], total, page, limit, hasMore: skip + data.length < total };
+    return {
+      data: data.reverse() as unknown as Action[],
+      total,
+      page,
+      limit,
+      hasMore: skip + data.length < total,
+    };
   }
 
   /**
