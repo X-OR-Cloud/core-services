@@ -930,6 +930,36 @@ export class AgentService extends BaseService<Agent> {
             );
           }
 
+          // Build members block
+          let membersBlock = '';
+          const members: Array<{ type: string; id: string; role: string }> =
+            data.members || [];
+          if (members.length > 0) {
+            const memberLines: string[] = [];
+            for (const member of members) {
+              if (member.type === 'agent') {
+                try {
+                  const agentData = await this.agentModel
+                    .findById(member.id)
+                    .select('code name instructionId')
+                    .lean();
+                  memberLines.push(
+                    `  - [agent] id=${member.id} code=${agentData?.code || 'N/A'} name=${agentData?.name || 'N/A'} instructionId=${agentData?.instructionId || 'N/A'} role=${member.role}`
+                  );
+                } catch {
+                  memberLines.push(
+                    `  - [agent] id=${member.id} role=${member.role}`
+                  );
+                }
+              } else {
+                memberLines.push(
+                  `  - [user] userId=${member.id} role=${member.role}`
+                );
+              }
+            }
+            membersBlock = `\n- Members (${members.length}):\n${memberLines.join('\n')}`;
+          }
+
           contextBlocks.push(
             `Project: ${data.name}\n` +
               `-ID: ${refId}\n` +
@@ -937,6 +967,7 @@ export class AgentService extends BaseService<Agent> {
               `-Timeline: ${startDate} → ${endDate}\n` +
               `-Description: ${data.description || 'N/A'}\n` +
               `-Tags: ${(data.tags || []).join(', ') || 'N/A'}` +
+              membersBlock +
               documentsBlock
           );
         } else if (refType === 'document') {
