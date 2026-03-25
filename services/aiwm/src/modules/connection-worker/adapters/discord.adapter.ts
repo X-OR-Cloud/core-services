@@ -120,6 +120,7 @@ export class DiscordAdapter extends BaseAdapter {
       provider: 'discord',
       externalUserId: msg.author.id,
       externalUsername: msg.author.username,
+      externalMessageId: msg.id,
       channelId: msg.channelId,
       serverId: msg.guildId ?? undefined,
       text: msg.content,

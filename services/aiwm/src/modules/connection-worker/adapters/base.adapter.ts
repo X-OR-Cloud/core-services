@@ -13,6 +13,7 @@ export interface NormalizedInbound {
   provider: string;
   externalUserId: string;
   externalUsername: string;
+  externalMessageId?: string; // Platform message ID — Discord: message.id, Telegram: update_id, used for dedup
   channelId: string;
   serverId?: string;          // Discord: guildId | Teams: teamId
   tenantId?: string;          // Teams only

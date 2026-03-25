@@ -20,6 +20,7 @@ export class ConnectionRunner {
   private readonly logger = new Logger(ConnectionRunner.name);
   private adapter: BaseAdapter | null = null;
   private running = false;
+  private readonly seenExternalMessageIds = new Set<string>();
 
   constructor(
     private readonly connection: Connection,
@@ -121,6 +122,19 @@ export class ConnectionRunner {
 
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {
     try {
+      // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
+      if (msg.externalMessageId) {
+        const dedupKey = `${msg.channelId}:${msg.externalMessageId}`;
+        if (this.seenExternalMessageIds.has(dedupKey)) {
+          this.logger.warn(`Duplicate inbound message skipped: ${dedupKey}`);
+          return;
+        }
+        this.seenExternalMessageIds.add(dedupKey);
+        if (this.seenExternalMessageIds.size > 500) {
+          this.seenExternalMessageIds.delete(this.seenExternalMessageIds.values().next().value!);
+        }
+      }
+
       const { resolved, skipReasons } = await this.routingService.resolve(msg, this.connection);
       if (!resolved) {
         this.writeLog('warn', `No route matched for channel ${msg.channelId}`, {

@@ -108,6 +108,7 @@ export class TelegramAdapter extends BaseAdapter {
       provider: 'telegram',
       externalUserId: String(msg.chat.id),
       externalUsername: msg.from?.username || msg.from?.first_name || 'unknown',
+      externalMessageId: String(msg.message_id),
       channelId: String(msg.chat.id),
       text,
       attachments,
