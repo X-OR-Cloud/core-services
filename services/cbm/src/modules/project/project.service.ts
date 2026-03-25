@@ -79,9 +79,19 @@ export class ProjectService extends BaseService<Project> {
         });
       }
       options = { ...existingFilter, $or: searchConditions };
-      delete options.search;
+    }
+    if (options.filter?.member) {
+      const memberFields = (options.filter?.member as string).split(':');
+      const memberType = memberFields[0];
+      const memberId = memberFields[1];
+      const memberFilter = { members: { $elemMatch: { type: memberType, id: memberId } } };
+
+      options.filter = { ...options.filter, ...memberFilter };
+      if (options.filter) delete options.filter.member;
     }
 
+    delete options.search;
+    console.log('Final query options after processing search and member filters:', options);
     const findResult = await super.findAll(options, context);
 
     // Apply access control to each project in the result
