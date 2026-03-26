@@ -79,6 +79,71 @@ export class SignalLlmCollector extends BaseCollector {
       { sort: { timestamp: -1 }, page: 1, limit: 8 },
     );
 
+    // Step 4.5: Build data snapshot — lưu giá trị thực tế đã dùng để generate signal
+    const firstCandle = candles[0] as any;
+    const lastCandle = candles[candles.length - 1] as any;
+    const latestSentiment = sentimentSignals[0] as any;
+    const dataSnapshot = {
+      indicator: indicator
+        ? {
+            timestamp: (indicator as any).timestamp,
+            rsi14: (indicator as any).rsi14,
+            macdLine: (indicator as any).macdLine,
+            macdSignal: (indicator as any).macdSignal,
+            macdHistogram: (indicator as any).macdHistogram,
+            ema9: (indicator as any).ema9,
+            ema20: (indicator as any).ema20,
+            ema50: (indicator as any).ema50,
+            ema200: (indicator as any).ema200,
+            sma20: (indicator as any).sma20,
+            bbUpper: (indicator as any).bbUpper,
+            bbMiddle: (indicator as any).bbMiddle,
+            bbLower: (indicator as any).bbLower,
+            atr14: (indicator as any).atr14,
+            atr14Pct: (indicator as any).atr14Pct,
+            volumeRatio: (indicator as any).volumeRatio,
+            hv30d: (indicator as any).hv30d,
+          }
+        : undefined,
+      macro:
+        macroIndicators.length > 0
+          ? macroIndicators.map((m: any) => ({
+              seriesId: m.seriesId,
+              name: m.name,
+              value: m.value,
+              unit: m.unit,
+              timestamp: m.timestamp,
+            }))
+          : undefined,
+      sentiment: latestSentiment
+        ? {
+            source: latestSentiment.source,
+            timestamp: latestSentiment.timestamp,
+            newsSentimentMean: latestSentiment.newsSentimentMean,
+            geopoliticalRiskScore: latestSentiment.geopoliticalRiskScore,
+            eventImpactLevel: latestSentiment.eventImpactLevel,
+            etfFlow7dOz: latestSentiment.etfFlow7dOz,
+            etfAumUsd: latestSentiment.etfAumUsd,
+            fundingRateAnnualized: latestSentiment.fundingRateAnnualized,
+            longShortRatio: latestSentiment.longShortRatio,
+            openInterestUsd: latestSentiment.openInterestUsd,
+          }
+        : undefined,
+      marketContext:
+        candles.length > 0
+          ? {
+              source: lastCandle?.source || 'binance_spot',
+              candleCount: candles.length,
+              fromTimestamp: firstCandle?.timestamp,
+              toTimestamp: lastCandle?.timestamp,
+              openPrice: firstCandle?.open,
+              highPrice: Math.max(...candles.map((c: any) => c.high ?? c.close)),
+              lowPrice: Math.min(...candles.map((c: any) => c.low ?? c.close)),
+              closePrice: lastCandle?.close,
+            }
+          : undefined,
+    };
+
     // Step 5: Fallback if insufficient data
     if (candles.length < 10) {
       this.logger.warn(
@@ -94,6 +159,7 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel: undefined,
         llmInput: null,
         llmRawResponse: null,
+        dataSnapshot,
       });
       this.systemActivityLogService.logActivity({
         workerType: SystemWorkerType.SIGNAL_GEN,
@@ -138,6 +204,7 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel: undefined,
         llmInput: null,
         llmRawResponse: null,
+        dataSnapshot,
       });
       this.systemActivityLogService.logActivity({
         workerType: SystemWorkerType.SIGNAL_GEN,
@@ -208,6 +275,7 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel,
         llmInput,
         llmRawResponse: { error: error.message, status, body },
+        dataSnapshot,
       });
       this.systemActivityLogService.logActivity({
         workerType: SystemWorkerType.SIGNAL_GEN,
@@ -244,6 +312,7 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel,
         llmInput,
         llmRawResponse,
+        dataSnapshot,
       });
       return;
     }
@@ -272,6 +341,7 @@ export class SignalLlmCollector extends BaseCollector {
       priceAtCreation: candles[candles.length - 1]?.close,
       llmInput,
       llmRawResponse,
+      dataSnapshot,
     });
 
     this.systemActivityLogService.logActivity({
@@ -312,6 +382,7 @@ export class SignalLlmCollector extends BaseCollector {
       priceAtCreation?: number;
       llmInput: Record<string, any> | null;
       llmRawResponse: Record<string, any> | null;
+      dataSnapshot?: Record<string, any>;
     },
   ): Promise<void> {
     const {
@@ -328,6 +399,7 @@ export class SignalLlmCollector extends BaseCollector {
       priceAtCreation,
       llmInput,
       llmRawResponse,
+      dataSnapshot,
     } = result;
 
     // Calculate confidenceLabel
@@ -398,6 +470,7 @@ export class SignalLlmCollector extends BaseCollector {
         priceAtCreation,
         llmInput,
         llmRawResponse,
+        dataSnapshot,
       },
       SYSTEM_CONTEXT,
     );

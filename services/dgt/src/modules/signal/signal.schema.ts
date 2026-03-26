@@ -96,6 +96,67 @@ export class Signal extends BaseSchema {
   llmRawResponse: Record<string, any>;
 
   /**
+   * Snapshot các giá trị dữ liệu thực tế đã được đưa vào LLM để generate signal.
+   * Lưu để audit/traceability — biết chính xác tín hiệu kỹ thuật, macro, sentiment
+   * tại thời điểm signal được tạo.
+   */
+  @Prop({ type: Object })
+  dataSnapshot: {
+    /** Giá trị TechnicalIndicator tại thời điểm generate */
+    indicator?: {
+      timestamp?: Date;
+      rsi14?: number;
+      macdLine?: number;
+      macdSignal?: number;
+      macdHistogram?: number;
+      ema9?: number;
+      ema20?: number;
+      ema50?: number;
+      ema200?: number;
+      sma20?: number;
+      bbUpper?: number;
+      bbMiddle?: number;
+      bbLower?: number;
+      atr14?: number;
+      atr14Pct?: number;
+      volumeRatio?: number;
+      hv30d?: number;
+    };
+    /** MacroIndicator values tại thời điểm generate (mỗi series 1 record) */
+    macro?: Array<{
+      seriesId: string;
+      name?: string;
+      value: number;
+      unit?: string;
+      timestamp?: Date;
+    }>;
+    /** SentimentSignal values tại thời điểm generate */
+    sentiment?: {
+      source?: string;
+      timestamp?: Date;
+      newsSentimentMean?: number;
+      geopoliticalRiskScore?: number;
+      eventImpactLevel?: string;
+      etfFlow7dOz?: number;
+      etfAumUsd?: number;
+      fundingRateAnnualized?: number;
+      longShortRatio?: number;
+      openInterestUsd?: number;
+    };
+    /** Context về market price candles đã dùng */
+    marketContext?: {
+      source: string;
+      candleCount: number;
+      fromTimestamp?: Date;
+      toTimestamp?: Date;
+      openPrice?: number;
+      highPrice?: number;
+      lowPrice?: number;
+      closePrice?: number;
+    };
+  };
+
+  /**
    * Thời điểm bot đã pick up signal này để execute trade.
    * Dùng làm atomic idempotency guard: chỉ set 1 lần, không reset.
    */
