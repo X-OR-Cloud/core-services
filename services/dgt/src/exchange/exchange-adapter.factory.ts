@@ -40,7 +40,7 @@ export class ExchangeAdapterFactory {
     apiSecret?: string;
   }): IExchangeAdapter {
     const { exchange, accountType, apiKey, apiSecret } = account;
-    const isTestnet = accountType === 'paper';
+    const isTestnet = accountType === 'paper'; // paper = Binance Demo (demo-api.binance.com)
 
     // Fallback nếu không có API key
     if (!apiKey || !apiSecret) {

@@ -2,11 +2,11 @@
  * BinanceAdapter
  *
  * Gọi Binance REST API (SPOT) để thực thi lệnh.
- * - Paper account (accountType='paper') → testnet: https://testnet.binance.vision
- * - Live account  (accountType='live')  → mainnet: https://api.binance.com
+ * - Paper account (accountType='paper') → Binance Spot Demo: https://demo-api.binance.com
+ * - Live account  (accountType='live')  → Binance Spot Live: https://api.binance.com
  *
+ * Ref: https://developers.binance.com/docs/binance-spot-api-docs/demo-mode/general-info
  * Authentication: HMAC-SHA256 signed requests.
- * Ref: https://binance-docs.github.io/apidocs/spot/en/
  */
 import { createHmac } from 'crypto';
 import axios from 'axios';
@@ -33,8 +33,10 @@ export class BinanceAdapter implements IExchangeAdapter {
     this.apiKey = config.apiKey;
     this.apiSecret = config.apiSecret;
     this.accountType = config.isTestnet ? 'paper' : 'live';
+    // paper = Binance Demo Trading (demo.binance.com) → https://demo-api.binance.com
+    // live  = Binance Mainnet → https://api.binance.com
     this.baseUrl = config.isTestnet
-      ? 'https://testnet.binance.vision'
+      ? 'https://demo-api.binance.com'
       : 'https://api.binance.com';
   }
 

@@ -160,7 +160,7 @@ export class AccountService extends BaseService<Account> {
     }
 
     const exchange = rawAccount?.exchange || 'binance';
-    const isTestnet = rawAccount?.accountType === AccountType.PAPER; // paper = sandbox = testnet
+    const isDemoAccount = rawAccount?.accountType === AccountType.PAPER; // paper = demo/sandbox
 
     // Chỉ Binance hỗ trợ test-connection hiện tại (OKX/Bybit chưa implement)
     if (exchange !== 'binance') {
@@ -168,8 +168,10 @@ export class AccountService extends BaseService<Account> {
       return { status: 'valid', error: undefined };
     }
 
-    const baseUrl = isTestnet
-      ? 'https://testnet.binance.vision'
+    // Binance Spot Demo: https://demo-api.binance.com (key từ demo.binance.com)
+    // Binance Spot Live: https://api.binance.com
+    const baseUrl = isDemoAccount
+      ? 'https://demo-api.binance.com'
       : 'https://api.binance.com';
 
     try {
