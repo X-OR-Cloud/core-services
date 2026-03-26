@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, NotFoundException, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -58,6 +58,7 @@ export class AccountController {
   }
 
   @Post(':id/test-connection')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Test API key connection (LIVE hoặc SANDBOX/Demo account)' })
   async testConnection(
     @Param('id') id: string,
@@ -67,6 +68,7 @@ export class AccountController {
   }
 
   @Post(':id/sync-balance')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Sync balance từ exchange về DB' })
   async syncBalance(
     @Param('id') id: string,
