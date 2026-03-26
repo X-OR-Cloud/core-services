@@ -171,9 +171,25 @@ export class ChatGateway
         await this._handleUserConnect(client, payload);
       }
     } catch (error) {
+      const token =
+        client.handshake.auth?.token ||
+        client.handshake.headers?.authorization?.replace('Bearer ', '') ||
+        client.handshake.query?.token;
+      let agentInfo = '';
+      if (token) {
+        try {
+          const decoded = this.jwtService.decode(token) as Record<string, any>;
+          if (decoded) {
+            const id = decoded.sub || decoded.agentId || decoded.anonymousId;
+            const code = decoded.code;
+            agentInfo = ` [sub=${id}${code ? ` code=${code}` : ''} type=${decoded.type ?? 'user'}]`;
+          }
+        } catch {
+          // ignore decode errors
+        }
+      }
       this.logger.error(
-        `Authentication failed for client ${client.id}:`,
-        (error as Error).message,
+        `Authentication failed for client ${client.id}${agentInfo}: ${(error as Error).message}`,
       );
       client.disconnect();
     }
