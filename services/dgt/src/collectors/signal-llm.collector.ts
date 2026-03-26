@@ -16,6 +16,8 @@ import { MacroIndicatorService } from '../modules/macro-indicator/macro-indicato
 import { SIGNAL_SYSTEM_PROMPT } from '../prompts/signal-system.prompt';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { NotificationService } from '../shared/notification.service';
+import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
+import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
 
 const SYSTEM_CONTEXT: RequestContext = {
   userId: 'system',
@@ -37,6 +39,7 @@ export class SignalLlmCollector extends BaseCollector {
     private readonly sentimentSignalService: SentimentSignalService,
     private readonly macroIndicatorService: MacroIndicatorService,
     private readonly notificationService: NotificationService,
+    private readonly systemActivityLogService: SystemActivityLogService,
   ) {
     super();
   }
@@ -47,6 +50,7 @@ export class SignalLlmCollector extends BaseCollector {
       asset: string;
       timeframe: string;
     };
+    const startTime = Date.now();
 
     // Step 1: Fetch last N MarketPrice candles (always use '1m' — raw data granularity)
     // The signal timeframe (1h/4h) determines signal validity, not candle granularity
@@ -91,6 +95,16 @@ export class SignalLlmCollector extends BaseCollector {
         llmInput: null,
         llmRawResponse: null,
       });
+      this.systemActivityLogService.logActivity({
+        workerType: SystemWorkerType.SIGNAL_GEN,
+        source: 'system',
+        symbol: asset,
+        action: 'generate_signal',
+        status: SystemActivityStatus.WARNING,
+        details: `Insufficient candle data (${candles.length} candles) for ${asset}/${timeframe} — fallback HOLD`,
+        metadata: { accountId, asset, timeframe, candleCount: candles.length },
+        durationMs: Date.now() - startTime,
+      });
       return;
     }
 
@@ -124,6 +138,16 @@ export class SignalLlmCollector extends BaseCollector {
         llmModel: undefined,
         llmInput: null,
         llmRawResponse: null,
+      });
+      this.systemActivityLogService.logActivity({
+        workerType: SystemWorkerType.SIGNAL_GEN,
+        source: llmModel,
+        symbol: asset,
+        action: 'generate_signal',
+        status: SystemActivityStatus.WARNING,
+        details: `LLM not configured — fallback HOLD for ${asset}/${timeframe}`,
+        metadata: { accountId, asset, timeframe },
+        durationMs: Date.now() - startTime,
       });
       return;
     }
@@ -185,6 +209,16 @@ export class SignalLlmCollector extends BaseCollector {
         llmInput,
         llmRawResponse: { error: error.message, status, body },
       });
+      this.systemActivityLogService.logActivity({
+        workerType: SystemWorkerType.SIGNAL_GEN,
+        source: llmModel,
+        symbol: asset,
+        action: 'generate_signal',
+        status: SystemActivityStatus.ERROR,
+        details: `LLM call failed for ${asset}/${timeframe}: ${error.message}`,
+        metadata: { accountId, asset, timeframe, httpStatus: status, llmModel },
+        durationMs: Date.now() - startTime,
+      });
       return;
     }
 
@@ -238,6 +272,25 @@ export class SignalLlmCollector extends BaseCollector {
       priceAtCreation: candles[candles.length - 1]?.close,
       llmInput,
       llmRawResponse,
+    });
+
+    this.systemActivityLogService.logActivity({
+      workerType: SystemWorkerType.SIGNAL_GEN,
+      source: llmModel,
+      symbol: asset,
+      action: 'generate_signal',
+      status: SystemActivityStatus.SUCCESS,
+      details: `Generated ${signalType} signal for ${asset}/${timeframe} — confidence: ${confidence}%`,
+      metadata: {
+        accountId,
+        asset,
+        timeframe,
+        signalType,
+        confidence,
+        llmModel,
+        candleCount: candles.length,
+      },
+      durationMs: Date.now() - startTime,
     });
   }
 
