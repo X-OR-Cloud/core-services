@@ -1,7 +1,7 @@
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { INestApplicationContext, Logger } from '@nestjs/common';
 import { ServerOptions, Server } from 'socket.io';
-import { verify } from 'jsonwebtoken';
+import { verify, decode } from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -60,8 +60,19 @@ export class WsJwtAdapter extends IoAdapter {
         );
         next();
       } catch (error) {
+        let nodeInfo = '';
+        if (socket.handshake.auth?.token) {
+          try {
+            const decoded = decode(socket.handshake.auth.token) as Record<string, any>;
+            if (decoded) {
+              nodeInfo = ` [sub=${decoded.sub} type=${decoded.type ?? 'unknown'}]`;
+            }
+          } catch {
+            // ignore decode errors
+          }
+        }
         this.logger.error(
-          `Authentication failed for socket ${socket.id}: ${error.message}`
+          `Authentication failed for socket ${socket.id}${nodeInfo}: ${error.message}`
         );
 
         if (error.name === 'TokenExpiredError') {
