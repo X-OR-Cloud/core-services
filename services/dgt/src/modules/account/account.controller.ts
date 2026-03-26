@@ -58,12 +58,21 @@ export class AccountController {
   }
 
   @Post(':id/test-connection')
-  @ApiOperation({ summary: 'Test Binance API key connection for a LIVE account' })
+  @ApiOperation({ summary: 'Test API key connection (LIVE hoặc SANDBOX/Demo account)' })
   async testConnection(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext,
   ) {
     return this.accountService.testConnection(id, context);
+  }
+
+  @Post(':id/sync-balance')
+  @ApiOperation({ summary: 'Sync balance từ exchange về DB' })
+  async syncBalance(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.accountService.syncBalance(id, context);
   }
 
   @Delete(':id')
