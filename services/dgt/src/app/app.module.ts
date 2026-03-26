@@ -38,6 +38,9 @@ import { SignalModule } from '../modules/signal/signal.module';
 // Group 6: Insights
 import { InsightsModule } from '../modules/insights/insights.module';
 
+// Group 7: Activity Logs
+import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -81,6 +84,9 @@ import { InsightsModule } from '../modules/insights/insights.module';
 
     // Group 6: Insights
     InsightsModule,
+
+    // Group 7: Activity Logs
+    SystemActivityLogModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

@@ -8,6 +8,7 @@ import { CollectorsModule } from '../collectors/collectors.module';
 import { IndicatorsModule } from '../indicators/indicators.module';
 import { DataIngestionProcessor } from '../queues/data-ingestion.processor';
 import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
+import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
 
 /**
  * AppIngestionModule — mode=ing
@@ -34,6 +35,7 @@ import { TechnicalIndicatorModule } from '../modules/technical-indicator/technic
     TechnicalIndicatorModule,
     CollectorsModule,
     IndicatorsModule,
+    SystemActivityLogModule,
   ],
   providers: [DataIngestionProcessor],
 })

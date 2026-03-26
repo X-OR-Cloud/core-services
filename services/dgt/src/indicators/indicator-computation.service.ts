@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { createLogger } from '@hydrabyte/shared';
 import { MarketPriceService } from '../modules/market-price/market-price.service';
 import { TechnicalIndicatorService } from '../modules/technical-indicator/technical-indicator.service';
+import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
+import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
 import * as math from './math.util';
 
 /** Minimum candles needed for all indicators (EMA200 + buffer) */
@@ -14,6 +16,7 @@ export class IndicatorComputationService {
   constructor(
     private readonly marketPriceService: MarketPriceService,
     private readonly technicalIndicatorService: TechnicalIndicatorService,
+    private readonly systemActivityLogService: SystemActivityLogService,
   ) {}
 
   /**
@@ -21,6 +24,8 @@ export class IndicatorComputationService {
    * Reads recent MarketPrice candles, calculates indicators, and upserts result.
    */
   async compute(symbol: string, source: string, timeframe: string): Promise<void> {
+    const startTime = Date.now();
+
     // Fetch enough candles for EMA200
     const { data: candles } = await this.marketPriceService.findAll(
       { symbol, source, timeframe },
@@ -29,6 +34,16 @@ export class IndicatorComputationService {
 
     if (candles.length < 30) {
       this.logger.warn(`[${symbol}/${timeframe}] Not enough candles (${candles.length}), need at least 30`);
+      this.systemActivityLogService.logActivity({
+        workerType: SystemWorkerType.TECH_INDICATOR,
+        source,
+        symbol,
+        action: 'compute_indicators',
+        status: SystemActivityStatus.WARNING,
+        details: `Not enough candles for ${symbol}/${timeframe} (${candles.length}/30 required)`,
+        metadata: { symbol, source, timeframe, candleCount: candles.length },
+        durationMs: Date.now() - startTime,
+      });
       return;
     }
 
@@ -94,6 +109,26 @@ export class IndicatorComputationService {
       indicator,
     );
 
+    const durationMs = Date.now() - startTime;
     this.logger.info(`[${symbol}/${timeframe}] Indicators computed: RSI=${rsi14?.toFixed(1)}, MACD=${macdResult?.line?.toFixed(2)}`);
+
+    this.systemActivityLogService.logActivity({
+      workerType: SystemWorkerType.TECH_INDICATOR,
+      source,
+      symbol,
+      action: 'compute_indicators',
+      status: SystemActivityStatus.SUCCESS,
+      details: `Computed indicators for ${symbol}/${timeframe} — RSI: ${rsi14?.toFixed(1)}, MACD: ${macdResult?.line?.toFixed(2)}`,
+      metadata: {
+        symbol,
+        source,
+        timeframe,
+        candleCount: candles.length,
+        rsi14: rsi14?.toFixed(1),
+        macdLine: macdResult?.line?.toFixed(2),
+        ema20: ema20?.toFixed(2),
+      },
+      durationMs,
+    });
   }
 }

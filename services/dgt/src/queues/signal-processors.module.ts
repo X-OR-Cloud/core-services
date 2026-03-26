@@ -10,6 +10,7 @@ import { TechnicalIndicatorModule } from '../modules/technical-indicator/technic
 import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-signal.module';
 import { MacroIndicatorModule } from '../modules/macro-indicator/macro-indicator.module';
 import { SignalLlmCollector } from '../collectors/signal-llm.collector';
+import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { SignalLlmCollector } from '../collectors/signal-llm.collector';
     TechnicalIndicatorModule,
     SentimentSignalModule,
     MacroIndicatorModule,
+    SystemActivityLogModule,
   ],
   providers: [
     SignalSchedulerProcessor,

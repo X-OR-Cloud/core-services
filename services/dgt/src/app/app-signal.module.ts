@@ -21,6 +21,9 @@ import { SignalModule } from '../modules/signal/signal.module';
 import { BotModule } from '../modules/bot/bot.module';
 import { BotActivityLogModule } from '../modules/bot-activity-log/bot-activity-log.module';
 
+// Activity Logs
+import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
+
 // Queue processors
 import { SignalProcessorsModule } from '../queues/signal-processors.module';
 
@@ -66,6 +69,9 @@ import { ExchangeModule } from '../exchange/exchange.module';
 
     // Exchange adapter factory
     ExchangeModule,
+
+    // Activity Logs
+    SystemActivityLogModule,
 
     // Processors & Collectors
     SignalProcessorsModule,

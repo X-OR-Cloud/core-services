@@ -13,6 +13,8 @@ import { BytetreeCollector } from '../collectors/bytetree.collector';
 import { NewsapiCollector } from '../collectors/newsapi.collector';
 import { IndicatorComputationService } from '../indicators/indicator-computation.service';
 import { PortfolioSnapshotCollector } from '../collectors/portfolio-snapshot.collector';
+import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
+import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
 
 @Processor(QUEUE_NAMES.DATA_INGESTION)
 export class DataIngestionProcessor extends WorkerHost {
@@ -30,6 +32,7 @@ export class DataIngestionProcessor extends WorkerHost {
     private readonly newsapiCollector: NewsapiCollector,
     private readonly indicatorComputation: IndicatorComputationService,
     private readonly portfolioSnapshotCollector: PortfolioSnapshotCollector,
+    private readonly systemActivityLogService: SystemActivityLogService,
   ) {
     super();
   }
@@ -79,8 +82,35 @@ export class DataIngestionProcessor extends WorkerHost {
 
       const duration = Date.now() - startTime;
       this.logger.info(`[${type}] Processed in ${duration}ms`);
+
+      if (type !== 'compute_indicators' && type !== 'snapshot_portfolio') {
+        this.systemActivityLogService.logActivity({
+          workerType: SystemWorkerType.DATA_INGESTION,
+          source: type,
+          symbol: params?.symbol,
+          action: 'fetch_market_data',
+          status: SystemActivityStatus.SUCCESS,
+          details: `Collected ${type} data successfully`,
+          metadata: { type, params },
+          durationMs: duration,
+        });
+      }
     } catch (error: any) {
+      const duration = Date.now() - startTime;
       this.logger.error(`[${type}] Collection failed: ${error.message}`);
+
+      if (type !== 'compute_indicators' && type !== 'snapshot_portfolio') {
+        this.systemActivityLogService.logActivity({
+          workerType: SystemWorkerType.DATA_INGESTION,
+          source: type,
+          symbol: params?.symbol,
+          action: 'fetch_market_data',
+          status: SystemActivityStatus.ERROR,
+          details: `Collection failed for ${type}: ${error.message}`,
+          metadata: { type, params, error: error.message },
+          durationMs: duration,
+        });
+      }
       throw error;
     }
   }

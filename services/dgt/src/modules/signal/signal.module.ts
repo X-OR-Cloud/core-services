@@ -9,6 +9,7 @@ import { TechnicalIndicatorModule } from '../technical-indicator/technical-indic
 import { AccountModule } from '../account/account.module';
 import { SentimentSignalModule } from '../sentiment-signal/sentiment-signal.module';
 import { MacroIndicatorModule } from '../macro-indicator/macro-indicator.module';
+import { SystemActivityLogModule } from '../system-activity-log/system-activity-log.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MacroIndicatorModule } from '../macro-indicator/macro-indicator.module'
     TechnicalIndicatorModule,
     SentimentSignalModule,
     MacroIndicatorModule,
+    SystemActivityLogModule,
   ],
   controllers: [SignalController],
   providers: [SignalService, SignalLlmCollector],
