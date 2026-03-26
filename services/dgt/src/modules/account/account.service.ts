@@ -192,6 +192,14 @@ export class AccountService extends BaseService<Account> {
       const data: any = await res.json();
       const permissions: string[] = data.permissions || [];
       await super.update(id, { apiKeyStatus: 'valid' }, context);
+
+      // Auto-sync balance sau khi test key thành công
+      this.syncBalance(id, context).catch((err) => {
+        // Non-blocking: không fail testConnection nếu sync lỗi
+        const logger = (this as any).logger;
+        if (logger) logger.warn(`[Account] Auto-sync balance failed after testConnection: ${err?.message}`);
+      });
+
       return { status: 'valid', permissions };
     } catch (err: any) {
       await super.update(id, { apiKeyStatus: 'invalid' }, context);

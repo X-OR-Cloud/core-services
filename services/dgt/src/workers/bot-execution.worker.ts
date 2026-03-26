@@ -19,6 +19,7 @@ import { Position, PositionDocument } from '../modules/position/position.schema'
 import { BotActivityLog, BotActivityLogDocument } from '../modules/bot-activity-log/bot-activity-log.schema';
 import { ActivityActionType, ActivityStatus, PerformedBy } from '../modules/bot-activity-log/bot-activity-log.schema';
 import { TradeExecutionService, ExecuteFromSignalDto } from '../modules/trade/trade-execution.service';
+import { ExchangeAdapterFactory } from '../exchange/exchange-adapter.factory';
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
 
@@ -34,6 +35,7 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
     @InjectModel(Position.name) private readonly positionModel: Model<PositionDocument>,
     @InjectModel(BotActivityLog.name) private readonly activityLogModel: Model<BotActivityLogDocument>,
     private readonly tradeExecutionService: TradeExecutionService,
+    private readonly adapterFactory: ExchangeAdapterFactory,
   ) {}
 
   onApplicationBootstrap() {
@@ -248,6 +250,11 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
         `[BotExec] Bot ${botId} executed ${signal.signalType} trade: qty=${quantity} ${bot.asset} ` +
           `order=${order._id} position=${position._id}`,
       );
+
+      // Auto-sync balance sau mỗi trade để cập nhật số dư thực tế
+      this.syncAccountBalance(account).catch((err) => {
+        this.logger.warn(`[BotExec] Auto-sync balance failed for account ${account._id}: ${err?.message}`);
+      });
     } catch (execErr: any) {
       this.logger.error(
         `[BotExec] Bot ${botId} failed to execute trade for signal ${signal._id}: ${execErr?.message}`,
@@ -323,6 +330,31 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
       });
     } catch (err: any) {
       this.logger.error(`[BotExec] Failed to write activity log: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Sync balance từ exchange về DB sau mỗi trade.
+   * Non-blocking — không ảnh hưởng đến flow execute trade.
+   */
+  private async syncAccountBalance(account: any): Promise<void> {
+    if (!account?.apiKey || !account?.apiSecret) return;
+
+    try {
+      const adapter = this.adapterFactory.createAdapter({
+        exchange: account.exchange,
+        accountType: account.accountType,
+        apiKey: account.apiKey,
+        apiSecret: account.apiSecret,
+      });
+
+      const currency = account.currency || 'USDT';
+      const balance = await adapter.getBalance(currency);
+
+      await this.accountModel.findByIdAndUpdate(account._id, { balance });
+      this.logger.info(`[BotExec] Synced balance for account ${account._id}: ${balance} ${currency}`);
+    } catch (err: any) {
+      throw new Error(`syncAccountBalance failed: ${err?.message}`);
     }
   }
 }
