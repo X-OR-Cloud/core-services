@@ -29,9 +29,16 @@ export class BotActivityLogService extends BaseService<BotActivityLog> {
   }
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<BotActivityLog>> {
+    // Cast botId string → ObjectId nếu có trong filter
+    const filter = (options.filter as any) || {};
+    if (filter.botId && typeof filter.botId === 'string') {
+      filter.botId = new Types.ObjectId(filter.botId);
+      options.filter = filter;
+    }
+
     if (!this.isOrgOwner(context)) {
       const accountIds = await this.getUserAccountIds(context.userId);
-      const requestedAccountId = (options.filter as any)?.accountId;
+      const requestedAccountId = filter.accountId;
       if (requestedAccountId) {
         const requested = new Types.ObjectId(requestedAccountId);
         const belongs = accountIds.some((id) => id.equals(requested));
