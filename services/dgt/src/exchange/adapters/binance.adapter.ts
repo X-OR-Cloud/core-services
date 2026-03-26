@@ -66,11 +66,19 @@ export class BinanceAdapter implements IExchangeAdapter {
   // ─── IExchangeAdapter ─────────────────────────────────────────────────────
 
   async placeMarketOrder(params: PlaceOrderParams): Promise<OrderResult> {
+    // Round quantity theo LOT_SIZE stepSize của Binance trước khi đặt lệnh
+    const stepSize = await this.getLotStepSize(params.symbol);
+    const roundedQuantity = this.roundToStepSize(params.quantity, stepSize);
+
+    this.logger.debug(
+      `[Binance] placeMarketOrder: symbol=${params.symbol} qty=${params.quantity} → rounded=${roundedQuantity} (stepSize=${stepSize})`,
+    );
+
     const orderParams: Record<string, any> = {
       symbol: params.symbol,
       side: params.side,
       type: 'MARKET',
-      quantity: params.quantity,
+      quantity: roundedQuantity,
     };
     if (params.clientOrderId) {
       orderParams['newClientOrderId'] = params.clientOrderId;
@@ -168,6 +176,36 @@ export class BinanceAdapter implements IExchangeAdapter {
       filledAt: data.transactTime ? new Date(data.transactTime) : new Date(),
       raw: data,
     };
+  }
+
+  /**
+   * Lấy LOT_SIZE stepSize của symbol từ Binance exchangeInfo.
+   * stepSize quy định quantity phải là bội số của nó (vd: 0.0001 cho PAXGUSDT).
+   */
+  private async getLotStepSize(symbol: string): Promise<number> {
+    try {
+      const res = await axios.get(
+        `${this.baseUrl}/api/v3/exchangeInfo?symbol=${symbol}`,
+        { timeout: this.timeout },
+      );
+      const symbolInfo = res.data?.symbols?.[0];
+      const lotFilter = symbolInfo?.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+      return lotFilter ? parseFloat(lotFilter.stepSize) : 0.00001;
+    } catch (err: any) {
+      this.logger.warn(`[Binance] getLotStepSize failed for ${symbol}: ${err?.message}. Using default 0.00001`);
+      return 0.00001;
+    }
+  }
+
+  /**
+   * Round quantity xuống bội số gần nhất của stepSize.
+   * Ví dụ: roundToStepSize(0.031250, 0.0001) = 0.0312
+   */
+  private roundToStepSize(quantity: number, stepSize: number): number {
+    if (!stepSize || stepSize <= 0) return quantity;
+    const precision = Math.round(-Math.log10(stepSize));
+    const rounded = Math.floor(quantity / stepSize) * stepSize;
+    return parseFloat(rounded.toFixed(precision));
   }
 
   private mapBinanceStatus(
