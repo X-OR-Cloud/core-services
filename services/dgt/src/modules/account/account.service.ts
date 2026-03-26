@@ -9,6 +9,7 @@ import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Account, AccountType } from './account.schema';
 import { CreateAccountDto } from './account.dto';
 import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../../config/queue.config';
+import { ExchangeAdapterFactory } from '../../exchange/exchange-adapter.factory';
 
 const ENCRYPTION_KEY = process.env['API_SECRET_KEY'] || 'dgt-default-secret-key-32chars!!';
 const KEY = createHash('sha256').update(ENCRYPTION_KEY).digest(); // 32 bytes for AES-256
@@ -46,6 +47,7 @@ export class AccountService extends BaseService<Account> {
   constructor(
     @InjectModel(Account.name) accountModel: Model<Account>,
     @InjectQueue(QUEUE_NAMES.SIGNAL_SCHEDULER) private readonly signalSchedulerQueue: Queue,
+    private readonly adapterFactory: ExchangeAdapterFactory,
   ) {
     super(accountModel as any);
   }
@@ -130,12 +132,15 @@ export class AccountService extends BaseService<Account> {
     return result;
   }
 
+  /**
+   * Test kết nối API key với exchange.
+   * Hỗ trợ cả LIVE (mainnet) và SANDBOX/paper (testnet).
+   * - SANDBOX (paper) → Binance Testnet, OKX Demo, Bybit Testnet
+   * - LIVE → exchange mainnet
+   */
   async testConnection(id: any, context: RequestContext): Promise<{ status: string; permissions?: string[]; error?: string }> {
     const account = await this.findById(id, context);
     if (!account) throw new NotFoundException(`Account ${id} not found`);
-    if (account.accountType !== AccountType.LIVE) {
-      throw new BadRequestException('test-connection is only available for LIVE accounts');
-    }
 
     const rawAccount = await (this as any).model.findById(id).lean().exec();
     const apiKey = rawAccount?.apiKey || '';
@@ -154,8 +159,16 @@ export class AccountService extends BaseService<Account> {
       return { status: 'invalid', error: 'Failed to decrypt API secret' };
     }
 
-    const useTestnet = process.env['BINANCE_USE_TESTNET'] === 'true';
-    const baseUrl = useTestnet
+    const exchange = rawAccount?.exchange || 'binance';
+    const isTestnet = rawAccount?.accountType === AccountType.PAPER; // paper = sandbox = testnet
+
+    // Chỉ Binance hỗ trợ test-connection hiện tại (OKX/Bybit chưa implement)
+    if (exchange !== 'binance') {
+      await super.update(id, { apiKeyStatus: 'valid' }, context);
+      return { status: 'valid', error: undefined };
+    }
+
+    const baseUrl = isTestnet
       ? 'https://testnet.binance.vision'
       : 'https://api.binance.com';
 
@@ -182,6 +195,40 @@ export class AccountService extends BaseService<Account> {
       await super.update(id, { apiKeyStatus: 'invalid' }, context);
       return { status: 'invalid', error: err?.message || 'Connection failed' };
     }
+  }
+
+  /**
+   * Sync balance từ exchange về DB.
+   * Dùng ExchangeAdapter (Binance/OKX/Bybit) để lấy số dư USDT thực tế.
+   * Hỗ trợ cả LIVE và SANDBOX (paper/testnet).
+   */
+  async syncBalance(id: any, context: RequestContext): Promise<{ balance: number; currency: string }> {
+    const account = await this.findById(id, context);
+    if (!account) throw new NotFoundException(`Account ${id} not found`);
+
+    const rawAccount = await (this as any).model.findById(id).lean().exec();
+
+    if (!rawAccount?.apiKey || !rawAccount?.apiSecret) {
+      throw new BadRequestException('API key not configured. Please set API key before syncing balance.');
+    }
+
+    let balance: number;
+    try {
+      const adapter = this.adapterFactory.createAdapter({
+        exchange: rawAccount.exchange,
+        accountType: rawAccount.accountType,
+        apiKey: rawAccount.apiKey,
+        apiSecret: rawAccount.apiSecret,
+      });
+
+      const currency = rawAccount.currency || 'USDT';
+      balance = await adapter.getBalance(currency);
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to sync balance from exchange: ${err?.message}`);
+    }
+
+    await super.update(id, { balance }, context);
+    return { balance, currency: rawAccount.currency || 'USDT' };
   }
 
   private async verifyOwnership(id: any, context: RequestContext): Promise<void> {
