@@ -14,6 +14,7 @@ import { TechnicalIndicatorModule } from '../modules/technical-indicator/technic
 
 // Group 3: Trading (dùng bởi BotExecutionWorker)
 import { TradeModule } from '../modules/trade/trade.module';
+import { PositionModule } from '../modules/position/position.module';
 
 // Group 5: AI Signal
 import { SignalModule } from '../modules/signal/signal.module';
@@ -56,6 +57,7 @@ import { ExchangeModule } from '../exchange/exchange.module';
 
     // Group 3: Trading (BotExecutionWorker → TradeExecutionService)
     TradeModule,
+    PositionModule,
 
     // Group 5: AI Signal
     SignalModule,
