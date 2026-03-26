@@ -11,6 +11,7 @@ import { SentimentSignalModule } from '../modules/sentiment-signal/sentiment-sig
 import { MacroIndicatorModule } from '../modules/macro-indicator/macro-indicator.module';
 import { SignalLlmCollector } from '../collectors/signal-llm.collector';
 import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
+import { NewsArticleModule } from '../modules/news-article/news-article.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SystemActivityLogModule } from '../modules/system-activity-log/system-a
     SentimentSignalModule,
     MacroIndicatorModule,
     SystemActivityLogModule,
+    NewsArticleModule,
   ],
   providers: [
     SignalSchedulerProcessor,

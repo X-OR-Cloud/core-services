@@ -10,6 +10,7 @@ import { AccountModule } from '../account/account.module';
 import { SentimentSignalModule } from '../sentiment-signal/sentiment-signal.module';
 import { MacroIndicatorModule } from '../macro-indicator/macro-indicator.module';
 import { SystemActivityLogModule } from '../system-activity-log/system-activity-log.module';
+import { NewsArticleModule } from '../news-article/news-article.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SystemActivityLogModule } from '../system-activity-log/system-activity-
     SentimentSignalModule,
     MacroIndicatorModule,
     SystemActivityLogModule,
+    NewsArticleModule,
   ],
   controllers: [SignalController],
   providers: [SignalService, SignalLlmCollector],
