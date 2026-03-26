@@ -50,25 +50,31 @@ export class ConfigurationService extends BaseService<Configuration> {
   }
 
   /**
-   * Find configuration by key
+   * Find configuration by key for a given org (org-specific first, then global fallback)
    * Returns WITH value
    */
   async findByKey(
     key: ConfigKey,
     context: RequestContext
   ): Promise<Configuration | null> {
-    // BaseService.findOne uses RBAC
-    const filter = {
+    // Try org-specific first
+    const orgConfig = await this.configModel.findOne({
       key,
+      scope: 'org',
       isDeleted: false,
       'owner.orgId': context.orgId,
-    };
-    const config = await this.configModel.findOne(filter).exec();
-    if (!config) {
-      return null;
-    }
+    }).exec();
 
-    return config;
+    if (orgConfig) return orgConfig;
+
+    // Fallback to global
+    const globalConfig = await this.configModel.findOne({
+      key,
+      scope: 'global',
+      isDeleted: false,
+    }).exec();
+
+    return globalConfig;
   }
 
   /**
@@ -82,12 +88,15 @@ export class ConfigurationService extends BaseService<Configuration> {
     // Validate against metadata
     this.validateConfiguration(dto.key, dto.value);
 
+    const scope = dto.scope ?? 'org';
+
     // Check if configuration already exists
     const existing = await this.configModel
       .findOne({
         key: dto.key,
+        scope,
         isDeleted: false,
-        'owner.orgId': context.orgId,
+        'owner.orgId': scope === 'global' ? '' : context.orgId,
       })
       .exec();
 
@@ -120,6 +129,7 @@ export class ConfigurationService extends BaseService<Configuration> {
       const created = await super.create(
         {
           ...dto,
+          scope,
         } as any,
         context
       );
@@ -245,10 +255,11 @@ export class ConfigurationService extends BaseService<Configuration> {
 
     for (const key of allKeys) {
       try {
-        // Check if key already exists
+        // Check if key already exists (org-scoped)
         const existing = await this.configModel
           .findOne({
             key,
+            scope: 'org',
             isDeleted: false,
             'owner.orgId': context.orgId,
           })
@@ -263,7 +274,8 @@ export class ConfigurationService extends BaseService<Configuration> {
         // Skip validation for empty string initialization
         const newConfig = new this.configModel({
           key,
-          value: '', // Empty string
+          value: '',
+          scope: 'org',
           owner: {
             orgId: context.orgId,
             userId: context.userId,

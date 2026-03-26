@@ -134,7 +134,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       );
 
       const browserApiUrl = await this.configService.getString(ConfigKey.PINCHTAB_API_URL);
-      const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, this.wsChatUrl);
+      const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, this.wsChatUrl);
 
       const runner = new AgentRunner({
         agentId,

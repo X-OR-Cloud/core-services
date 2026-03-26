@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfigKey } from '@hydrabyte/shared';
+import { ConfigScope } from './configuration.schema';
 
 /**
  * Create/Update Configuration DTO
@@ -29,6 +30,15 @@ export class CreateConfigurationDto {
   @MinLength(1, { message: 'Value cannot be empty' })
   @MaxLength(5000, { message: 'Value is too long (max 5000 characters)' })
   value!: string;
+
+  @ApiPropertyOptional({
+    description: 'Scope: global (all orgs) or org (org-specific override). Defaults to org.',
+    enum: ['global', 'org'],
+    example: 'org',
+  })
+  @IsOptional()
+  @IsEnum(['global', 'org'])
+  scope?: ConfigScope;
 
   @ApiPropertyOptional({
     description: 'Admin notes about this configuration',
@@ -84,6 +94,9 @@ export class ConfigurationListResponseDto {
     },
   })
   metadata!: any;
+
+  @ApiProperty({ enum: ['global', 'org'], example: 'org' })
+  scope!: ConfigScope;
 
   @ApiPropertyOptional({ example: 'Primary MinIO instance' })
   notes?: string;

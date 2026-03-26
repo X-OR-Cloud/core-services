@@ -31,7 +31,7 @@ export class FileService {
     const accessKey = await this.configService.getString(ConfigKey.S3_ACCESS_KEY);
     const secretKey = await this.configService.getString(ConfigKey.S3_SECRET_KEY);
     const bucket = await this.configService.getString(ConfigKey.S3_BUCKET_FILES);
-    const region = await this.configService.getOrDefault(ConfigKey.S3_REGION, 'us-east-1');
+    const region = await this.configService.getOrDefault(ConfigKey.S3_REGION, undefined, 'us-east-1');
     const useSSL = await this.configService.getBoolean(ConfigKey.S3_USE_SSL);
 
     if (!endpoint || !accessKey || !secretKey || !bucket) {

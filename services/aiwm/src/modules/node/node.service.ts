@@ -165,11 +165,12 @@ export class NodeService extends BaseService<Node> {
     const nodeId = (node as any)._id.toString();
     const expiresAt = new Date(Date.now() + SETUP_TOKEN_EXPIRES_IN * 1000);
 
-    // Resolve URLs from config with fallbacks
+    // Resolve URLs from config with fallbacks (org-specific → global → default)
+    const orgId = context.orgId;
     const [baseApiUrl, baseWsUrl, monaBaseUrl] = await Promise.all([
-      this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, 'http://localhost:3003'),
-      this.configService.getOrDefault(ConfigKey.AIWM_BASE_WS_URL, 'ws://localhost:3003'),
-      this.configService.getOrDefault(ConfigKey.MONA_BASE_API_URL, 'http://localhost:3005'),
+      this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, orgId, 'http://localhost:3003'),
+      this.configService.getOrDefault(ConfigKey.AIWM_BASE_WS_URL, orgId, 'ws://localhost:3003'),
+      this.configService.getOrDefault(ConfigKey.MONA_BASE_API_URL, orgId, 'http://localhost:3005'),
     ]);
 
     const bootstrapUrl = `${baseApiUrl}/nodes/auth/bootstrap`;

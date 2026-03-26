@@ -5,25 +5,17 @@ import { ConfigKey } from '@hydrabyte/shared';
 import { Configuration } from './configuration.schema';
 import { CONFIG_METADATA } from './constants';
 
+const GLOBAL_PREFIX = '__global__';
+
 /**
  * Config Service (Internal Consumption)
  *
  * Provides cached access to configuration values for internal services.
- * This service is designed for use by other services within the application.
+ * Supports multi-tenant with two-tier cache:
+ *   - Tier 1: org-specific  → key: `<orgId>:<configKey>`
+ *   - Tier 2: global        → key: `__global__:<configKey>`
  *
- * Features:
- * - In-memory caching for fast access
- * - Type-safe config retrieval
- * - Automatic type parsing (string, number, boolean)
- * - Default value support
- * - Hot reload capability
- *
- * Usage:
- * ```typescript
- * const endpoint = await this.configService.get(ConfigKey.S3_ENDPOINT);
- * const port = await this.configService.get<number>(ConfigKey.SMTP_PORT);
- * const useSSL = await this.configService.getOrDefault(ConfigKey.S3_USE_SSL, 'true');
- * ```
+ * Lookup order: org-specific → global → hardcoded default
  */
 @Injectable()
 export class ConfigService implements OnModuleInit {
@@ -36,14 +28,11 @@ export class ConfigService implements OnModuleInit {
     private readonly configModel: Model<Configuration>
   ) {}
 
-  /**
-   * Initialize cache on module startup
-   */
   async onModuleInit() {
     try {
       await this.initializeCache();
       this.logger.log(
-        `Configuration cache initialized with ${this.cache.size} keys`
+        `Configuration cache initialized with ${this.cache.size} entries`
       );
     } catch (error) {
       this.logger.error('Failed to initialize configuration cache', error);
@@ -51,139 +40,132 @@ export class ConfigService implements OnModuleInit {
   }
 
   /**
-   * Get configuration value by key
-   * Returns parsed value based on metadata type
+   * Get configuration value by key, with org-specific → global fallback.
    */
-  async get<T = string>(key: ConfigKey): Promise<T | null> {
-    // Check cache first
-    if (this.cache.has(key)) {
-      return this.cache.get(key) as T;
-    }
-
-    // If cache not initialized, try to fetch from DB
+  async get<T = string>(key: ConfigKey, orgId?: string): Promise<T | null> {
     if (!this.cacheInitialized) {
       await this.initializeCache();
     }
 
-    // Check cache again after initialization
-    if (this.cache.has(key)) {
-      return this.cache.get(key) as T;
+    // Tier 1: org-specific
+    if (orgId) {
+      const orgCacheKey = `${orgId}:${key}`;
+      if (this.cache.has(orgCacheKey)) {
+        return this.cache.get(orgCacheKey) as T;
+      }
+    }
+
+    // Tier 2: global
+    const globalCacheKey = `${GLOBAL_PREFIX}:${key}`;
+    if (this.cache.has(globalCacheKey)) {
+      return this.cache.get(globalCacheKey) as T;
     }
 
     return null;
   }
 
   /**
-   * Get configuration with default fallback
+   * Get configuration with default fallback.
    */
-  async getOrDefault<T = string>(key: ConfigKey, defaultValue: T): Promise<T> {
-    const value = await this.get<T>(key);
+  async getOrDefault<T = string>(key: ConfigKey, orgId: string | undefined, defaultValue: T): Promise<T> {
+    const value = await this.get<T>(key, orgId);
     return value !== null ? value : defaultValue;
   }
 
   /**
-   * Get all active configurations as object
-   * Useful for bulk retrieval
+   * Get all active configurations as object (merged: global overridden by org)
    */
-  async getAll(): Promise<Record<string, any>> {
+  async getAll(orgId?: string): Promise<Record<string, any>> {
     if (!this.cacheInitialized) {
       await this.initializeCache();
     }
 
     const result: Record<string, any> = {};
-    this.cache.forEach((value, key) => {
-      result[key] = value;
-    });
+
+    // First pass: global values
+    for (const [cacheKey, value] of this.cache.entries()) {
+      if (cacheKey.startsWith(`${GLOBAL_PREFIX}:`)) {
+        const configKey = cacheKey.slice(GLOBAL_PREFIX.length + 1);
+        result[configKey] = value;
+      }
+    }
+
+    // Second pass: org-specific overrides
+    if (orgId) {
+      for (const [cacheKey, value] of this.cache.entries()) {
+        if (cacheKey.startsWith(`${orgId}:`)) {
+          const configKey = cacheKey.slice(orgId.length + 1);
+          result[configKey] = value;
+        }
+      }
+    }
 
     return result;
   }
 
-  /**
-   * Check if configuration key exists and is active
-   */
-  async has(key: ConfigKey): Promise<boolean> {
-    const value = await this.get(key);
+  async has(key: ConfigKey, orgId?: string): Promise<boolean> {
+    const value = await this.get(key, orgId);
     return value !== null;
   }
 
-  /**
-   * Get configuration value as string
-   */
-  async getString(key: ConfigKey): Promise<string | null> {
-    return this.get<string>(key);
+  async getString(key: ConfigKey, orgId?: string): Promise<string | null> {
+    return this.get<string>(key, orgId);
   }
 
-  /**
-   * Get configuration value as number
-   */
-  async getNumber(key: ConfigKey): Promise<number | null> {
-    const value = await this.get<string>(key);
+  async getNumber(key: ConfigKey, orgId?: string): Promise<number | null> {
+    const value = await this.get<string>(key, orgId);
     if (value === null) return null;
     const parsed = Number(value);
     return isNaN(parsed) ? null : parsed;
   }
 
-  /**
-   * Get configuration value as boolean
-   */
-  async getBoolean(key: ConfigKey): Promise<boolean | null> {
-    const value = await this.get<string>(key);
+  async getBoolean(key: ConfigKey, orgId?: string): Promise<boolean | null> {
+    const value = await this.get<string>(key, orgId);
     if (value === null) return null;
     return value === 'true' || value === '1';
   }
 
   /**
-   * Hot reload cache for specific key
-   * Call this after updating a configuration value
+   * Hot reload cache for specific key (both global and all orgs).
    */
   async reloadKey(key: ConfigKey): Promise<void> {
-    this.cache.delete(key);
+    // Remove all cached entries for this key
+    for (const cacheKey of Array.from(this.cache.keys())) {
+      if (cacheKey.endsWith(`:${key}`)) {
+        this.cache.delete(cacheKey);
+      }
+    }
 
-    const config = await this.configModel
-      .findOne({
-        key,
-        isDeleted: false,
-      })
+    const configs = await this.configModel
+      .find({ key, isDeleted: false, value: { $nin: [null, ''] } })
       .exec();
 
-    if (config) {
+    for (const config of configs) {
       const parsedValue = this.parseValue(key, config.value);
-      this.cache.set(key, parsedValue);
-      this.logger.debug(`Cache reloaded for key: ${key}`);
-    } else {
-      this.logger.debug(`Key not found or inactive: ${key}`);
+      const cacheKey = config.scope === 'global'
+        ? `${GLOBAL_PREFIX}:${key}`
+        : `${config.owner?.orgId}:${key}`;
+      this.cache.set(cacheKey, parsedValue);
     }
+
+    this.logger.debug(`Cache reloaded for key: ${key}`);
   }
 
-  /**
-   * Hot reload entire cache
-   * Call this to refresh all configuration values
-   */
   async reloadCache(): Promise<void> {
     this.cache.clear();
     await this.initializeCache();
     this.logger.log(
-      `Configuration cache reloaded with ${this.cache.size} keys`
+      `Configuration cache reloaded with ${this.cache.size} entries`
     );
   }
 
-  /**
-   * Clear cache (for testing or maintenance)
-   */
   clearCache(): void {
     this.cache.clear();
     this.cacheInitialized = false;
     this.logger.log('Configuration cache cleared');
   }
 
-  /**
-   * Get cache statistics
-   */
-  getCacheStats(): {
-    size: number;
-    initialized: boolean;
-    keys: string[];
-  } {
+  getCacheStats(): { size: number; initialized: boolean; keys: string[] } {
     return {
       size: this.cache.size,
       initialized: this.cacheInitialized,
@@ -195,15 +177,11 @@ export class ConfigService implements OnModuleInit {
   // Private Helper Methods
   // =======================================================================
 
-  /**
-   * Initialize cache by loading all active configurations
-   */
   private async initializeCache(): Promise<void> {
     try {
       const configs = await this.configModel
         .find({
           isDeleted: false,
-          isActive: true,
           value: { $nin: [null, ''] },
         })
         .exec();
@@ -215,7 +193,10 @@ export class ConfigService implements OnModuleInit {
           config.key as ConfigKey,
           config.value
         );
-        this.cache.set(config.key, parsedValue);
+        const cacheKey = config.scope === 'global'
+          ? `${GLOBAL_PREFIX}:${config.key}`
+          : `${config.owner?.orgId}:${config.key}`;
+        this.cache.set(cacheKey, parsedValue);
       }
 
       this.cacheInitialized = true;
@@ -225,14 +206,10 @@ export class ConfigService implements OnModuleInit {
     }
   }
 
-  /**
-   * Parse value based on metadata data type
-   */
   private parseValue(key: ConfigKey, value: string): any {
     const metadata = CONFIG_METADATA[key];
 
     if (!metadata) {
-      // If metadata not found, return as string
       return value;
     }
 

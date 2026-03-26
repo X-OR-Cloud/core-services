@@ -46,7 +46,7 @@ export class SetupService {
     // 1. Khởi tạo tất cả keys với giá trị rỗng
     const result = await this.configurationService.initializeAll(systemContext);
 
-    // 2. Upsert 6 service URL keys với giá trị thực
+    // 2. Upsert 6 service URL keys as global scope (shared across all orgs)
     const urlMappings: Array<{ key: ConfigKey; value: string }> = [
       { key: ConfigKey.IAM_BASE_API_URL, value: dto.serviceUrls.iamBaseApiUrl },
       { key: ConfigKey.AIWM_BASE_API_URL, value: dto.serviceUrls.aiwmBaseApiUrl },
@@ -57,7 +57,7 @@ export class SetupService {
     ];
 
     for (const { key, value } of urlMappings) {
-      await this.configurationService.createOrUpdate({ key, value }, systemContext);
+      await this.configurationService.createOrUpdate({ key, value, scope: 'global' }, systemContext);
     }
 
     return {
