@@ -98,7 +98,7 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
 
     const signal = await this.signalModel.findOneAndUpdate(
       {
-        accountId: bot.accountId,
+        accountId: new Types.ObjectId(bot.accountId.toString()),
         asset: bot.asset,
         timeframe: bot.timeframe,
         signalType: { $in: ['BUY', 'SELL'] },
