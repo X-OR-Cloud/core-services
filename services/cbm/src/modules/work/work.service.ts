@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -7,7 +7,8 @@ import { Work, RecurrenceConfig } from './work.schema';
 import { CreateWorkDto } from './work.dto';
 import { NotificationService } from '../notification/notification.service';
 import { ProjectService } from '../project/project.service';
-import { assertCanManageWork, getWorkCallerRole } from '../project/project-access.helper';
+import { assertCanManageWork, getWorkCallerRole, isWorkCreator, isSuperAdmin } from '../project/project-access.helper';
+import { PredefinedRole, getHighestRole } from '@hydrabyte/shared';
 
 /**
  * WorkService
@@ -27,14 +28,14 @@ export class WorkService extends BaseService<Work> {
   }
 
   /**
-   * Assert that the caller is a project lead or super-admin for work's project.
+   * Assert that the caller is a project lead, super-admin, or work creator for work's project.
    * No-op if work has no projectId.
    */
-  private async assertWorkProjectAccess(projectId: string | undefined, context: RequestContext): Promise<void> {
+  private async assertWorkProjectAccess(projectId: string | undefined, context: RequestContext, work?: any): Promise<void> {
     if (!projectId) return;
     const project = await this.projectService.getRawProjectById(projectId.toString());
     if (project) {
-      assertCanManageWork(project, context);
+      assertCanManageWork(project, context, work);
     }
   }
 
@@ -46,6 +47,12 @@ export class WorkService extends BaseService<Work> {
    * - subtask: must have parentId, and parent must be task
    */
   async create(data: CreateWorkDto, context: RequestContext): Promise<Work> {
+    // org.viewer cannot create work
+    const highestRole = getHighestRole(context.roles);
+    if (highestRole === PredefinedRole.OrganizationViewer) {
+      throw new ForbiddenException('organization.viewer does not have permission to create work items');
+    }
+
     // Check project lead access if work belongs to a project
     await this.assertWorkProjectAccess((data as any).projectId, context);
     // Validate reporter exists and isDeleted = false
@@ -109,10 +116,10 @@ export class WorkService extends BaseService<Work> {
    * - reason: Managed automatically by blockWork/unblockWork actions
    */
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Work>> {
-    // Check project lead access
+    // Check project lead / creator access
     const existingWork = await super.findById(id, context);
     if (existingWork) {
-      await this.assertWorkProjectAccess((existingWork as any).projectId, context);
+      await this.assertWorkProjectAccess((existingWork as any).projectId, context, existingWork);
     }
 
     // Block fields that cannot be updated directly
@@ -819,8 +826,8 @@ export class WorkService extends BaseService<Work> {
       throw new BadRequestException('Work not found');
     }
 
-    // Check project lead access
-    await this.assertWorkProjectAccess((work as any).projectId, context);
+    // Check project lead / creator access
+    await this.assertWorkProjectAccess((work as any).projectId, context, work);
 
     if (!['done', 'cancelled'].includes(work.status)) {
       const nextStep = this.hint(context,

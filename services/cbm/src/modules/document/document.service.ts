@@ -73,14 +73,15 @@ export class DocumentService extends BaseService<Document> {
   private async applyViewAccess(doc: any, context: RequestContext, needsMembership: boolean): Promise<boolean> {
     const shareMode = (doc as any).shareMode ?? 'private';
 
+    // Creator always has full access regardless of shareMode or project
+    if (canViewPrivateDocument(doc, context)) return true;
+
     if (shareMode === 'organization') {
       // All same-org members (filtered by owner.orgId in query) can view
       return true;
     }
 
     // shareMode === 'private'
-    if (isSuperAdmin(context)) return true;
-
     if ((doc as any).projectId) {
       // Project-linked: project members can view
       const memberIds = await this.projectService.getMemberProjectIds(context);
@@ -90,8 +91,8 @@ export class DocumentService extends BaseService<Document> {
       return true;
     }
 
-    // No project: only creator can view
-    return canViewPrivateDocument(doc, context);
+    // No project, private, not creator: deny
+    return false;
   }
 
   /**
@@ -114,15 +115,13 @@ export class DocumentService extends BaseService<Document> {
     if (isSuperAdmin(context)) return null; // super-admin: no restriction
 
     const memberIds = await this.projectService.getMemberProjectIds(context);
-    const callerId = context.agentId || context.userId;
 
-    // Conditions for private documents this caller can see:
-    const privateConditions: any[] = [
-      // private no-project docs created by caller
-      { shareMode: { $in: ['private', null] }, projectId: { $exists: false }, createdBy: callerId },
-      { shareMode: { $in: ['private', null] }, projectId: null, createdBy: callerId },
-    ];
+    // Build creator condition: docs where caller is the owner
+    const creatorConditions: any[] = [];
+    if (context.userId) creatorConditions.push({ 'owner.userId': context.userId });
+    if (context.agentId) creatorConditions.push({ 'owner.agentId': context.agentId });
 
+    const privateConditions: any[] = [];
     if (memberIds !== undefined && memberIds.size > 0) {
       // private project docs where caller is a member
       privateConditions.push({
@@ -133,6 +132,8 @@ export class DocumentService extends BaseService<Document> {
 
     return {
       $or: [
+        // creator always sees their own docs regardless of shareMode/project
+        ...creatorConditions,
         // organization-shared docs: all org members can view (orgId already filtered in findAll)
         { shareMode: 'organization' },
         ...privateConditions,

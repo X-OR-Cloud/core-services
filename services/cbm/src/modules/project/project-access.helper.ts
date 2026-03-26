@@ -98,6 +98,19 @@ export function isSuperAdmin(context: RequestContext): boolean {
 }
 
 /**
+ * Check if the caller is the creator/owner of a project.
+ * Matches context.userId === project.owner.userId OR context.agentId === project.owner.agentId
+ */
+export function isProjectCreator(project: any, context: RequestContext): boolean {
+  const plain = project.toObject ? project.toObject() : project;
+  const owner = plain.owner;
+  if (!owner) return false;
+  if (context.userId && owner.userId && owner.userId.toString() === context.userId) return true;
+  if (context.agentId && owner.agentId && owner.agentId.toString() === context.agentId) return true;
+  return false;
+}
+
+/**
  * Check if the caller belongs to the same org as the project
  */
 export function isSameOrg(project: any, context: RequestContext): boolean {
@@ -169,34 +182,47 @@ export function assertCanManageMembers(project: any, context: RequestContext): v
 
 /**
  * Assert that the caller can manage project info (update/delete).
- * Only project.lead and super-admin are allowed.
+ * Allowed: project.lead, super-admin, or creator (owner.userId/agentId match).
  */
 export function assertCanManageProject(project: any, context: RequestContext): void {
   const role = getMemberRole(project, context);
-  if (role !== 'super-admin' && role !== 'project.lead') {
-    throw new ForbiddenException(
-      buildForbiddenMessage(
-        'Only project leads and organization owners can modify project information. Please contact the project lead to perform this action.',
-        project,
-      ),
-    );
-  }
+  if (role === 'super-admin' || role === 'project.lead') return;
+  if (isProjectCreator(project, context)) return;
+  throw new ForbiddenException(
+    buildForbiddenMessage(
+      'Only project leads, organization owners, and the project creator can modify project information. Please contact the project lead to perform this action.',
+      project,
+    ),
+  );
+}
+
+/**
+ * Check if the caller is the creator/reporter of a work item.
+ * Matches context.userId/agentId against work.reporter.
+ */
+export function isWorkCreator(work: any, context: RequestContext): boolean {
+  const plain = work.toObject ? work.toObject() : work;
+  const reporter = plain.reporter;
+  if (!reporter) return false;
+  if (context.agentId && reporter.type === 'agent' && reporter.id === context.agentId) return true;
+  if (context.userId && reporter.type === 'user' && reporter.id === context.userId) return true;
+  return false;
 }
 
 /**
  * Assert that the caller can manage work items (create/update/delete).
- * Only project.lead and super-admin are allowed.
+ * Allowed: project.lead, super-admin, or work creator (reporter match).
  */
-export function assertCanManageWork(project: any, context: RequestContext): void {
+export function assertCanManageWork(project: any, context: RequestContext, work?: any): void {
   const role = getMemberRole(project, context);
-  if (role !== 'super-admin' && role !== 'project.lead') {
-    throw new ForbiddenException(
-      buildForbiddenMessage(
-        'Only project leads and organization owners can create, update, or delete work items. Please contact the project lead to perform this action.',
-        project,
-      ),
-    );
-  }
+  if (role === 'super-admin' || role === 'project.lead') return;
+  if (work && isWorkCreator(work, context)) return;
+  throw new ForbiddenException(
+    buildForbiddenMessage(
+      'Only project leads, organization owners, and the work creator can create, update, or delete work items. Please contact the project lead to perform this action.',
+      project,
+    ),
+  );
 }
 
 /**
@@ -245,7 +271,7 @@ export function applyProjectAccess(project: any, context: RequestContext): any {
   const role = getMemberRole(project, context);
   const myRole = getCallerRole(project, context);
 
-  if (role === null) {
+  if (role === null && !isProjectCreator(project, context)) {
     return { ...stripToPublicView(project), myRole };
   }
 
@@ -264,7 +290,7 @@ export function applyProjectListAccess(projects: any[], context: RequestContext)
     .map((p) => {
       const role = getMemberRole(p, context);
       const myRole = getCallerRole(p, context);
-      if (role === null) {
+      if (role === null && !isProjectCreator(p, context)) {
         return { ...stripToPublicView(p), myRole };
       }
       const plain = p.toObject ? p.toObject() : p;
@@ -300,61 +326,61 @@ export function getMemberProjectIds(
 
 
 /**
+ * Check if the caller is the creator/owner of a document.
+ */
+function isDocumentCreator(doc: any, context: RequestContext): boolean {
+  const owner = doc.owner;
+  if (!owner) return false;
+  if (context.userId && owner.userId && owner.userId.toString() === context.userId) return true;
+  if (context.agentId && owner.agentId && owner.agentId.toString() === context.agentId) return true;
+  return false;
+}
+
+/**
  * Check if the caller can view a private document.
  *
  * Rules:
- *   - super-admin (universe.owner / organization.owner): always allowed
- *   - all same-org members: allowed (owner/creator check temporarily disabled due to Base layer issue)
- *
- * Note: project-linked documents use membership checks separately;
- * this helper handles the non-project case and the supra-admin bypass.
- *
- * TODO: Re-enable isDocumentOwner check once owner field population is verified stable.
+ *   - super-admin: always allowed
+ *   - creator (owner.userId/agentId match): always allowed
+ *   - others: false (caller must be project member for project-linked docs)
  */
-export function canViewPrivateDocument(_doc: any, _context: RequestContext): boolean {
-  // Owner/creator check temporarily disabled — all org members can view private docs
-  // if (isSuperAdmin(context)) return true;
-  // return isDocumentOwner(doc, context);
-  return true;
+export function canViewPrivateDocument(doc: any, context: RequestContext): boolean {
+  if (isSuperAdmin(context)) return true;
+  if (isDocumentCreator(doc, context)) return true;
+  return false;
 }
 
 /**
  * Assert that the caller can update or delete a document (write access).
  *
- * Rules (temporary):
- *   - all same-org members: allowed (owner/creator check temporarily disabled due to Base layer issue)
- *
- * Original rules (to restore):
+ * Rules:
  *   - super-admin (universe.owner / organization.owner): always allowed
+ *   - creator (owner.userId or owner.agentId match): always allowed, regardless of shareMode or project
  *   - project.lead (when doc belongs to a project): allowed
- *   - document owner (owner.userId or owner.agentId): always allowed
  *   - others: ForbiddenException
- *
- * TODO: Re-enable owner check once owner field population is verified stable.
  *
  * @param doc     - the Document plain object
  * @param project - the raw Project (null if doc has no projectId)
  * @param context - caller's RequestContext
  */
-export function assertCanWriteDocument(_doc: any, _project: any | null, _context: RequestContext): void {
-  // Owner/creator check temporarily disabled — all org members can write
-  // if (isSuperAdmin(context)) return;
-  // if (isDocumentOwner(doc, context)) return;
-  // if (project) {
-  //   const role = getMemberRole(project, context);
-  //   if (role === 'project.lead') return;
-  //   throw new ForbiddenException(
-  //     buildForbiddenMessage(
-  //       'Only the document creator, project leads, and organization owners can modify or delete this document. Please contact the project lead to perform this action.',
-  //       project,
-  //     ),
-  //   );
-  // }
-  // const creatorParts: string[] = [];
-  // if (doc.owner?.userId) creatorParts.push(`userId: ${doc.owner.userId}`);
-  // if (doc.owner?.agentId) creatorParts.push(`agentId: ${doc.owner.agentId}`);
-  // const creatorStr = creatorParts.length > 0 ? ` Document creator: ${creatorParts.join(', ')}.` : '';
-  // throw new ForbiddenException(
-  //   `Only the document creator and organization owners can modify or delete this document.${creatorStr}`,
-  // );
+export function assertCanWriteDocument(doc: any, project: any | null, context: RequestContext): void {
+  if (isSuperAdmin(context)) return;
+  if (isDocumentCreator(doc, context)) return;
+  if (project) {
+    const role = getMemberRole(project, context);
+    if (role === 'project.lead') return;
+    throw new ForbiddenException(
+      buildForbiddenMessage(
+        'Only the document creator, project leads, and organization owners can modify or delete this document. Please contact the project lead to perform this action.',
+        project,
+      ),
+    );
+  }
+  const creatorParts: string[] = [];
+  if (doc.owner?.userId) creatorParts.push(`userId: ${doc.owner.userId}`);
+  if (doc.owner?.agentId) creatorParts.push(`agentId: ${doc.owner.agentId}`);
+  const creatorStr = creatorParts.length > 0 ? ` Document creator: ${creatorParts.join(', ')}.` : '';
+  throw new ForbiddenException(
+    `Only the document creator and organization owners can modify or delete this document.${creatorStr}`,
+  );
 }
