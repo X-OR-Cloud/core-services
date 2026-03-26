@@ -142,7 +142,21 @@ export class Signal extends BaseSchema {
       fundingRateAnnualized?: number;
       longShortRatio?: number;
       openInterestUsd?: number;
+      /** Các sự kiện thị trường nổi bật từ ByteTree analysis */
+      keyEvents?: string[];
+      /** Tóm tắt phân tích sentiment từ ByteTree */
+      analysisSummary?: string;
     };
+    /** News articles gần nhất đã được đưa vào LLM prompt */
+    newsArticles?: Array<{
+      title: string;
+      sourceName?: string;
+      publishedAt?: Date;
+      description?: string;
+      sentiment?: number;
+      sentimentLabel?: string;
+      sentimentReason?: string;
+    }>;
     /** Context về market price candles đã dùng */
     marketContext?: {
       source: string;

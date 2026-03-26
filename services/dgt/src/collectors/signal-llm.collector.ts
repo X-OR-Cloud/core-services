@@ -18,6 +18,7 @@ import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { NotificationService } from '../shared/notification.service';
 import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
 import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
+import { NewsArticleService } from '../modules/news-article/news-article.service';
 
 const SYSTEM_CONTEXT: RequestContext = {
   userId: 'system',
@@ -40,6 +41,7 @@ export class SignalLlmCollector extends BaseCollector {
     private readonly macroIndicatorService: MacroIndicatorService,
     private readonly notificationService: NotificationService,
     private readonly systemActivityLogService: SystemActivityLogService,
+    private readonly newsArticleService: NewsArticleService,
   ) {
     super();
   }
@@ -79,7 +81,13 @@ export class SignalLlmCollector extends BaseCollector {
       { sort: { timestamp: -1 }, page: 1, limit: 8 },
     );
 
-    // Step 4.5: Build data snapshot — lưu giá trị thực tế đã dùng để generate signal
+    // Step 5: Fetch latest NewsArticle records (last 5, most recent)
+    const { data: recentNewsArticles } = await this.newsArticleService.findAll(
+      {},
+      { sort: { publishedAt: -1 }, page: 1, limit: 5 },
+    );
+
+    // Step 5.5: Build data snapshot — lưu giá trị thực tế đã dùng để generate signal
     const firstCandle = candles[0] as any;
     const lastCandle = candles[candles.length - 1] as any;
     const latestSentiment = sentimentSignals[0] as any;
@@ -127,7 +135,20 @@ export class SignalLlmCollector extends BaseCollector {
             fundingRateAnnualized: latestSentiment.fundingRateAnnualized,
             longShortRatio: latestSentiment.longShortRatio,
             openInterestUsd: latestSentiment.openInterestUsd,
+            keyEvents: latestSentiment.keyEvents,
+            analysisSummary: latestSentiment.analysisSummary,
           }
+        : undefined,
+      newsArticles: recentNewsArticles.length > 0
+        ? recentNewsArticles.map((a: any) => ({
+            title: a.title,
+            sourceName: a.sourceName,
+            publishedAt: a.publishedAt,
+            description: a.description,
+            sentiment: a.sentiment,
+            sentimentLabel: a.sentimentLabel,
+            sentimentReason: a.sentimentReason,
+          }))
         : undefined,
       marketContext:
         candles.length > 0
@@ -144,7 +165,7 @@ export class SignalLlmCollector extends BaseCollector {
           : undefined,
     };
 
-    // Step 5: Fallback if insufficient data
+    // Step 6: Fallback if insufficient data
     if (candles.length < 10) {
       this.logger.warn(
         `[${this.name}] Insufficient candle data for ${asset}/${timeframe} (${candles.length} candles), generating HOLD signal`,
@@ -174,7 +195,7 @@ export class SignalLlmCollector extends BaseCollector {
       return;
     }
 
-    // Step 6: Build user prompt
+    // Step 7: Build user prompt
     const userPrompt = this.buildUserPrompt(
       asset,
       timeframe,
@@ -182,9 +203,10 @@ export class SignalLlmCollector extends BaseCollector {
       indicator,
       sentimentSignals,
       macroIndicators,
+      recentNewsArticles,
     );
 
-    // Step 7: Call LLM
+    // Step 8: Call LLM
     const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
     const llmApiKey = process.env['LLM_API_KEY'] || '';
     const llmModel =
@@ -290,7 +312,7 @@ export class SignalLlmCollector extends BaseCollector {
       return;
     }
 
-    // Step 8: Validate LLM response
+    // Step 9: Validate LLM response
     const validSignalTypes = [SignalType.BUY, SignalType.SELL, SignalType.HOLD];
     const rawSignalType = parsed?.signal_type;
     const rawConfidence = parsed?.confidence;
@@ -521,6 +543,7 @@ export class SignalLlmCollector extends BaseCollector {
     indicator: any,
     sentimentSignals: any[],
     macroIndicators: any[],
+    newsArticles: any[] = [],
   ): string {
     const candleData = candles.map((c) => ({
       timestamp: c.timestamp,
@@ -583,6 +606,18 @@ export class SignalLlmCollector extends BaseCollector {
         }))
       : null;
 
+    const newsData = newsArticles.length > 0
+      ? newsArticles.map((a) => ({
+          title: a.title,
+          sourceName: a.sourceName,
+          publishedAt: a.publishedAt,
+          description: a.description,
+          sentiment: a.sentiment,
+          sentimentLabel: a.sentimentLabel,
+          sentimentReason: a.sentimentReason,
+        }))
+      : null;
+
     return `Analyze the following market data for ${asset} on the ${timeframe} timeframe and generate a trading signal.
 
 LATEST PRICE: ${latestCandle?.close ?? 'N/A'}
@@ -597,9 +632,12 @@ ${indicatorData ? JSON.stringify(indicatorData, null, 2) : 'No indicator data av
 NEWS & SENTIMENT (most recent records):
 ${sentimentData ? JSON.stringify(sentimentData, null, 2) : 'No sentiment data available'}
 
+NEWS ARTICLES (most recent, with sentiment analysis):
+${newsData ? JSON.stringify(newsData, null, 2) : 'No news articles available'}
+
 MACRO INDICATORS (latest values):
 ${macroData ? JSON.stringify(macroData, null, 2) : 'No macro data available'}
 
-Based on all available data (technical, sentiment, macro), generate a trading signal following the required JSON format.`;
+Based on all available data (technical, sentiment, news articles, macro), generate a trading signal following the required JSON format.`;
   }
 }
