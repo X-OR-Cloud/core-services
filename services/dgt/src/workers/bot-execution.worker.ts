@@ -93,6 +93,11 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
     // 3. Check điều kiện tổng thể của bot
     if (!this.checkBotConditions(bot, account)) return;
 
+    // 3b. Sync balance từ exchange trước khi check — đảm bảo dùng số dư thực tế
+    //     (user có thể nạp thêm USDT trực tiếp trên sàn)
+    const freshAccount = await this.syncAndGetFreshAccount(account);
+    const accountWithFreshBalance = freshAccount ?? account;
+
     // 4. Tìm signal ACTIVE cho asset/timeframe của bot, chưa được execute bởi bot
     //    Atomic: dùng findOneAndUpdate để claim ngay
     const now = new Date();
@@ -189,17 +194,17 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
       return;
     }
 
-    // 9. Check balance đủ không
+    // 9. Check balance đủ không (dùng fresh balance từ exchange)
     const estimatedCost = entryPrice * quantity;
-    if (account.balance < estimatedCost) {
+    if (accountWithFreshBalance.balance < estimatedCost) {
       this.logger.warn(
-        `[BotExec] Bot ${botId} insufficient balance: $${account.balance} < $${estimatedCost.toFixed(2)}`,
+        `[BotExec] Bot ${botId} insufficient balance: $${accountWithFreshBalance.balance} < $${estimatedCost.toFixed(2)}`,
       );
       await this.releaseSignalClaim(signal._id);
-      await this.logActivity(bot, account, {
+      await this.logActivity(bot, accountWithFreshBalance, {
         action: 'Trade skipped: insufficient balance',
         actionType: ActivityActionType.WARNING,
-        details: `Balance $${account.balance.toFixed(2)} < required $${estimatedCost.toFixed(2)} for ${quantity} ${bot.asset}`,
+        details: `Balance $${accountWithFreshBalance.balance.toFixed(2)} < required $${estimatedCost.toFixed(2)} for ${quantity} ${bot.asset}`,
         status: ActivityStatus.WARNING,
       });
       return;
@@ -330,6 +335,37 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
       });
     } catch (err: any) {
       this.logger.error(`[BotExec] Failed to write activity log: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Sync balance từ exchange và trả về account với balance mới nhất.
+   * Dùng TRƯỚC khi check balance để đảm bảo dùng số dư thực tế từ exchange.
+   * Trả về null nếu không có API key hoặc sync thất bại (fallback về account cũ).
+   */
+  private async syncAndGetFreshAccount(account: any): Promise<any | null> {
+    if (!account?.apiKey || !account?.apiSecret) return null;
+
+    try {
+      const adapter = this.adapterFactory.createAdapter({
+        exchange: account.exchange,
+        accountType: account.accountType,
+        apiKey: account.apiKey,
+        apiSecret: account.apiSecret,
+      });
+
+      const currency = account.currency || 'USDT';
+      const balance = await adapter.getBalance(currency);
+
+      // Cập nhật DB và trả về account với balance mới
+      await this.accountModel.findByIdAndUpdate(account._id, { balance });
+      this.logger.debug(`[BotExec] Synced balance for account ${account._id}: ${balance} ${currency}`);
+
+      return { ...account, balance };
+    } catch (err: any) {
+      // Sync thất bại → fallback về balance cũ trong DB, không block execution
+      this.logger.warn(`[BotExec] Pre-trade balance sync failed for account ${account._id}: ${err?.message}. Using cached balance.`);
+      return null;
     }
   }
 
