@@ -387,19 +387,25 @@ export class AccountService extends BaseService<Account> {
   }
 
   /**
-   * Cập nhật balance trực tiếp vào DB — không qua RBAC check.
+   * Cập nhật balance + balanceBreakdown trực tiếp vào DB — không qua RBAC check.
    * Dùng cho internal/system calls (auto-sync, periodic job).
+   * Atomic update: cả balance và breakdown được ghi trong 1 updateOne().
    */
-  private async updateBalanceInDB(id: string, balance: number): Promise<void> {
+  private async updateBalanceInDB(
+    id: string,
+    balance: number,
+    breakdown: Record<string, number>,
+  ): Promise<void> {
     await this.model.updateOne(
       { _id: id },
-      { $set: { balance, updatedAt: new Date() } },
+      { $set: { balance, balanceBreakdown: breakdown, updatedAt: new Date() } },
     ).exec();
   }
 
   /**
    * Sync balance cho 1 account — không cần user context (dùng cho internal calls).
    * Tính tổng portfolio value = USDT + PAXG × giá PAXG/USDT.
+   * Lưu balanceBreakdown = { USDT: qty, PAXG: qty } để dashboard dùng.
    * Bỏ qua account không có API key thay vì throw.
    */
   async syncBalanceInternal(id: string): Promise<{ balance: number; currency: string }> {
@@ -425,9 +431,13 @@ export class AccountService extends BaseService<Account> {
         adapter.getBalance('PAXG'),
       ]);
 
+      // Build breakdown: lưu qty thực của từng asset
+      const breakdown: Record<string, number> = { USDT: usdtBalance };
+
       // Tính tổng portfolio: USDT + PAXG × giá PAXG/USDT
       let totalBalance = usdtBalance;
       if (paxgBalance > 0) {
+        breakdown['PAXG'] = paxgBalance;
         const paxgPrice = await this.getLatestPaxgPrice();
         const paxgValueUsd = paxgBalance * paxgPrice;
         totalBalance = usdtBalance + paxgValueUsd;
@@ -437,8 +447,8 @@ export class AccountService extends BaseService<Account> {
       }
 
       const balance = Math.round(totalBalance * 100) / 100;
-      await this.updateBalanceInDB(id, balance);
-      this.logger.debug(`Account ${id}: balance synced → ${balance} USDT`);
+      await this.updateBalanceInDB(id, balance, breakdown);
+      this.logger.debug(`Account ${id}: balance synced → ${balance} USDT, breakdown=${JSON.stringify(breakdown)}`);
       return { balance, currency: 'USDT' };
     } catch (err: any) {
       throw new BadRequestException(`Failed to sync balance: ${err?.message}`);

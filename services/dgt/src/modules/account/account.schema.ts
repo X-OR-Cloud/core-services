@@ -35,6 +35,9 @@ export class Account extends BaseSchema {
   @Prop({ required: true, default: 0 })
   balance: number;
 
+  @Prop({ type: Map, of: Number, default: {} })
+  balanceBreakdown: Map<string, number>;
+
   @Prop({ required: true, default: 0 })
   initialBalance: number;
 

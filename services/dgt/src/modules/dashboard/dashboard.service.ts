@@ -60,6 +60,42 @@ export class DashboardService {
     const initialBalance = account.initialBalance || totalValueUsd;
     const totalPnlPct = initialBalance > 0 ? (totalPnlUsd / initialBalance) * 100 : 0;
 
+    // Build cash asset allocation từ balanceBreakdown (nếu có)
+    // balanceBreakdown lưu qty thực từng asset: { USDT: 2274.71, PAXG: 3.21 }
+    const breakdown = account.balanceBreakdown
+      ? Object.fromEntries(account.balanceBreakdown as Map<string, number>)
+      : {};
+
+    let cashAllocation: Array<{ symbol: string; valueUsd: number; pct: number; quantity: number }>;
+
+    if (Object.keys(breakdown).length > 0) {
+      // Lấy PAXG price nếu có PAXG trong breakdown
+      const paxgPrice = breakdown['PAXG'] ? await this.getPaxgPriceForDashboard() : 0;
+
+      // Tính valueUsd cho từng asset từ qty × price
+      const breakdownEntries = Object.entries(breakdown).map(([asset, qty]) => {
+        const valueUsd = asset === 'USDT' ? qty : asset === 'PAXG' ? qty * paxgPrice : 0;
+        return { asset, qty, valueUsd };
+      });
+
+      cashAllocation = breakdownEntries.map(({ asset, qty, valueUsd }) => ({
+        symbol: asset,
+        valueUsd: Math.round(valueUsd * 100) / 100,
+        pct: totalValueUsd > 0 ? Math.round((valueUsd / totalValueUsd) * 1000) / 10 : 0,
+        quantity: Math.round(qty * 10000) / 10000,
+      }));
+    } else {
+      // Fallback: behavior cũ — hiện toàn bộ balance là USDT
+      cashAllocation = [
+        {
+          symbol: account.currency || 'USDT',
+          valueUsd: Math.round(cashBalanceUsd * 100) / 100,
+          pct: totalValueUsd > 0 ? Math.round((cashBalanceUsd / totalValueUsd) * 1000) / 10 : 0,
+          quantity: Math.round(cashBalanceUsd * 100) / 100,
+        },
+      ];
+    }
+
     const assetAllocation = [
       ...Object.entries(symbolMap).map(([symbol, v]) => ({
         symbol,
@@ -67,12 +103,7 @@ export class DashboardService {
         pct: totalValueUsd > 0 ? Math.round((v.valueUsd / totalValueUsd) * 1000) / 10 : 0,
         quantity: Math.round(v.quantity * 10000) / 10000,
       })),
-      {
-        symbol: account.currency || 'USDT',
-        valueUsd: Math.round(cashBalanceUsd * 100) / 100,
-        pct: totalValueUsd > 0 ? Math.round((cashBalanceUsd / totalValueUsd) * 1000) / 10 : 0,
-        quantity: Math.round(cashBalanceUsd * 100) / 100,
-      },
+      ...cashAllocation,
     ];
 
     return {
@@ -88,6 +119,23 @@ export class DashboardService {
       assetAllocation,
       updatedAt: new Date(),
     };
+  }
+
+  /**
+   * Lấy giá PAXG/USDT mới nhất từ DB (binance_spot) để tính assetAllocation.
+   * Fallback về 0 nếu không có data (hiếm gặp — worker thường cập nhật liên tục).
+   */
+  private async getPaxgPriceForDashboard(): Promise<number> {
+    try {
+      const latest = await this.marketPriceModel
+        .findOne({ symbol: 'PAXGUSDT', source: 'binance_spot' })
+        .sort({ timestamp: -1 })
+        .lean()
+        .exec();
+      return latest?.close || 0;
+    } catch {
+      return 0;
+    }
   }
 
   async getPriceCards(symbols: string[], sparklinePoints: number) {
