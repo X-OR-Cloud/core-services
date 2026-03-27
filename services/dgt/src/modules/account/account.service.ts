@@ -205,7 +205,10 @@ export class AccountService extends BaseService<Account> {
 
     const result = await super.create(data, context);
     const accountId = (result as any)._id?.toString();
-    if (accountId && data.status === 'active') {
+    // Account mới tạo luôn active theo default schema
+    // Dùng status từ saved result thay vì data (data.status có thể undefined)
+    const savedStatus = (result as any).status || 'active';
+    if (accountId && savedStatus === 'active') {
       await this.publishSyncAccountSignals(accountId, 'upsert');
     }
 
