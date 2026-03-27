@@ -3,7 +3,48 @@ import { IsString, IsEnum, IsNumber, IsBoolean, IsOptional, Min, ValidateNested 
 import { Type } from 'class-transformer';
 import { AccountType, Exchange, AccountStatus } from './account.schema';
 
+/**
+ * DTO để test API key TRƯỚC khi tạo account.
+ * Server sẽ test connection với exchange và trả về testToken (Redis one-time token, TTL 10 phút).
+ * Dùng testToken này trong CreateAccountDto để tạo account — không cần gửi lại apiKey/apiSecret.
+ */
+export class TestApiKeyDto {
+  @ApiProperty({ enum: Exchange, default: Exchange.BINANCE, description: 'Exchange cần test' })
+  @IsEnum(Exchange)
+  exchange: string;
+
+  @ApiProperty({ enum: AccountType, default: AccountType.PAPER, description: 'Loại account (live/paper)' })
+  @IsEnum(AccountType)
+  accountType: string;
+
+  @ApiProperty({ description: 'API Key từ exchange' })
+  @IsString()
+  apiKey: string;
+
+  @ApiProperty({ description: 'API Secret từ exchange' })
+  @IsString()
+  apiSecret: string;
+
+  @ApiProperty({ required: false, default: 'USDT', description: 'Currency để lấy balance' })
+  @IsString()
+  @IsOptional()
+  currency?: string;
+}
+
 export class CreateAccountDto {
+  /**
+   * testToken nhận được từ POST /accounts/test-key.
+   * Khi cung cấp testToken, server sẽ lấy apiKey/apiSecret từ Redis cache —
+   * không cần (và không được) gửi apiKey/apiSecret trong request này.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'Token nhận từ POST /accounts/test-key (TTL 10 phút, one-time use). Khi dùng testToken thì không cần gửi apiKey/apiSecret.',
+  })
+  @IsString()
+  @IsOptional()
+  testToken?: string;
+
   @ApiProperty({ enum: AccountType, default: AccountType.PAPER })
   @IsEnum(AccountType)
   @IsOptional()
@@ -35,12 +76,12 @@ export class CreateAccountDto {
   @IsOptional()
   isDefault?: boolean;
 
-  @ApiProperty({ required: false, description: 'API Key from exchange (required for live accounts)' })
+  @ApiProperty({ required: false, description: 'API Key từ exchange (chỉ dùng khi không có testToken — paper account không cần key)' })
   @IsString()
   @IsOptional()
   apiKey?: string;
 
-  @ApiProperty({ required: false, description: 'API Secret from exchange — encrypted at rest, never returned' })
+  @ApiProperty({ required: false, description: 'API Secret từ exchange — chỉ dùng khi không có testToken' })
   @IsString()
   @IsOptional()
   apiSecret?: string;

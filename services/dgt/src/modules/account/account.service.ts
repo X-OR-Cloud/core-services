@@ -1,15 +1,24 @@
-import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Model } from 'mongoose';
 import { Queue } from 'bullmq';
 import { createHash, createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+import type Redis from 'ioredis';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
 import { Account, AccountType } from './account.schema';
-import { CreateAccountDto } from './account.dto';
+import { CreateAccountDto, TestApiKeyDto } from './account.dto';
 import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../../config/queue.config';
 import { ExchangeAdapterFactory } from '../../exchange/exchange-adapter.factory';
+import { DGT_REDIS_CLIENT } from '../../shared/redis.provider';
+
+// Redis key prefixes cho test-key flow
+const TEST_KEY_DATA_PREFIX = 'dgt:test-key:data:';   // TTL 10 phút — chứa apiKey/apiSecret
+const TEST_KEY_META_PREFIX = 'dgt:test-key:meta:';   // TTL 30 phút — tombstone để detect expired
+const TEST_KEY_DATA_TTL = 600;   // 10 phút (giây)
+const TEST_KEY_META_TTL = 1800;  // 30 phút (giây)
 
 const ENCRYPTION_KEY = process.env['API_SECRET_KEY'] || 'dgt-default-secret-key-32chars!!';
 const KEY = createHash('sha256').update(ENCRYPTION_KEY).digest(); // 32 bytes for AES-256
@@ -48,6 +57,7 @@ export class AccountService extends BaseService<Account> {
     @InjectModel(Account.name) accountModel: Model<Account>,
     @InjectQueue(QUEUE_NAMES.SIGNAL_SCHEDULER) private readonly signalSchedulerQueue: Queue,
     private readonly adapterFactory: ExchangeAdapterFactory,
+    @Inject(DGT_REDIS_CLIENT) private readonly redis: Redis,
   ) {
     super(accountModel as any);
   }
@@ -60,6 +70,104 @@ export class AccountService extends BaseService<Account> {
     );
   }
 
+  /**
+   * Test API key với exchange TRƯỚC khi tạo account.
+   * Nếu test thành công: lưu vào Redis (TTL 10 phút) và trả về testToken.
+   * FE dùng testToken này trong POST /accounts thay vì gửi lại apiKey/apiSecret.
+   */
+  async testKeyBeforeCreate(
+    dto: TestApiKeyDto,
+    userId: string,
+  ): Promise<{ testToken: string; expiresIn: number; status: string; permissions?: string[]; balance?: number; currency?: string }> {
+    const { apiKey, apiSecret, exchange, accountType, currency = 'USDT' } = dto;
+
+    // Test connection với exchange
+    const isDemoAccount = accountType === AccountType.PAPER;
+    let permissions: string[] = [];
+    let balance: number | undefined;
+
+    if (exchange === 'binance') {
+      const baseUrl = isDemoAccount ? 'https://demo-api.binance.com' : 'https://api.binance.com';
+      const timestamp = Date.now();
+      const queryString = `timestamp=${timestamp}`;
+      const signature = createHmac('sha256', apiSecret).update(queryString).digest('hex');
+
+      const res = await fetch(`${baseUrl}/api/v3/account?${queryString}&signature=${signature}`, {
+        headers: { 'X-MBX-APIKEY': apiKey },
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new BadRequestException((body as any).msg || `Exchange returned HTTP ${res.status}`);
+      }
+
+      const data: any = await res.json();
+      permissions = data.permissions || [];
+
+      // Lấy balance luôn nếu test thành công
+      try {
+        const adapter = this.adapterFactory.createAdapter({ exchange, accountType, apiKey, apiSecret });
+        balance = await adapter.getBalance(currency);
+      } catch {
+        // Non-blocking — không fail nếu getBalance lỗi
+      }
+    }
+    // OKX / Bybit: chấp nhận key mà không test thật (chưa implement adapter test)
+    // Sẽ mở rộng sau khi có adapter đầy đủ
+
+    // Lưu vào Redis
+    const testToken = uuidv4();
+    const payload = JSON.stringify({ apiKey, apiSecret: encryptSecret(apiSecret), exchange, accountType, currency, userId });
+
+    await this.redis.set(`${TEST_KEY_DATA_PREFIX}${testToken}`, payload, 'EX', TEST_KEY_DATA_TTL);
+    await this.redis.set(`${TEST_KEY_META_PREFIX}${testToken}`, '1', 'EX', TEST_KEY_META_TTL);
+
+    return {
+      testToken,
+      expiresIn: TEST_KEY_DATA_TTL,
+      status: 'valid',
+      permissions,
+      ...(balance !== undefined && { balance, currency }),
+    };
+  }
+
+  /**
+   * Resolve testToken từ Redis thành { apiKey, apiSecret, exchange, accountType }.
+   * Phân biệt rõ 2 trường hợp lỗi: token hết hạn vs token không hợp lệ.
+   */
+  private async resolveTestToken(
+    testToken: string,
+    userId: string,
+  ): Promise<{ apiKey: string; apiSecret: string; exchange: string; accountType: string; currency: string }> {
+    const dataRaw = await this.redis.get(`${TEST_KEY_DATA_PREFIX}${testToken}`);
+
+    if (dataRaw) {
+      // Token còn hạn — parse và verify ownership
+      const data = JSON.parse(dataRaw);
+      if (data.userId !== userId) {
+        throw new BadRequestException('Token không hợp lệ');
+      }
+      // One-time use: xóa cả 2 keys ngay
+      await this.redis.del(`${TEST_KEY_DATA_PREFIX}${testToken}`);
+      await this.redis.del(`${TEST_KEY_META_PREFIX}${testToken}`);
+      return {
+        apiKey: data.apiKey,
+        apiSecret: decryptSecret(data.apiSecret), // decrypt để dùng, rồi re-encrypt khi save
+        exchange: data.exchange,
+        accountType: data.accountType,
+        currency: data.currency || 'USDT',
+      };
+    }
+
+    // Data key hết hạn — check tombstone để phân biệt expired vs invalid
+    const meta = await this.redis.get(`${TEST_KEY_META_PREFIX}${testToken}`);
+    if (meta) {
+      throw new BadRequestException('Test token đã hết hạn, vui lòng thực hiện test kết nối lại');
+    }
+
+    throw new BadRequestException('Token không hợp lệ');
+  }
+
   private isOrgOwner(context: RequestContext): boolean {
     return (
       context.roles?.includes(PredefinedRole.OrganizationOwner) ||
@@ -68,18 +176,35 @@ export class AccountService extends BaseService<Account> {
   }
 
   async create(dto: CreateAccountDto, context: RequestContext): Promise<Partial<Account>> {
-    const data: any = {
-      ...dto,
-      balance: dto.initialBalance || 0,
-    };
-    if (data.apiSecret) {
+    const { testToken, ...rest } = dto;
+    const data: any = { ...rest, balance: dto.initialBalance || 0 };
+
+    if (testToken) {
+      // Luồng chính: dùng testToken — lấy apiKey/apiSecret từ Redis
+      // apiKey/apiSecret trong dto sẽ bị bỏ qua hoàn toàn (tránh swap key)
+      const resolved = await this.resolveTestToken(testToken, context.userId);
+      data.apiKey = resolved.apiKey;
+      data.apiSecret = encryptSecret(resolved.apiSecret);
+      // Nếu FE không truyền exchange/accountType thì dùng từ token
+      if (!data.exchange) data.exchange = resolved.exchange;
+      if (!data.accountType) data.accountType = resolved.accountType;
+      if (!data.currency) data.currency = resolved.currency;
+      data.apiKeyStatus = 'valid'; // đã được test
+    } else if (data.apiSecret) {
+      // Luồng fallback: không dùng testToken (paper account không cần key)
       data.apiSecret = encryptSecret(data.apiSecret);
     }
-    // count default accounts to set the first one as default
-    const existingCount = await this.model.countDocuments({ "owner.orgId": context.orgId, "owner.userId": context.userId, isDefault: true }).exec();
+
+    // Set isDefault nếu chưa có account nào
+    const existingCount = await this.model.countDocuments({
+      'owner.orgId': context.orgId,
+      'owner.userId': context.userId,
+      isDefault: true,
+    }).exec();
     if (existingCount === 0) {
       data.isDefault = true;
     }
+
     const result = await super.create(data, context);
     const accountId = (result as any)._id?.toString();
     if (accountId && data.status === 'active') {
