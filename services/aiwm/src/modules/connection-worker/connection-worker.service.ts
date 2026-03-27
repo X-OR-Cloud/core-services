@@ -23,6 +23,7 @@ const CHANNEL_INBOUND_TEAMS_PATTERN = 'inbound:teams:*';
 export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConnectionWorkerService.name);
   private readonly runners = new Map<string, ConnectionRunner>();
+  private readonly spawning = new Set<string>();
   private readonly outboundHandlers = new Map<string, OutboundHandler>();
   private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
@@ -225,37 +226,40 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async spawnRunner(connection: any): Promise<void> {
     const id = String(connection._id);
-    if (this.runners.has(id)) return;
-
-    const runner = new ConnectionRunner(
-      connection,
-      this.actionService,
-      this.routingService,
-      (conversationId, handler, verboseActions, verboseLogsChannelId) => {
-        this.outboundHandlers.set(conversationId, handler);
-        this.conversationConnectionId.set(conversationId, id);
-        if (verboseActions) this.conversationVerboseActions.set(conversationId, verboseActions);
-        if (verboseLogsChannelId) this.conversationVerboseLogsChannelId.set(conversationId, verboseLogsChannelId);
-      },
-      (conversationId) => {
-        this.outboundHandlers.delete(conversationId);
-        this.conversationConnectionId.delete(conversationId);
-        this.conversationVerboseActions.delete(conversationId);
-        this.conversationVerboseLogsChannelId.delete(conversationId);
-      },
-      (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
-      (payload) => this.publishMessageNew(payload),
-      (payload) => this.publishCommand(payload),
-      (level, message, data) =>
-        this.connectionService.addLog(id, level, message, data as Record<string, any>).catch(() => undefined),
-    );
+    if (this.runners.has(id) || this.spawning.has(id)) return;
+    this.spawning.add(id);
 
     try {
+      const runner = new ConnectionRunner(
+        connection,
+        this.actionService,
+        this.routingService,
+        (conversationId, handler, verboseActions, verboseLogsChannelId) => {
+          this.outboundHandlers.set(conversationId, handler);
+          this.conversationConnectionId.set(conversationId, id);
+          if (verboseActions) this.conversationVerboseActions.set(conversationId, verboseActions);
+          if (verboseLogsChannelId) this.conversationVerboseLogsChannelId.set(conversationId, verboseLogsChannelId);
+        },
+        (conversationId) => {
+          this.outboundHandlers.delete(conversationId);
+          this.conversationConnectionId.delete(conversationId);
+          this.conversationVerboseActions.delete(conversationId);
+          this.conversationVerboseLogsChannelId.delete(conversationId);
+        },
+        (agentId, conversationId) => this.publishAgentJoinRoom(agentId, conversationId),
+        (payload) => this.publishMessageNew(payload),
+        (payload) => this.publishCommand(payload),
+        (level, message, data) =>
+          this.connectionService.addLog(id, level, message, data as Record<string, any>).catch(() => undefined),
+      );
+
       await runner.start();
       this.runners.set(id, runner);
       this.logger.log(`Runner started for connection ${id} [${connection.provider}] "${connection.name}"`);
     } catch (err: any) {
       this.logger.error(`Failed to start runner for connection ${id}: ${err.message}`);
+    } finally {
+      this.spawning.delete(id);
     }
   }
 
