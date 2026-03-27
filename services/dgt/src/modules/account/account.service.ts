@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type Redis from 'ioredis';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, PredefinedRole } from '@hydrabyte/shared';
-import { Account, AccountType } from './account.schema';
+import { Account, AccountType, AccountStatus } from './account.schema';
 import { CreateAccountDto, TestApiKeyDto } from './account.dto';
 import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../../config/queue.config';
 import { ExchangeAdapterFactory } from '../../exchange/exchange-adapter.factory';
@@ -208,6 +208,14 @@ export class AccountService extends BaseService<Account> {
     if (accountId && data.status === 'active') {
       await this.publishSyncAccountSignals(accountId, 'upsert');
     }
+
+    // Auto-sync balance từ exchange ngay sau khi tạo account có API key
+    if (testToken && accountId) {
+      this.syncBalanceInternal(accountId).catch((err) =>
+        this.logger.warn(`[auto-sync] Balance sync failed for ${accountId}: ${err?.message}`),
+      );
+    }
+
     return sanitizeAccount(result);
   }
 
@@ -331,37 +339,86 @@ export class AccountService extends BaseService<Account> {
   }
 
   /**
-   * Sync balance từ exchange về DB.
-   * Dùng ExchangeAdapter (Binance/OKX/Bybit) để lấy số dư USDT thực tế.
-   * Hỗ trợ cả LIVE và SANDBOX (paper/testnet).
+   * Cập nhật balance trực tiếp vào DB — không qua RBAC check.
+   * Dùng cho internal/system calls (auto-sync, periodic job).
+   */
+  private async updateBalanceInDB(id: string, balance: number): Promise<void> {
+    await this.model.updateOne(
+      { _id: id },
+      { $set: { balance, updatedAt: new Date() } },
+    ).exec();
+  }
+
+  /**
+   * Sync balance cho 1 account — không cần user context (dùng cho internal calls).
+   * Bỏ qua account không có API key thay vì throw.
+   */
+  async syncBalanceInternal(id: string): Promise<{ balance: number; currency: string }> {
+    const rawAccount = await this.model.findById(id).lean().exec();
+    if (!rawAccount) throw new NotFoundException(`Account ${id} not found`);
+
+    if (!rawAccount.apiKey || !rawAccount.apiSecret) {
+      this.logger.debug(`Account ${id}: no API key configured, skip balance sync`);
+      return { balance: (rawAccount as any).balance || 0, currency: (rawAccount as any).currency || 'USDT' };
+    }
+
+    const currency = (rawAccount as any).currency || 'USDT';
+    try {
+      const adapter = this.adapterFactory.createAdapter({
+        exchange: (rawAccount as any).exchange,
+        accountType: (rawAccount as any).accountType,
+        apiKey: (rawAccount as any).apiKey,
+        apiSecret: (rawAccount as any).apiSecret,
+      });
+      const balance = await adapter.getBalance(currency);
+      await this.updateBalanceInDB(id, balance);
+      this.logger.debug(`Account ${id}: balance synced → ${balance} ${currency}`);
+      return { balance, currency };
+    } catch (err: any) {
+      throw new BadRequestException(`Failed to sync balance: ${err?.message}`);
+    }
+  }
+
+  /**
+   * Sync balance cho tất cả active accounts có API key.
+   * Dùng cho periodic scheduled job.
+   */
+  async syncAllActiveBalances(): Promise<{ synced: number; failed: number; total: number }> {
+    const accounts = await this.model
+      .find({ status: AccountStatus.ACTIVE, apiKey: { $exists: true, $ne: null } })
+      .select('_id')
+      .lean()
+      .exec();
+
+    let synced = 0, failed = 0;
+    for (const account of accounts) {
+      try {
+        await this.syncBalanceInternal((account._id as any).toString());
+        synced++;
+      } catch (err: any) {
+        this.logger.warn(`Periodic balance sync failed for account ${account._id}: ${err?.message}`);
+        failed++;
+      }
+    }
+    return { synced, failed, total: accounts.length };
+  }
+
+  /**
+   * Sync balance từ exchange về DB — API endpoint (cần user context + ownership check).
    */
   async syncBalance(id: any, context: RequestContext): Promise<{ balance: number; currency: string }> {
     const account = await this.findById(id, context);
     if (!account) throw new NotFoundException(`Account ${id} not found`);
+    if (!this.isOrgOwner(context)) {
+      await this.verifyOwnership(id, context);
+    }
 
-    const rawAccount = await (this as any).model.findById(id).lean().exec();
-
-    if (!rawAccount?.apiKey || !rawAccount?.apiSecret) {
+    const rawAccount = await this.model.findById(id).lean().exec();
+    if (!(rawAccount as any)?.apiKey || !(rawAccount as any)?.apiSecret) {
       throw new BadRequestException('API key not configured. Please set API key before syncing balance.');
     }
 
-    let balance: number;
-    try {
-      const adapter = this.adapterFactory.createAdapter({
-        exchange: rawAccount.exchange,
-        accountType: rawAccount.accountType,
-        apiKey: rawAccount.apiKey,
-        apiSecret: rawAccount.apiSecret,
-      });
-
-      const currency = rawAccount.currency || 'USDT';
-      balance = await adapter.getBalance(currency);
-    } catch (err: any) {
-      throw new BadRequestException(`Failed to sync balance from exchange: ${err?.message}`);
-    }
-
-    await super.update(id, { balance }, context);
-    return { balance, currency: rawAccount.currency || 'USDT' };
+    return this.syncBalanceInternal(id.toString());
   }
 
   private async verifyOwnership(id: any, context: RequestContext): Promise<void> {
