@@ -16,8 +16,10 @@ export class InsightsDataService {
   ) {}
 
   async getTechnicalIndicators(symbol: string, timeframe: string) {
+    // TechnicalIndicator data is computed from 1m candles and always stored with timeframe='1m'.
+    // The requested timeframe (1h/4h) determines signal validity, not data granularity.
     const ti = await this.tiModel
-      .findOne({ symbol, timeframe })
+      .findOne({ symbol, timeframe: '1m' })
       .sort({ timestamp: -1 })
       .lean()
       .exec();
@@ -44,7 +46,7 @@ export class InsightsDataService {
 
   async getSentimentVolatility(symbol: string) {
     const ti = await this.tiModel
-      .findOne({ symbol, timeframe: '1h' })
+      .findOne({ symbol, timeframe: '1m' })
       .sort({ timestamp: -1 })
       .lean()
       .exec();
@@ -106,7 +108,7 @@ export class InsightsDataService {
       .exec();
 
     const ti = await this.tiModel
-      .findOne({ symbol, timeframe: '1h' })
+      .findOne({ symbol, timeframe: '1m' })
       .sort({ timestamp: -1 })
       .lean()
       .exec();
@@ -139,8 +141,9 @@ export class InsightsDataService {
   }
 
   async getAdvancedMetrics(symbol: string, timeframe: string) {
+    // Same as getTechnicalIndicators: TI data stored with timeframe='1m'
     const ti = await this.tiModel
-      .findOne({ symbol, timeframe })
+      .findOne({ symbol, timeframe: '1m' })
       .sort({ timestamp: -1 })
       .lean()
       .exec();
