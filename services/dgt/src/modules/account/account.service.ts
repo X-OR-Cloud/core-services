@@ -13,6 +13,7 @@ import { CreateAccountDto, TestApiKeyDto } from './account.dto';
 import { QUEUE_NAMES, SIGNAL_JOB_TYPES } from '../../config/queue.config';
 import { ExchangeAdapterFactory } from '../../exchange/exchange-adapter.factory';
 import { DGT_REDIS_CLIENT } from '../../shared/redis.provider';
+import { MarketPrice, MarketPriceDocument } from '../market-price/market-price.schema';
 
 // Redis key prefixes cho test-key flow
 const TEST_KEY_DATA_PREFIX = 'dgt:test-key:data:';   // TTL 10 phút — chứa apiKey/apiSecret
@@ -55,6 +56,7 @@ function sanitizeAccount(account: any): any {
 export class AccountService extends BaseService<Account> {
   constructor(
     @InjectModel(Account.name) accountModel: Model<Account>,
+    @InjectModel(MarketPrice.name) private readonly marketPriceModel: Model<MarketPriceDocument>,
     @InjectQueue(QUEUE_NAMES.SIGNAL_SCHEDULER) private readonly signalSchedulerQueue: Queue,
     private readonly adapterFactory: ExchangeAdapterFactory,
     @Inject(DGT_REDIS_CLIENT) private readonly redis: Redis,
@@ -342,6 +344,49 @@ export class AccountService extends BaseService<Account> {
   }
 
   /**
+   * Lấy giá PAXG/USDT mới nhất để tính portfolio value.
+   * 1. Ưu tiên từ DB (binance_spot 1m, tươi < 5 phút)
+   * 2. Fallback: Binance public ticker API (không cần auth)
+   */
+  private async getLatestPaxgPrice(): Promise<number> {
+    try {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const latest = await this.marketPriceModel
+        .findOne({
+          symbol: 'PAXGUSDT',
+          source: 'binance_spot',
+          timeframe: '1m',
+          timestamp: { $gte: fiveMinutesAgo },
+        })
+        .sort({ timestamp: -1 })
+        .lean()
+        .exec();
+
+      if (latest?.close) {
+        this.logger.debug(`[getLatestPaxgPrice] From DB: ${latest.close}`);
+        return latest.close;
+      }
+    } catch (err: any) {
+      this.logger.warn(`[getLatestPaxgPrice] DB lookup failed: ${err?.message}`);
+    }
+
+    // Fallback: Binance public endpoint (không cần auth)
+    try {
+      const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT');
+      if (res.ok) {
+        const data: any = await res.json();
+        const price = parseFloat(data.price);
+        this.logger.debug(`[getLatestPaxgPrice] From Binance API: ${price}`);
+        return price;
+      }
+    } catch (err: any) {
+      this.logger.warn(`[getLatestPaxgPrice] Binance ticker API failed: ${err?.message}`);
+    }
+
+    throw new Error('Cannot get PAXG price: both DB and Binance ticker API unavailable');
+  }
+
+  /**
    * Cập nhật balance trực tiếp vào DB — không qua RBAC check.
    * Dùng cho internal/system calls (auto-sync, periodic job).
    */
@@ -354,18 +399,18 @@ export class AccountService extends BaseService<Account> {
 
   /**
    * Sync balance cho 1 account — không cần user context (dùng cho internal calls).
+   * Tính tổng portfolio value = USDT + PAXG × giá PAXG/USDT.
    * Bỏ qua account không có API key thay vì throw.
    */
   async syncBalanceInternal(id: string): Promise<{ balance: number; currency: string }> {
     const rawAccount = await this.model.findById(id).lean().exec();
     if (!rawAccount) throw new NotFoundException(`Account ${id} not found`);
 
-    if (!rawAccount.apiKey || !rawAccount.apiSecret) {
+    if (!(rawAccount as any).apiKey || !(rawAccount as any).apiSecret) {
       this.logger.debug(`Account ${id}: no API key configured, skip balance sync`);
-      return { balance: (rawAccount as any).balance || 0, currency: (rawAccount as any).currency || 'USDT' };
+      return { balance: (rawAccount as any).balance || 0, currency: 'USDT' };
     }
 
-    const currency = (rawAccount as any).currency || 'USDT';
     try {
       const adapter = this.adapterFactory.createAdapter({
         exchange: (rawAccount as any).exchange,
@@ -373,10 +418,28 @@ export class AccountService extends BaseService<Account> {
         apiKey: (rawAccount as any).apiKey,
         apiSecret: (rawAccount as any).apiSecret,
       });
-      const balance = await adapter.getBalance(currency);
+
+      // Lấy USDT và PAXG balance song song (2 concurrent calls)
+      const [usdtBalance, paxgBalance] = await Promise.all([
+        adapter.getBalance('USDT'),
+        adapter.getBalance('PAXG'),
+      ]);
+
+      // Tính tổng portfolio: USDT + PAXG × giá PAXG/USDT
+      let totalBalance = usdtBalance;
+      if (paxgBalance > 0) {
+        const paxgPrice = await this.getLatestPaxgPrice();
+        const paxgValueUsd = paxgBalance * paxgPrice;
+        totalBalance = usdtBalance + paxgValueUsd;
+        this.logger.debug(
+          `Account ${id}: USDT=${usdtBalance.toFixed(2)} + PAXG=${paxgBalance} × ${paxgPrice} = ${totalBalance.toFixed(2)} USDT`,
+        );
+      }
+
+      const balance = Math.round(totalBalance * 100) / 100;
       await this.updateBalanceInDB(id, balance);
-      this.logger.debug(`Account ${id}: balance synced → ${balance} ${currency}`);
-      return { balance, currency };
+      this.logger.debug(`Account ${id}: balance synced → ${balance} USDT`);
+      return { balance, currency: 'USDT' };
     } catch (err: any) {
       throw new BadRequestException(`Failed to sync balance: ${err?.message}`);
     }

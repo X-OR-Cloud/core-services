@@ -8,12 +8,14 @@ import { NotificationService } from '../../shared/notification.service';
 import { RedisClientProvider } from '../../shared/redis.provider';
 import { QUEUE_NAMES } from '../../config/queue.config';
 import { ExchangeModule } from '../../exchange/exchange.module';
+import { MarketPriceModule } from '../market-price/market-price.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Account.name, schema: AccountSchema }]),
     BullModule.registerQueue({ name: QUEUE_NAMES.SIGNAL_SCHEDULER }),
     ExchangeModule,
+    MarketPriceModule,
   ],
   controllers: [AccountController],
   providers: [AccountService, NotificationService, RedisClientProvider],
