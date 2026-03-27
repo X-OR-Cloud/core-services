@@ -5,6 +5,7 @@ import { AccountController } from './account.controller';
 import { AccountService } from './account.service';
 import { Account, AccountSchema } from './account.schema';
 import { NotificationService } from '../../shared/notification.service';
+import { RedisClientProvider } from '../../shared/redis.provider';
 import { QUEUE_NAMES } from '../../config/queue.config';
 import { ExchangeModule } from '../../exchange/exchange.module';
 
@@ -15,7 +16,7 @@ import { ExchangeModule } from '../../exchange/exchange.module';
     ExchangeModule,
   ],
   controllers: [AccountController],
-  providers: [AccountService, NotificationService],
+  providers: [AccountService, NotificationService, RedisClientProvider],
   exports: [AccountService, NotificationService, MongooseModule],
 })
 export class AccountModule {}
