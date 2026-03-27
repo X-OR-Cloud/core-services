@@ -11,3 +11,7 @@ export const SIGNAL_JOB_TYPES = {
   EXPIRE_SIGNALS: 'expire_signals',
   SYNC_ACCOUNT_SIGNALS: 'sync_account_signals',
 };
+
+export const INGESTION_JOB_TYPES = {
+  SYNC_ACCOUNT_BALANCES: 'sync_account_balances',
+};

@@ -96,6 +96,14 @@ export const DATASOURCE_SCHEDULES: DatasourceSchedule[] = [
     enabled: true,
   },
 
+  // === Account Balance Sync (every 15 minutes) ===
+  {
+    type: 'sync_account_balances',
+    name: 'Account Balance Sync - All active accounts',
+    intervalMs: 900_000, // 15 phút
+    enabled: true,
+  },
+
   // === Technical Indicator Computation (every 5 minutes) ===
   {
     type: 'compute_indicators',

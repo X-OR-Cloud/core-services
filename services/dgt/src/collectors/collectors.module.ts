@@ -16,6 +16,7 @@ import { YahooFinanceCollector } from './yahoo-finance.collector';
 import { BytetreeCollector } from './bytetree.collector';
 import { NewsapiCollector } from './newsapi.collector';
 import { PortfolioSnapshotCollector } from './portfolio-snapshot.collector';
+import { AccountBalanceSyncCollector } from './account-balance-sync.collector';
 
 const collectors = [
   GoldapiCollector,
@@ -28,6 +29,7 @@ const collectors = [
   BytetreeCollector,
   NewsapiCollector,
   PortfolioSnapshotCollector,
+  AccountBalanceSyncCollector,
 ];
 
 @Module({
