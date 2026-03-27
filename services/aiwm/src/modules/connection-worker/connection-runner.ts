@@ -156,10 +156,57 @@ export class ConnectionRunner {
       const slashMatch = msg.text.match(/^\/(\w+)(?:\s+(.*))?$/);
       if (slashMatch) {
         const command = slashMatch[1].toLowerCase();
-        const reason = slashMatch[2]?.trim();
+        const rest = slashMatch[2]?.trim();
         if (['stop', 'reload', 'inspect'].includes(command)) {
-          this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason });
+          this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason: rest });
           this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
+          return;
+        }
+        if (command === 'ignore') {
+          if (!rest) {
+            this.writeLog('warn', '/ignore requires a message after the command', { conversationId: resolved.conversationId });
+            return;
+          }
+          const savedIgnoreAction = await this.actionService.createActionDirect(
+            {
+              conversationId: resolved.conversationId,
+              connectionId,
+              type: ActionType.MESSAGE,
+              actor: resolved.actor,
+              content: rest,
+              metadata: {
+                attachments: msg.attachments,
+                raw: msg.raw,
+                skipAgent: true,
+              },
+            },
+            { orgId, agentId: resolved.agentId },
+          );
+          const ignoreActionId = String((savedIgnoreAction as any)._id);
+          this.onOutbound(resolved.conversationId, async (responseText: string) => {
+            await this.sendResponse(msg.channelId, responseText);
+          }, resolved.verboseActions, resolved.verboseLogsChannelId);
+          this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
+          this.onMessageNew({
+            actionId: ignoreActionId,
+            conversationId: resolved.conversationId,
+            agentId: resolved.agentId,
+            orgId,
+            role: 'user',
+            content: rest,
+            attachments: msg.attachments,
+            userId: resolved.iamUserId,
+            username: resolved.iamUsername,
+            fullname: resolved.iamFullname,
+            externalUsername: msg.externalUsername,
+            externalUserId: msg.externalUserId,
+            channelId: msg.channelId,
+            serverId: msg.serverId,
+            connectionId,
+            platform: this.connection.provider,
+            skipAgent: true,
+          });
+          this.writeLog('info', '/ignore message saved (skipAgent=true)', { conversationId: resolved.conversationId });
           return;
         }
       }

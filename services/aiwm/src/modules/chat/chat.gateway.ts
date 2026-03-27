@@ -92,7 +92,7 @@ export class ChatGateway
       if (channel === 'chat:message-new') {
         try {
           if (!this.server) return;
-          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, msgNonce } = JSON.parse(message);
+          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, msgNonce, skipAgent } = JSON.parse(message);
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
           const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
@@ -111,7 +111,7 @@ export class ChatGateway
           // Broadcast to room — Action already saved by con worker.
           // _id = actionId allows AgentRunner to deduplicate when agent has multiple sockets across instances.
           // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
-          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform };
+          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, ...(skipAgent ? { skipAgent: true } : {}) };
           this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
             `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,
