@@ -1170,10 +1170,43 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       throw new BadRequestException('Agent is suspended. Heartbeat rejected.');
     }
 
+    // Handle sleep status
+    if (heartbeatDto.status === 'sleep') {
+      if (!heartbeatDto.sleep) {
+        throw new BadRequestException('sleep field is required when status=sleep');
+      }
+      await this.agentModel.updateOne(
+        { _id: agent._id },
+        {
+          $set: {
+            lastHeartbeatAt: new Date(),
+            status: 'sleep',
+            sleepReason: heartbeatDto.sleep.reason,
+            sleepSince: new Date(heartbeatDto.sleep.since),
+            sleepUntil: heartbeatDto.sleep.until ? new Date(heartbeatDto.sleep.until) : null,
+          },
+        }
+      );
+      this.logger.debug('Agent entered sleep', {
+        agentId,
+        reason: heartbeatDto.sleep.reason,
+        until: heartbeatDto.sleep.until ?? 'indefinite',
+      });
+      return { success: true };
+    }
+
+    // Build update — clear sleep fields when waking up from sleep
+    const statusUpdate: Record<string, any> = { lastHeartbeatAt: new Date(), status: heartbeatDto.status };
+    if (agent.status === 'sleep') {
+      statusUpdate.sleepReason = null;
+      statusUpdate.sleepSince = null;
+      statusUpdate.sleepUntil = null;
+    }
+
     // Update lastHeartbeatAt + status from heartbeat DTO
     await this.agentModel.updateOne(
       { _id: agent._id },
-      { $set: { lastHeartbeatAt: new Date(), status: heartbeatDto.status } }
+      { $set: statusUpdate }
     );
 
     this.logger.debug('Agent heartbeat received', {

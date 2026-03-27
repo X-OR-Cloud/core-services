@@ -46,6 +46,7 @@ export class ConnectionRunner {
       serverId?: string;
       connectionId: string;
       platform: string;
+      skipAgent?: boolean;
     }) => void,
     private readonly onCommand: (payload: { agentId: string; conversationId: string; command: string; reason?: string }) => void,
     private readonly addLogFn: AddLogFn,
