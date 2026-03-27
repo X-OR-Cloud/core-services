@@ -33,58 +33,47 @@ export class TestApiKeyDto {
 
 export class CreateAccountDto {
   /**
-   * testToken nhận được từ POST /accounts/test-key.
-   * Khi cung cấp testToken, server sẽ lấy apiKey/apiSecret từ Redis cache —
-   * không cần (và không được) gửi apiKey/apiSecret trong request này.
+   * Token nhận từ POST /accounts/test-key (bắt buộc khi gọi qua API).
+   * Server sẽ lấy apiKey/apiSecret đã verify từ Redis.
+   * exchange, accountType, currency được lấy từ token — không cần gửi lại.
    */
   @ApiProperty({
-    required: false,
-    description: 'Token nhận từ POST /accounts/test-key (TTL 10 phút, one-time use). Khi dùng testToken thì không cần gửi apiKey/apiSecret.',
+    description: 'Token nhận từ POST /accounts/test-key (TTL 10 phút, one-time use). Bắt buộc khi tạo account.',
   })
   @IsString()
-  @IsOptional()
-  testToken?: string;
+  testToken: string;
 
-  @ApiProperty({ enum: AccountType, default: AccountType.PAPER })
-  @IsEnum(AccountType)
-  @IsOptional()
-  accountType?: string;
-
-  @ApiProperty({ enum: Exchange, default: Exchange.BINANCE })
-  @IsEnum(Exchange)
-  @IsOptional()
-  exchange?: string;
-
-  @ApiProperty({ required: false, example: 'My Paper Account' })
+  @ApiProperty({ required: false, example: 'My Binance Account' })
   @IsString()
   @IsOptional()
   label?: string;
 
-  @ApiProperty({ default: 0 })
+  @ApiProperty({ default: 0, required: false })
   @IsNumber()
   @Min(0)
   @IsOptional()
   initialBalance?: number;
 
-  @ApiProperty({ default: 'USDT' })
-  @IsString()
-  @IsOptional()
-  currency?: string;
-
-  @ApiProperty({ default: false })
+  @ApiProperty({ default: false, required: false })
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+}
 
-  @ApiProperty({ required: false, description: 'API Key từ exchange (chỉ dùng khi không có testToken — paper account không cần key)' })
-  @IsString()
-  @IsOptional()
+/**
+ * DTO nội bộ cho system calls (VD: iam-event.processor auto-create default account).
+ * Không dùng cho external API — không có testToken requirement.
+ */
+export class CreateAccountInternalDto {
+  accountType?: string;
+  exchange?: string;
+  label?: string;
+  initialBalance?: number;
+  currency?: string;
+  isDefault?: boolean;
   apiKey?: string;
-
-  @ApiProperty({ required: false, description: 'API Secret từ exchange — chỉ dùng khi không có testToken' })
-  @IsString()
-  @IsOptional()
   apiSecret?: string;
+  testToken?: string;
 }
 
 export class NotificationsConfigDto {
