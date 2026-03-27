@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf, IsNumber, Min, Max, IsDateString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
@@ -516,17 +516,39 @@ export class AgentConnectResponseDto {
   browserApiKey?: string | null;
 }
 
+export class AgentSleepInfoDto {
+  @ApiProperty({ description: 'Reason agent is sleeping', example: 'BrowserMcpServer timeout 3 consecutive times' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
+  @ApiProperty({ description: 'ISO timestamp when sleep started', example: '2026-03-27T07:30:00.000Z' })
+  @IsDateString()
+  since: string;
+
+  @ApiPropertyOptional({ description: 'ISO timestamp when agent expects to wake, null = indefinite', example: '2026-03-27T08:30:00.000Z', nullable: true, required: false })
+  @IsOptional()
+  @IsDateString()
+  until?: string | null;
+}
+
 /**
  * DTO for agent heartbeat
  */
 export class AgentHeartbeatDto {
   @ApiProperty({
     description: 'Current agent status',
-    enum: ['idle', 'busy'],
+    enum: ['idle', 'busy', 'sleep'],
     example: 'idle'
   })
-  @IsEnum(['idle', 'busy'])
+  @IsEnum(['idle', 'busy', 'sleep'])
   status: string;
+
+  @ApiPropertyOptional({ description: 'Sleep info, required when status=sleep', required: false })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentSleepInfoDto)
+  sleep?: AgentSleepInfoDto;
 
   @ApiPropertyOptional({ description: 'Optional metrics', required: false })
   @IsOptional()

@@ -54,7 +54,7 @@ export class Agent extends BaseSchema {
   @Prop({ required: true })
   description: string;
 
-  @Prop({ required: true, enum: ['inactive', 'idle', 'busy', 'suspended'], default: 'inactive' })
+  @Prop({ required: true, enum: ['inactive', 'idle', 'busy', 'suspended', 'sleep'], default: 'inactive' })
   status: string;
 
   @Prop({
@@ -211,6 +211,16 @@ export class Agent extends BaseSchema {
 
   @Prop()
   lastHeartbeatAt?: Date;
+
+  // Sleep state
+  @Prop()
+  sleepReason?: string;
+
+  @Prop()
+  sleepSince?: Date;
+
+  @Prop({ type: Date, default: null })
+  sleepUntil?: Date | null;
 
   // Conversation scoping mode — applies to anonymous WS clients and Connection Worker users
   // Authenticated WS users select conversation manually and are not affected by this setting
