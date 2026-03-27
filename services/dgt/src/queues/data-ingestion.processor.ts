@@ -13,6 +13,7 @@ import { BytetreeCollector } from '../collectors/bytetree.collector';
 import { NewsapiCollector } from '../collectors/newsapi.collector';
 import { IndicatorComputationService } from '../indicators/indicator-computation.service';
 import { PortfolioSnapshotCollector } from '../collectors/portfolio-snapshot.collector';
+import { AccountBalanceSyncCollector } from '../collectors/account-balance-sync.collector';
 import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
 import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
 
@@ -32,6 +33,7 @@ export class DataIngestionProcessor extends WorkerHost {
     private readonly newsapiCollector: NewsapiCollector,
     private readonly indicatorComputation: IndicatorComputationService,
     private readonly portfolioSnapshotCollector: PortfolioSnapshotCollector,
+    private readonly accountBalanceSyncCollector: AccountBalanceSyncCollector,
     private readonly systemActivityLogService: SystemActivityLogService,
   ) {
     super();
@@ -76,6 +78,9 @@ export class DataIngestionProcessor extends WorkerHost {
         case 'snapshot_portfolio':
           await this.portfolioSnapshotCollector.collect();
           break;
+        case 'sync_account_balances':
+          await this.accountBalanceSyncCollector.collect();
+          break;
         default:
           throw new Error(`Unknown datasource type: ${type}`);
       }
@@ -83,7 +88,8 @@ export class DataIngestionProcessor extends WorkerHost {
       const duration = Date.now() - startTime;
       this.logger.info(`[${type}] Processed in ${duration}ms`);
 
-      if (type !== 'compute_indicators' && type !== 'snapshot_portfolio') {
+      const skipActivityLog = ['compute_indicators', 'snapshot_portfolio', 'sync_account_balances'];
+      if (!skipActivityLog.includes(type)) {
         this.systemActivityLogService.logActivity({
           workerType: SystemWorkerType.DATA_INGESTION,
           source: type,
@@ -99,7 +105,8 @@ export class DataIngestionProcessor extends WorkerHost {
       const duration = Date.now() - startTime;
       this.logger.error(`[${type}] Collection failed: ${error.message}`);
 
-      if (type !== 'compute_indicators' && type !== 'snapshot_portfolio') {
+      const skipActivityLog = ['compute_indicators', 'snapshot_portfolio', 'sync_account_balances'];
+      if (!skipActivityLog.includes(type)) {
         this.systemActivityLogService.logActivity({
           workerType: SystemWorkerType.DATA_INGESTION,
           source: type,
