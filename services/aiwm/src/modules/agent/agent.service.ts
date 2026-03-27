@@ -811,7 +811,9 @@ export class AgentService extends BaseService<Agent> {
         contextBlocks,
         tools,
         agentId,
-        agent.code || undefined
+        agent.code || undefined,
+        agent.instructionId?.toString(),
+        agent.owner?.orgId
       ),
     };
 
@@ -971,18 +973,17 @@ export class AgentService extends BaseService<Agent> {
               documentsBlock
           );
         } else if (refType === 'document') {
-          const content =
-            data.content?.length > 2000
-              ? data.content.substring(0, 2000) + '\n...(truncated)'
-              : data.content || '';
-          contextBlocks.push(
-            `Document: ${data.summary}\n` +
-              `- ID: ${refId}\n` +
-              `- Type: ${data.type || 'N/A'}\n` +
-              `- Status: ${data.status || 'N/A'}\n` +
-              `- Labels: ${(data.labels || []).join(', ') || 'N/A'}\n` +
-              `- Content:\n${content}`
-          );
+          const lines = [
+            `Document: ${data.summary}`,
+            `- ID: ${refId}`,
+            `- Type: ${data.type || 'N/A'}`,
+            `- Status: ${data.status || 'N/A'}`,
+            `- Share Mode: ${data.shareMode || 'N/A'}`,
+          ];
+          if (data.projectId) {
+            lines.push(`- Project ID: ${data.projectId}`);
+          }
+          contextBlocks.push(lines.join('\n'));
         }
 
         this.logger.debug(`Resolved @${refType}:${refId} successfully`);
@@ -1013,7 +1014,9 @@ export class AgentService extends BaseService<Agent> {
     contextBlocks: string[],
     tools: Tool[],
     agentId: string,
-    agentCode?: string
+    agentCode?: string,
+    instructionId?: string,
+    orgId?: string
   ): string {
     const toolNames = new Set(tools.map((t) => t.name));
 
@@ -1062,6 +1065,8 @@ MEMORY CATEGORIES:
       `Agent ID: ${agentId}`,
     ];
     if (agentCode) runtimeLines.push(`Agent Code: ${agentCode}`);
+    if (instructionId) runtimeLines.push(`Instruction ID: ${instructionId}`);
+    if (orgId) runtimeLines.push(`Organization ID: ${orgId}`);
     parts.push(`<runtime>\n${runtimeLines.join('\n')}\n</runtime>`);
 
     parts.push(
