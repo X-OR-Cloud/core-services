@@ -663,7 +663,7 @@ export class ChatGateway
           if (acquired && this.redisPub) {
             this.redisPub.publish(
               'outbound:message',
-              JSON.stringify({ conversationId, text: dto.content, actionType: dto.type ?? 'message' }),
+              JSON.stringify({ conversationId, text: dto.content, actionType: dto.type === 'system' ? 'notice' : (dto.type ?? 'message') }),
             ).catch((err: Error) =>
               this.logger.error(`Failed to publish outbound:message: ${err.message}`),
             );
