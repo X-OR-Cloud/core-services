@@ -203,28 +203,7 @@ export class AccountService extends BaseService<Account> {
       data.isDefault = true;
     }
 
-    // Account là self-service resource — bypass BaseService.create() để tránh RBAC check
-    // (organization.viewer cũng có quyền tạo account của chính mình)
-    const auditCtx = { ...context };
-    delete (auditCtx as any).licenses;
-    const dataWithOwner = {
-      ...data,
-      owner: {
-        orgId: context.orgId || '',
-        groupId: context.groupId || '',
-        userId: context.userId || '',
-        agentId: context.agentId || '',
-        appId: context.appId || '',
-      },
-      createdBy: auditCtx,
-      updatedBy: auditCtx,
-    };
-    const created = new this.model(dataWithOwner);
-    const saved = await created.save();
-    const result = saved.toObject ? saved.toObject() : (saved as any);
-    delete (result as any).isDeleted;
-    delete (result as any).deletedAt;
-
+    const result = await super.create(data, context);
     const accountId = (result as any)._id?.toString();
     if (accountId && data.status === 'active') {
       await this.publishSyncAccountSignals(accountId, 'upsert');
