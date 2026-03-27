@@ -175,25 +175,23 @@ export class AccountService extends BaseService<Account> {
     );
   }
 
-  async create(dto: CreateAccountDto, context: RequestContext): Promise<Partial<Account>> {
+  async create(dto: CreateAccountDto | any, context: RequestContext): Promise<Partial<Account>> {
     const { testToken, ...rest } = dto;
     const data: any = { ...rest, balance: dto.initialBalance || 0 };
 
     if (testToken) {
-      // Luồng chính: dùng testToken — lấy apiKey/apiSecret từ Redis
-      // apiKey/apiSecret trong dto sẽ bị bỏ qua hoàn toàn (tránh swap key)
+      // Luồng chính (qua API): lấy apiKey/apiSecret đã verify từ Redis
+      // Ưu tiên tất cả thông tin từ token — bỏ qua bất kỳ giá trị nào FE truyền trực tiếp
       const resolved = await this.resolveTestToken(testToken, context.userId);
       data.apiKey = resolved.apiKey;
       data.apiSecret = encryptSecret(resolved.apiSecret);
-      // Nếu FE không truyền exchange/accountType thì dùng từ token
-      if (!data.exchange) data.exchange = resolved.exchange;
-      if (!data.accountType) data.accountType = resolved.accountType;
-      if (!data.currency) data.currency = resolved.currency;
-      data.apiKeyStatus = 'valid'; // đã được test
-    } else if (data.apiSecret) {
-      // Luồng fallback: không dùng testToken (paper account không cần key)
-      data.apiSecret = encryptSecret(data.apiSecret);
+      data.exchange = resolved.exchange;
+      data.accountType = resolved.accountType;
+      data.currency = resolved.currency;
+      data.apiKeyStatus = 'valid';
     }
+    // Luồng không có testToken: chỉ dành cho internal system calls (VD: iam-event.processor)
+    // Controller đã validate testToken bắt buộc cho external API requests
 
     // Set isDefault nếu chưa có account nào
     const existingCount = await this.model.countDocuments({

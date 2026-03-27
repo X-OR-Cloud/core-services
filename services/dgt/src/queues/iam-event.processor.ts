@@ -6,6 +6,7 @@ import { Job } from 'bullmq';
 import { RequestContext } from '@hydrabyte/shared';
 import { QUEUE_NAMES } from '../config/queue.config';
 import { AccountService } from '../modules/account/account.service';
+import { CreateAccountInternalDto } from '../modules/account/account.dto';
 import { Account, AccountType, Exchange } from '../modules/account/account.schema';
 import { IamQueueEvent, IamUserCreatedEvent } from './iam-event.types';
 
@@ -61,17 +62,15 @@ export class IamEventProcessor extends WorkerHost {
       roles: [role as any],
     };
 
-    await this.accountService.create(
-      {
-        accountType: AccountType.PAPER,
-        exchange: Exchange.BINANCE,
-        label: 'Default Paper Account',
-        initialBalance: 10000,
-        currency: 'USDT',
-        isDefault: true,
-      },
-      context,
-    );
+    const internalDto: CreateAccountInternalDto = {
+      accountType: AccountType.PAPER,
+      exchange: Exchange.BINANCE,
+      label: 'Default Paper Account',
+      initialBalance: 10000,
+      currency: 'USDT',
+      isDefault: true,
+    };
+    await this.accountService.create(internalDto as any, context);
 
     this.logger.log(`Created default paper account for user ${username} (${userId})`);
   }
