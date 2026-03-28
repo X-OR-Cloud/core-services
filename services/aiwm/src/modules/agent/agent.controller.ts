@@ -16,6 +16,9 @@ import {
   AnonymousTokenDto,
   AnonymousTokenResponseDto,
   AnonymousTokenListResponseDto,
+  AddExternalSigningKeyDto,
+  ExternalSigningKeyEntryDto,
+  ExternalSigningKeyListResponseDto,
   PreviewInstructionQueryDto,
   UpdateAgentInstructionDto,
   AddAgentLogDto,
@@ -301,6 +304,61 @@ export class AgentController {
   ): Promise<void> {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     return this.agentService.revokeAnonymousToken(resolvedId, tokenId, context);
+  }
+
+  // ─── External Signing Keys ───────────────────────────────────────────────────
+
+  @Post(':id/signing-keys')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Add external signing key',
+    description: 'Upload a partner EC public key (PEM, ES256) to enable partner-signed anonymous tokens. Partner holds the private key and signs tokens locally without calling our API.',
+  })
+  @ApiResponse({ status: 201, description: 'Key added successfully', type: ExternalSigningKeyEntryDto })
+  @ApiResponse({ status: 400, description: 'Invalid public key or keyId already exists' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async addExternalSigningKey(
+    @Param('id') id: string,
+    @Body() dto: AddExternalSigningKeyDto,
+    @CurrentUser() context: RequestContext,
+  ): Promise<ExternalSigningKeyEntryDto> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.addExternalSigningKey(resolvedId, dto, context);
+  }
+
+  @Get(':id/signing-keys')
+  @ApiOperation({
+    summary: 'List external signing keys',
+    description: 'List all external signing keys for an agent. Public key values are not returned.',
+  })
+  @ApiResponse({ status: 200, description: 'List of signing keys', type: ExternalSigningKeyListResponseDto })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async listExternalSigningKeys(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<ExternalSigningKeyListResponseDto> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.listExternalSigningKeys(resolvedId, context);
+  }
+
+  @Delete(':id/signing-keys/:keyId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Revoke external signing key',
+    description: 'Revoke a signing key by keyId. All tokens signed by the corresponding private key will immediately fail verification.',
+  })
+  @ApiResponse({ status: 204, description: 'Key revoked successfully' })
+  @ApiResponse({ status: 404, description: 'Agent or key not found' })
+  @UseGuards(JwtAuthGuard)
+  async revokeExternalSigningKey(
+    @Param('id') id: string,
+    @Param('keyId') keyId: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<void> {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.revokeExternalSigningKey(resolvedId, keyId, context);
   }
 
   @Post(':id/stop')

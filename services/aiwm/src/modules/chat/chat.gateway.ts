@@ -157,14 +157,31 @@ export class ChatGateway
         return;
       }
 
-      const payload = this.jwtService.verify(token);
+      // Try server-issued JWT first
+      let payload: any;
+      let isExternalSigned = false;
+      try {
+        payload = this.jwtService.verify(token);
+      } catch {
+        // Fallback: try external-signed ES256 token
+        // Decode without verify to get agentId for key lookup
+        const decoded = this.jwtService.decode(token) as Record<string, any> | null;
+        if (decoded?.type === 'anonymous' && decoded?.agentId) {
+          payload = await this.agentService.verifyExternalSignedToken(decoded.agentId, token);
+          isExternalSigned = true;
+        } else {
+          throw new Error('Token verification failed and not a valid external-signed anonymous token');
+        }
+      }
+
       // Check anonymous first — anonymous token contains agentId which would
       // otherwise be misidentified as an agent token
       const isAnonymous = payload.type === 'anonymous';
       const isAgent = !isAnonymous && (payload.type === 'agent' || !!payload.agentId);
 
       if (isAnonymous) {
-        await this._handleAnonymousConnect(client, payload);
+        // External-signed tokens have no tokenId — skip DB revocation check
+        await this._handleAnonymousConnect(client, payload, isExternalSigned);
       } else if (isAgent) {
         await this._handleAgentConnect(client, payload);
       } else {
@@ -252,10 +269,11 @@ export class ChatGateway
     });
   }
 
-  private async _handleAnonymousConnect(client: Socket, payload: any) {
+  private async _handleAnonymousConnect(client: Socket, payload: any, isExternalSigned = false) {
     const { anonymousId, agentId, orgId, tokenId } = payload;
 
-    if (tokenId) {
+    // External-signed tokens have no tokenId — skip DB revocation check (signature + exp already verified)
+    if (!isExternalSigned && tokenId) {
       const isValid = await this.agentService.validateAndTouchAnonymousToken(agentId, tokenId);
       if (!isValid) {
         this.logger.warn(`Anonymous token ${tokenId} is revoked or not found, rejecting client ${client.id}`);
@@ -264,10 +282,16 @@ export class ChatGateway
       }
     }
 
+    // Anonymous always has agentId in token — auto findOrCreate based on agent's conversationMode
+    const agent = await this.agentService.findByIdInternal(agentId);
+
+    // Derive orgId from agent when not present in token (external-signed tokens omit orgId)
+    const resolvedOrgId = orgId || (agent as any)?.owner?.orgId || '';
+
     client.data.type = 'anonymous';
     client.data.userId = anonymousId;
     client.data.agentId = agentId;
-    client.data.orgId = orgId;
+    client.data.orgId = resolvedOrgId;
     client.data.roles = [];
 
     await this.chatService.setUserOnline(anonymousId, client.id);
@@ -277,13 +301,10 @@ export class ChatGateway
       conversationId: '',
       connectedAt: new Date().toISOString(),
     });
-
-    // Anonymous always has agentId in token — auto findOrCreate based on agent's conversationMode
-    const agent = await this.agentService.findByIdInternal(agentId);
     const conversationMode = (agent as any)?.conversationMode ?? 'per-user';
     const sessionTimeoutMs = (agent as any)?.sessionTimeoutMs ?? 1800000;
     const conversation = await this.conversationService.resolveConversation({
-      orgId,
+      orgId: resolvedOrgId,
       agentId,
       userId: anonymousId,
       mode: conversationMode,
