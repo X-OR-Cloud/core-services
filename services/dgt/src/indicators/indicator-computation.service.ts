@@ -27,10 +27,12 @@ export class IndicatorComputationService {
     const startTime = Date.now();
 
     // Fetch enough candles for EMA200
-    const { data: candles } = await this.marketPriceService.findAll(
+    // Sort DESC to get latest candles, then reverse to chronological order for indicator calculation
+    const { data: rawCandles } = await this.marketPriceService.findAll(
       { symbol, source, timeframe },
-      { sort: { timestamp: 1 }, limit: MIN_CANDLES },
+      { sort: { timestamp: -1 }, limit: MIN_CANDLES },
     );
+    const candles = rawCandles.slice().reverse();
 
     if (candles.length < 30) {
       this.logger.warn(`[${symbol}/${timeframe}] Not enough candles (${candles.length}), need at least 30`);
