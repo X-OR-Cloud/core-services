@@ -2,7 +2,7 @@ import {
   IsString,
   IsEnum,
   IsOptional,
-  IsBoolean,
+  IsMongoId,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -145,38 +145,41 @@ export class ConfigurationQueryDto {
 }
 
 /**
+ * Initialize Configurations DTO
+ */
+export class InitializeConfigurationsDto {
+  @ApiProperty({
+    description: 'Scope to initialize: "global" (universe.owner only) or "organization"',
+    enum: ['global', 'organization'],
+    example: 'organization',
+  })
+  @IsEnum(['global', 'organization'], { message: 'scope must be global or organization' })
+  scope!: 'global' | 'organization';
+
+  @ApiPropertyOptional({
+    description:
+      'Target org ID. Only allowed for universe.owner with scope=organization. ' +
+      'organization.owner cannot set this — their own orgId is used automatically.',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @IsOptional()
+  @IsMongoId({ message: 'orgId must be a valid MongoDB ObjectId' })
+  orgId?: string;
+}
+
+/**
  * Initialize All Configurations Response DTO
  */
 export class InitializeConfigurationsResponseDto {
-  @ApiProperty({
-    description: 'Success status',
-    example: true,
-  })
+  @ApiProperty({ example: true })
   success!: boolean;
 
-  @ApiProperty({
-    description: 'Summary of initialization',
-    example: {
-      total: 26,
-      created: 18,
-      skipped: 8,
-    },
-  })
-  summary!: {
-    total: number;
-    created: number;
-    skipped: number;
-  };
+  @ApiProperty({ example: 26 })
+  total!: number;
 
-  @ApiProperty({
-    description: 'List of configuration keys that were created',
-    example: ['s3.endpoint', 'smtp.host', 'llm.openai.api_key'],
-  })
-  created!: string[];
+  @ApiProperty({ example: 18 })
+  created!: number;
 
-  @ApiProperty({
-    description: 'List of configuration keys that were skipped (already exist)',
-    example: ['discord.webhook_url', 'telegram.bot_token'],
-  })
-  skipped!: string[];
+  @ApiProperty({ example: 8 })
+  skipped!: number;
 }

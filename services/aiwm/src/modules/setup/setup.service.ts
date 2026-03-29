@@ -43,8 +43,8 @@ export class SetupService {
       licenses: {},
     };
 
-    // 1. Khởi tạo tất cả keys với giá trị rỗng
-    const result = await this.configurationService.initializeAll(systemContext);
+    // 1. Khởi tạo tất cả keys với giá trị rỗng (internal call — bypass role check)
+    const result = await this.configurationService.initializeAllInternal({ scope: 'org', orgId });
 
     // 2. Upsert 6 service URL keys as global scope (shared across all orgs)
     const urlMappings: Array<{ key: ConfigKey; value: string }> = [

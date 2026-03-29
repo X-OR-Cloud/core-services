@@ -30,6 +30,7 @@ import {
   ConfigurationQueryDto,
   ConfigurationListResponseDto,
   ConfigurationDetailResponseDto,
+  InitializeConfigurationsDto,
   InitializeConfigurationsResponseDto,
 } from './configuration.dto';
 import { CONFIG_METADATA } from './constants';
@@ -159,8 +160,9 @@ export class ConfigurationController {
   }
 
   /**
-   * Initialize all configuration keys with empty values
-   * Only organization.owner can access
+   * Initialize all configuration keys with empty values.
+   * - universe.owner: can seed global or any org (with optional orgId)
+   * - organization.owner: can only seed their own org
    */
   @Post('initialize')
   @UseGuards(JwtAuthGuard)
@@ -168,27 +170,30 @@ export class ConfigurationController {
   @ApiOperation({
     summary: 'Initialize all configuration keys',
     description:
-      'Creates all 26 configuration keys with empty values for the organization. Skips keys that already exist. Only organization.owner can access.',
+      'Creates all configuration keys with empty values for the given scope/org. ' +
+      'Skips keys that already exist. ' +
+      'universe.owner can seed global or any org. ' +
+      'organization.owner can only seed their own org.',
   })
   @ApiResponse({
     status: 201,
     description: 'Configurations initialized successfully',
     type: InitializeConfigurationsResponseDto,
   })
+  @ApiResponse({ status: 400, description: 'Invalid input or org not found/inactive' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - organization.owner only' })
-  async initialize(@CurrentUser() context: RequestContext) {
-    const result = await this.configurationService.initializeAll(context);
+  @ApiResponse({ status: 403, description: 'Forbidden - requires universe.owner or organization.owner' })
+  async initialize(
+    @Body() dto: InitializeConfigurationsDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const result = await this.configurationService.initializeAll(dto, context);
 
     return {
       success: true,
-      summary: {
-        total: result.total,
-        created: result.created,
-        skipped: result.skipped,
-      },
-      created: result.createdKeys,
-      skipped: result.skippedKeys,
+      total: result.total,
+      created: result.created,
+      skipped: result.skipped,
     };
   }
 
