@@ -716,6 +716,80 @@ export class AnonymousTokenListResponseDto {
 }
 
 /**
+ * DTO for adding an external signing key (partner ES256 public key)
+ */
+export class AddExternalSigningKeyDto {
+  @ApiProperty({
+    description: 'Unique key identifier (kid). Used in JWT header for key lookup.',
+    example: 'key-001',
+  })
+  @IsString()
+  @IsNotEmpty()
+  keyId: string;
+
+  @ApiProperty({
+    description: 'EC public key in PEM format (EC P-256, for ES256)',
+    example: '-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYFK4EEAAoDQgAE...\n-----END PUBLIC KEY-----',
+  })
+  @IsString()
+  @IsNotEmpty()
+  publicKey: string;
+
+  @ApiPropertyOptional({
+    description: 'Human-readable label for this key',
+    example: 'Production Key Jan 2026',
+  })
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional({
+    description: 'Key expiry (ISO 8601). If omitted, key never expires.',
+    example: '2027-01-01T00:00:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
+
+/**
+ * Response DTO for a single external signing key entry
+ */
+export class ExternalSigningKeyEntryDto {
+  @ApiProperty({ description: 'Key ID', example: 'key-001' })
+  keyId: string;
+
+  @ApiProperty({ description: 'Algorithm', example: 'ES256' })
+  algorithm: string;
+
+  @ApiPropertyOptional({ description: 'Human-readable label' })
+  label?: string;
+
+  @ApiProperty({ description: 'Key creation timestamp' })
+  createdAt: Date;
+
+  @ApiPropertyOptional({ description: 'Key expiry timestamp (null = no expiry)' })
+  expiresAt?: Date;
+
+  @ApiPropertyOptional({ description: 'Revocation timestamp (null if active)' })
+  revokedAt?: Date;
+
+  @ApiProperty({ description: 'Whether this key is currently active', example: true })
+  isActive: boolean;
+}
+
+/**
+ * Response DTO for listing external signing keys
+ */
+export class ExternalSigningKeyListResponseDto {
+  @ApiProperty({ type: [ExternalSigningKeyEntryDto] })
+  items: ExternalSigningKeyEntryDto[];
+
+  @ApiProperty({ description: 'Total number of keys' })
+  total: number;
+}
+
+/**
  * DTO for adding a debug log entry to an agent
  */
 export class AddAgentLogDto {

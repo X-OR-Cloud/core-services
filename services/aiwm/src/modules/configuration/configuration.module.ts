@@ -7,6 +7,7 @@ import {
 import { ConfigurationService } from './configuration.service';
 import { ConfigurationController } from './configuration.controller';
 import { ConfigService } from './config.service';
+import { IamOrgService } from './iam-org.service';
 
 /**
  * Configuration Module
@@ -24,7 +25,7 @@ import { ConfigService } from './config.service';
       { name: Configuration.name, schema: ConfigurationSchema },
     ]),
   ],
-  providers: [ConfigurationService, ConfigService],
+  providers: [ConfigurationService, ConfigService, IamOrgService],
   controllers: [ConfigurationController],
   exports: [ConfigurationService, ConfigService],
 })

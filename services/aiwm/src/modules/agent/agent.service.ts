@@ -37,6 +37,9 @@ import {
   AnonymousTokenListResponseDto,
   AddAgentLogDto,
   AgentLogsResponseDto,
+  AddExternalSigningKeyDto,
+  ExternalSigningKeyEntryDto,
+  ExternalSigningKeyListResponseDto,
 } from './agent.dto';
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -2370,6 +2373,211 @@ echo "Installation script placeholder - implement actual logic"
     }
 
     return { logs: agent.logs ?? [] };
+  }
+
+  // ---------------------------------------------------------------------------
+  // External signing keys (partner ES256 public keys)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Add an external signing public key to an agent.
+   * Partner holds the private key; we store the public key (PEM) to verify tokens.
+   */
+  async addExternalSigningKey(
+    agentId: string,
+    dto: AddExternalSigningKeyDto,
+    context: RequestContext
+  ): Promise<ExternalSigningKeyEntryDto> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    // Validate PEM is a valid EC public key
+    try {
+      crypto.createPublicKey({ key: dto.publicKey, format: 'pem' });
+    } catch {
+      throw new BadRequestException('Invalid public key: must be a valid EC public key in PEM format');
+    }
+
+    // Check keyId uniqueness within agent
+    const agentWithKeys = await this.agentModel
+      .findById(agentId)
+      .select('+externalSigningKeys')
+      .lean();
+    const existingKeys: any[] = (agentWithKeys as any)?.externalSigningKeys ?? [];
+    if (existingKeys.some((k: any) => k.keyId === dto.keyId && !k.revokedAt)) {
+      throw new BadRequestException(`Key with keyId "${dto.keyId}" already exists and is active`);
+    }
+
+    const entry = {
+      keyId: dto.keyId,
+      publicKey: dto.publicKey,
+      algorithm: 'ES256' as const,
+      label: dto.label,
+      createdAt: new Date(),
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+    };
+
+    await this.agentModel.updateOne(
+      { _id: agentId },
+      { $push: { externalSigningKeys: entry } }
+    );
+
+    this.logger.log(`Added external signing key keyId=${dto.keyId} for agent ${agentId}`);
+
+    return {
+      keyId: entry.keyId,
+      algorithm: entry.algorithm,
+      label: entry.label,
+      createdAt: entry.createdAt,
+      expiresAt: entry.expiresAt,
+      isActive: true,
+    };
+  }
+
+  /**
+   * List all external signing keys for an agent (public key value not returned).
+   */
+  async listExternalSigningKeys(
+    agentId: string,
+    context: RequestContext
+  ): Promise<ExternalSigningKeyListResponseDto> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    const agentWithKeys = await this.agentModel
+      .findById(agentId)
+      .select('+externalSigningKeys')
+      .lean();
+
+    const now = new Date();
+    const items: ExternalSigningKeyEntryDto[] = (
+      (agentWithKeys as any)?.externalSigningKeys ?? []
+    ).map((k: any) => ({
+      keyId: k.keyId,
+      algorithm: k.algorithm,
+      label: k.label,
+      createdAt: k.createdAt,
+      expiresAt: k.expiresAt,
+      revokedAt: k.revokedAt,
+      isActive: !k.revokedAt && (!k.expiresAt || new Date(k.expiresAt) > now),
+    }));
+
+    return { items, total: items.length };
+  }
+
+  /**
+   * Revoke an external signing key by keyId.
+   */
+  async revokeExternalSigningKey(
+    agentId: string,
+    keyId: string,
+    context: RequestContext
+  ): Promise<void> {
+    const agent = await this.findById(new Types.ObjectId(agentId) as any, context);
+    if (!agent) {
+      throw new NotFoundException(`Agent with ID ${agentId} not found`);
+    }
+
+    const result = await this.agentModel.updateOne(
+      {
+        _id: agentId,
+        'externalSigningKeys.keyId': keyId,
+        'externalSigningKeys.revokedAt': { $exists: false },
+      },
+      { $set: { 'externalSigningKeys.$.revokedAt': new Date() } }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException(`Signing key "${keyId}" not found or already revoked`);
+    }
+
+    this.logger.log(`Revoked external signing key keyId=${keyId} for agent ${agentId}`);
+  }
+
+  /**
+   * Verify a partner-signed ES256 JWT using the agent's stored external signing keys.
+   * Returns the decoded payload if valid, throws UnauthorizedException otherwise.
+   * Internal use by ChatGateway only.
+   */
+  async verifyExternalSignedToken(agentId: string, token: string): Promise<any> {
+    // Decode header to get kid
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      throw new UnauthorizedException('Invalid token format');
+    }
+
+    let header: any;
+    try {
+      header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    } catch {
+      throw new UnauthorizedException('Invalid token header');
+    }
+
+    if (header.alg !== 'ES256') {
+      throw new UnauthorizedException('Token must use ES256 algorithm');
+    }
+
+    const kid = header.kid;
+
+    // Load agent's signing keys (select: false field)
+    const agentWithKeys = await this.agentModel
+      .findOne({ _id: agentId, isDeleted: false })
+      .select('+externalSigningKeys')
+      .lean();
+
+    if (!agentWithKeys) {
+      throw new UnauthorizedException('Agent not found');
+    }
+
+    const keys: any[] = (agentWithKeys as any).externalSigningKeys ?? [];
+    const now = new Date();
+
+    // Find matching active key
+    const candidates = kid
+      ? keys.filter((k) => k.keyId === kid)
+      : keys; // fallback: try all if no kid
+
+    const activeKey = candidates.find(
+      (k) => !k.revokedAt && (!k.expiresAt || new Date(k.expiresAt) > now)
+    );
+
+    if (!activeKey) {
+      throw new UnauthorizedException(
+        kid ? `No active signing key found for kid="${kid}"` : 'No active signing keys configured for this agent'
+      );
+    }
+
+    // Verify signature with Node.js crypto
+    let payload: any;
+    try {
+      const pubKey = crypto.createPublicKey({ key: activeKey.publicKey, format: 'pem' });
+      const verify = crypto.createVerify('SHA256');
+      verify.update(`${parts[0]}.${parts[1]}`);
+      const sig = Buffer.from(parts[2], 'base64url');
+      if (!verify.verify(pubKey, sig)) {
+        throw new Error('Signature mismatch');
+      }
+      payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    } catch (err: any) {
+      throw new UnauthorizedException(`Token signature verification failed: ${err.message}`);
+    }
+
+    // Validate expiry
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < nowSec) {
+      throw new UnauthorizedException('Token has expired');
+    }
+
+    // Validate agentId claim matches
+    if (payload.agentId && payload.agentId !== agentId) {
+      throw new UnauthorizedException('Token agentId does not match');
+    }
+
+    return payload;
   }
 
   /**

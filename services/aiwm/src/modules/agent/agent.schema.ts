@@ -26,6 +26,16 @@ export interface AnonymousTokenEntry {
   revokedAt?: Date;
 }
 
+export interface ExternalSigningKeyEntry {
+  keyId: string;
+  publicKey: string; // PEM format EC public key
+  algorithm: 'ES256';
+  createdAt: Date;
+  expiresAt?: Date;
+  revokedAt?: Date;
+  label?: string;
+}
+
 export type AgentLogLevel = 'info' | 'warn' | 'error';
 
 export interface AgentLog {
@@ -154,6 +164,24 @@ export class Agent extends BaseSchema {
     default: [],
   })
   channels: ChannelConfig[];
+
+  // External signing keys for partner-signed anonymous tokens (ES256)
+  @Prop({
+    type: [
+      {
+        keyId: { type: String, required: true },
+        publicKey: { type: String, required: true },
+        algorithm: { type: String, enum: ['ES256'], required: true, default: 'ES256' },
+        createdAt: { type: Date, required: true },
+        expiresAt: { type: Date },
+        revokedAt: { type: Date },
+        label: { type: String },
+      },
+    ],
+    default: [],
+    select: false,
+  })
+  externalSigningKeys: ExternalSigningKeyEntry[];
 
   // Anonymous tokens for chatbot widget integration
   @Prop({
