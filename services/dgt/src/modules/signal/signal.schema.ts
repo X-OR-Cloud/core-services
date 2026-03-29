@@ -5,6 +5,7 @@ import { BaseSchema } from '@hydrabyte/base';
 export type SignalDocument = Signal & Document;
 
 export enum SignalTimeframe {
+  M15 = '15m',
   H1 = '1h',
   H4 = '4h',
 }
