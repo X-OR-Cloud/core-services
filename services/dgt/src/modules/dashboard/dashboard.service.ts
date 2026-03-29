@@ -339,9 +339,11 @@ export class DashboardService {
     };
   }
 
-  async getMarketIndicators(symbol: string) {
+  async getMarketIndicators(rawSymbol: string) {
+    // Strip exchange prefix (e.g. "BINANCE:PAXGUSDT" → "PAXGUSDT")
+    const symbol = rawSymbol.includes(':') ? rawSymbol.split(':').pop()! : rawSymbol;
     const ti = await this.technicalIndicatorModel
-      .findOne({ symbol, timeframe: '1h' })
+      .findOne({ symbol, timeframe: '1m' })
       .sort({ timestamp: -1 })
       .lean()
       .exec();
