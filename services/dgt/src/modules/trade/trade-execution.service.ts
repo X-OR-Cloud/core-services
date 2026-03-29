@@ -129,18 +129,21 @@ export class TradeExecutionService {
       owner: { userId, orgId: context.orgId },
     });
 
-    // 10. Calculate SL/TP từ bot config (fallback về % cố định nếu không có bot)
+    // 10. Calculate SL/TP
+    // signal.stopLoss and signal.takeProfit are ABSOLUTE prices (e.g. 4475, 4545)
+    // Use them directly; fallback to fixed % if not provided by signal
     const entryPrice = filledPrice;
-    const slPct = signal.stopLoss || 2;   // % từ signal hoặc default 2%
-    const tpPct = signal.takeProfit || 4; // % từ signal hoặc default 4%
-    const slPrice =
-      signal.signalType === 'BUY'
-        ? entryPrice * (1 - slPct / 100)
-        : entryPrice * (1 + slPct / 100);
-    const tpPrice =
-      signal.signalType === 'BUY'
-        ? entryPrice * (1 + tpPct / 100)
-        : entryPrice * (1 - tpPct / 100);
+    const isBuy = signal.signalType === 'BUY';
+    const slPrice = signal.stopLoss
+      ? signal.stopLoss
+      : isBuy
+        ? entryPrice * (1 - 2 / 100)
+        : entryPrice * (1 + 2 / 100);
+    const tpPrice = signal.takeProfit
+      ? signal.takeProfit
+      : isBuy
+        ? entryPrice * (1 + 4 / 100)
+        : entryPrice * (1 - 4 / 100);
 
     // 11. Create Position
     const position = await this.positionModel.create({
