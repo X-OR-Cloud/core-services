@@ -283,7 +283,10 @@ export class DashboardService {
   }
 
   async getMacroContext() {
-    const seriesIds = ['DXY', 'VIXCLS', 'DFII10'];
+    // DTWEXBGS = Trade Weighted US Dollar Index (FRED series, collected daily)
+    // VIXCLS   = CBOE Volatility Index (FRED series, collected daily)
+    // DFII10   = 10Y Real Interest Rate (FRED series, collected daily)
+    const seriesIds = ['DTWEXBGS', 'VIXCLS', 'DFII10'];
     const indicators = await Promise.all(
       seriesIds.map((id) =>
         this.macroIndicatorModel.findOne({ seriesId: id }).sort({ timestamp: -1 }).lean().exec(),
@@ -411,17 +414,31 @@ export class DashboardService {
       .find({ 'owner.userId': userId, isDeleted: false })
       .distinct('_id');
 
-    const query: any = { accountId: { $in: accountIds } };
-    if (since) {
-      query.createdAt = { $gt: new Date(since) };
-    }
+    const dateFilter = since ? { $gt: new Date(since) } : undefined;
 
-    const logs = await this.botActivityLogModel
-      .find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean()
-      .exec();
+    // Query bot activity logs và LLM signals song song
+    const [logs, signals] = await Promise.all([
+      this.botActivityLogModel
+        .find({
+          accountId: { $in: accountIds },
+          ...(dateFilter ? { createdAt: dateFilter } : {}),
+        })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.signalModel
+        .find({
+          accountId: { $in: accountIds },
+          insight: { $exists: true, $ne: '' },
+          ...(dateFilter ? { createdAt: dateFilter } : {}),
+        })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .select('_id accountId asset timeframe signalType confidence confidenceLabel insight keyFactors macroFactors createdAt')
+        .lean()
+        .exec(),
+    ]);
 
     const agentMap: Record<string, string> = {
       buy: 'TREND',
@@ -437,16 +454,42 @@ export class DashboardService {
       ERROR: 'ALERT',
     };
 
-    const entries = logs.map((log) => ({
+    // Map bot activity logs
+    const logEntries = logs.map((log) => ({
       id: (log._id as Types.ObjectId).toString(),
       timestamp: log.createdAt,
       agent: agentMap[log.actionType] || 'NEURAL',
       message: log.action,
       severity: severityMap[log.status] || 'INFO',
       metadata: log.metadata || {},
+      type: 'bot_activity' as const,
     }));
 
-    return { entries, hasMore: false };
+    // Map LLM signal insights
+    const signalEntries = signals.map((sig) => ({
+      id: (sig._id as Types.ObjectId).toString(),
+      timestamp: sig.createdAt,
+      agent: 'LLM',
+      message: sig.insight,
+      severity: 'INFO' as const,
+      metadata: {
+        signalType: sig.signalType,
+        confidence: sig.confidence,
+        confidenceLabel: sig.confidenceLabel,
+        asset: sig.asset,
+        timeframe: sig.timeframe,
+        keyFactors: sig.keyFactors || [],
+        macroFactors: sig.macroFactors || [],
+      },
+      type: 'llm_insight' as const,
+    }));
+
+    // Merge, sort by timestamp desc, apply limit
+    const merged = [...logEntries, ...signalEntries]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+
+    return { entries: merged, hasMore: false };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

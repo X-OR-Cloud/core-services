@@ -77,7 +77,7 @@ export const DATASOURCE_SCHEDULES: DatasourceSchedule[] = [
     params: {
       seriesIds: [
         'FEDFUNDS', 'CPIAUCSL', 'PCEPI', 'FEDTARMD', 'DFII10',
-        'DTWEXBGS', 'M2SL', 'RRPONTSYD', 'BAMLH0A0HYM2', 'DGS10', 'DGS2',
+        'DTWEXBGS', 'VIXCLS', 'M2SL', 'RRPONTSYD', 'BAMLH0A0HYM2', 'DGS10', 'DGS2',
       ],
     },
   },

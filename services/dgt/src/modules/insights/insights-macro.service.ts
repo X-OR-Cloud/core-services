@@ -172,7 +172,8 @@ export class InsightsMacroService {
   }
 
   async getLiquidity() {
-    const dxy = await this.macroModel.findOne({ seriesId: 'DXY' }).sort({ timestamp: -1 }).lean().exec();
+    // DTWEXBGS = Trade Weighted US Dollar Index (FRED series ID, collected daily)
+    const dxy = await this.macroModel.findOne({ seriesId: 'DTWEXBGS' }).sort({ timestamp: -1 }).lean().exec();
 
     const etfData = await this.sentimentModel
       .findOne({ source: 'bytetree' })
