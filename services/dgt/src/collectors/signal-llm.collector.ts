@@ -55,8 +55,12 @@ export class SignalLlmCollector extends BaseCollector {
     const startTime = Date.now();
 
     // Step 1: Fetch last N MarketPrice candles (always use '1m' — raw data granularity)
-    // The signal timeframe (1h/4h) determines signal validity, not candle granularity
-    const candleLimit = timeframe === '4h' ? 240 : 60; // 4h → 240 × 1m candles, 1h → 60 × 1m
+    // The signal timeframe determines signal validity, not candle granularity
+    // 15m → 30 × 1m candles (30 phút context)
+    // 1h  → 60 × 1m candles (1 giờ context)
+    // 4h  → 240 × 1m candles (4 giờ context)
+    const CANDLE_LIMITS: Record<string, number> = { '15m': 30, '1h': 60, '4h': 240 };
+    const candleLimit = CANDLE_LIMITS[timeframe] ?? 60;
     const { data: candlesDesc } = await this.marketPriceService.findAll(
       { symbol: asset, timeframe: '1m' },
       { sort: { timestamp: -1 }, page: 1, limit: candleLimit },
@@ -437,9 +441,14 @@ export class SignalLlmCollector extends BaseCollector {
     }
 
     // Calculate expiresAt
+    // 15m → expire sau 1 giờ (4 × period)
+    // 1h  → expire sau 4 giờ (4 × period)
+    // 4h  → expire sau 16 giờ (4 × period)
     const now = new Date();
     const expiresAt = new Date(now);
-    if (timeframe === SignalTimeframe.H1) {
+    if (timeframe === SignalTimeframe.M15) {
+      expiresAt.setMinutes(expiresAt.getMinutes() + 60); // +1h
+    } else if (timeframe === SignalTimeframe.H1) {
       expiresAt.setHours(expiresAt.getHours() + 4);
     } else if (timeframe === SignalTimeframe.H4) {
       expiresAt.setHours(expiresAt.getHours() + 16);

@@ -51,7 +51,7 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
     for (const account of accounts) {
       const accountId = (account as any)._id.toString();
       await this.registerJobsForAccount(accountId);
-      registered += 2;
+      registered += 3; // 15m + 1h + 4h
     }
 
     // Register global expiry job
@@ -97,6 +97,18 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
   }
 
   private async registerJobsForAccount(accountId: string): Promise<void> {
+    await this.signalGenerationQueue.add(
+      this.jobName(accountId, '15m'),
+      { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '15m' } },
+      {
+        repeat: { every: 900_000 }, // 15 phút
+        removeOnComplete: 100,
+        removeOnFail: 50,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      },
+    );
+
     await this.signalGenerationQueue.add(
       this.jobName(accountId, '1h'),
       { type: SIGNAL_JOB_TYPES.GENERATE_SIGNAL, params: { accountId, asset: 'PAXGUSDT', timeframe: '1h' } },
