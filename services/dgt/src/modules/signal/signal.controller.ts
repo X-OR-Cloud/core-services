@@ -63,7 +63,12 @@ export class SignalController {
     @Query() query: QueryStringParams,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.signalService.findAll(parseQueryString(query), context);
+    const parsed = parseQueryString(query);
+    // Mặc định chỉ trả 1h + 4h nếu FE không truyền timeframe filter
+    if (!parsed.filter?.['timeframe']) {
+      parsed.filter = { ...(parsed.filter || {}), timeframe: { $in: ['1h', '4h'] } };
+    }
+    return this.signalService.findAll(parsed, context);
   }
 
   @Get('latest')
