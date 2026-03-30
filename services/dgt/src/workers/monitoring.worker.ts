@@ -108,11 +108,6 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
     exitPrice: number,
     closeReason: CloseReason,
   ): Promise<void> {
-    const realizedPnl =
-      position.side === 'long'
-        ? (exitPrice - position.entryPrice) * position.quantity
-        : (position.entryPrice - exitPrice) * position.quantity;
-
     // Lấy account để tạo adapter đúng
     const account = await this.accountModel.findById(position.accountId).lean().exec();
 
@@ -134,7 +129,7 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
         exchangeOrderId = result.exchangeOrderId;
         fees = result.fees;
         feeAsset = result.feeAsset;
-        // Dùng giá thực tế từ exchange nếu có
+        // Dùng giá fill thực tế từ exchange — chính xác hơn giá poll
         if (result.averageFilledPrice > 0) {
           exitPrice = result.averageFilledPrice;
         }
@@ -144,6 +139,13 @@ export class MonitoringWorker implements OnApplicationBootstrap, OnApplicationSh
         );
       }
     }
+
+    // Tính realizedPnl SAU KHI có exitPrice thực từ exchange, trừ fees
+    const grossPnl =
+      position.side === 'long'
+        ? (exitPrice - position.entryPrice) * position.quantity
+        : (position.entryPrice - exitPrice) * position.quantity;
+    const realizedPnl = grossPnl - fees;
 
     // Create close order record
     await this.orderModel.create({
