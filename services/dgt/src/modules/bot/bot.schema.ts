@@ -19,6 +19,7 @@ export enum TradingMode {
 }
 
 export enum BotTimeframe {
+  M15 = '15m',
   H1 = '1h',
   H4 = '4h',
 }
