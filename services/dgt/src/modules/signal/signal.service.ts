@@ -67,6 +67,9 @@ export class SignalService extends BaseService<Signal> {
       if (!belongs) {
         // Return empty — requested accountId not accessible
         options.filter = { ...(options.filter || {}), accountId: new Types.ObjectId() };
+      } else {
+        // Convert string → ObjectId so MongoDB query matches correctly
+        options.filter = { ...(options.filter || {}), accountId: requested };
       }
     } else {
       options.filter = { ...(options.filter || {}), accountId: { $in: accountIds } };
