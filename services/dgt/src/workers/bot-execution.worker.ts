@@ -247,6 +247,8 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
           quantity,
           entryPrice,
           confidence: signal.confidence,
+          takeProfit: signal.takeProfit ?? null,
+          stopLoss: signal.stopLoss ?? null,
         },
         status: ActivityStatus.SUCCESS,
       });
