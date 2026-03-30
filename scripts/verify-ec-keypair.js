@@ -162,7 +162,8 @@ if (jwtToken) {
         const verifyJwt = crypto.createVerify('SHA256');
         verifyJwt.update(`${parts[0]}.${parts[1]}`);
         const sig = Buffer.from(parts[2], 'base64url');
-        const valid = verifyJwt.verify(publicKey, sig);
+        // ES256 signatures from jsonwebtoken are DER-encoded (IEEE P1363 format)
+        const valid = verifyJwt.verify({ key: publicKey, dsaEncoding: 'ieee-p1363' }, sig);
         if (valid) {
           pass('JWT signature is VALID — token was signed by the private key matching public.pem ✓');
         } else {

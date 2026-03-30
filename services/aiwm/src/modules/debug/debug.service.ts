@@ -167,7 +167,8 @@ const token = generateChatToken('<agentId>', '<userId>')
       const verify = crypto.createVerify('SHA256');
       verify.update(`${parts[0]}.${parts[1]}`);
       const sig = Buffer.from(parts[2], 'base64url');
-      const signatureValid = verify.verify(pubKey, sig);
+      // ES256 signatures from jsonwebtoken are DER-encoded (IEEE P1363 format)
+      const signatureValid = verify.verify({ key: pubKey, dsaEncoding: 'ieee-p1363' }, sig);
 
       if (!signatureValid) {
         return {

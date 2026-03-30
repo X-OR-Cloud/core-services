@@ -2558,7 +2558,8 @@ echo "Installation script placeholder - implement actual logic"
       const verify = crypto.createVerify('SHA256');
       verify.update(`${parts[0]}.${parts[1]}`);
       const sig = Buffer.from(parts[2], 'base64url');
-      if (!verify.verify(pubKey, sig)) {
+      // ES256 signatures from jsonwebtoken are DER-encoded (IEEE P1363 format)
+      if (!verify.verify({ key: pubKey, dsaEncoding: 'ieee-p1363' }, sig)) {
         throw new Error('Signature mismatch');
       }
       payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
