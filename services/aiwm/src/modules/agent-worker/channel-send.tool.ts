@@ -1,7 +1,7 @@
 import { tool } from 'ai';
 import { zodSchema } from 'ai';
 import { z } from 'zod';
-import { Socket } from 'socket.io-client';
+import type Redis from 'ioredis';
 
 export const CONNECTION_TOOL_NAMES = [
   'mcp__Chat__SendMessage',
@@ -10,7 +10,7 @@ export const CONNECTION_TOOL_NAMES = [
 ] as const;
 
 export interface ChannelSendToolsContext {
-  socket: Socket;
+  redisPub: Redis;
   /** 'assistant' agents upload base64 internally; 'engineer' agents POST multipart to REST API */
   agentType: 'assistant' | 'engineer';
   /** assistant only — direct S3 upload callback */
@@ -39,7 +39,7 @@ const embedSchema = z.object({
  * to a specific platform channel via an active Connection.
  */
 export function createChannelSendTools(ctx: ChannelSendToolsContext) {
-  const { socket } = ctx;
+  const { redisPub } = ctx;
 
   return {
     mcp__Chat__SendMessage: tool({
@@ -54,7 +54,7 @@ export function createChannelSendTools(ctx: ChannelSendToolsContext) {
         conversationId: z.string().optional().describe('Optional: link this message to an existing conversation for audit trail'),
       })),
       execute: async ({ connectionId, channelId, content, conversationId }) => {
-        return _emitChannelSend(socket, { connectionId, channelId, content, conversationId });
+        return _publishChannelSend(redisPub, { connectionId, channelId, content, conversationId });
       },
     }),
 
@@ -71,7 +71,7 @@ export function createChannelSendTools(ctx: ChannelSendToolsContext) {
         conversationId: z.string().optional().describe('Optional: link this message to an existing conversation for audit trail'),
       })),
       execute: async ({ connectionId, channelId, embed, conversationId }) => {
-        return _emitChannelSend(socket, { connectionId, channelId, embed, conversationId });
+        return _publishChannelSend(redisPub, { connectionId, channelId, embed, conversationId });
       },
     }),
 
@@ -138,7 +138,7 @@ export function createChannelSendTools(ctx: ChannelSendToolsContext) {
             fileUrl = json.fileUrl;
           }
 
-          return _emitChannelSend(socket, {
+          return _publishChannelSend(redisPub, {
             connectionId,
             channelId,
             file: { fileUrl, filename, mimeType, caption },
@@ -152,25 +152,14 @@ export function createChannelSendTools(ctx: ChannelSendToolsContext) {
   };
 }
 
-function _emitChannelSend(
-  socket: Socket,
+async function _publishChannelSend(
+  redisPub: Redis,
   payload: object,
 ): Promise<{ success: boolean; connectionId?: string; channelId?: string; error?: string }> {
-  return new Promise((resolve) => {
-    if (!socket.connected) {
-      resolve({ success: false, error: 'Agent socket is not connected' });
-      return;
-    }
-
-    const timer = setTimeout(() => resolve({ success: false, error: 'channel:send timed out' }), 10_000);
-
-    socket.emit(
-      'channel:send',
-      payload,
-      (ack: { success: boolean; connectionId?: string; channelId?: string; error?: string }) => {
-        clearTimeout(timer);
-        resolve(ack);
-      },
-    );
-  });
+  try {
+    await redisPub.publish('outbound:direct', JSON.stringify(payload));
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: `channel:send publish failed: ${err.message}` };
+  }
 }

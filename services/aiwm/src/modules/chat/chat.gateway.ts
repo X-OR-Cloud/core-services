@@ -72,6 +72,96 @@ export class ChatGateway
     this.redisPub = new Redis(redisConfig);
 
     await this.redisSub.subscribe('agent:join-room', 'chat:message-new', 'outbound:command');
+    await this.redisSub.psubscribe('chat:response:*');
+
+    this.redisSub.on('pmessage', async (_pattern, channel, message) => {
+      // channel = chat:response:{conversationId}
+      if (!channel.startsWith('chat:response:')) return;
+      const conversationId = channel.slice('chat:response:'.length);
+      try {
+        const payload = JSON.parse(message) as {
+          taskId: string;
+          agentId: string;
+          conversationId: string;
+          type: string;
+          role: string;
+          content: string;
+          sources?: unknown[];
+          workId?: string;
+          isTyping?: boolean;
+          isFinal?: boolean;
+        };
+
+        // Typing indicator — broadcast only, no DB save
+        if (payload.type === 'typing') {
+          this.server.to(`conversation:${conversationId}`).emit('agent:typing', {
+            agentId: payload.agentId,
+            conversationId,
+            isTyping: payload.isTyping ?? false,
+            timestamp: new Date(),
+          });
+          return;
+        }
+
+        // Save action to DB
+        const actionTypeMap: Record<string, ActionType> = {
+          message: ActionType.MESSAGE,
+          system: ActionType.NOTICE,
+          tool_use: ActionType.TOOL_USE,
+          tool_result: ActionType.TOOL_RESULT,
+          thinking: ActionType.THINKING,
+          error: ActionType.ERROR,
+        };
+        const actionType = actionTypeMap[payload.type] ?? ActionType.MESSAGE;
+        const savedAction = await this.actionService.createActionDirect(
+          {
+            conversationId,
+            type: actionType,
+            actor: { role: ActorRole.AGENT, agentId: payload.agentId, displayName: payload.agentId },
+            content: payload.content,
+            ...(payload.sources?.length ? { sources: payload.sources } : {}),
+            ...(payload.workId ? { workId: payload.workId } : {}),
+          } as any,
+          { orgId: '', agentId: payload.agentId, userId: '' },
+        );
+        const actionId = (savedAction as any)._id?.toString() || 'unknown';
+
+        // Broadcast to conversation room (users only receive type=message — frontend filters the rest)
+        this.server.to(`conversation:${conversationId}`).emit('message:new', {
+          _id: actionId,
+          conversationId,
+          role: 'assistant',
+          type: payload.type,
+          content: payload.content,
+          agentId: payload.agentId,
+          platform: 'portal',
+          ...(payload.sources?.length ? { sources: payload.sources } : {}),
+          ...(payload.workId ? { workId: payload.workId } : {}),
+        });
+
+        // Bridge final assistant message to Connection Worker (Discord/Telegram outbound)
+        if (payload.isFinal && payload.role === 'assistant' && this.redisPub) {
+          const outboundLockKey = `lock:outbound:${actionId}`;
+          this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
+            if (acquired && this.redisPub) {
+              this.redisPub.publish(
+                'outbound:message',
+                JSON.stringify({
+                  conversationId,
+                  text: payload.content,
+                  actionType: payload.type === 'system' ? 'notice' : (payload.type ?? 'message'),
+                }),
+              ).catch((err: Error) => this.logger.error(`Failed to publish outbound:message: ${err.message}`));
+            }
+          }).catch((err: Error) => this.logger.error(`Failed to acquire outbound lock: ${err.message}`));
+        }
+
+        this.logger.debug(`[Redis] chat:response actionId=${actionId} conv=${conversationId} type=${payload.type}`);
+      } catch (err: any) {
+        this.logger.error(`Failed to process chat:response for ${conversationId}: ${err.message}`);
+      }
+    });
+
     this.redisSub.on('message', async (channel, message) => {
       if (channel === 'agent:join-room') {
         try {
@@ -100,21 +190,48 @@ export class ChatGateway
             this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
             return;
           }
-          // Ensure agent is in the conversation room before broadcasting
-          // (agent:join-room may arrive after chat:message-new due to Redis pub ordering)
-          if (agentId) {
-            const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
-            if (agentSocketIds.length > 0) {
-              this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, ...(skipAgent ? { skipAgent: true } : {}) };
+          // Broadcast to user sockets in room regardless of agent type
+          this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+
+          // Route to agent:
+          // - assistant agent → Redis task queue (worker:agt consumes via BLPOP)
+          // - engineer agent → already in room via WS, receives message:new above
+          if (!skipAgent && agentId) {
+            const agentDoc = await this.agentService.findByIdInternal(agentId);
+            if ((agentDoc as any)?.type === 'assistant') {
+              const task = {
+                taskId: actionId,
+                agentId,
+                conversationId,
+                actionId,
+                content,
+                role,
+                userId,
+                username,
+                fullname,
+                externalUsername,
+                externalUserId,
+                channelId,
+                connectionId,
+                attachments,
+                platform,
+                timestamp: new Date().toISOString(),
+              };
+              this.redisPub!.lpush(`chat:task:${agentId}`, JSON.stringify(task)).catch((err: Error) =>
+                this.logger.error(`Failed to push task from con worker: ${err.message}`),
+              );
+              this.logger.debug(`[Redis] chat:task:${agentId} pushed from con-worker taskId=${actionId}`);
+            } else {
+              // Engineer agent: ensure agent is in the conversation room
+              const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+              if (agentSocketIds.length > 0) {
+                this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+              }
             }
           }
-          // Broadcast to room — Action already saved by con worker.
-          // _id = actionId allows AgentRunner to deduplicate when agent has multiple sockets across instances.
-          // Note: do NOT include agentId at top-level — AgentRunner skips messages where agentId === its own id
-          const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, ...(skipAgent ? { skipAgent: true } : {}) };
-          this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
           this.logger.debug(
-            `[Redis] chat:message-new broadcast conversationId=${conversationId} role=${role}`,
+            `[Redis] chat:message-new processed conversationId=${conversationId} role=${role}`,
           );
         } catch (err: any) {
           this.logger.error(`Failed to process chat:message-new: ${err.message}`);
@@ -293,6 +410,7 @@ export class ChatGateway
     client.data.agentId = agentId;
     client.data.orgId = resolvedOrgId;
     client.data.roles = [];
+    client.data.agentType = (agent as any)?.type ?? 'engineer';
 
     await this.chatService.setUserOnline(anonymousId, client.id);
     await this.chatService.setSocketSession(client.id, {
@@ -373,6 +491,16 @@ export class ChatGateway
     await client.join(`conversation:${conversationId}`);
     client.data.conversationId = conversationId;
     client.data.agentId = agentId;
+
+    // Cache agent type so handleSendMessage can route assistant → Redis queue, engineer → WS broadcast
+    if (!client.data.agentType && agentId) {
+      try {
+        const agent = await this.agentService.findByIdInternal(agentId);
+        client.data.agentType = (agent as any)?.type ?? 'engineer';
+      } catch {
+        client.data.agentType = 'engineer';
+      }
+    }
 
     const participantId = client.data.userId || client.data.agentId;
     await this.chatService.joinConversation(conversationId, participantId);
@@ -674,24 +802,57 @@ export class ChatGateway
         ...(skipAgent ? { skipAgent: true } : {}),
         ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username, fullname: client.data.fullname } : {}),
       };
-      this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
 
-      // Bridge agent response back to con worker (Discord/Telegram outbound)
-      // Lock on actionId to prevent duplicate outbound from multiple WS instances
-      if (dto.role === 'assistant' && this.redisPub) {
-        const outboundLockKey = `lock:outbound:${actionId}`;
-        this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
-          if (acquired && this.redisPub) {
-            this.redisPub.publish(
-              'outbound:message',
-              JSON.stringify({ conversationId, text: dto.content, actionType: dto.type === 'system' ? 'notice' : (dto.type ?? 'message') }),
-            ).catch((err: Error) =>
-              this.logger.error(`Failed to publish outbound:message: ${err.message}`),
-            );
-          }
-        }).catch((err: Error) =>
-          this.logger.error(`Failed to acquire outbound lock: ${err.message}`),
+      // Route message to agent:
+      // - assistant agents (worker:agt) → Redis task queue (no WS round-trip)
+      // - engineer agents (self-deployed) → broadcast room via WS (existing behavior)
+      const isAssistantAgent = client.data.agentType === 'assistant';
+      if (!isAgent && isAssistantAgent && agentId && !skipAgent && this.redisPub) {
+        // User → assistant agent: push task to Redis queue
+        const task = {
+          taskId: actionId,
+          agentId,
+          conversationId,
+          actionId,
+          content: dto.content,
+          role: dto.role,
+          userId: client.data.userId || undefined,
+          username: client.data.username || undefined,
+          fullname: client.data.fullname || undefined,
+          attachments: dto.attachments,
+          references: dto.references,
+          sources: dto.sources,
+          workId: dto.workId,
+          platform: 'portal',
+          timestamp: new Date().toISOString(),
+        };
+        this.redisPub.lpush(`chat:task:${agentId}`, JSON.stringify(task)).catch((err: Error) =>
+          this.logger.error(`Failed to push task to chat:task:${agentId}: ${err.message}`),
         );
+        this.logger.debug(`[Redis] chat:task:${agentId} pushed taskId=${actionId}`);
+        // Broadcast message to user sockets only (sender sees their own message)
+        this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+      } else {
+        // Engineer agent or agent-sent message → broadcast room via WS (existing behavior)
+        this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+
+        // Bridge agent response back to con worker (Discord/Telegram outbound)
+        // Lock on actionId to prevent duplicate outbound from multiple WS instances
+        if (dto.role === 'assistant' && this.redisPub) {
+          const outboundLockKey = `lock:outbound:${actionId}`;
+          this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
+            if (acquired && this.redisPub) {
+              this.redisPub.publish(
+                'outbound:message',
+                JSON.stringify({ conversationId, text: dto.content, actionType: dto.type === 'system' ? 'notice' : (dto.type ?? 'message') }),
+              ).catch((err: Error) =>
+                this.logger.error(`Failed to publish outbound:message: ${err.message}`),
+              );
+            }
+          }).catch((err: Error) =>
+            this.logger.error(`Failed to acquire outbound lock: ${err.message}`),
+          );
+        }
       }
 
       client.emit('message:sent', {
@@ -824,25 +985,6 @@ export class ChatGateway
       return { success: false, error: 'No agent associated with this connection' };
     }
 
-    // Resolve agent socket IDs
-    const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
-    if (agentSocketIds.length === 0) {
-      // /reload still gets a DB write for audit even when agent is offline
-      if (command === 'reload') {
-        await this.actionService.createActionDirect(
-          {
-            conversationId: conversationId || '',
-            type: ActionType.COMMAND,
-            actor: { role: ActorRole.USER, userId, displayName: client.data.username || userId },
-            content: `/${command}`,
-            metadata: { commandName: command, ...(reason ? { reason } : {}), ...(conversationId ? { targetConversationId: conversationId } : {}) },
-          },
-          { orgId, userId },
-        );
-      }
-      return { success: false, error: 'Agent is not connected' };
-    }
-
     // Save DB Action for commands with side effects
     if (command === 'stop' || command === 'reload') {
       await this.actionService.createActionDirect(
@@ -857,10 +999,23 @@ export class ChatGateway
       );
     }
 
-    // Emit agent:command directly to agent socket(s) — not broadcast to room
-    this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
-
-    this.logger.log(`[WS-CMD] command=${command} agentId=${agentId} sockets=${agentSocketIds.length} conversationId=${conversationId || 'n/a'}`);
+    // Route command:
+    // - assistant agents (worker:agt) → Redis pub/sub chat:cmd:{agentId}
+    // - engineer agents (self-deployed) → WS agent:command direct emit
+    const isAssistantAgent = client.data.agentType === 'assistant';
+    if (isAssistantAgent && this.redisPub) {
+      this.redisPub.publish(`chat:cmd:${agentId}`, JSON.stringify({ type: command, conversationId, reason })).catch((err: Error) =>
+        this.logger.error(`Failed to publish chat:cmd: ${err.message}`),
+      );
+      this.logger.log(`[Redis] chat:cmd:${agentId} command=${command} conversationId=${conversationId || 'n/a'}`);
+    } else {
+      const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+      if (agentSocketIds.length === 0) {
+        return { success: false, error: 'Agent is not connected' };
+      }
+      this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
+      this.logger.log(`[WS-CMD] command=${command} agentId=${agentId} sockets=${agentSocketIds.length} conversationId=${conversationId || 'n/a'}`);
+    }
 
     return { success: true, command };
   }

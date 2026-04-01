@@ -2,7 +2,9 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { createHash } from 'crypto';
+import Redis from 'ioredis';
 import { ConfigKey } from '@hydrabyte/shared';
+import { redisConfig } from '../../config/redis.config';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
 import { ActionService } from '../action/action.service';
@@ -44,7 +46,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly runnerConfigHash = new Map<string, string>();
   private healthCheckTimer: NodeJS.Timeout | null = null;
 
-  private readonly wsChatUrl: string;
+  /** Shared Redis client for publish/set/get — shared across all runners */
+  private redisPub: Redis | null = null;
+  /** Map of agentId → dedicated Redis client for BLPOP (blocking, one per runner) */
+  private readonly redisBlockingMap = new Map<string, Redis>();
   private readonly agentIdFilter: string[];
 
   constructor(
@@ -56,13 +61,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly fileService: FileService,
     private readonly cbmKnowledgeService: CbmKnowledgeService,
   ) {
-    this.wsChatUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
     this.agentIdFilter = process.env.AGENT_IDS
       ? process.env.AGENT_IDS.split(',').filter(Boolean)
       : [];
   }
 
   async onModuleInit() {
+    this.redisPub = new Redis(redisConfig);
     await this.lockService.connect();
     await this.spawnAgents();
     this.startHealthCheck();
@@ -75,8 +80,12 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     for (const [agentId, runner] of this.runners.entries()) {
       runner.stop();
       await this.lockService.release(agentId);
+      this.redisBlockingMap.get(agentId)?.disconnect();
+      this.redisBlockingMap.delete(agentId);
     }
     this.runners.clear();
+    this.redisPub?.disconnect();
+    this.redisPub = null;
     this.logger.log('All agent runners stopped');
   }
 
@@ -134,7 +143,11 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       );
 
       const browserApiUrl = await this.configService.getString(ConfigKey.PINCHTAB_API_URL);
-      const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, this.wsChatUrl);
+      const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, 'http://localhost:3003');
+
+      // Each runner needs its own blocking Redis connection for BLPOP
+      const redisBlocking = new Redis(redisConfig);
+      this.redisBlockingMap.set(agentId, redisBlocking);
 
       const runner = new AgentRunner({
         agentId,
@@ -145,7 +158,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         settings: settings || agent.settings || {},
         mcpServers: mcpServers || {},
         allowedFunctions: allowedFunctions || [],
-        wsChatUrl: this.wsChatUrl,
+        redisBlocking,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        redisPub: this.redisPub!,
         agentType: (agent.type as 'assistant' | 'engineer') ?? 'assistant',
         apiBaseUrl: aiwmApiBaseUrl,
         browserApiUrl: browserApiUrl ?? undefined,
@@ -157,9 +172,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
             const ext = filePath.split('.').pop() ?? 'bin';
             const mimeType = ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
             this.logger.debug(`[browser] sendFile conv=${conversationId} file=${filePath}`);
-            // Emit via runner's socket — runner exposes emitMessage for this purpose
-            this.runners.get(agentId)?.emitMessage(conversationId, {
-              role: 'assistant',
+            // Publish via runner's Redis — runner exposes publishMessage for this purpose
+            this.runners.get(agentId)?.publishMessage(conversationId, {
               type: 'file',
               content: caption,
               file: { data: base64, mimeType, filename: filePath.split('/').pop() ?? 'file' },
@@ -223,18 +237,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
    */
   private startHealthCheck() {
     this.healthCheckTimer = setInterval(async () => {
-      // 1. Reconnect disconnected runners
-      for (const [agentId, runner] of this.runners.entries()) {
-        if (!runner.isConnected) {
-          this.logger.warn(`Runner disconnected for ${agentId}, reconnecting...`);
-          runner.reconnect();
-        }
-      }
-
-      // 2. Restart runners whose agent config changed (updatedAt differs) and are idle
+      // 1. Restart runners whose agent config changed and are idle
       await this.restartUpdatedAgents();
 
-      // 3. Try to claim agents not yet owned by any instance
+      // 2. Try to claim agents not yet owned by any instance
       await this.claimUnlockedAgents();
     }, HEALTH_CHECK_INTERVAL_MS);
   }
@@ -270,6 +276,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Agent ${agent.name} (${agentId}) config changed, restarting runner...`);
       await this.agentService.addLog(agentId, { level: 'info', message: 'Runner restarted — config changed' });
       runner.stop();
+      this.redisBlockingMap.get(agentId)?.disconnect();
+      this.redisBlockingMap.delete(agentId);
       this.runners.delete(agentId);
       this.runnerConfigHash.delete(agentId);
       await this.spawnRunner(agent as unknown as AgentDocument);
