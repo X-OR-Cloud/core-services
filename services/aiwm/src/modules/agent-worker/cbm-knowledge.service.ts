@@ -9,7 +9,7 @@ export interface RagChunk {
 @Injectable()
 export class CbmKnowledgeService {
   private readonly logger = new Logger(CbmKnowledgeService.name);
-  private readonly cbmUrl = process.env.CBM_SERVICE_URL || 'http://localhost:3004';
+  private readonly cbmUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
 
   async search(
     collectionId: string,

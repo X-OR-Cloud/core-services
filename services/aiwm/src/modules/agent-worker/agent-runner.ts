@@ -101,6 +101,7 @@ export interface AgentTask {
   actionId: string;
   content: string;
   role: string;
+  orgId?: string;
   userId?: string;
   username?: string;
   fullname?: string;
@@ -126,6 +127,10 @@ export class AgentRunner {
   private readonly logger: Logger;
   private readonly processingMap = new Map<string, boolean>();
   private readonly abortMap = new Map<string, AbortController>();
+  /** Per-conversation pending task queue — avoids Redis requeue infinite loop */
+  private readonly pendingTasks = new Map<string, AgentTask>();
+  /** Per-conversation orgId — carried from task to response for RBAC */
+  private readonly conversationOrgId = new Map<string, string>();
   private isShuttingDown = false;
   private isReloading = false;
 
@@ -270,9 +275,11 @@ export class AgentRunner {
 
   /** Publish a response/event back to ChatGateway via Redis */
   private publishResponse(conversationId: string, payload: Record<string, unknown>) {
+    const orgId = this.conversationOrgId.get(conversationId) || '';
+    const nonce = `${this.config.agentId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
     this.config.redisPub.publish(
       `chat:response:${conversationId}`,
-      JSON.stringify({ agentId: this.config.agentId, conversationId, ...payload }),
+      JSON.stringify({ agentId: this.config.agentId, conversationId, orgId, nonce, ...payload }),
     ).catch((err: Error) => this.logger.error(`publishResponse failed: ${err.message}`));
   }
 
@@ -422,18 +429,18 @@ export class AgentRunner {
       referencesBlock = `<references>\n${refLines.join('\n\n')}\n</references>\n\n`;
     }
 
-    // Concurrency guard
+    // Concurrency guard — store latest pending task in memory instead of requeuing to Redis
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
     if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
-      // Requeue task so it's not lost
-      this.config.redisPub.rpush(`chat:task:${this.config.agentId}`, JSON.stringify(task)).catch(() => {/* silent */});
-      this.writeLog('warn', 'Max concurrency — task requeued', { conversationId, activeCount, maxConcurrency: this.maxConcurrency });
-      this.logger.warn(`Requeued — conversation ${conversationId} busy or at max concurrency`);
+      // Keep only the latest pending task per conversation (newer message replaces older)
+      this.pendingTasks.set(conversationId, task);
+      this.logger.debug(`Queued in memory — conversation ${conversationId} busy (active=${activeCount}/${this.maxConcurrency})`);
       return;
     }
 
     this.processingMap.set(conversationId, true);
     this.lastConversationId = conversationId;
+    if (task.orgId) this.conversationOrgId.set(conversationId, task.orgId);
     const abortController = new AbortController();
     this.abortMap.set(conversationId, abortController);
 
@@ -587,6 +594,15 @@ export class AgentRunner {
       this.abortMap.delete(conversationId);
       this.currentWorkId = null;
       this.publishResponse(conversationId, { type: 'typing', isTyping: false });
+
+      // Drain pending task for this conversation (if any)
+      const pending = this.pendingTasks.get(conversationId);
+      if (pending) {
+        this.pendingTasks.delete(conversationId);
+        this.handleTask(pending).catch((err: Error) =>
+          this.logger.error(`handleTask (pending) error: ${err.message}`, err.stack),
+        );
+      }
     }
   }
 

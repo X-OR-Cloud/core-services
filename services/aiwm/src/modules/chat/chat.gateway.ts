@@ -83,6 +83,7 @@ export class ChatGateway
           taskId: string;
           agentId: string;
           conversationId: string;
+          orgId?: string;
           type: string;
           role: string;
           content: string;
@@ -90,9 +91,10 @@ export class ChatGateway
           workId?: string;
           isTyping?: boolean;
           isFinal?: boolean;
+          nonce?: string;
         };
 
-        // Typing indicator — broadcast only, no DB save
+        // Typing indicator — broadcast only, no DB save (no dedup needed)
         if (payload.type === 'typing') {
           this.server.to(`conversation:${conversationId}`).emit('agent:typing', {
             agentId: payload.agentId,
@@ -101,6 +103,16 @@ export class ChatGateway
             timestamp: new Date(),
           });
           return;
+        }
+
+        // Distributed dedup: only one WS instance processes each response
+        if (payload.nonce && this.redisPub) {
+          const lockKey = `lock:chat-resp:${payload.nonce}`;
+          const acquired = await this.redisPub.set(lockKey, '1', 'EX', 10, 'NX');
+          if (!acquired) {
+            this.logger.debug(`[Redis] chat:response skipped (lock taken) nonce=${payload.nonce}`);
+            return;
+          }
         }
 
         // Save action to DB
@@ -122,7 +134,7 @@ export class ChatGateway
             ...(payload.sources?.length ? { sources: payload.sources } : {}),
             ...(payload.workId ? { workId: payload.workId } : {}),
           } as any,
-          { orgId: '', agentId: payload.agentId, userId: '' },
+          { orgId: payload.orgId || '', agentId: payload.agentId, userId: '' },
         );
         const actionId = (savedAction as any)._id?.toString() || 'unknown';
 
@@ -207,6 +219,7 @@ export class ChatGateway
                 actionId,
                 content,
                 role,
+                orgId: orgId || '',
                 userId,
                 username,
                 fullname,
@@ -816,6 +829,7 @@ export class ChatGateway
           actionId,
           content: dto.content,
           role: dto.role,
+          orgId: client.data.orgId || '',
           userId: client.data.userId || undefined,
           username: client.data.username || undefined,
           fullname: client.data.fullname || undefined,
