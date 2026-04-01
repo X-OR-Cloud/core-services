@@ -137,7 +137,7 @@ export class ChatGateway
             conversationId,
             type: actionType,
             actor: { role: ActorRole.AGENT, agentId: payload.agentId, displayName: payload.agentId },
-            content: payload.content,
+            content: payload.content || '',
             ...(payload.sources?.length ? { sources: payload.sources } : {}),
             ...(payload.workId ? { workId: payload.workId } : {}),
           } as any,
