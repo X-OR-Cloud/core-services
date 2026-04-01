@@ -37,6 +37,14 @@ export class ConversationService extends BaseService<Conversation> {
   }
 
   /**
+   * Find a conversation by ID, bypassing RBAC.
+   * Used for anonymous/agent contexts where RBAC context is incomplete.
+   */
+  async findByIdDirect(conversationId: string): Promise<Conversation | null> {
+    return this.model.findById(conversationId).lean().exec() as Promise<Conversation | null>;
+  }
+
+  /**
    * Find or create a conversation scoped to (userId, agentId) — 'user' mode.
    * Same conversation across all connections for this user+agent pair.
    */

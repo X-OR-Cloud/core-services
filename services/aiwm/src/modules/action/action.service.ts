@@ -305,19 +305,16 @@ export class ActionService extends BaseService<Action> {
       );
     }
 
-    const context: RequestContext = {
-      userId: actorId,
-      roles: [PredefinedRole.OrganizationEditor],
-      orgId: orgId || '',
-      groupId: '',
-      agentId: '',
-      appId: '',
-    };
-    const conversation = await this.conversationService.findById(
-      new Types.ObjectId(dto.conversationId) as any,
-      context
-    );
+    const conversation = await this.conversationService.findByIdDirect(dto.conversationId);
     if (conversation && conversation.totalMessages % 10 === 0) {
+      const context: RequestContext = {
+        userId: actorId,
+        roles: [PredefinedRole.OrganizationEditor],
+        orgId: orgId || (conversation as any).owner?.orgId || '',
+        groupId: '',
+        agentId: '',
+        appId: '',
+      };
       this.conversationService
         .generateContextSummary(dto.conversationId, context)
         .catch((err) => {

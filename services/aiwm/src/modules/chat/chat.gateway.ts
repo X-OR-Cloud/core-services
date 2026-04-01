@@ -68,6 +68,13 @@ export class ChatGateway
   }
 
   async onModuleInit() {
+    // AGT/CON modes don't serve WS clients — skip Redis subscriptions that only API instances need
+    const mode = process.env.MODE || 'api';
+    if (mode !== 'api') {
+      this.logger.log(`Skipping Redis subscriptions in MODE=${mode}`);
+      return;
+    }
+
     this.redisSub = new Redis(redisConfig);
     this.redisPub = new Redis(redisConfig);
 
@@ -1057,10 +1064,14 @@ export class ChatGateway
       const { conversationId, page, limit, before, includeInternal } = data;
 
       // Verify client has access to this conversation
-      const conversation = await this.conversationService.findById(
-        conversationId as any,
-        { userId: client.data.userId || '', roles: client.data.roles || [], orgId: client.data.orgId, groupId: '', agentId: '', appId: '' },
-      );
+      // Anonymous users have no RBAC roles — use direct DB lookup instead
+      const isAnonymous = client.data.type === 'anonymous';
+      const conversation = isAnonymous
+        ? await this.conversationService.findByIdDirect(conversationId)
+        : await this.conversationService.findById(
+            conversationId as any,
+            { userId: client.data.userId || '', roles: client.data.roles || [], orgId: client.data.orgId, groupId: '', agentId: '', appId: '' },
+          );
 
       if (!conversation) {
         return { success: false, error: `Conversation ${conversationId} not found` };
