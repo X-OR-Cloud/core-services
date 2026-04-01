@@ -834,7 +834,10 @@ export class AgentRunner {
       type: 'tool_use',
       content: `🧠 **Knowledge Search**\n${userContent}`,
       metadata: {
-        toolName: 'knowledge_search',
+        toolName:
+`knowledge_search with ${collectionIds.length} collection(s):
+- Query length ${userContent.length} characters
+- Score threshold: ${this.config.ragCollections.map((c) => `${c.collectionId}≥${c.minScore}`).join(', ')}`,
         toolInput: { query: userContent, collectionIds },
         toolUseId,
       },
