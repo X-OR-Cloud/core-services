@@ -640,6 +640,11 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      // Anonymous clients have their conversation resolved on connect — reject manual join to prevent cross-conversation leaks
+      if (client.data.type === 'anonymous') {
+        return { success: false, error: 'Anonymous clients cannot join conversations manually. Use the conversation assigned on connect.' };
+      }
+
       const { conversationId } = data;
 
       // Load conversation to get agentId
@@ -737,7 +742,10 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const conversationId = dto.conversationId || client.data.conversationId;
+      // Anonymous clients: always use server-resolved conversationId to prevent cross-conversation leaks
+      const conversationId = client.data.type === 'anonymous'
+        ? client.data.conversationId
+        : (dto.conversationId || client.data.conversationId);
 
       if (!conversationId) {
         throw new Error('No conversation found. Please emit agent:connect or conversation:join first.');
