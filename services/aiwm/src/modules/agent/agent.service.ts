@@ -1083,7 +1083,7 @@ User messages may contain optional metadata blocks prepended before the actual m
   → Treat as context the user wants you to use when answering. Do NOT describe or explain the XML structure itself — just use the referenced content naturally in your response.
 
 - <knowledge_context>: Relevant knowledge chunks retrieved from the knowledge base.
-  → Use as supporting information when formulating your answer.
+  → Use as supporting information when formulating your answer. Please mention <knowledge_context> as part of your reasoning if it helps you answer the question, but do NOT quote the XML tags or explain the structure to the user.
 
 These blocks are system metadata, not questions. Never explain them. Never repeat them back. Focus solely on the user's actual message after the blocks.
 </message_format>`
