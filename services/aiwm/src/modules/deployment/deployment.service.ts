@@ -647,14 +647,10 @@ export class DeploymentService extends BaseService<Deployment> {
         break;
 
       case 'anthropic':
-        // Anthropic supports two auth methods:
-        // 1. API key: x-api-key header
-        // 2. OAuth: Bearer token (when apiConfig.oauthToken is provided)
-        if (isOAuth) {
-          headers['Authorization'] = `Bearer ${apiKey}`;
-        } else {
-          headers['x-api-key'] = apiKey;
-        }
+        // Anthropic only supports API key authentication for third-party applications.
+        // OAuth tokens (sk-ant-oat01-*) are restricted to Claude Code CLI and Claude.ai only
+        // — using them in proxies/external services violates Anthropic's Consumer ToS.
+        headers['x-api-key'] = apiKey;
         // Required: API version
         headers['anthropic-version'] = apiConfig['anthropic-version'] || '2023-10-01';
         break;
