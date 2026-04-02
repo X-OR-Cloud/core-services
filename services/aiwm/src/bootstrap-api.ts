@@ -5,13 +5,19 @@
 
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter, customQueryParser } from '@hydrabyte/base';
 import { AppModule } from './app/app.module';
 import { RedisIoAdapter } from './modules/chat/redis-io.adapter';
+import * as bodyParser from 'body-parser';
 
 export async function bootstrapApiServer() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Increase body size limit for inference proxy (LLM responses can be large)
+  app.use(bodyParser.json({ limit: '10mb' }));
+  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
   // Configure Express to use custom query parser
   // Supports: filter[search]=123, filter.search=123, filter[metadata.discordUserId]=123
