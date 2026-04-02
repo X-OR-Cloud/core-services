@@ -743,12 +743,22 @@ export class ChatGateway
   ) {
     try {
       // Anonymous clients: always use server-resolved conversationId to prevent cross-conversation leaks
+      // Authenticated/agent clients: allow dto.conversationId but verify room membership
       const conversationId = client.data.type === 'anonymous'
         ? client.data.conversationId
         : (dto.conversationId || client.data.conversationId);
 
       if (!conversationId) {
         throw new Error('No conversation found. Please emit agent:connect or conversation:join first.');
+      }
+
+      // Verify sender has joined this conversation room (prevents writing to arbitrary conversations)
+      if (dto.conversationId && dto.conversationId !== client.data.conversationId) {
+        const inRoom = client.rooms.has(`conversation:${dto.conversationId}`);
+        if (!inRoom) {
+          this.logger.warn(`[WS-MSG-SEND] Rejected — ${client.data.type} ${client.data.userId} not in room conversation:${dto.conversationId}`);
+          return { success: false, error: 'You must join the conversation before sending messages.' };
+        }
       }
 
       // --- /ignore <text> intercept ---
