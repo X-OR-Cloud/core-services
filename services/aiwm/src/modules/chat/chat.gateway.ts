@@ -753,7 +753,8 @@ export class ChatGateway
       }
 
       // Verify sender has joined this conversation room (prevents writing to arbitrary conversations)
-      if (dto.conversationId && dto.conversationId !== client.data.conversationId) {
+      // Anonymous clients are excluded — their conversationId is already server-resolved above
+      if (client.data.type !== 'anonymous' && dto.conversationId && dto.conversationId !== client.data.conversationId) {
         const inRoom = client.rooms.has(`conversation:${dto.conversationId}`);
         if (!inRoom) {
           this.logger.warn(`[WS-MSG-SEND] Rejected — ${client.data.type} ${client.data.userId} not in room conversation:${dto.conversationId}`);
