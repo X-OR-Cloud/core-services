@@ -599,11 +599,13 @@ export class DeploymentService extends BaseService<Deployment> {
 
     // Build target URL (provider-specific)
     let targetUrl: string;
-    const apiKey = apiConfig.apiKey;
+    const apiKey = apiConfig.apiKey || apiConfig.oauthToken;
 
     if (!apiKey) {
-      throw new BadRequestException('API key is required in model configuration');
+      throw new BadRequestException('API key or OAuth token is required in model configuration');
     }
+
+    const isOAuth = !apiConfig.apiKey && !!apiConfig.oauthToken;
 
     // Google uses model ID in path
     if (model.provider === 'google') {
@@ -645,10 +647,16 @@ export class DeploymentService extends BaseService<Deployment> {
         break;
 
       case 'anthropic':
-        // Anthropic uses x-api-key header
-        headers['x-api-key'] = apiKey;
+        // Anthropic supports two auth methods:
+        // 1. API key: x-api-key header
+        // 2. OAuth: Bearer token (when apiConfig.oauthToken is provided)
+        if (isOAuth) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        } else {
+          headers['x-api-key'] = apiKey;
+        }
         // Required: API version
-        headers['anthropic-version'] = apiConfig['anthropic-version'] || '2023-06-01';
+        headers['anthropic-version'] = apiConfig['anthropic-version'] || '2023-10-01';
         break;
 
       case 'google':
@@ -683,6 +691,11 @@ export class DeploymentService extends BaseService<Deployment> {
         requestBody.model = modelIdentifier;
       }
     }
+
+    // TODO: Add streaming support — when request body contains `"stream": true`,
+    // use axios with `responseType: 'stream'` and pipe SSE chunks directly to `res`.
+    // This is critical for Anthropic (SSE) and OpenAI (SSE) streaming responses.
+    // Current implementation buffers the entire response, which breaks streaming clients.
 
     try {
       // Make request to AI provider
