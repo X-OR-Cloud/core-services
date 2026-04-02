@@ -305,24 +305,27 @@ export class ActionService extends BaseService<Action> {
       );
     }
 
-    const conversation = await this.conversationService.findByIdDirect(dto.conversationId);
-    if (conversation && conversation.totalMessages % 10 === 0) {
-      const context: RequestContext = {
-        userId: actorId,
-        roles: [PredefinedRole.OrganizationEditor],
-        orgId: orgId || (conversation as any).owner?.orgId || '',
-        groupId: '',
-        agentId: '',
-        appId: '',
-      };
-      this.conversationService
-        .generateContextSummary(dto.conversationId, context)
-        .catch((err) => {
-          this.logger.error(
-            `Failed to generate summary for conversation ${dto.conversationId}:`,
-            err.stack
-          );
-        });
-    }
+    // TODO: Re-enable auto context summary with retry logic and configurable model
+    // Disabled: was calling hard-coded gpt-5-nano via OpenAI API, causing 503 errors
+    // See: UtilService.generateText() and ConversationService.generateContextSummary()
+    // const conversation = await this.conversationService.findByIdDirect(dto.conversationId);
+    // if (conversation && conversation.totalMessages % 10 === 0) {
+    //   const context: RequestContext = {
+    //     userId: actorId,
+    //     roles: [PredefinedRole.OrganizationEditor],
+    //     orgId: orgId || (conversation as any).owner?.orgId || '',
+    //     groupId: '',
+    //     agentId: '',
+    //     appId: '',
+    //   };
+    //   this.conversationService
+    //     .generateContextSummary(dto.conversationId, context)
+    //     .catch((err) => {
+    //       this.logger.error(
+    //         `Failed to generate summary for conversation ${dto.conversationId}:`,
+    //         err.stack
+    //       );
+    //     });
+    // }
   }
 }
