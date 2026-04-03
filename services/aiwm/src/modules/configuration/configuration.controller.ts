@@ -21,6 +21,7 @@ import {
 import {
   JwtAuthGuard,
   CurrentUser,
+  UniverseScopeOnly,
 } from '@hydrabyte/base';
 import { RequestContext, ConfigKey } from '@hydrabyte/shared';
 import { ConfigurationService } from './configuration.service';
@@ -164,6 +165,7 @@ export class ConfigurationController {
    * - universe.owner: can seed global or any org (with optional orgId)
    * - organization.owner: can only seed their own org
    */
+  @UniverseScopeOnly() // Allow orgId override for universe.owner, but not for organization.owner
   @Post('initialize')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
