@@ -28,7 +28,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
   private readonly conversationConnectionId = new Map<string, string>(); // conversationId → connectionId
-  private readonly typingChannels = new Map<string, string>(); // conversationId → channelId
+  private readonly typingChannels = new Map<string, { channelId: string; threadId?: string }>(); // conversationId → chat destination
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
@@ -132,12 +132,13 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     externalUserId: string;
     channelId: string;
     serverId?: string;
+    threadId?: string;          // Telegram: message_thread_id (topic)
     connectionId: string;
     platform: string;
     skipAgent?: boolean;
   }): Promise<void> {
-    // Track channelId for this conversation — used to forward typing indicators
-    this.typingChannels.set(payload.conversationId, payload.channelId);
+    // Track chat destination for this conversation — used to forward typing indicators
+    this.typingChannels.set(payload.conversationId, { channelId: payload.channelId, threadId: payload.threadId });
 
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
     const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -207,11 +208,11 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async handleOutboundTyping(conversationId: string): Promise<void> {
-    const channelId = this.typingChannels.get(conversationId);
-    if (!channelId) return;
+    const target = this.typingChannels.get(conversationId);
+    if (!target) return;
     for (const runner of this.runners.values()) {
-      await runner.sendTyping(channelId).catch((err: Error) =>
-        this.logger.warn(`Failed to forward typing to ${channelId}: ${err.message}`),
+      await runner.sendTyping(target.channelId, target.threadId).catch((err: Error) =>
+        this.logger.warn(`Failed to forward typing to ${target.channelId}: ${err.message}`),
       );
     }
   }

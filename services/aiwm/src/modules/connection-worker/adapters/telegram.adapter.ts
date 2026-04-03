@@ -61,7 +61,8 @@ export class TelegramAdapter extends BaseAdapter {
   async sendFile(target: AdapterTarget, file: FilePayload): Promise<void> {
     if (!this.bot) throw new Error('Telegram bot not connected');
     const chatId = target.channelId;
-    const opts: any = file.caption ? { caption: file.caption } : {};
+    const threadOpts = target.threadId ? { message_thread_id: Number(target.threadId) } : {};
+    const opts: any = { ...(file.caption ? { caption: file.caption } : {}), ...threadOpts };
     const mime = file.mimeType ?? '';
 
     if (mime.startsWith('image/')) {
@@ -78,7 +79,9 @@ export class TelegramAdapter extends BaseAdapter {
   async sendTyping(target: AdapterTarget): Promise<void> {
     if (!this.bot) return;
     try {
-      await this.bot.sendChatAction(target.channelId, 'typing');
+      await this.bot.sendChatAction(target.channelId, 'typing', {
+        message_thread_id: target.threadId ? Number(target.threadId) : undefined,
+      } as any);
     } catch (err: any) {
       this.logger.warn(`sendTyping failed for channel ${target.channelId}: ${err.message}`);
     }
@@ -92,8 +95,9 @@ export class TelegramAdapter extends BaseAdapter {
     for (const chunk of chunks) {
       await this.bot.sendMessage(target.channelId, chunk, {
         reply_to_message_id: options?.replyToId ? Number(options.replyToId) : undefined,
+        message_thread_id: target.threadId ? Number(target.threadId) : undefined,
         parse_mode: 'Markdown',
-      });
+      } as any);
     }
   }
 
@@ -106,10 +110,11 @@ export class TelegramAdapter extends BaseAdapter {
 
     const normalized: NormalizedInbound = {
       provider: 'telegram',
-      externalUserId: String(msg.chat.id),
+      externalUserId: String(msg.from?.id ?? msg.chat.id),
       externalUsername: msg.from?.username || msg.from?.first_name || 'unknown',
       externalMessageId: String(msg.message_id),
-      channelId: String(msg.chat.id),
+      channelId: msg.message_thread_id ? String(msg.message_thread_id) : undefined,
+      serverId: String(msg.chat.id),
       text,
       attachments,
       raw: msg,

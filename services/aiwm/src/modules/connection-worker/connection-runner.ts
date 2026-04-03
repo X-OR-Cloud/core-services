@@ -44,6 +44,7 @@ export class ConnectionRunner {
       externalUserId: string;
       channelId: string;
       serverId?: string;
+      threadId?: string;          // Telegram: message_thread_id (topic)
       connectionId: string;
       platform: string;
       skipAgent?: boolean;
@@ -92,40 +93,49 @@ export class ConnectionRunner {
 
   /**
    * Send a response back to the platform (called by ConnectionWorkerService).
+   * channelId = platform chat destination (Discord channelId / Telegram chat.id)
+   * threadId = optional topic thread (Telegram message_thread_id)
    */
-  async sendResponse(channelId: string, text: string): Promise<void> {
+  async sendResponse(channelId: string, text: string, threadId?: string): Promise<void> {
     if (!this.adapter) return;
-    await this.adapter.send({ channelId }, text);
+    await this.adapter.send({ channelId, threadId }, text);
   }
 
   /** Proactive send to a specific channel (no conversation context needed). */
-  async sendDirect(channelId: string, text: string): Promise<void> {
+  async sendDirect(channelId: string, text: string, threadId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.send({ channelId }, text);
+    await this.adapter.send({ channelId, threadId }, text);
   }
 
   /** Proactive file send to a specific channel. */
-  async sendDirectFile(channelId: string, file: FilePayload): Promise<void> {
+  async sendDirectFile(channelId: string, file: FilePayload, threadId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.sendFile({ channelId }, file);
+    await this.adapter.sendFile({ channelId, threadId }, file);
   }
 
   /** Proactive embed send to a specific channel. */
-  async sendDirectEmbed(channelId: string, embed: EmbedPayload): Promise<void> {
+  async sendDirectEmbed(channelId: string, embed: EmbedPayload, threadId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.sendEmbed({ channelId }, embed);
+    await this.adapter.sendEmbed({ channelId, threadId }, embed);
   }
 
-  async sendTyping(channelId: string): Promise<void> {
+  async sendTyping(channelId: string, threadId?: string): Promise<void> {
     if (!this.adapter) return;
-    await this.adapter.sendTyping({ channelId });
+    await this.adapter.sendTyping({ channelId, threadId });
   }
 
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {
     try {
+      // Resolve platform chat destination and optional thread (topic)
+      // Telegram: serverId (chat.id) is the send target, channelId (message_thread_id) is the topic thread
+      // Discord/Teams: channelId is the send target, serverId is container only
+      const isTelegram = this.connection.provider === 'telegram';
+      const chatDest = isTelegram ? (msg.serverId ?? '') : (msg.channelId ?? msg.serverId ?? '');
+      const threadId = isTelegram ? msg.channelId : undefined;
+
       // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
-        const dedupKey = `${msg.channelId}:${msg.externalMessageId}`;
+        const dedupKey = `${msg.serverId ?? msg.channelId}:${msg.externalMessageId}`;
         if (this.seenExternalMessageIds.has(dedupKey)) {
           this.logger.warn(`Duplicate inbound message skipped: ${dedupKey}`);
           return;
@@ -185,7 +195,7 @@ export class ConnectionRunner {
           );
           const ignoreActionId = String((savedIgnoreAction as any)._id);
           this.onOutbound(resolved.conversationId, async (responseText: string) => {
-            await this.sendResponse(msg.channelId, responseText);
+            await this.sendResponse(chatDest, responseText, threadId);
           }, resolved.verboseActions, resolved.verboseLogsChannelId);
           this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
           this.onMessageNew({
@@ -201,8 +211,9 @@ export class ConnectionRunner {
             fullname: resolved.iamFullname,
             externalUsername: msg.externalUsername,
             externalUserId: msg.externalUserId,
-            channelId: msg.channelId,
+            channelId: chatDest,
             serverId: msg.serverId,
+            threadId,
             connectionId,
             platform: this.connection.provider,
             skipAgent: true,
@@ -231,7 +242,7 @@ export class ConnectionRunner {
 
       // Register outbound handler for this conversation
       this.onOutbound(resolved.conversationId, async (responseText: string) => {
-        await this.sendResponse(msg.channelId, responseText);
+        await this.sendResponse(chatDest, responseText, threadId);
       }, resolved.verboseActions, resolved.verboseLogsChannelId);
 
       // Signal ChatGateway (any api instance) to force agent into the conversation room
@@ -251,8 +262,9 @@ export class ConnectionRunner {
         fullname: resolved.iamFullname,
         externalUsername: msg.externalUsername,
         externalUserId: msg.externalUserId,
-        channelId: msg.channelId,
+        channelId: chatDest,
         serverId: msg.serverId,
+        threadId,
         connectionId,
         platform: this.connection.provider,
       });

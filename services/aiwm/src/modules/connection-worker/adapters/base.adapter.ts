@@ -13,9 +13,9 @@ export interface NormalizedInbound {
   provider: string;
   externalUserId: string;
   externalUsername: string;
-  externalMessageId?: string; // Platform message ID — Discord: message.id, Telegram: update_id, used for dedup
-  channelId: string;
-  serverId?: string;          // Discord: guildId | Teams: teamId
+  externalMessageId?: string; // Platform message ID — Discord: message.id, Telegram: message_id, used for dedup
+  channelId?: string;         // Discord: channelId | Telegram: message_thread_id (topic) | Teams: channelId
+  serverId?: string;          // Discord: guildId | Telegram: chat.id (group) | Teams: teamId
   tenantId?: string;          // Teams only
   teamsServiceUrl?: string;   // Teams only — needed to reply via Bot connector
   teamsConversationId?: string; // Teams only — conversation reference for replies

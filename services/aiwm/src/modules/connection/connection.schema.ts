@@ -28,8 +28,8 @@ export interface ConnectionConfig {
 }
 
 export interface ConnectionRoute {
-  serverId?: string;        // Discord: server/guild ID | Teams: teamId
-  channelId?: string;       // Discord channel ID / Telegram chatId / Teams channelId
+  serverId?: string;        // Discord: guild ID | Telegram: chat.id (group) | Teams: teamId
+  channelId?: string;       // Discord: channel ID | Telegram: message_thread_id (topic) | Teams: channelId
   botId?: string;           // filter by specific bot ID
   tenantId?: string;        // Teams: Azure tenant ID
   requireMention?: boolean; // only reply when @mentioned (Discord / Teams)
