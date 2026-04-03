@@ -8,12 +8,7 @@ export const RedisClientProvider: Provider = {
   provide: DGT_REDIS_CLIENT,
   useFactory: () => {
     return new Redis({
-      host: redisConfig.host,
-      port: redisConfig.port,
-      username: redisConfig.username,
-      password: redisConfig.password,
-      db: redisConfig.db,
-      enableReadyCheck: false,
+      ...redisConfig,
       lazyConnect: false,
     });
   },

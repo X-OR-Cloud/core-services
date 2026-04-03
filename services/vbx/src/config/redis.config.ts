@@ -4,5 +4,6 @@ export const redisConfig = {
   username: process.env['REDIS_USERNAME'] || undefined,
   password: process.env['REDIS_PASSWORD'] || undefined,
   db: parseInt(process.env['REDIS_DB'] || '0', 10),
+  enableReadyCheck: false,
   maxRetriesPerRequest: null as any,
 };
