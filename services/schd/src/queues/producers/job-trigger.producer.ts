@@ -31,13 +31,7 @@ export class JobTriggerProducer {
   private getQueue(queueName: string): Queue {
     if (!this.queues.has(queueName)) {
       const queue = new Queue(queueName, {
-        connection: {
-          host: redisConfig.host,
-          port: redisConfig.port,
-          username: redisConfig.username,
-          password: redisConfig.password || undefined,
-          db: redisConfig.db,
-        },
+        connection: redisConfig,
       });
       this.queues.set(queueName, queue);
     }

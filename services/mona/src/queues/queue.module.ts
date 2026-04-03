@@ -9,13 +9,7 @@ import { ReportProducer } from './producers/report.producer';
 @Module({
   imports: [
     BullModule.forRoot({
-      connection: {
-        host: redisConfig.host,
-        port: redisConfig.port,
-        username: redisConfig.username,
-        password: redisConfig.password,
-        db: redisConfig.db,
-      },
+      connection: redisConfig,
     }),
     BullModule.registerQueue(
       { name: QUEUE_NAMES.CATEGORIES },

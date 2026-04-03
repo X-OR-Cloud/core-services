@@ -38,6 +38,7 @@ import { Connection, ConnectionSchema } from '../connection/connection.schema';
         type: 'single',
         url: configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
         options: {
+          enableReadyCheck: false,
           retryStrategy: (times) => {
             const delay = Math.min(times * 50, 2000);
             return delay;
