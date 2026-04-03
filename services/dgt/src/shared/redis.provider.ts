@@ -13,6 +13,7 @@ export const RedisClientProvider: Provider = {
       username: redisConfig.username,
       password: redisConfig.password,
       db: redisConfig.db,
+      enableReadyCheck: false,
       lazyConnect: false,
     });
   },

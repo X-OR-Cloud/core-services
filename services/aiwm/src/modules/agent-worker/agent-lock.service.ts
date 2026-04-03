@@ -29,8 +29,10 @@ export class AgentLockService implements OnModuleDestroy {
     this.redis = new Redis({
       host: redisConfig.host,
       port: redisConfig.port,
+      username: redisConfig.username,
       password: redisConfig.password,
       db: redisConfig.db,
+      enableReadyCheck: false,
       lazyConnect: true,
     });
     // Unique identifier per process instance

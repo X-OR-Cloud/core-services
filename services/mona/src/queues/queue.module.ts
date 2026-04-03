@@ -12,6 +12,7 @@ import { ReportProducer } from './producers/report.producer';
       connection: {
         host: redisConfig.host,
         port: redisConfig.port,
+        username: redisConfig.username,
         password: redisConfig.password,
         db: redisConfig.db,
       },

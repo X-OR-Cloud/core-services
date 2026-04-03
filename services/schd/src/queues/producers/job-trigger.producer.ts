@@ -34,6 +34,7 @@ export class JobTriggerProducer {
         connection: {
           host: redisConfig.host,
           port: redisConfig.port,
+          username: redisConfig.username,
           password: redisConfig.password || undefined,
           db: redisConfig.db,
         },
