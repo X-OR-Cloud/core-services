@@ -277,10 +277,14 @@ export class ConfigurationService extends BaseService<Configuration> {
       dbScope = 'org';
 
       if (isUniverseOwner && dto.orgId) {
-        // universe.owner specified a target org — validate it
-        const org = await this.iamOrgService.findActiveOrg(dto.orgId);
-        if (!org) {
-          throw new BadRequestException(`Organization '${dto.orgId}' not found or is inactive`);
+        // universe.owner specified a target org — validate ObjectId format only
+        // TODO: Re-enable IAM org validation once IAM supports x-api-key for GET /organizations/:id
+        // const org = await this.iamOrgService.findActiveOrg(dto.orgId);
+        // if (!org) {
+        //   throw new BadRequestException(`Organization '${dto.orgId}' not found or is inactive`);
+        // }
+        if (!/^[0-9a-fA-F]{24}$/.test(dto.orgId)) {
+          throw new BadRequestException(`Invalid organization ID format: '${dto.orgId}'`);
         }
         targetOrgId = dto.orgId;
       } else {
