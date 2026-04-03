@@ -32,12 +32,12 @@ export class ConnectionConfigDto {
 }
 
 export class ConnectionRouteDto {
-  @ApiProperty({ description: 'Discord server (guild) ID', required: false })
+  @ApiProperty({ description: 'Discord: guild ID | Telegram: chat.id (group) | Teams: teamId', required: false })
   @IsOptional()
   @IsString()
-  guildId?: string;
+  serverId?: string;
 
-  @ApiProperty({ description: 'Discord channel ID or Telegram chatId', required: false })
+  @ApiProperty({ description: 'Discord: channel ID | Telegram: message_thread_id (topic) | Teams: channelId', required: false })
   @IsOptional()
   @IsString()
   channelId?: string;
