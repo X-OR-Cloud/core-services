@@ -342,11 +342,43 @@ export class ConfigurationService extends BaseService<Configuration> {
     let created = 0;
     let extraSkipped = 0;
 
+    this.logger.debug('insertMany input', {
+      docsCount: docs.length,
+      sampleDoc: docs[0],
+    });
+
+    // DEBUG: validate first doc manually
     try {
-      const result = await this.configModel.insertMany(docs, { ordered: false });
-      created = result.length;
+      const testDoc = new this.configModel(docs[0]);
+      const validationError = testDoc.validateSync();
+      this.logger.debug('Manual validation result', {
+        hasError: !!validationError,
+        error: validationError?.message,
+        errorFields: validationError ? Object.keys(validationError.errors) : [],
+      });
+    } catch (valErr: any) {
+      this.logger.error('Manual validation threw', { message: valErr.message });
+    }
+
+    try {
+      const result = await this.configModel.insertMany(docs, { ordered: false, rawResult: true }) as any;
+      this.logger.debug('insertMany rawResult', {
+        acknowledged: result.acknowledged,
+        insertedCount: result.insertedCount,
+        insertedIds: result.insertedIds ? Object.keys(result.insertedIds).length : 0,
+        mongoose: result.mongoose,
+      });
+      created = result.insertedCount ?? 0;
     } catch (error: any) {
       // insertMany with ordered:false may partially succeed and throw BulkWriteError
+      this.logger.error('insertMany error during initialization', {
+        errorName: error.name,
+        errorCode: error.code,
+        errorMessage: error.message,
+        nInserted: error.result?.nInserted,
+        insertedCount: error.insertedDocs?.length,
+        writeErrors: error.writeErrors?.map((e: any) => ({ code: e.code, errmsg: e.errmsg })),
+      });
       if (error.name === 'MongoBulkWriteError' || error.code === 11000) {
         created = error.result?.nInserted ?? error.insertedDocs?.length ?? 0;
         extraSkipped = keysToCreate.length - created;

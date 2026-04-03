@@ -21,7 +21,7 @@ export class Configuration extends BaseSchema {
   })
   key!: string;
 
-  @Prop({ required: true, default: '' })
+  @Prop({ default: '' })
   value!: string;
 
   @Prop({ required: true, enum: ['global', 'org'], default: 'org', index: true })
