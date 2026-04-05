@@ -1448,6 +1448,51 @@ These blocks are system metadata, not questions. Never explain them. Never repea
    * Stop agent — transitions status to suspended.
    * Allowed from: idle, inactive. Blocked if busy.
    */
+  /**
+   * Send a lifecycle command to the node managing this agent.
+   * Only applicable for engineer agents with nodeId.
+   */
+  private async sendLifecycleCommandToNode(
+    agent: AgentDocument,
+    commandType: string,
+    fullConfig: boolean,
+    context: RequestContext
+  ): Promise<void> {
+    if (agent.type !== 'engineer' || !agent.nodeId) return;
+
+    const agentId = (agent as any)._id.toString();
+    const data: Record<string, any> = { agentId, code: agent.code, name: agent.name };
+
+    if (fullConfig) {
+      Object.assign(data, {
+        description: agent.description,
+        status: agent.status,
+        type: agent.type,
+        framework: agent.framework,
+        instructionId: agent.instructionId,
+        guardrailId: agent.guardrailId,
+        deploymentId: agent.deploymentId,
+        settings: await this.buildSettingsWithOAuthToken(
+          (agent.settings as Record<string, unknown>) || {},
+          agent.framework,
+          context.orgId
+        ),
+      });
+    }
+
+    try {
+      await this.nodeGateway.sendCommandToNode(
+        agent.nodeId,
+        commandType,
+        { type: 'agent', id: agentId },
+        data
+      );
+      this.logger.log(`${commandType} sent to node ${agent.nodeId} for agent ${agentId}`);
+    } catch (error: any) {
+      this.logger.warn(`Could not send ${commandType} to node ${agent.nodeId}: ${error.message}`);
+    }
+  }
+
   async stopAgent(
     agentId: string,
     context: RequestContext
@@ -1479,6 +1524,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       previousStatus: agent.status,
       by: context.userId,
     });
+
+    // Notify node to stop agent process
+    await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_STOP, false, context);
+    // TODO: handle non-nodeId agents (self-deployed engineer / assistant)
+
     return { success: true, status: 'suspended' };
   }
 
@@ -1514,7 +1564,200 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       name: agent.name,
       by: context.userId,
     });
+
+    // Notify node to start agent process (full config needed)
+    await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_START, true, context);
+    // TODO: handle non-nodeId agents (self-deployed engineer / assistant)
+
     return { success: true, status: 'inactive' };
+  }
+
+  /**
+   * Wake agent — transitions status from sleep back to idle.
+   * Clears sleep metadata fields.
+   */
+  async wakeAgent(
+    agentId: string,
+    context: RequestContext
+  ): Promise<{ success: boolean; status: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.status !== 'sleep') {
+      throw new BadRequestException(
+        `Agent is not sleeping (current status: ${agent.status})`
+      );
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      {
+        $set: {
+          status: 'idle',
+          sleepReason: null,
+          sleepSince: null,
+          sleepUntil: null,
+          updatedBy: context.userId,
+        },
+      }
+    );
+
+    this.logger.log('Agent woken up', {
+      agentId,
+      name: agent.name,
+      previousSleepReason: agent.sleepReason,
+      by: context.userId,
+    });
+    return { success: true, status: 'idle' };
+  }
+
+  /**
+   * Sleep agent — admin-initiated sleep.
+   * Allowed from idle or inactive status.
+   */
+  async sleepAgent(
+    agentId: string,
+    sleepDto: { reason: string; until?: string | null },
+    context: RequestContext
+  ): Promise<{ success: boolean; status: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.status === 'busy') {
+      throw new BadRequestException('Agent is busy. Use stop or restart instead.');
+    }
+
+    if (agent.status === 'suspended') {
+      throw new BadRequestException('Agent is suspended. Use start first.');
+    }
+
+    if (agent.status === 'sleep') {
+      return { success: true, status: 'sleep' };
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      {
+        $set: {
+          status: 'sleep',
+          sleepReason: sleepDto.reason,
+          sleepSince: new Date(),
+          sleepUntil: sleepDto.until ? new Date(sleepDto.until) : null,
+          updatedBy: context.userId,
+        },
+      }
+    );
+
+    this.logger.log('Agent put to sleep', {
+      agentId,
+      name: agent.name,
+      reason: sleepDto.reason,
+      until: sleepDto.until ?? 'indefinite',
+      previousStatus: agent.status,
+      by: context.userId,
+    });
+    return { success: true, status: 'sleep' };
+  }
+
+  /**
+   * Restart agent — force reset to inactive from any non-suspended status.
+   * Unlike stop, this is allowed when agent is busy.
+   */
+  async restartAgent(
+    agentId: string,
+    context: RequestContext
+  ): Promise<{ success: boolean; status: string; previousStatus: string }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.status === 'suspended') {
+      throw new BadRequestException(
+        'Agent is suspended. Use start instead of restart.'
+      );
+    }
+
+    if (agent.status === 'inactive') {
+      return { success: true, status: 'inactive', previousStatus: 'inactive' };
+    }
+
+    const previousStatus = agent.status;
+    const updateFields: Record<string, any> = {
+      status: 'inactive',
+      updatedBy: context.userId,
+    };
+
+    if (agent.status === 'sleep') {
+      updateFields.sleepReason = null;
+      updateFields.sleepSince = null;
+      updateFields.sleepUntil = null;
+    }
+
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      { $set: updateFields }
+    );
+
+    this.logger.log('Agent restarted', {
+      agentId,
+      name: agent.name,
+      previousStatus,
+      by: context.userId,
+    });
+
+    // Notify node to restart agent process (full config needed)
+    await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_RESTART, true, context);
+    // TODO: handle non-nodeId agents (self-deployed engineer / assistant)
+
+    return { success: true, status: 'inactive', previousStatus };
+  }
+
+  /**
+   * Update agent on node — trigger node to pull latest version and restart agent.
+   * Does not change agent status in DB.
+   */
+  async updateAgentOnNode(
+    agentId: string,
+    context: RequestContext
+  ): Promise<{ success: boolean }> {
+    const agent = await this.agentModel
+      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+      .exec();
+
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
+    if (agent.type !== 'engineer' || !agent.nodeId) {
+      // TODO: handle non-nodeId agents
+      throw new BadRequestException(
+        'Update action is only supported for engineer agents deployed on a node.'
+      );
+    }
+
+    await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_UPDATE, true, context);
+
+    this.logger.log('Agent update triggered', {
+      agentId,
+      name: agent.name,
+      nodeId: agent.nodeId,
+      by: context.userId,
+    });
+    return { success: true };
   }
 
   /**

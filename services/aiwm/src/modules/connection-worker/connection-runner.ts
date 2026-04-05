@@ -168,7 +168,7 @@ export class ConnectionRunner {
       if (slashMatch) {
         const command = slashMatch[1].toLowerCase();
         const rest = slashMatch[2]?.trim();
-        if (['stop', 'reload', 'inspect'].includes(command)) {
+        if (['stop', 'start', 'restart', 'update', 'reload', 'inspect', 'sleep', 'wake'].includes(command)) {
           this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason: rest });
           this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
           return;

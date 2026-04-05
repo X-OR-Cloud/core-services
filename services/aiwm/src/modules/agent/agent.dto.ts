@@ -557,6 +557,21 @@ export class AgentHeartbeatDto {
 }
 
 /**
+ * DTO for admin-initiated sleep action (POST :id/sleep)
+ */
+export class AgentSleepActionDto {
+  @ApiProperty({ description: 'Reason for putting agent to sleep', example: 'Maintenance window' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
+  @ApiPropertyOptional({ description: 'ISO timestamp when agent should wake, null = indefinite', example: '2026-04-05T10:00:00.000Z', nullable: true, required: false })
+  @IsOptional()
+  @IsDateString()
+  until?: string | null;
+}
+
+/**
  * DTO for system task returned in heartbeat response
  */
 export class AgentSystemTaskDto {

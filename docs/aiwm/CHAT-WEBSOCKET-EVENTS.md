@@ -373,14 +373,14 @@ The periodic timer heartbeat continues independently and handles the `idle → b
 
 ### `command:send`
 **Who:** `user` only (anonymous is rejected)
-**Purpose:** Issue a slash command to the agent. Gateway validates, optionally saves to DB, then emits `agent:command` directly to agent socket(s). Does **not** broadcast to the conversation room.
+**Purpose:** Issue a slash command. Gateway validates, saves audit trail to DB, then routes to the appropriate handler. Does **not** broadcast to the conversation room.
 
 ```json
 // emit
 {
-  "command": "stop" | "reload" | "inspect",
-  "conversationId": "507f...",   // required for stop; optional for reload/inspect
-  "reason": "Taking too long"    // optional, only meaningful for stop
+  "command": "stop" | "start" | "restart" | "update" | "reload" | "inspect" | "sleep" | "wake",
+  "conversationId": "507f...",   // required for stop; optional for others
+  "reason": "Taking too long"    // optional — used as sleep reason for /sleep, audit info for others
 }
 
 // ack
@@ -388,18 +388,46 @@ The periodic timer heartbeat continues independently and handles the `idle → b
 { "success": false, "error": "Agent is not connected" }
 { "success": false, "error": "Unauthorized: anonymous clients cannot issue commands" }
 { "success": false, "error": "No agent associated with this connection" }
+// error examples
+{ "success": false, "error": "Agent is busy. Please try again later." }
+{ "success": false, "error": "Agent is not suspended (current status: idle)" }
+{ "success": false, "error": "Agent is not sleeping (current status: idle)" }
+{ "success": false, "error": "Agent is suspended. Use start instead of restart." }
+{ "success": false, "error": "Update action is only supported for engineer agents deployed on a node." }
 ```
+
+**Command categories:**
+
+Commands are split into three categories based on how they are processed:
+
+| Category | Commands | Behavior |
+|----------|----------|----------|
+| **Node lifecycle** | `stop`, `start`, `restart`, `update` | Modifies agent status in DB via `AgentService`. If agent has `nodeId`, sends command to Node via `NodeGateway`. |
+| **Agent WS** | `sleep`, `wake` | Modifies agent status in DB via `AgentService`, then notifies agent socket(s) via `agent:command`. |
+| **Signal** | `reload`, `inspect` | Forwarded to agent socket(s) via `agent:command`. Agent must be connected. |
+
+**Node lifecycle command details:**
+
+| Command | From status | To status | Node WS command |
+|---------|-------------|-----------|-----------------|
+| `/stop` | `idle`, `inactive`, `sleep` | `suspended` | `agent.stop` (minimal data) |
+| `/start` | `suspended` | `inactive` | `agent.start` (full config) |
+| `/restart` | `busy`, `idle`, `sleep`, `inactive` | `inactive` | `agent.restart` (full config) |
+| `/update` | any | _(no change)_ | `agent.update` (full config) |
+
+**Agent WS command details:**
+
+| Command | From status | To status | Side effects |
+|---------|-------------|-----------|--------------|
+| `/sleep [reason]` | `idle`, `inactive` | `sleep` | Sets `sleepReason`, `sleepSince`, `sleepUntil`. Rejects if `busy` or `suspended`. |
+| `/wake` | `sleep` | `idle` | Clears `sleepReason`, `sleepSince`, `sleepUntil`. Rejects if not sleeping. |
 
 **DB storage per command:**
 
-| Command | Agent online | DB write |
-|---------|-------------|----------|
-| `stop` | ✅ | `ActionType.COMMAND` |
-| `stop` | ❌ (offline) | ❌ |
-| `reload` | ✅ | `ActionType.COMMAND` |
-| `reload` | ❌ (offline) | `ActionType.COMMAND` (audit trail) |
-| `inspect` | ✅ | ❌ |
-| `inspect` | ❌ (offline) | ❌ |
+| Command | DB write |
+|---------|----------|
+| `inspect` | ❌ |
+| _(all others)_ | `ActionType.COMMAND` |
 
 ---
 
@@ -608,19 +636,28 @@ socket.on('message:new', (msg) => {
 **To:** agent socket(s) only (via `server.in(agentSocketIds).emit(...)`)
 **Trigger:** `command:send` from an authorized user.
 
+Only **signal** and **agent WS** commands are emitted via `agent:command`. Node lifecycle commands (`stop`, `start`, `restart`, `update`) are handled by `AgentService` → `NodeGateway` and do NOT emit `agent:command`.
+
 ```json
+// Signal commands (agent must handle)
 { "type": "stop",    "conversationId": "507f...", "reason": "Taking too long" }
 { "type": "reload",  "conversationId": "507f..." }
 { "type": "inspect", "conversationId": "507f..." }
+
+// Agent WS commands (DB already updated — agent should react)
+{ "type": "sleep",   "conversationId": "507f...", "reason": "Maintenance window" }
+{ "type": "wake",    "conversationId": "507f..." }
 ```
 
 **AgentRunner handling:**
 
-| `type` | Action |
-|--------|--------|
-| `stop` | Calls `abortMap.get(conversationId)?.abort()`. Emits system message to conversation. |
-| `reload` | Calls `connectInternal(agentId)` to re-fetch config from AIWM. Emits system message with result. |
-| `inspect` | Emits sanitized runtime config as system message to conversation. Never includes `accessToken` or MCP server headers. |
+| `type` | Category | Action |
+|--------|----------|--------|
+| `stop` | Signal | Calls `abortMap.get(conversationId)?.abort()`. Emits system message to conversation. |
+| `reload` | Signal | Calls `connectInternal(agentId)` to re-fetch config from AIWM. Emits system message with result. |
+| `inspect` | Signal | Emits sanitized runtime config as system message to conversation. Never includes `accessToken` or MCP server headers. |
+| `sleep` | Agent WS | Agent status already set to `sleep` in DB. Agent should stop polling for work and enter sleep mode. |
+| `wake` | Agent WS | Agent status already set to `idle` in DB. Agent should resume normal heartbeat and work polling. |
 
 **`inspect` response shape** (emitted as `message:send` type `system` by agent):
 ```json
@@ -829,7 +866,7 @@ Distributed lock keys:
 | `message:send` (tool_result) | `tool_result` | agent | ✅ |
 | `message:send` (thinking) | `thinking` | agent | ✅ |
 | `message:send` (/ignore) | `message` + `metadata.skipAgent: true` | user | ✅ |
-| `command:send` (stop/reload) | `command` + `metadata.commandName` | user | ✅ |
+| `command:send` (all except inspect) | `command` + `metadata.commandName` | user | ✅ |
 | `command:send` (inspect) | — | — | ❌ |
 | `agent:heartbeat` | — | — | ❌ (uses `Agent.lastHeartbeatAt`) |
 | `message:typing` | — | — | ❌ |

@@ -23,6 +23,7 @@ import {
   UpdateAgentInstructionDto,
   AddAgentLogDto,
   AgentLogsResponseDto,
+  AgentSleepActionDto,
 } from './agent.dto';
 
 @ApiTags('agents')
@@ -395,6 +396,79 @@ export class AgentController {
   ) {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     return this.agentService.startAgent(resolvedId, context);
+  }
+
+  @Post(':id/wake')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Wake agent',
+    description: 'Wake a sleeping agent by setting status back to idle. Only allowed when agent is sleeping.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent woken up successfully' })
+  @ApiResponse({ status: 400, description: 'Agent is not sleeping' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async wakeAgent(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.wakeAgent(resolvedId, context);
+  }
+
+  @Post(':id/sleep')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Sleep agent',
+    description: 'Put an agent to sleep. Allowed when status is idle or inactive. Returns 400 if agent is busy or suspended.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent put to sleep successfully' })
+  @ApiResponse({ status: 400, description: 'Agent is busy or suspended' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async sleepAgent(
+    @Param('id') id: string,
+    @Body() sleepDto: AgentSleepActionDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.sleepAgent(resolvedId, sleepDto, context);
+  }
+
+  @Post(':id/restart')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Restart agent',
+    description: 'Force restart an agent to inactive status. Unlike stop, this is allowed when agent is busy. Returns 400 if agent is suspended.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent restarted successfully' })
+  @ApiResponse({ status: 400, description: 'Agent is suspended' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async restartAgent(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.restartAgent(resolvedId, context);
+  }
+
+  @Post(':id/update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update agent on node',
+    description: 'Trigger node to pull latest version and restart agent. Only for engineer agents deployed on a node.',
+  })
+  @ApiResponse({ status: 200, description: 'Update command sent to node' })
+  @ApiResponse({ status: 400, description: 'Agent not deployed on a node' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  @UseGuards(JwtAuthGuard)
+  async updateAgentOnNode(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.updateAgentOnNode(resolvedId, context);
   }
 
   @Post(':id/credentials/regenerate')

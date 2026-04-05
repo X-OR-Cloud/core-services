@@ -1003,12 +1003,12 @@ export class ChatGateway
 
   // ---------------------------------------------------------------------------
   // Event: command:send — authorized users only
-  // Dispatches stop/reload/inspect as agent:command directly to agent socket(s)
+  // Dispatches commands to agent socket(s) or AgentService depending on category
   // ---------------------------------------------------------------------------
 
   @SubscribeMessage('command:send')
   async handleCommandSend(
-    @MessageBody() data: { command: 'stop' | 'reload' | 'inspect'; conversationId?: string; reason?: string },
+    @MessageBody() data: { command: 'stop' | 'start' | 'restart' | 'update' | 'reload' | 'inspect' | 'sleep' | 'wake'; conversationId?: string; reason?: string },
     @ConnectedSocket() client: Socket,
   ) {
     // Anonymous clients cannot issue commands
@@ -1025,8 +1025,8 @@ export class ChatGateway
       return { success: false, error: 'No agent associated with this connection' };
     }
 
-    // Save DB Action for commands with side effects
-    if (command === 'stop' || command === 'reload') {
+    // Save DB Action for commands with side effects (all except inspect)
+    if (command !== 'inspect') {
       await this.actionService.createActionDirect(
         {
           conversationId: conversationId || '',
@@ -1039,9 +1039,61 @@ export class ChatGateway
       );
     }
 
-    // Route command:
-    // - assistant agents (worker:agt) → Redis pub/sub chat:cmd:{agentId}
-    // - engineer agents (self-deployed) → WS agent:command direct emit
+    const context = { userId, orgId } as any;
+
+    // --- Node lifecycle commands: stop/start/restart/update ---
+    // Modify agent status in DB, send command to node via NodeGateway (if nodeId)
+    if (['stop', 'start', 'restart', 'update'].includes(command)) {
+      try {
+        if (command === 'stop') {
+          await this.agentService.stopAgent(agentId, context);
+        } else if (command === 'start') {
+          await this.agentService.startAgent(agentId, context);
+        } else if (command === 'restart') {
+          await this.agentService.restartAgent(agentId, context);
+        } else {
+          await this.agentService.updateAgentOnNode(agentId, context);
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+
+      this.logger.log(`[CMD-NODE] command=${command} agentId=${agentId} conversationId=${conversationId || 'n/a'} by=${userId}`);
+      return { success: true, command };
+    }
+
+    // --- Agent WS commands: sleep/wake ---
+    // Modify agent status in DB, notify agent via Chat WS (agent:command)
+    if (['sleep', 'wake'].includes(command)) {
+      try {
+        if (command === 'sleep') {
+          await this.agentService.sleepAgent(agentId, { reason: reason || 'User requested via chat' }, context);
+        } else {
+          await this.agentService.wakeAgent(agentId, context);
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+
+      // Notify agent socket(s)
+      const isAssistantAgent = client.data.agentType === 'assistant';
+      if (isAssistantAgent && this.redisPub) {
+        this.redisPub.publish(`chat:cmd:${agentId}`, JSON.stringify({ type: command, conversationId, reason })).catch((err: Error) =>
+          this.logger.error(`Failed to publish chat:cmd: ${err.message}`),
+        );
+      } else {
+        const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+        if (agentSocketIds.length > 0) {
+          this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
+        }
+      }
+
+      this.logger.log(`[CMD-AGENT] command=${command} agentId=${agentId} conversationId=${conversationId || 'n/a'} by=${userId}`);
+      return { success: true, command };
+    }
+
+    // --- Signal commands: stop/reload/inspect ---
+    // Route command directly to agent socket(s)
     const isAssistantAgent = client.data.agentType === 'assistant';
     if (isAssistantAgent && this.redisPub) {
       this.redisPub.publish(`chat:cmd:${agentId}`, JSON.stringify({ type: command, conversationId, reason })).catch((err: Error) =>
