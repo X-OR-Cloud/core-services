@@ -2307,41 +2307,15 @@ echo "Installation script placeholder - implement actual logic"
       // Emit event to queue
       await this.agentProducer.emitAgentUpdated(updated);
 
-      // Send agent.update to node via WebSocket if engineer agent with nodeId
+      // Send agent.restart to node via WebSocket if engineer agent with nodeId
+      // Node will restart the agent process with the updated config
       if (updated.type === 'engineer' && updated.nodeId) {
-        try {
-          await this.nodeGateway.sendCommandToNode(
-            updated.nodeId,
-            MessageType.AGENT_UPDATE,
-            { type: 'agent', id: (updated as any)._id.toString() },
-            {
-              agentId: (updated as any)._id.toString(),
-              code: updated.code,
-              name: updated.name,
-              description: updated.description,
-              status: updated.status,
-              type: updated.type,
-              framework: updated.framework,
-              instructionId: updated.instructionId,
-              guardrailId: updated.guardrailId,
-              deploymentId: updated.deploymentId,
-              settings: await this.buildSettingsWithOAuthToken(
-                (updated.settings as Record<string, unknown>) || {},
-                updated.framework ?? '',
-                context.orgId
-              ),
-            }
-          );
-          this.logger.log(
-            `agent.update sent to node ${updated.nodeId} for agent ${
-              (updated as any)._id
-            }`
-          );
-        } catch (error: any) {
-          this.logger.warn(
-            `Could not send agent.update to node ${updated.nodeId}: ${error.message}`
-          );
-        }
+        await this.sendLifecycleCommandToNode(
+          updated as AgentDocument,
+          MessageType.AGENT_RESTART,
+          true,
+          context
+        );
       }
     }
 
