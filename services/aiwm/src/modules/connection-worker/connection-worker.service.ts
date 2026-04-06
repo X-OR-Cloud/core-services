@@ -210,7 +210,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   async handleOutboundTyping(conversationId: string): Promise<void> {
     const target = this.typingChannels.get(conversationId);
     if (!target) return;
-    for (const runner of this.runners.values()) {
+    const connectionId = this.conversationConnectionId.get(conversationId);
+    const runner = connectionId ? this.runners.get(connectionId) : undefined;
+    if (runner) {
       await runner.sendTyping(target.channelId, target.threadId).catch((err: Error) =>
         this.logger.warn(`Failed to forward typing to ${target.channelId}: ${err.message}`),
       );

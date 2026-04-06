@@ -7,6 +7,7 @@ export class TelegramAdapter extends BaseAdapter {
   readonly provider = 'telegram';
   private readonly logger = new Logger(TelegramAdapter.name);
   private bot: TelegramBot | null = null;
+  private botUsername: string | null = null;
 
   constructor(private readonly config: ConnectionConfig) {
     super();
@@ -22,6 +23,15 @@ export class TelegramAdapter extends BaseAdapter {
     } else {
       this.bot = new TelegramBot(this.config.botToken, { polling: true });
       this.logger.log('Telegram connected via long-polling');
+    }
+
+    // Fetch bot username for mention detection
+    try {
+      const me = await this.bot.getMe();
+      this.botUsername = me.username?.toLowerCase() ?? null;
+      this.logger.log(`Bot username: @${this.botUsername}`);
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch bot info: ${err.message}`);
     }
 
     this.bot.on('message', (msg) => this._handleMessage(msg));
@@ -108,6 +118,18 @@ export class TelegramAdapter extends BaseAdapter {
     // Skip if no text and no attachments
     if (!text && attachments.length === 0) return;
 
+    // Detect @mention of this bot in message entities
+    const entities = msg.entities || msg.caption_entities || [];
+    const isMention = this.botUsername
+      ? entities.some(
+          (e) =>
+            e.type === 'mention' &&
+            text
+              .substring(e.offset + 1, e.offset + e.length)
+              .toLowerCase() === this.botUsername,
+        )
+      : false;
+
     const normalized: NormalizedInbound = {
       provider: 'telegram',
       externalUserId: String(msg.from?.id ?? msg.chat.id),
@@ -117,6 +139,7 @@ export class TelegramAdapter extends BaseAdapter {
       serverId: String(msg.chat.id),
       text,
       attachments,
+      isMention,
       raw: msg,
     };
 
