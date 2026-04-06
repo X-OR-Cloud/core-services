@@ -25,7 +25,10 @@ export class FileController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload file to S3, returns public URL' })
   @ApiConsumes('multipart/form-data')
-  async upload(@UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string }) {
+  async upload(
+    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype: string },
+    @CurrentUser() context: { orgId: string },
+  ) {
     if (!file) {
       throw new BadRequestException('No file provided. Use multipart/form-data with field name "file".');
     }
@@ -34,6 +37,7 @@ export class FileController {
       file.buffer,
       file.originalname,
       file.mimetype,
+      context.orgId,
     );
 
     return {

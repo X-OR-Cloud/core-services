@@ -26,13 +26,14 @@ export class FileService {
     buffer: Buffer,
     originalFilename: string,
     mimeType: string,
+    orgId?: string,
   ): Promise<UploadResult> {
-    const endpoint = await this.configService.getString(ConfigKey.S3_ENDPOINT);
-    const accessKey = await this.configService.getString(ConfigKey.S3_ACCESS_KEY);
-    const secretKey = await this.configService.getString(ConfigKey.S3_SECRET_KEY);
-    const bucket = await this.configService.getString(ConfigKey.S3_BUCKET_FILES);
-    const region = await this.configService.getOrDefault(ConfigKey.S3_REGION, undefined, 'us-east-1');
-    const useSSL = await this.configService.getBoolean(ConfigKey.S3_USE_SSL);
+    const endpoint = await this.configService.getString(ConfigKey.S3_ENDPOINT, orgId);
+    const accessKey = await this.configService.getString(ConfigKey.S3_ACCESS_KEY, orgId);
+    const secretKey = await this.configService.getString(ConfigKey.S3_SECRET_KEY, orgId);
+    const bucket = await this.configService.getString(ConfigKey.S3_BUCKET_FILES, orgId);
+    const region = await this.configService.getOrDefault(ConfigKey.S3_REGION, orgId, 'us-east-1');
+    const useSSL = await this.configService.getBoolean(ConfigKey.S3_USE_SSL, orgId);
 
     if (!endpoint || !accessKey || !secretKey || !bucket) {
       throw new Error('S3 storage is not configured. Please set s3.endpoint, s3.access_key, s3.secret_key, and s3.bucket.files in Configuration.');
@@ -75,9 +76,10 @@ export class FileService {
     base64: string,
     filename: string,
     mimeType: string,
+    orgId?: string,
   ): Promise<UploadResult> {
     const buffer = Buffer.from(base64, 'base64');
-    return this.uploadBuffer(buffer, filename, mimeType);
+    return this.uploadBuffer(buffer, filename, mimeType, orgId);
   }
 
   private _mimeToExt(mimeType: string): string {

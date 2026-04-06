@@ -183,7 +183,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
           }
         },
         uploadFileInternal: (base64, filename, mimeType) =>
-          this.fileService.uploadBase64(base64, filename, mimeType).then((r) => r.fileUrl),
+          this.fileService.uploadBase64(base64, filename, mimeType, agent.owner?.orgId).then((r) => r.fileUrl),
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
           this.agentService.heartbeat(id, { status }, accessToken),
