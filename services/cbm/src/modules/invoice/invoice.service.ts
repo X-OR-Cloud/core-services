@@ -116,7 +116,7 @@ export class InvoiceService extends BaseService<Invoice> {
     return findResult;
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Invoice> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Invoice>> {
     const invoice = await super.findById(id, context);
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;

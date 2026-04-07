@@ -84,7 +84,7 @@ export class CompanyService extends BaseService<Company> {
   /**
    * Override findById — throws 404 if not found.
    */
-  async findById(id: ObjectId, context: RequestContext): Promise<Company> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Company>> {
     const company = await super.findById(id, context);
     if (!company) throw new NotFoundException('Company not found');
     return company;

@@ -76,7 +76,7 @@ export class ContactService extends BaseService<Contact> {
     return findResult;
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Contact> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Contact>> {
     const contact = await super.findById(id, context);
     if (!contact) throw new NotFoundException('Contact not found');
     return contact;

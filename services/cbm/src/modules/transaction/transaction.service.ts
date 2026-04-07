@@ -39,7 +39,7 @@ export class TransactionService extends BaseService<Transaction> {
     return super.findAll(options, context);
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Transaction> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Transaction>> {
     const transaction = await super.findById(id, context);
     if (!transaction) throw new NotFoundException('Transaction not found');
     return transaction;

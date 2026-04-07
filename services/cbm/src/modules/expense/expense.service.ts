@@ -89,7 +89,7 @@ export class ExpenseService extends BaseService<Expense> {
     return findResult;
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Expense> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Expense>> {
     const expense = await super.findById(id, context);
     if (!expense) throw new NotFoundException('Expense not found');
     return expense;
