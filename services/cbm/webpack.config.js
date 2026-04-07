@@ -17,7 +17,12 @@ module.exports = [
         compiler: 'tsc',
         main: './src/main.ts',
         tsConfig: './tsconfig.app.json',
-        assets: ['./src/assets'],
+        assets: [
+          './src/assets',
+          // Skill *.md files are in src/assets/skill/ — already covered above.
+          // When adding a new module's skill content, place the file at:
+          //   src/assets/skill/modules/<module-name>.skill.md
+        ],
         optimization: false,
         outputHashing: 'none',
         generatePackageJson: true,
