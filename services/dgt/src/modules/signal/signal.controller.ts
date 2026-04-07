@@ -68,8 +68,9 @@ export class SignalController {
     if (!parsed.filter?.['timeframe']) {
       parsed.filter = { ...(parsed.filter || {}), timeframe: { $in: ['1h', '4h'] } };
     }
-    if (!parsed.filter?.['action']) {
-      parsed.filter = { ...(parsed.filter || {}), action: { $in: ['BUY', 'SELL'] } };
+    // Use 'signalType' (actual DB field), not 'action' (virtual field)
+    if (!parsed.filter?.['signalType']) {
+      parsed.filter = { ...(parsed.filter || {}), signalType: { $in: ['BUY', 'SELL'] } };
     }
     return this.signalService.findAll(parsed, context);
   }
