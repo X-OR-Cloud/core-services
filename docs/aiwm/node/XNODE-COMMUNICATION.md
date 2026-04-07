@@ -926,9 +926,9 @@ Khi một **engineer agent** được tạo với `nodeId`, AIWM sẽ gửi lệ
 
 ---
 
-### 6.4. `agent.update` — Cập nhật agent (không restart)
+### 6.4. `agent.update` — Cập nhật phiên bản agent
 
-> Mục đích: Cập nhật config runtime mà không cần restart process.
+> Mục đích: Yêu cầu xnode update agent lên version mới (tương tự `system.update` nhưng cho agent process).
 
 **Payload:**
 ```json
@@ -936,12 +936,23 @@ Khi một **engineer agent** được tạo với `nodeId`, AIWM sẽ gửi lệ
   "type": "agent.update",
   "data": {
     "agentId": "agent-507f...",
-    "settings": {
-      "maxConcurrentTasks": 10
-    }
+    "code": "jack-bold",
+    "version": "2.1.0"
   }
 }
 ```
+
+| Field | Mô tả |
+|-------|--------|
+| `agentId` | ID agent cần update |
+| `code` | Mã unique của agent |
+| `version` | Version mới. `"latest"` = bản mới nhất |
+
+**xnode phải:**
+1. Gửi `command.ack`
+2. Tải/cập nhật agent lên version mới
+3. Restart agent process với version mới
+4. Gửi `command.result`
 
 ---
 
