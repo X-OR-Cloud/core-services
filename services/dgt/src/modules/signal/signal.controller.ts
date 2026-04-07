@@ -64,9 +64,12 @@ export class SignalController {
     @CurrentUser() context: RequestContext,
   ) {
     const parsed = parseQueryString(query);
-    // Mặc định chỉ trả 1h + 4h nếu FE không truyền timeframe filter
+    // Default filters: 1h + 4h timeframe, only BUY/SELL (skip HOLD)
     if (!parsed.filter?.['timeframe']) {
       parsed.filter = { ...(parsed.filter || {}), timeframe: { $in: ['1h', '4h'] } };
+    }
+    if (!parsed.filter?.['action']) {
+      parsed.filter = { ...(parsed.filter || {}), action: { $in: ['BUY', 'SELL'] } };
     }
     return this.signalService.findAll(parsed, context);
   }
