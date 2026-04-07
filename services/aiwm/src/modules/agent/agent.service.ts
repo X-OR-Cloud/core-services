@@ -134,8 +134,14 @@ export class AgentService extends BaseService<Agent> {
       createAgentDto.secret = await bcrypt.hash(plaintextSecret, 10);
     }
 
-    // Validate deploymentId for assistant agents
+    // Validate deploymentId for assistant agents and pi-agent-sdk framework
     if (createAgentDto.type === 'assistant') {
+      await this.validateHostedDeployment(createAgentDto.deploymentId);
+    }
+    if (createAgentDto.framework === 'pi-agent-sdk') {
+      if (createAgentDto.type !== 'engineer') {
+        throw new BadRequestException('pi-agent-sdk framework is only available for engineer agents');
+      }
       await this.validateHostedDeployment(createAgentDto.deploymentId);
     }
 
@@ -2271,12 +2277,21 @@ echo "Installation script placeholder - implement actual logic"
       }
     }
 
-    // Validate deploymentId for assistant agents
-    if (updateAgentDto.deploymentId) {
+    // Validate deploymentId for assistant agents and pi-agent-sdk framework
+    if (updateAgentDto.deploymentId || updateAgentDto.framework === 'pi-agent-sdk') {
       const existingAgent = await this.agentModel.findById(id).exec();
       const effectiveType = updateAgentDto.type ?? existingAgent?.type;
+      const effectiveFramework = updateAgentDto.framework ?? existingAgent?.framework;
+      const effectiveDeploymentId = updateAgentDto.deploymentId ?? existingAgent?.deploymentId;
+
       if (effectiveType === 'assistant') {
-        await this.validateHostedDeployment(updateAgentDto.deploymentId);
+        await this.validateHostedDeployment(effectiveDeploymentId);
+      }
+      if (effectiveFramework === 'pi-agent-sdk') {
+        if (effectiveType !== 'engineer') {
+          throw new BadRequestException('pi-agent-sdk framework is only available for engineer agents');
+        }
+        await this.validateHostedDeployment(effectiveDeploymentId);
       }
     }
 

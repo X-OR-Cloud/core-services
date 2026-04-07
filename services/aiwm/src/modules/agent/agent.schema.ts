@@ -76,7 +76,7 @@ export class Agent extends BaseSchema {
 
   @Prop({
     type: String,
-    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk', 'pi-agent-sdk'],
     default: 'claude-agent-sdk'
   })
   framework: string;

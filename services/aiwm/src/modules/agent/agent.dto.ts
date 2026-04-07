@@ -95,14 +95,14 @@ export class CreateAgentDto {
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine). Not used for assistant agents.',
-    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
+    description: 'Agent framework (determines runtime engine). Not used for assistant agents. pi-agent-sdk requires a running deployment.',
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk', 'pi-agent-sdk'],
     example: 'claude-agent-sdk',
     required: false
   })
   @IsOptional()
   @ValidateIf((o) => o.type !== 'assistant')
-  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
+  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk', 'pi-agent-sdk'])
   framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID (optional)', required: false })
@@ -116,10 +116,10 @@ export class CreateAgentDto {
   guardrailId?: string;
 
   @ApiPropertyOptional({
-    description: 'Deployment ID (required for assistant agents, must be status=running)',
+    description: 'Deployment ID (required for assistant agents and pi-agent-sdk framework, must be status=running)',
     required: false
   })
-  @ValidateIf((o) => o.type === 'assistant')
+  @ValidateIf((o) => o.type === 'assistant' || o.framework === 'pi-agent-sdk')
   @IsNotEmpty()
   @IsString()
   deploymentId?: string;
@@ -259,13 +259,13 @@ export class UpdateAgentDto {
   type?: string;
 
   @ApiPropertyOptional({
-    description: 'Agent framework (determines runtime engine). Not used for assistant agents.',
-    enum: ['claude-agent-sdk', 'vercel-ai-sdk'],
+    description: 'Agent framework (determines runtime engine). Not used for assistant agents. pi-agent-sdk requires a running deployment.',
+    enum: ['claude-agent-sdk', 'vercel-ai-sdk', 'pi-agent-sdk'],
     required: false
   })
   @IsOptional()
   @ValidateIf((o) => o.type !== 'assistant')
-  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk'])
+  @IsEnum(['claude-agent-sdk', 'vercel-ai-sdk', 'pi-agent-sdk'])
   framework?: string;
 
   @ApiPropertyOptional({ description: 'Instruction ID', required: false })
@@ -279,10 +279,10 @@ export class UpdateAgentDto {
   guardrailId?: string;
 
   @ApiPropertyOptional({
-    description: 'Deployment ID (required for assistant agents, must be status=running)',
+    description: 'Deployment ID (required for assistant agents and pi-agent-sdk framework, must be status=running)',
     required: false
   })
-  @ValidateIf((o) => o.type === 'assistant')
+  @ValidateIf((o) => o.type === 'assistant' || o.framework === 'pi-agent-sdk')
   @IsNotEmpty()
   @IsString()
   deploymentId?: string;
