@@ -5,7 +5,6 @@ import {
   IsArray,
   IsEnum,
   IsDate,
-  IsMongoId,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -20,17 +19,15 @@ const INTERACTION_TYPES = ['call', 'email', 'meeting', 'note', 'other'] as const
 export class CreateInteractionDto {
   @ApiProperty({
     description: 'Contact ID (required)',
-    example: '507f1f77bcf86cd799439011',
   })
-  @IsMongoId()
+  @IsString()
   contactId!: string;
 
   @ApiPropertyOptional({
     description: 'Company ID (optional)',
-    example: '507f1f77bcf86cd799439012',
   })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   companyId?: string;
 
   @ApiProperty({

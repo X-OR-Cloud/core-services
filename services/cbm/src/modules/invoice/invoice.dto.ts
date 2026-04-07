@@ -5,7 +5,6 @@ import {
   IsArray,
   IsEnum,
   IsDate,
-  IsMongoId,
   IsNumber,
   IsPositive,
   MinLength,
@@ -91,17 +90,15 @@ export class CreateInvoiceDto {
 
   @ApiProperty({
     description: 'Contact ID',
-    example: '507f1f77bcf86cd799439011',
   })
-  @IsMongoId()
+  @IsString()
   contactId!: string;
 
   @ApiPropertyOptional({
     description: 'Company ID (optional)',
-    example: '507f1f77bcf86cd799439012',
   })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   companyId?: string;
 
   @ApiPropertyOptional({
@@ -180,12 +177,12 @@ export class CreateInvoiceDto {
 export class UpdateInvoiceDto {
   @ApiPropertyOptional()
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   contactId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   companyId?: string;
 
   @ApiPropertyOptional({ type: [InvoiceItemDto] })

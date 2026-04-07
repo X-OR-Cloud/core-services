@@ -5,7 +5,6 @@ import {
   IsArray,
   IsEnum,
   IsEmail,
-  IsMongoId,
   MinLength,
   MaxLength,
   ValidateNested,
@@ -70,11 +69,10 @@ export class CreateContactDto {
   types?: string[];
 
   @ApiPropertyOptional({
-    description: 'Reference to Company (optional)',
-    example: '507f1f77bcf86cd799439011',
+    description: 'Reference to Company ID (optional)',
   })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   companyId?: string;
 
   @ApiPropertyOptional({
@@ -167,7 +165,7 @@ export class UpdateContactDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   companyId?: string;
 
   @ApiPropertyOptional({ maxLength: 200 })

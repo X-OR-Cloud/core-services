@@ -5,7 +5,6 @@ import {
   IsArray,
   IsEnum,
   IsDate,
-  IsMongoId,
   MinLength,
   MaxLength,
   ValidateNested,
@@ -39,11 +38,10 @@ export class CreateExpenseDto {
   amount!: MoneyAmountDto;
 
   @ApiPropertyOptional({
-    description: 'Vendor Contact or Company ID',
-    example: '507f1f77bcf86cd799439011',
+    description: 'Vendor Contact or Company ID (optional)',
   })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   vendorId?: string;
 
   @ApiPropertyOptional({
@@ -123,7 +121,7 @@ export class UpdateExpenseDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   vendorId?: string;
 
   @ApiPropertyOptional({ maxLength: 200 })
