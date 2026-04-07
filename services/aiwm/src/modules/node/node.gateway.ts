@@ -222,6 +222,7 @@ export class NodeGateway
         // New format: Node Agent sends systemInfo directly
         await this.nodeService.updateNodeInfo(nodeId, {
           systemInfo: (registerData as any).systemInfo,
+          daemonVersion: (registerData as any).daemonVersion,
           status: 'online',
         });
       } else {
@@ -306,6 +307,7 @@ export class NodeGateway
         ramUsage: data.data.ramUsage,
         activeDeployments: data.data.activeDeployments,
         gpuStatus: data.data.gpuStatus,
+        daemonVersion: data.data.daemonVersion,
       });
     } catch (error) {
       this.logger.error(`Failed to update heartbeat for ${nodeId}: ${error.message}`);

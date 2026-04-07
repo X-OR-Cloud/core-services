@@ -641,18 +641,22 @@ export class NodeService extends BaseService<Node> {
    * TODO: Will be refactored to store dynamic data in MetricData collection
    */
   async updateHeartbeat(id: string, heartbeatData: any): Promise<void> {
+    const update: Record<string, unknown> = {
+      status: heartbeatData.status,
+      uptimeSeconds: heartbeatData.uptimeSeconds,
+      cpuUsage: heartbeatData.cpuUsage,
+      ramUsage: heartbeatData.ramUsage,
+      lastHeartbeat: new Date(),
+      updatedAt: new Date(),
+    };
+
+    if (heartbeatData.daemonVersion) {
+      update.daemonVersion = heartbeatData.daemonVersion;
+    }
+
     await this.model.updateOne(
       { _id: new Types.ObjectId(id) },
-      {
-        $set: {
-          status: heartbeatData.status,
-          uptimeSeconds: heartbeatData.uptimeSeconds,
-          cpuUsage: heartbeatData.cpuUsage,
-          ramUsage: heartbeatData.ramUsage,
-          lastHeartbeat: new Date(),
-          updatedAt: new Date(),
-        },
-      }
+      { $set: update },
     );
   }
 

@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsArray,
   IsObject,
   ValidateNested,
@@ -48,6 +49,10 @@ export class NodeHeartbeatDataDto {
   @ValidateNested({ each: true })
   @Type(() => Object)
   gpuStatus!: IGpuStatus[];
+
+  @IsOptional()
+  @IsString()
+  daemonVersion?: string;
 }
 
 /**
