@@ -30,20 +30,27 @@ export class ApiKeyOrJwtGuard extends AuthGuard('jwt-auth') implements CanActiva
 
   protected extractToken(request: any): string {
     const authHeader: string | undefined = request.headers['authorization'];
+    // Case-insensitive: Express normalizes headers to lowercase,
+    // but check common casings for safety
     const apiKeyHeader: string | undefined =
-      request.headers['x-api-key'] ||
-      request.headers['X-API-KEY'] ||
-      request.headers['X-API-Key'];
+      request.headers['x-api-key'];
 
     if (!authHeader && !apiKeyHeader) {
       throw new UnauthorizedException('Authorization header or API key is required');
     }
 
-    return authHeader
-      ? authHeader.startsWith('Bearer ')
+    if (authHeader) {
+      return authHeader.startsWith('Bearer ')
         ? authHeader.slice(7)
-        : authHeader
-      : apiKeyHeader || '';
+        : authHeader;
+    }
+
+    // x-api-key header present — inject as Authorization for Passport JWT fallback
+    if (apiKeyHeader && !apiKeyHeader.startsWith(API_KEY_PREFIX)) {
+      request.headers['authorization'] = `Bearer ${apiKeyHeader}`;
+    }
+
+    return apiKeyHeader || '';
   }
 
   /** Override in subclasses to pass additional context (e.g. deploymentId) to validateKey */
