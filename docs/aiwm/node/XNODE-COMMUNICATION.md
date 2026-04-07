@@ -275,6 +275,7 @@ xnode sử dụng các interval này để cấu hình vòng lặp heartbeat và
   "data": {
     "nodeId": "507f1f77bcf86cd799439011",
     "name": "gpu-node-01",
+    "daemonVersion": "1.2.0",
     "systemInfo": {
       "os": { "name": "Ubuntu", "version": "22.04 LTS", "kernel": "5.15.0-91", "platform": "linux" },
       "architecture": { "cpu": "x86_64", "bits": 64, "endianness": "LE" },
@@ -311,6 +312,11 @@ xnode sử dụng các interval này để cấu hình vòng lặp heartbeat và
   }
 }
 ```
+
+| Field | Required | Mô tả |
+|-------|----------|--------|
+| `daemonVersion` | **Có** | Phiên bản hiện tại của xnode CLI (ví dụ `"1.2.0"`) |
+| `systemInfo` | **Có** | Thông tin phần cứng, OS, container runtime |
 
 **Server response (ack):**
 ```json
@@ -354,14 +360,20 @@ xnode sử dụng các interval này để cấu hình vòng lặp heartbeat và
         "utilization": 78,
         "temperature": 72
       }
-    ]
+    ],
+    "daemonVersion": "1.2.0"
   }
 }
 ```
 
+| Field | Required | Mô tả |
+|-------|----------|--------|
+| `daemonVersion` | Không (optional) | Phiên bản xnode CLI. Nếu có, server cập nhật vào DB. Hữu ích để phát hiện version thay đổi sau `system.update`. |
+
 **Hành vi server:**
 - Cập nhật `lastHeartbeat` trong DB và in-memory connection
 - Cập nhật `status` nếu thay đổi
+- Cập nhật `daemonVersion` nếu có trong payload
 
 ---
 
