@@ -17,6 +17,13 @@ import { WorkModule } from '../modules/work/work.module';
 import { KnowledgeCollectionModule } from '../modules/knowledge-collection/knowledge-collection.module';
 import { KnowledgeFileModule } from '../modules/knowledge-file/knowledge-file.module';
 import { KnowledgeChunkModule } from '../modules/knowledge-chunk/knowledge-chunk.module';
+import { CompanyModule } from '../modules/company/company.module';
+import { ContactModule } from '../modules/contact/contact.module';
+import { InteractionModule } from '../modules/interaction/interaction.module';
+import { InvoiceModule } from '../modules/invoice/invoice.module';
+import { ExpenseModule } from '../modules/expense/expense.module';
+import { PaymentModule } from '../modules/payment/payment.module';
+import { TransactionModule } from '../modules/transaction/transaction.module';
 
 @Module({
   imports: [
@@ -33,6 +40,15 @@ import { KnowledgeChunkModule } from '../modules/knowledge-chunk/knowledge-chunk
     KnowledgeCollectionModule,
     KnowledgeFileModule,
     KnowledgeChunkModule,
+    // CRM modules
+    CompanyModule,
+    ContactModule,
+    InteractionModule,
+    // Finance modules
+    TransactionModule,
+    InvoiceModule,
+    ExpenseModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
