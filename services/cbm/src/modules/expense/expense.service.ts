@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Expense } from './expense.schema';
+import { TransactionService } from '../transaction/transaction.service';
 
 /**
  * ExpenseService
@@ -18,7 +19,8 @@ import { Expense } from './expense.schema';
 @Injectable()
 export class ExpenseService extends BaseService<Expense> {
   constructor(
-    @InjectModel(Expense.name) private expenseModel: Model<Expense>
+    @InjectModel(Expense.name) private expenseModel: Model<Expense>,
+    private readonly transactionService: TransactionService
   ) {
     super(expenseModel);
   }
@@ -96,16 +98,53 @@ export class ExpenseService extends BaseService<Expense> {
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Expense>> {
     const expense = await super.findById(id, context);
     if (!expense) throw new NotFoundException('Expense not found');
-    // Phase 3: restrict update to pending/rejected status only
+    if (!['pending', 'rejected'].includes(expense.status)) {
+      throw new BadRequestException(`Expense can only be updated in pending or rejected status (current: ${expense.status})`);
+    }
     return super.update(id, data, context);
   }
 
   async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Expense>> {
     const expense = await super.findById(id, context);
     if (!expense) throw new NotFoundException('Expense not found');
-    // Phase 3: restrict delete to pending/rejected status only
+    if (!['pending', 'rejected'].includes(expense.status)) {
+      throw new BadRequestException(`Expense can only be deleted in pending or rejected status (current: ${expense.status})`);
+    }
     return super.softDelete(id, context);
   }
 
-  // =============== Phase 3: approve / reject / resubmit ===============
+  // =============== Phase 3: State machine ===============
+
+  async approve(id: ObjectId, context: RequestContext): Promise<Partial<Expense>> {
+    const expense = await super.findById(id, context);
+    if (!expense) throw new NotFoundException('Expense not found');
+    if (expense.status !== 'pending') {
+      throw new BadRequestException(`Expense must be in pending status to approve (current: ${expense.status})`);
+    }
+    const updated = await super.update(id, { status: 'approved' }, context);
+    // Create Transaction record
+    await this.transactionService.createFromExpense(
+      { ...(expense as any), status: 'approved' },
+      context
+    );
+    return updated;
+  }
+
+  async reject(id: ObjectId, rejectionReason: string, context: RequestContext): Promise<Partial<Expense>> {
+    const expense = await super.findById(id, context);
+    if (!expense) throw new NotFoundException('Expense not found');
+    if (expense.status !== 'pending') {
+      throw new BadRequestException(`Expense must be in pending status to reject (current: ${expense.status})`);
+    }
+    return super.update(id, { status: 'rejected', rejectionReason }, context);
+  }
+
+  async resubmit(id: ObjectId, context: RequestContext): Promise<Partial<Expense>> {
+    const expense = await super.findById(id, context);
+    if (!expense) throw new NotFoundException('Expense not found');
+    if (expense.status !== 'rejected') {
+      throw new BadRequestException(`Expense must be in rejected status to resubmit (current: ${expense.status})`);
+    }
+    return super.update(id, { status: 'pending', rejectionReason: null }, context);
+  }
 }

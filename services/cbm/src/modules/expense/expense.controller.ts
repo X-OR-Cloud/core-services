@@ -22,7 +22,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { ExpenseService } from './expense.service';
-import { CreateExpenseDto, UpdateExpenseDto } from './expense.dto';
+import { CreateExpenseDto, UpdateExpenseDto, RejectExpenseDto } from './expense.dto';
 
 @ApiTags('Expenses')
 @ApiBearerAuth()
@@ -88,8 +88,33 @@ export class ExpenseController {
     return this.expenseService.softDelete(new Types.ObjectId(id) as any, context);
   }
 
-  // =============== Phase 3: State machine action endpoints ===============
-  // POST /expenses/:id/approve   → pending → approved (creates Transaction)
-  // POST /expenses/:id/reject    → pending → rejected (requires rejectionReason)
-  // POST /expenses/:id/resubmit  → rejected → pending
+  // =============== Phase 3: State machine ===============
+
+  @Post(':id/approve')
+  @ApiOperation({ summary: 'Approve expense', description: 'Transition: pending → approved. Auto-creates Transaction.' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async approve(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.expenseService.approve(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/reject')
+  @ApiOperation({ summary: 'Reject expense (requires rejectionReason)', description: 'Transition: pending → rejected' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async reject(
+    @Param('id') id: string,
+    @Body() dto: RejectExpenseDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.expenseService.reject(new Types.ObjectId(id) as any, dto.rejectionReason, context);
+  }
+
+  @Post(':id/resubmit')
+  @ApiOperation({ summary: 'Resubmit rejected expense', description: 'Transition: rejected → pending' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async resubmit(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.expenseService.resubmit(new Types.ObjectId(id) as any, context);
+  }
 }

@@ -22,7 +22,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { ContactService } from './contact.service';
-import { CreateContactDto, UpdateContactDto } from './contact.dto';
+import { CreateContactDto, UpdateContactDto, PlatformLinkDto } from './contact.dto';
 
 @ApiTags('Contacts')
 @ApiBearerAuth()
@@ -88,7 +88,30 @@ export class ContactController {
     return this.contactService.softDelete(new Types.ObjectId(id) as any, context);
   }
 
-  // =============== Phase 3: platform-links sub-endpoints ===============
-  // POST /contacts/:id/platform-links
-  // DELETE /contacts/:id/platform-links/:platform
+  // =============== Phase 3: Platform Links ===============
+
+  @Post(':id/platform-links')
+  @ApiOperation({ summary: 'Add a platform link to contact (Discord, Telegram, Zalo...)' })
+  @ApiCreateErrors()
+  @UseGuards(JwtAuthGuard)
+  async addPlatformLink(
+    @Param('id') id: string,
+    @Body() dto: PlatformLinkDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.contactService.addPlatformLink(new Types.ObjectId(id) as any, dto, context);
+  }
+
+  @Delete(':id/platform-links/:platform/:platformUserId')
+  @ApiOperation({ summary: 'Remove a platform link from contact by platform + platformUserId' })
+  @ApiDeleteErrors()
+  @UseGuards(JwtAuthGuard)
+  async removePlatformLink(
+    @Param('id') id: string,
+    @Param('platform') platform: string,
+    @Param('platformUserId') platformUserId: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.contactService.removePlatformLink(new Types.ObjectId(id) as any, platform, platformUserId, context);
+  }
 }

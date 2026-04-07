@@ -88,7 +88,27 @@ export class CompanyController {
     return this.companyService.softDelete(new Types.ObjectId(id) as any, context);
   }
 
-  // =============== Phase 3: Action Endpoints (activate / deactivate) ===============
-  // POST /companies/:id/activate
-  // POST /companies/:id/deactivate
+  // =============== Phase 3: Action Endpoints ===============
+
+  @Post(':id/activate')
+  @ApiOperation({ summary: 'Activate company', description: 'Transition: inactive → active' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async activate(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.companyService.activate(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/deactivate')
+  @ApiOperation({ summary: 'Deactivate company', description: 'Transition: active → inactive' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async deactivate(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.companyService.deactivate(new Types.ObjectId(id) as any, context);
+  }
 }
