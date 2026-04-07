@@ -688,27 +688,133 @@ export class DeploymentService extends BaseService<Deployment> {
       }
     }
 
-    // TODO: Add streaming support — when request body contains `"stream": true`,
-    // use axios with `responseType: 'stream'` and pipe SSE chunks directly to `res`.
-    // This is critical for Anthropic (SSE) and OpenAI (SSE) streaming responses.
-    // Current implementation buffers the entire response, which breaks streaming clients.
+    // Route based on streaming mode
+    if (requestBody.stream === true) {
+      await this.proxyStreamingRequest(deployment, targetUrl, requestBody, headers, req, res);
+    } else {
+      await this.proxyNonStreamingRequest(deployment, targetUrl, requestBody, headers, req, res);
+    }
+  }
+
+  /**
+   * Handle streaming (SSE) inference request — passthrough from upstream provider
+   */
+  private async proxyStreamingRequest(
+    deployment: any,
+    targetUrl: string,
+    requestBody: any,
+    headers: Record<string, string>,
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    const startTime = Date.now();
 
     try {
-      // Make request to AI provider
+      const response = await axios({
+        method: req.method,
+        url: targetUrl,
+        data: requestBody,
+        headers,
+        timeout: 300000,
+        responseType: 'stream',
+        validateStatus: () => true,
+        maxRedirects: 5,
+      });
+
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `Provider streaming response: ${response.status} - Connected in ${duration}ms`
+      );
+
+      // Forward response headers from upstream
+      const contentType = response.headers['content-type'] || 'text/event-stream';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+      res.status(response.status);
+
+      // If upstream returned a non-streaming error (e.g. 4xx JSON), pipe as-is
+      if (response.status >= 400) {
+        response.data.pipe(res);
+        return;
+      }
+
+      // Passthrough SSE chunks, capture last data line for usage tracking
+      let lastDataLine = '';
+
+      response.data.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        // Track last SSE data line for usage extraction
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            lastDataLine = line;
+          }
+        }
+        res.write(chunk);
+      });
+
+      response.data.on('end', () => {
+        res.end();
+        // Best-effort usage tracking from final SSE chunk
+        this.extractStreamingUsage(deployment._id, lastDataLine).catch(err => {
+          this.logger.error(`Failed to update streaming usage stats: ${err.message}`);
+        });
+      });
+
+      response.data.on('error', (err: Error) => {
+        this.logger.error(`Stream error from provider: ${err.message}`);
+        if (!res.writableEnded) {
+          res.end();
+        }
+      });
+
+      // Handle client disconnect mid-stream
+      req.on('close', () => {
+        if (!response.data.destroyed) {
+          response.data.destroy();
+        }
+      });
+
+    } catch (error: any) {
+      this.logger.error(`Provider streaming request failed: ${error.message}`);
+
+      if (error.code === 'ECONNREFUSED') {
+        throw new BadGatewayException('AI provider is unreachable');
+      } else if (error.code === 'ETIMEDOUT') {
+        throw new GatewayTimeoutException('Request to AI provider timed out');
+      } else {
+        throw new BadGatewayException('Failed to connect to AI provider');
+      }
+    }
+  }
+
+  /**
+   * Handle non-streaming inference request (existing behavior)
+   */
+  private async proxyNonStreamingRequest(
+    deployment: any,
+    targetUrl: string,
+    requestBody: any,
+    headers: Record<string, string>,
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
       const startTime = Date.now();
       const response = await axios({
         method: req.method,
         url: targetUrl,
         data: requestBody,
         headers,
-        timeout: 300000, // 5 minutes
-        validateStatus: () => true, // Accept all status codes (forward errors)
+        timeout: 300000,
+        validateStatus: () => true,
         maxRedirects: 5,
       });
 
       const duration = Date.now() - startTime;
 
-      // Log success/failure
       this.logger.log(
         `Provider response: ${response.status} - Duration: ${duration}ms`
       );
@@ -725,7 +831,6 @@ export class DeploymentService extends BaseService<Deployment> {
     } catch (error: any) {
       this.logger.error(`Provider request failed: ${error.message}`);
 
-      // Forward error from provider (transparent)
       if (error.response) {
         res.status(error.response.status).json(error.response.data);
       } else if (error.code === 'ECONNREFUSED') {
@@ -735,6 +840,27 @@ export class DeploymentService extends BaseService<Deployment> {
       } else {
         throw new BadGatewayException('Failed to connect to AI provider');
       }
+    }
+  }
+
+  /**
+   * Extract usage stats from the last SSE data line in a streaming response
+   * SSE format: data: {"id":"...","usage":{"prompt_tokens":10,...}}
+   */
+  private async extractStreamingUsage(
+    deploymentId: ObjectId,
+    lastDataLine: string
+  ): Promise<void> {
+    if (!lastDataLine) return;
+
+    try {
+      const jsonStr = lastDataLine.replace(/^data:\s*/, '');
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.usage) {
+        await this.updateUsageStats(deploymentId, parsed);
+      }
+    } catch {
+      // Not valid JSON or no usage data — skip silently
     }
   }
 
