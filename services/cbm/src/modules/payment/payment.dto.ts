@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsEnum,
   IsDate,
-  IsMongoId,
   MaxLength,
   ValidateNested,
   IsObject,
@@ -22,9 +21,8 @@ const PAYMENT_METHODS = ['cash', 'bank_transfer', 'card', 'e_wallet', 'other'] a
 export class CreatePaymentDto {
   @ApiProperty({
     description: 'Invoice ID this payment is for',
-    example: '507f1f77bcf86cd799439011',
   })
-  @IsMongoId()
+  @IsString()
   invoiceId!: string;
 
   @ApiProperty({
@@ -81,6 +79,6 @@ export class PaymentQueryDto extends PaginationQueryDto {
     example: '507f1f77bcf86cd799439011',
   })
   @IsOptional()
-  @IsMongoId()
+  @IsString()
   invoiceId?: string;
 }
