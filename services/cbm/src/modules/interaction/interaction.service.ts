@@ -48,7 +48,7 @@ export class InteractionService extends BaseService<Interaction> {
     return super.findAll(options, context);
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Interaction> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Interaction>> {
     const interaction = await super.findById(id, context);
     if (!interaction) throw new NotFoundException('Interaction not found');
     return interaction;

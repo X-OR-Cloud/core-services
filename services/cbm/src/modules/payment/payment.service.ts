@@ -37,7 +37,7 @@ export class PaymentService extends BaseService<Payment> {
     return super.findAll(options, context);
   }
 
-  async findById(id: ObjectId, context: RequestContext): Promise<Payment> {
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Payment>> {
     const payment = await super.findById(id, context);
     if (!payment) throw new NotFoundException('Payment not found');
     return payment;
@@ -66,7 +66,7 @@ export class PaymentService extends BaseService<Payment> {
     await this.paymentModel.updateOne({ _id: payment._id }, { transactionId: String((tx as any)._id) });
 
     // 5. Recalculate Invoice status
-    await this.recalculateInvoice(String(invoice._id ?? data.invoiceId), invoice.totalAmount.currency, context);
+    await this.recalculateInvoice(String((invoice as any)._id ?? data.invoiceId), invoice.totalAmount.currency, context);
 
     return { ...payment, transactionId: String((tx as any)._id) };
   }
@@ -88,7 +88,7 @@ export class PaymentService extends BaseService<Payment> {
     // Recalculate Invoice status after voiding
     const invoice = await this.invoiceService.findById(payment.invoiceId as any, context).catch(() => null);
     if (invoice) {
-      await this.recalculateInvoice(String(invoice._id ?? payment.invoiceId), invoice.totalAmount.currency, context);
+      await this.recalculateInvoice(String((invoice as any)._id ?? payment.invoiceId), invoice.totalAmount.currency, context);
     }
 
     return result;
