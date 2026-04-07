@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { Contact } from './contact.schema';
+import { Contact, PlatformLink } from './contact.schema';
 
 /**
  * ContactService
@@ -94,5 +94,48 @@ export class ContactService extends BaseService<Contact> {
     return super.softDelete(id, context);
   }
 
-  // =============== Phase 3: platform-links, activate/deactivate ===============
+  // =============== Phase 3: Platform Links ===============
+
+  async addPlatformLink(
+    id: ObjectId,
+    link: PlatformLink,
+    context: RequestContext
+  ): Promise<Contact> {
+    const contact = await super.findById(id, context);
+    if (!contact) throw new NotFoundException('Contact not found');
+
+    const exists = contact.platformLinks?.some(
+      (l) => l.platform === link.platform && l.platformUserId === link.platformUserId
+    );
+    if (exists) throw new ConflictException(`Platform link already exists for ${link.platform}:${link.platformUserId}`);
+
+    await this.contactModel.updateOne(
+      { _id: id },
+      { $push: { platformLinks: link } }
+    );
+
+    return this.contactModel.findById(id).lean() as any;
+  }
+
+  async removePlatformLink(
+    id: ObjectId,
+    platform: string,
+    platformUserId: string,
+    context: RequestContext
+  ): Promise<Contact> {
+    const contact = await super.findById(id, context);
+    if (!contact) throw new NotFoundException('Contact not found');
+
+    const exists = contact.platformLinks?.some(
+      (l) => l.platform === platform && l.platformUserId === platformUserId
+    );
+    if (!exists) throw new BadRequestException(`Platform link not found for ${platform}:${platformUserId}`);
+
+    await this.contactModel.updateOne(
+      { _id: id },
+      { $pull: { platformLinks: { platform, platformUserId } } }
+    );
+
+    return this.contactModel.findById(id).lean() as any;
+  }
 }

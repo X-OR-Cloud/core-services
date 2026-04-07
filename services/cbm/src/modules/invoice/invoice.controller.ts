@@ -22,7 +22,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { InvoiceService } from './invoice.service';
-import { CreateInvoiceDto, UpdateInvoiceDto } from './invoice.dto';
+import { CreateInvoiceDto, UpdateInvoiceDto, LinkEInvoiceDto } from './invoice.dto';
 
 @ApiTags('Invoices')
 @ApiBearerAuth()
@@ -88,10 +88,49 @@ export class InvoiceController {
     return this.invoiceService.softDelete(new Types.ObjectId(id) as any, context);
   }
 
-  // =============== Phase 3: State machine action endpoints ===============
-  // POST /invoices/:id/send          → draft → sent
-  // POST /invoices/:id/mark-overdue  → sent/partial → overdue
-  // POST /invoices/:id/cancel        → * → cancelled
-  // POST /invoices/:id/reopen        → cancelled → draft
-  // PATCH /invoices/:id/e-invoice    → link e-invoice data
+  // =============== Phase 3: State machine ===============
+
+  @Post(':id/send')
+  @ApiOperation({ summary: 'Send invoice to customer', description: 'Transition: draft → sent' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async send(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.invoiceService.send(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/mark-overdue')
+  @ApiOperation({ summary: 'Mark invoice as overdue', description: 'Transition: sent/partial → overdue' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async markOverdue(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.invoiceService.markOverdue(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel invoice', description: 'Transition: any unpaid → cancelled' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async cancel(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.invoiceService.cancel(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/reopen')
+  @ApiOperation({ summary: 'Reopen cancelled invoice', description: 'Transition: cancelled → draft' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async reopen(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.invoiceService.reopen(new Types.ObjectId(id) as any, context);
+  }
+
+  @Patch(':id/e-invoice')
+  @ApiOperation({ summary: 'Link e-invoice data (VNPT, MISA, Viettel...)' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async linkEInvoice(
+    @Param('id') id: string,
+    @Body() dto: LinkEInvoiceDto,
+    @CurrentUser() context: RequestContext
+  ) {
+    return this.invoiceService.linkEInvoice(new Types.ObjectId(id) as any, dto as any, context);
+  }
 }

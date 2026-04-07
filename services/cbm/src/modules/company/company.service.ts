@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -109,6 +109,19 @@ export class CompanyService extends BaseService<Company> {
     return super.softDelete(id, context);
   }
 
-  // =============== Phase 3: Action Methods (activate / deactivate) ===============
-  // To be implemented in Phase 3
+  // =============== Phase 3: Action Methods ===============
+
+  async activate(id: ObjectId, context: RequestContext): Promise<Partial<Company>> {
+    const company = await super.findById(id, context);
+    if (!company) throw new NotFoundException('Company not found');
+    if (company.status === 'active') throw new BadRequestException('Company is already active');
+    return super.update(id, { status: 'active' }, context);
+  }
+
+  async deactivate(id: ObjectId, context: RequestContext): Promise<Partial<Company>> {
+    const company = await super.findById(id, context);
+    if (!company) throw new NotFoundException('Company not found');
+    if (company.status === 'inactive') throw new BadRequestException('Company is already inactive');
+    return super.update(id, { status: 'inactive' }, context);
+  }
 }

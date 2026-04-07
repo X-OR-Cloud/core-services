@@ -15,6 +15,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { TransactionService } from './transaction.service';
+import { TransactionSummaryQueryDto } from './transaction.dto';
 
 @ApiTags('Transactions')
 @ApiBearerAuth()
@@ -35,15 +36,14 @@ export class TransactionController {
   }
 
   @Get('summary')
-  @ApiOperation({ summary: 'Get aggregated income vs expense summary by period and currency' })
+  @ApiOperation({ summary: 'Get aggregated income vs expense totals by period and currency' })
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async getSummary(
-    @Query() query: Record<string, any>,
+    @Query() query: TransactionSummaryQueryDto,
     @CurrentUser() context: RequestContext
   ) {
-    // Phase 3: implement aggregation logic in TransactionService
-    return { message: 'Summary endpoint — to be implemented in Phase 3', query };
+    return this.transactionService.getSummary(query, context);
   }
 
   @Get(':id')
