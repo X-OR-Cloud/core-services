@@ -222,6 +222,19 @@ export class GenerateTokenResponseDto {
   installScript: string;
 }
 
+// ============= Node Update DTOs =============
+
+export class NodeUpdateSoftwareDto {
+  @ApiProperty({
+    description: 'Target version to update to. If omitted, updates to latest.',
+    required: false,
+    example: '1.2.0',
+  })
+  @IsOptional()
+  @IsString()
+  version?: string;
+}
+
 // ============= Node Authentication DTOs =============
 
 export class NodeLoginDto {

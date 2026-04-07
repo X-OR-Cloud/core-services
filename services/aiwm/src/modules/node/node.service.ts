@@ -459,6 +459,38 @@ export class NodeService extends BaseService<Node> {
     await this.nodeProducer.emitNodeDeleted(id);
   }
 
+  // ============= Remote Update =============
+
+  /**
+   * Validate that a node can receive a remote update command.
+   * Returns the node if valid; throws otherwise.
+   * Only org.owner or node creator can trigger.
+   * Node must be online (WebSocket connected).
+   */
+  async validateUpdateRequest(id: string, context: RequestContext): Promise<Node> {
+    const node = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
+    if (!node) throw new NotFoundException(`Node with ID ${id} not found`);
+
+    const isOwner = context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+    const isNodeCreator = node.owner?.userId === context.userId;
+
+    if (!isOwner && !isNodeCreator) {
+      throw new ForbiddenException('Only organization owner or node creator can trigger node update');
+    }
+
+    if (node.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Node does not belong to your organization');
+    }
+
+    if (node.status !== 'online') {
+      throw new BadRequestException(
+        `Node must be online to receive update command (current: ${node.status})`
+      );
+    }
+
+    return node as Node;
+  }
+
   // ============= WebSocket & Token Management =============
   // TODO: Will be analyzed and implemented later
 

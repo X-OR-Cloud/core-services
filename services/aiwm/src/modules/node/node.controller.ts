@@ -4,13 +4,18 @@ import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@h
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { NodeService } from './node.service';
-import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideDto, SetupGuideResponseDto, NodeBootstrapDto, NodeBootstrapResponseDto } from './node.dto';
+import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideDto, SetupGuideResponseDto, NodeBootstrapDto, NodeBootstrapResponseDto, NodeUpdateSoftwareDto } from './node.dto';
+import { NodeGateway } from './node.gateway';
+import { MessageType } from '@hydrabyte/shared';
 
 @ApiTags('nodes')
 @ApiBearerAuth('JWT-auth')
 @Controller('nodes')
 export class NodeController {
-  constructor(private readonly nodeService: NodeService) {}
+  constructor(
+    private readonly nodeService: NodeService,
+    private readonly nodeGateway: NodeGateway,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -170,6 +175,42 @@ export class NodeController {
   ) {
     await this.nodeService.deleteNode(id, context);
     return { message: 'Node deleted successfully' };
+  }
+
+  // ============= Remote Update =============
+
+  @Post(':id/update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Trigger remote xnode update',
+    description: 'Send a system.update command to the node via WebSocket. The node will self-update to the specified version (or latest). Node must be online. Accessible by org.owner or node creator.',
+  })
+  @ApiResponse({ status: 200, description: 'Update command sent successfully' })
+  @ApiResponse({ status: 400, description: 'Node is not online' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Node not found' })
+  @UseGuards(JwtAuthGuard)
+  async requestUpdate(
+    @Param('id') id: string,
+    @Body() dto: NodeUpdateSoftwareDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const node = await this.nodeService.validateUpdateRequest(id, context);
+
+    const messageId = await this.nodeGateway.sendCommandToNode(
+      id,
+      MessageType.SYSTEM_UPDATE,
+      { type: 'system', id },
+      { version: dto.version || 'latest' },
+    );
+
+    return {
+      messageId,
+      nodeId: id,
+      nodeName: node.name,
+      version: dto.version || 'latest',
+      message: `Update command sent to node "${node.name}". The node will disconnect temporarily during the update and reconnect with the new version.`,
+    };
   }
 
   // ============= Setup Guide =============
