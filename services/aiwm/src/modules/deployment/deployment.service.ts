@@ -607,23 +607,23 @@ export class DeploymentService extends BaseService<Deployment> {
 
     const isOAuth = !apiConfig.apiKey && !!apiConfig.oauthToken;
 
+    // Build target URL: strip version prefix from client path if apiEndpoint already contains one.
+    // e.g. apiEndpoint="https://open.bigmodel.cn/api/paas/v4" + path="/v1/chat/completions"
+    //   → strip "/v1" from path → target="https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    const resolvedPath = this.resolveInferencePath(apiEndpoint, path);
+
     // Google uses model ID in path
     if (model.provider === 'google') {
-      // Path format: /v1beta/models/{modelId}:generateContent
-      // User sends: /v1beta/models/gemini-pro:generateContent
-      // We inject modelIdentifier into path
-      let finalPath = path;
+      let finalPath = resolvedPath;
 
       // If path contains generic model placeholder or doesn't contain model ID
-      if (modelIdentifier && !path.includes(modelIdentifier)) {
-        // Replace pattern like /models/{model}: or /models/MODEL:
-        finalPath = path.replace(/\/models\/[^:\/]+:/i, `/models/${modelIdentifier}:`);
+      if (modelIdentifier && !finalPath.includes(modelIdentifier)) {
+        finalPath = finalPath.replace(/\/models\/[^:\/]+:/i, `/models/${modelIdentifier}:`);
       }
 
       targetUrl = `${apiEndpoint}${finalPath}`;
     } else {
-      // Standard URL building for OpenAI, Anthropic
-      targetUrl = `${apiEndpoint}${path}`;
+      targetUrl = `${apiEndpoint}${resolvedPath}`;
     }
 
     this.logger.log(
@@ -652,7 +652,7 @@ export class DeploymentService extends BaseService<Deployment> {
         // — using them in proxies/external services violates Anthropic's Consumer ToS.
         headers['x-api-key'] = apiKey;
         // Required: API version
-        headers['anthropic-version'] = apiConfig['anthropic-version'] || '2023-10-01';
+        headers['anthropic-version'] = apiConfig['anthropic-version'] || '2023-06-01';
         break;
 
       case 'google':
@@ -844,6 +844,30 @@ export class DeploymentService extends BaseService<Deployment> {
   }
 
   /**
+   * Resolve the inference path by stripping the version prefix from the client path
+   * if the apiEndpoint already contains a version segment.
+   *
+   * Examples:
+   *   apiEndpoint="https://api.openai.com/v1"   path="/v1/chat/completions"   → "/chat/completions"
+   *   apiEndpoint="https://open.bigmodel.cn/api/paas/v4"  path="/v1/chat/completions"  → "/chat/completions"
+   *   apiEndpoint="https://api.example.com"      path="/v1/chat/completions"   → "/v1/chat/completions" (no change)
+   *   apiEndpoint="https://api.openai.com/v1"    path="/chat/completions"      → "/chat/completions" (no version to strip)
+   */
+  private resolveInferencePath(apiEndpoint: string, clientPath: string): string {
+    // Check if apiEndpoint already ends with a version segment (e.g. /v1, /v4, /v1beta)
+    const endpointVersionMatch = apiEndpoint.match(/\/(v\d+[a-z]*)\/?$/i);
+    if (!endpointVersionMatch) {
+      // apiEndpoint has no version suffix — use client path as-is
+      return clientPath;
+    }
+
+    // Strip any version prefix from client path to avoid duplication
+    // e.g. "/v1/chat/completions" → "/chat/completions"
+    const stripped = clientPath.replace(/^\/v\d+[a-z]*/i, '');
+    return stripped || '/';
+  }
+
+  /**
    * Extract usage stats from the last SSE data line in a streaming response
    * SSE format: data: {"id":"...","usage":{"prompt_tokens":10,...}}
    */
@@ -924,8 +948,8 @@ export class DeploymentService extends BaseService<Deployment> {
     );
     const baseApiUrl = baseApiUrlConfig?.value || 'http://localhost:3003';
 
-    // Determine the inference path based on provider
-    let aiProviderPath = '/v1/chat/completions'; // Default OpenAI-style
+    // Determine the inference path and sample body based on provider
+    let aiProviderPath: string;
     let sampleBody: Record<string, any> = {};
     let providerName = 'AI Provider';
     let providerDocsUrl = '';
@@ -965,6 +989,9 @@ export class DeploymentService extends BaseService<Deployment> {
           break;
 
         default:
+          // For unknown providers, derive path from apiEndpoint.
+          // If apiEndpoint has version (e.g. /v4), use /v1/chat/completions
+          // — the proxy will strip /v1 and append /chat/completions to the endpoint.
           aiProviderPath = '/v1/chat/completions';
           sampleBody = {
             messages: [{ role: 'user', content: 'Hello, how are you?' }],
@@ -975,7 +1002,7 @@ export class DeploymentService extends BaseService<Deployment> {
     } else {
       // Self-hosted deployment
       providerName = 'Self-Hosted';
-      aiProviderPath = '/v1/chat/completions'; // vLLM/Triton typically use OpenAI-compatible API
+      aiProviderPath = '/v1/chat/completions';
       sampleBody = {
         messages: [{ role: 'user', content: 'Hello, how are you?' }],
         temperature: 0.7,
