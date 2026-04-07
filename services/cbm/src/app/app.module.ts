@@ -24,6 +24,7 @@ import { InvoiceModule } from '../modules/invoice/invoice.module';
 import { ExpenseModule } from '../modules/expense/expense.module';
 import { PaymentModule } from '../modules/payment/payment.module';
 import { TransactionModule } from '../modules/transaction/transaction.module';
+import { SkillModule } from '../skill/skill.module';
 
 @Module({
   imports: [
@@ -49,6 +50,8 @@ import { TransactionModule } from '../modules/transaction/transaction.module';
     InvoiceModule,
     ExpenseModule,
     PaymentModule,
+    // Skill manifest endpoint
+    SkillModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
