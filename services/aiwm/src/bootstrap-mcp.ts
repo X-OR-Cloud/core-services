@@ -566,8 +566,12 @@ export async function bootstrapMcpServer() {
           const sessionMcpServer = await createSessionMcpServer(userContext, bearerToken);
 
           // Create transport
+          // enableJsonResponse: true → respond with application/json instead of SSE stream.
+          // Claude Code SDK (Lh8) calls _startOrAuthSse (GET) only when response is SSE.
+          // With JSON responses, SDK parses JSON directly and does NOT open a GET SSE channel.
           const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => newSessionId,
+            enableJsonResponse: true,
           });
 
           // Connect transport to this session's McpServer
@@ -616,6 +620,7 @@ export async function bootstrapMcpServer() {
   // If session id exists → delegate to transport for SSE streaming.
   expressApp.get('/', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    logger.log(`GET request | session: ${sessionId || 'none'} | known: ${sessionId ? sessions.has(sessionId) : false}`);
     if (!sessionId || !sessions.has(sessionId)) {
       return res.status(405).set('Allow', 'POST, DELETE, OPTIONS').json({
         error: 'Method Not Allowed',
