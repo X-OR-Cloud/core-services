@@ -13,8 +13,12 @@ export class DashboardController {
 
   @Get('summary')
   @ApiOperation({ summary: 'Portfolio summary — total value, PnL, asset allocation' })
-  getSummary(@CurrentUser() ctx: RequestContext) {
-    return this.dashboardService.getSummary(ctx.userId);
+  @ApiQuery({ name: 'accountId', required: false, description: 'Account ID to query. Falls back to user default account if omitted.' })
+  getSummary(
+    @CurrentUser() ctx: RequestContext,
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.dashboardService.getSummary(ctx.userId, accountId);
   }
 
   @Get('price-cards')
@@ -31,36 +35,42 @@ export class DashboardController {
 
   @Get('portfolio-history')
   @ApiOperation({ summary: 'Portfolio value history for chart' })
+  @ApiQuery({ name: 'accountId', required: false, description: 'Account ID to query. Falls back to user default account if omitted.' })
   @ApiQuery({ name: 'range', required: false, enum: ['7d', '30d', '90d', 'all'], example: '30d' })
   getPortfolioHistory(
     @CurrentUser() ctx: RequestContext,
+    @Query('accountId') accountId?: string,
     @Query('range') range: '7d' | '30d' | '90d' | 'all' = '30d',
   ) {
-    return this.dashboardService.getPortfolioHistory(ctx.userId, range);
+    return this.dashboardService.getPortfolioHistory(ctx.userId, accountId, range);
   }
 
   @Get('ai-signal')
   @ApiOperation({ summary: 'AI Trend Signal widget — BULLISH/BEARISH/NEUTRAL with confidence' })
+  @ApiQuery({ name: 'accountId', required: false, description: 'Account ID to query. Falls back to user default account if omitted.' })
   @ApiQuery({ name: 'timeframe', required: false, enum: ['1h', '4h', '12h', '24h'], example: '4h' })
   @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
   getAiSignal(
     @CurrentUser() ctx: RequestContext,
+    @Query('accountId') accountId?: string,
     @Query('timeframe') timeframe = '4h',
     @Query('symbol') symbol = 'PAXGUSDT',
   ) {
-    return this.dashboardService.getAiSignal(ctx.userId, symbol, timeframe);
+    return this.dashboardService.getAiSignal(ctx.userId, accountId, symbol, timeframe);
   }
 
   @Get('ai-prediction')
   @ApiOperation({ summary: 'AI Prediction widget — alias for ai-signal' })
+  @ApiQuery({ name: 'accountId', required: false, description: 'Account ID to query. Falls back to user default account if omitted.' })
   @ApiQuery({ name: 'timeframe', required: false, enum: ['1h', '4h', '12h', '24h'], example: '4h' })
   @ApiQuery({ name: 'symbol', required: false, example: 'PAXGUSDT' })
   getAiPrediction(
     @CurrentUser() ctx: RequestContext,
+    @Query('accountId') accountId?: string,
     @Query('timeframe') timeframe = '4h',
     @Query('symbol') symbol = 'PAXGUSDT',
   ) {
-    return this.dashboardService.getAiSignal(ctx.userId, symbol, timeframe);
+    return this.dashboardService.getAiSignal(ctx.userId, accountId, symbol, timeframe);
   }
 
   @Get('market-status')
@@ -85,13 +95,15 @@ export class DashboardController {
 
   @Get('ai-activity')
   @ApiOperation({ summary: 'AI Activity Feed — recent bot activity logs (poll every 30s)' })
+  @ApiQuery({ name: 'accountId', required: false, description: 'Filter activity logs by account ID. Shows all user accounts if omitted.' })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'since', required: false, description: 'ISO 8601 timestamp for incremental updates' })
   getAiActivity(
     @CurrentUser() ctx: RequestContext,
+    @Query('accountId') accountId?: string,
     @Query('limit') limit = '20',
     @Query('since') since?: string,
   ) {
-    return this.dashboardService.getAiActivity(ctx.userId, parseInt(limit, 10) || 20, since);
+    return this.dashboardService.getAiActivity(ctx.userId, accountId, parseInt(limit, 10) || 20, since);
   }
 }

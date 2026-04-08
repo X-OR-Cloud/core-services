@@ -26,8 +26,8 @@ export class DashboardService {
     private readonly snapshotService: PortfolioSnapshotService,
   ) {}
 
-  async getSummary(userId: string) {
-    const account = await this.getDefaultAccount(userId);
+  async getSummary(userId: string, accountIdParam?: string) {
+    const account = await this.resolveAccount(userId, accountIdParam);
     const accountId = account._id as Types.ObjectId;
 
     const openPositions = await this.positionModel
@@ -145,8 +145,8 @@ export class DashboardService {
     return { priceCards: priceCards.filter(Boolean) };
   }
 
-  async getPortfolioHistory(userId: string, range: RangeKey) {
-    const account = await this.getDefaultAccount(userId);
+  async getPortfolioHistory(userId: string, accountIdParam?: string, range: RangeKey = '30d') {
+    const account = await this.resolveAccount(userId, accountIdParam);
     const accountId = account._id as Types.ObjectId;
     const from = this.rangeToDate(range);
     const to = new Date();
@@ -179,8 +179,8 @@ export class DashboardService {
     };
   }
 
-  async getAiSignal(userId: string, symbol: string, timeframe: string) {
-    const account = await this.getDefaultAccount(userId);
+  async getAiSignal(userId: string, accountIdParam?: string, symbol: string = 'PAXGUSDT', timeframe: string = '1h') {
+    const account = await this.resolveAccount(userId, accountIdParam);
     const accountId = account._id as Types.ObjectId;
 
     const signal = await this.signalModel
@@ -406,10 +406,15 @@ export class DashboardService {
     };
   }
 
-  async getAiActivity(userId: string, limit: number, since?: string) {
-    const accountIds = await this.accountModel
-      .find({ 'owner.userId': userId, isDeleted: false })
-      .distinct('_id');
+  async getAiActivity(userId: string, accountIdParam?: string, limit: number = 20, since?: string) {
+    let accountIds: Types.ObjectId[];
+    if (accountIdParam) {
+      accountIds = [new Types.ObjectId(accountIdParam)];
+    } else {
+      accountIds = await this.accountModel
+        .find({ 'owner.userId': userId, isDeleted: { $ne: true } })
+        .distinct('_id');
+    }
 
     const query: any = { accountId: { $in: accountIds } };
     if (since) {
@@ -449,10 +454,38 @@ export class DashboardService {
     return { entries, hasMore: false };
   }
 
+  /**
+   * Resolve account by explicit accountId, or fallback to user's default account.
+   * Validates that the account belongs to the user.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async resolveAccount(userId: string, accountIdParam?: string): Promise<any> {
+    if (accountIdParam) {
+      const account = await this.accountModel
+        .findOne({
+          _id: new Types.ObjectId(accountIdParam),
+          'owner.userId': userId,
+          isDeleted: { $ne: true },
+        })
+        .lean()
+        .exec();
+      if (!account) {
+        throw new NotFoundException(`Account ${accountIdParam} not found or does not belong to this user`);
+      }
+      return account;
+    }
+    return this.getDefaultAccount(userId);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async getDefaultAccount(userId: string): Promise<any> {
     const account = await this.accountModel
-      .findOne({ 'owner.userId': userId, isDefault: true, status: AccountStatus.ACTIVE })
+      .findOne({
+        'owner.userId': userId,
+        isDefault: true,
+        status: AccountStatus.ACTIVE,
+        isDeleted: { $ne: true },   // ← Fix: bỏ qua account đã xóa
+      })
       .lean()
       .exec();
     if (!account) {
