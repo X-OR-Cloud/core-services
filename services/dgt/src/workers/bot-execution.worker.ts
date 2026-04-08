@@ -144,17 +144,28 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
       return;
     }
 
-    // 6. Check đã có open position cho asset này chưa (tránh double-open)
-    const existingPosition = await this.positionModel.findOne({
+    // 6. Position check — logic differs for BUY vs SELL (SPOT-only, no short selling)
+    const existingLongPosition = await this.positionModel.findOne({
       accountId: bot.accountId,
       symbol: bot.asset,
+      side: 'long',
       status: 'open',
       isDeleted: false,
     }).lean().exec();
 
-    if (existingPosition) {
+    if (signal.signalType === 'BUY' && existingLongPosition) {
+      // BUY: skip if already holding a LONG (prevent double-open)
       this.logger.info(
-        `[BotExec] Bot ${botId} already has open position for ${bot.asset}. Skipping signal ${signal._id}.`,
+        `[BotExec] Bot ${botId} already has open LONG for ${bot.asset}. Skipping BUY signal ${signal._id}.`,
+      );
+      await this.releaseSignalClaim(signal._id);
+      return;
+    }
+
+    if (signal.signalType === 'SELL' && !existingLongPosition) {
+      // SELL: skip if no LONG to close (spot trading — cannot short)
+      this.logger.info(
+        `[BotExec] Bot ${botId} has no open LONG for ${bot.asset}. Skipping SELL signal ${signal._id} (no position to close).`,
       );
       await this.releaseSignalClaim(signal._id);
       return;
@@ -178,36 +189,47 @@ export class BotExecutionWorker implements OnApplicationBootstrap, OnApplication
       return;
     }
 
-    // 8. Calculate quantity từ maxEntrySize và giá hiện tại
+    // 8. Calculate quantity
+    // SELL: quantity is taken from existing LONG position (pass 0 — closeLongPosition handles it)
+    // BUY: calculate from maxEntrySize and signal price
     const entryPrice = signal.priceAtCreation || 0;
     if (entryPrice <= 0) {
       this.logger.error(`[BotExec] Signal ${signal._id} has no valid price. Skipping.`);
       await this.releaseSignalClaim(signal._id);
       return;
     }
-    const quantity = Math.floor((bot.maxEntrySize / entryPrice) * 1e6) / 1e6; // 6 decimal precision
-    if (quantity <= 0) {
-      this.logger.error(
-        `[BotExec] Calculated quantity ${quantity} is invalid for bot ${botId}. maxEntrySize=$${bot.maxEntrySize}, price=${entryPrice}`,
-      );
-      await this.releaseSignalClaim(signal._id);
-      return;
+
+    let quantity = 0;
+    if (signal.signalType === 'BUY') {
+      quantity = Math.floor((bot.maxEntrySize / entryPrice) * 1e6) / 1e6; // 6 decimal precision
+      if (quantity <= 0) {
+        this.logger.error(
+          `[BotExec] Calculated quantity ${quantity} is invalid for bot ${botId}. maxEntrySize=$${bot.maxEntrySize}, price=${entryPrice}`,
+        );
+        await this.releaseSignalClaim(signal._id);
+        return;
+      }
+    } else {
+      // SELL: closeLongPosition will use existingLongPosition.quantity directly
+      quantity = existingLongPosition!.quantity;
     }
 
-    // 9. Check balance đủ không (dùng fresh balance từ exchange)
-    const estimatedCost = entryPrice * quantity;
-    if (accountWithFreshBalance.balance < estimatedCost) {
-      this.logger.warn(
-        `[BotExec] Bot ${botId} insufficient balance: $${accountWithFreshBalance.balance} < $${estimatedCost.toFixed(2)}`,
-      );
-      await this.releaseSignalClaim(signal._id);
-      await this.logActivity(bot, accountWithFreshBalance, {
-        action: 'Trade skipped: insufficient balance',
-        actionType: ActivityActionType.WARNING,
-        details: `Balance $${accountWithFreshBalance.balance.toFixed(2)} < required $${estimatedCost.toFixed(2)} for ${quantity} ${bot.asset}`,
-        status: ActivityStatus.WARNING,
-      });
-      return;
+    // 9. Check balance (BUY only — SELL returns funds, no balance check needed)
+    if (signal.signalType === 'BUY') {
+      const estimatedCost = entryPrice * quantity;
+      if (accountWithFreshBalance.balance < estimatedCost) {
+        this.logger.warn(
+          `[BotExec] Bot ${botId} insufficient balance: $${accountWithFreshBalance.balance} < $${estimatedCost.toFixed(2)}`,
+        );
+        await this.releaseSignalClaim(signal._id);
+        await this.logActivity(bot, accountWithFreshBalance, {
+          action: 'Trade skipped: insufficient balance',
+          actionType: ActivityActionType.WARNING,
+          details: `Balance $${accountWithFreshBalance.balance.toFixed(2)} < required $${estimatedCost.toFixed(2)} for ${quantity} ${bot.asset}`,
+          status: ActivityStatus.WARNING,
+        });
+        return;
+      }
     }
 
     // 10. Execute trade — tạo context giả cho bot execution
