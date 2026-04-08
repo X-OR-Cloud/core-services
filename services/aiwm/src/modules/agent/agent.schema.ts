@@ -127,6 +127,8 @@ export class Agent extends BaseSchema {
    * - claude_permissionMode: string - Permission mode (default: 'bypassPermissions')
    * - claude_resume: boolean - Resume capability (default: true)
    * - claude_oauthToken: string - Claude OAuth token (optional)
+   * - agent_taskRetryLimit: number - Max consecutive failures for same systemTask before auto-sleep (default: 3)
+   * - agent_taskSleepMinutes: number - Minutes to sleep after hitting taskRetryLimit (default: 30)
    * - discord_token: string - Discord bot token (deprecated: use channels[])
    * - discord_channelIds: string[] - Discord channel IDs (deprecated: use channels[])
    * - discord_botId: string - Discord bot ID (deprecated: use channels[])

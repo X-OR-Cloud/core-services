@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import Redis from 'ioredis';
 import { ConnectionService } from './connection.service';
 import { redisConfig } from '../../config/redis.config';
+import { verifyTeamsJwt } from './teams-jwt.verifier';
 
 const CHANNEL_INBOUND_TEAMS = (connectionId: string) => `inbound:teams:${connectionId}`;
 
@@ -69,11 +70,11 @@ export class TeamsWebhookController {
       throw new BadRequestException(`Connection ${id} is not a Teams connection`);
     }
 
-    // TODO: verify Teams JWT signature from authorization header
-    // For now we trust the payload — add signature verification before production
-    if (!authorization) {
-      this.logger.warn(`Missing authorization header for Teams webhook on connection ${id}`);
+    const appId = (connection as any).config?.appId;
+    if (!appId) {
+      throw new BadRequestException(`Connection ${id} has no appId configured`);
     }
+    await verifyTeamsJwt(authorization, appId);
 
     this.logger.debug(`Teams activity received for connection ${id}: type=${body.type}`);
 

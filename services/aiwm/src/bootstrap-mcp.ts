@@ -610,6 +610,16 @@ export async function bootstrapMcpServer() {
     }
   });
 
+  // GET — SSE stream (MCP Streamable HTTP spec: return 405 if not supported)
+  // Claude Code SDK sends GET / with Accept: text/event-stream on init.
+  // Returning 405 tells the SDK to skip SSE and use POST-only mode.
+  expressApp.get('/', (req, res) => {
+    res.status(405).set('Allow', 'POST, DELETE, OPTIONS').json({
+      error: 'Method Not Allowed',
+      message: 'This MCP server does not support SSE streaming via GET. Use POST for all requests.',
+    });
+  });
+
   // DELETE — session termination (MCP protocol spec)
   expressApp.delete('/', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
