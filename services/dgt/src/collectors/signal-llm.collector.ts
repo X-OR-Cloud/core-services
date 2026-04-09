@@ -253,7 +253,7 @@ export class SignalLlmCollector extends BaseCollector {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
-      max_tokens: 2048,
+      max_tokens: 4096,
       stream: true,
     };
 
@@ -304,7 +304,17 @@ export class SignalLlmCollector extends BaseCollector {
       }
 
       llmRawResponse = { streaming: true, accumulatedContent: content };
-      parsed = JSON.parse(content);
+
+      // Strip markdown code fences nếu có (```json ... ```)
+      let cleanContent = content.trim();
+      const fenceMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) cleanContent = fenceMatch[1].trim();
+
+      // Extract JSON object nếu có text thừa trước/sau
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) cleanContent = jsonMatch[0];
+
+      parsed = JSON.parse(cleanContent);
     } catch (error: any) {
       const status = error.response?.status;
       const body = JSON.stringify(error.response?.data)?.slice(0, 300);
