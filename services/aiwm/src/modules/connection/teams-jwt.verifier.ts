@@ -59,6 +59,7 @@ export async function verifyTeamsJwt(authorization: string, appId: string): Prom
     const jwks = await getJwks();
     const { payload } = await jwtVerify(token, jwks, {
       audience: appId,
+      clockTolerance: 300, // 5 minutes — Microsoft recommends allowing up to 5 min skew
     });
 
     // Verify issuer is a Microsoft-trusted source
