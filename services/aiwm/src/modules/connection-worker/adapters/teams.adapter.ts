@@ -74,6 +74,9 @@ export class TeamsAdapter extends BaseAdapter {
     const rawConversationId: string = body.conversation?.id || '';
     const cleanConversationId = rawConversationId.split(';')[0];
 
+    if (Array.isArray(body.entities) && body.entities.length > 0) {
+      this.logger.debug(`Teams entities: ${JSON.stringify(body.entities)}`);
+    }
     const isMention = Array.isArray(body.entities) &&
       body.entities.some((e: any) => e.type === 'mention' && e.mentioned?.role === 'bot');
 
