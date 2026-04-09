@@ -45,6 +45,8 @@ export class ConnectionRunner {
       channelId: string;
       serverId?: string;
       threadId?: string;          // Telegram: message_thread_id (topic)
+      teamsServiceUrl?: string;   // Teams only
+      teamsConversationId?: string; // Teams only
       connectionId: string;
       platform: string;
       skipAgent?: boolean;
@@ -269,6 +271,8 @@ export class ConnectionRunner {
         channelId: chatDest,
         serverId: msg.serverId,
         threadId,
+        teamsServiceUrl,
+        teamsConversationId,
         connectionId,
         platform: this.connection.provider,
       });
