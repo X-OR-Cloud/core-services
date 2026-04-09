@@ -253,7 +253,7 @@ export class SignalLlmCollector extends BaseCollector {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
-      max_tokens: 4096,
+      max_tokens: 8192,
       stream: true,
     };
 
@@ -304,6 +304,7 @@ export class SignalLlmCollector extends BaseCollector {
       }
 
       llmRawResponse = { streaming: true, accumulatedContent: content };
+      this.logger.debug(`[SignalLLM] Accumulated content (${content.length} chars): ${content.slice(0, 500)}`);
 
       // Strip markdown code fences nếu có (```json ... ```)
       let cleanContent = content.trim();
