@@ -29,6 +29,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
   private readonly conversationConnectionId = new Map<string, string>(); // conversationId → connectionId
   private readonly typingChannels = new Map<string, { channelId: string; threadId?: string; teamsServiceUrl?: string; teamsConversationId?: string }>(); // conversationId → chat destination
+  private readonly teamsConversationRefs = new Map<string, { serviceUrl: string; conversationId: string }>(); // connectionId:channelId → Teams conversation ref
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
@@ -142,6 +143,12 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     // Track chat destination for this conversation — used to forward typing indicators
     this.typingChannels.set(payload.conversationId, { channelId: payload.channelId, threadId: payload.threadId, teamsServiceUrl: payload.teamsServiceUrl, teamsConversationId: payload.teamsConversationId });
 
+    // Cache Teams conversation reference for proactive send (keyed by connectionId:channelId)
+    if (payload.platform === 'teams' && payload.teamsServiceUrl && payload.teamsConversationId) {
+      const refKey = `${payload.connectionId}:${payload.channelId}`;
+      this.teamsConversationRefs.set(refKey, { serviceUrl: payload.teamsServiceUrl, conversationId: payload.teamsConversationId });
+    }
+
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
     const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
     this.redisPub?.publish(CHANNEL_MESSAGE_NEW, JSON.stringify({ ...payload, msgNonce })).catch((err: Error) =>
@@ -194,16 +201,24 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`outbound:direct — no runner found for connectionId=${connectionId}`);
       return;
     }
+
+    // For Teams: resolve cached conversation reference for proactive send
+    const refKey = `${connectionId}:${channelId}`;
+    const teamsRef = this.teamsConversationRefs.get(refKey);
+    const threadId = teamsRef ? undefined : undefined;
+    const teamsServiceUrl = teamsRef?.serviceUrl;
+    const teamsConversationId = teamsRef?.conversationId;
+
     if (file) {
-      await runner.sendDirectFile(channelId, file as any).catch((err: Error) =>
+      await runner.sendDirectFile(channelId, file as any, threadId, teamsServiceUrl, teamsConversationId).catch((err: Error) =>
         this.logger.error(`outbound:direct file failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
       );
     } else if (embed) {
-      await runner.sendDirectEmbed(channelId, embed as any).catch((err: Error) =>
+      await runner.sendDirectEmbed(channelId, embed as any, threadId, teamsServiceUrl, teamsConversationId).catch((err: Error) =>
         this.logger.error(`outbound:direct embed failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
       );
     } else if (content) {
-      await runner.sendDirect(channelId, content).catch((err: Error) =>
+      await runner.sendDirect(channelId, content, threadId, teamsServiceUrl, teamsConversationId).catch((err: Error) =>
         this.logger.error(`outbound:direct failed connectionId=${connectionId} channelId=${channelId}: ${err.message}`),
       );
     }

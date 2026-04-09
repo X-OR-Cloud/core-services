@@ -102,21 +102,21 @@ export class ConnectionRunner {
   }
 
   /** Proactive send to a specific channel (no conversation context needed). */
-  async sendDirect(channelId: string, text: string, threadId?: string): Promise<void> {
+  async sendDirect(channelId: string, text: string, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.send({ channelId, threadId }, text);
+    await this.adapter.send({ channelId, threadId, teamsServiceUrl, teamsConversationId }, text);
   }
 
   /** Proactive file send to a specific channel. */
-  async sendDirectFile(channelId: string, file: FilePayload, threadId?: string): Promise<void> {
+  async sendDirectFile(channelId: string, file: FilePayload, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.sendFile({ channelId, threadId }, file);
+    await this.adapter.sendFile({ channelId, threadId, teamsServiceUrl, teamsConversationId }, file);
   }
 
   /** Proactive embed send to a specific channel. */
-  async sendDirectEmbed(channelId: string, embed: EmbedPayload, threadId?: string): Promise<void> {
+  async sendDirectEmbed(channelId: string, embed: EmbedPayload, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
     if (!this.adapter) throw new Error('Runner adapter is not running');
-    await this.adapter.sendEmbed({ channelId, threadId }, embed);
+    await this.adapter.sendEmbed({ channelId, threadId, teamsServiceUrl, teamsConversationId }, embed);
   }
 
   async sendTyping(channelId: string, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
