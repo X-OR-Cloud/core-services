@@ -25,6 +25,7 @@ export class TeamsAdapter extends BaseAdapter {
   readonly provider = 'teams';
   private readonly logger = new Logger(TeamsAdapter.name);
   private tokenCache: { token: string; expiresAt: number } | null = null;
+  private botConnectorTokenCache: { token: string; expiresAt: number } | null = null;
 
   constructor(private readonly config: ConnectionConfig) {
     super();
@@ -198,40 +199,45 @@ export class TeamsAdapter extends BaseAdapter {
       throw new Error('Teams adapter requires appId and appPassword for Bot connector reply');
     }
 
-    // Bot Framework connector scope + tenant from config (or 'common' fallback)
-    const scope = 'https://api.botframework.com/.default';
-    const tenant = this.config.tenantId ?? 'common';
+    const token = await this._getBotConnectorToken();
+    const baseUrl = serviceUrl.endsWith('/') ? serviceUrl.slice(0, -1) : serviceUrl;
+    const url = `${baseUrl}/v3/conversations/${conversationId}/activities`;
 
-    const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
+    const body: Record<string, any> = { type };
+    if (text) body['text'] = text;
+    await this._graphPost(url, body, token);
+  }
+
+  private async _getBotConnectorToken(): Promise<string> {
+    const now = Date.now();
+    if (this.botConnectorTokenCache && this.botConnectorTokenCache.expiresAt - now > TOKEN_REFRESH_BUFFER_MS) {
+      return this.botConnectorTokenCache.token;
+    }
+
+    const { appId, appPassword, tenantId } = this.config;
+    if (!appId || !appPassword) throw new Error('Teams adapter requires appId and appPassword');
+
+    const tenant = tenantId ?? 'common';
+    const res = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'client_credentials',
         client_id: appId,
         client_secret: appPassword,
-        scope,
+        scope: 'https://api.botframework.com/.default',
       }).toString(),
     });
 
-    if (!tokenRes.ok) {
-      const body = await tokenRes.text();
-      throw new Error(`Bot connector token fetch failed: ${tokenRes.status} ${body}`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Bot connector token fetch failed: ${res.status} ${body}`);
     }
 
-    const tokenData = await tokenRes.json() as { access_token: string };
-    const token = tokenData.access_token;
-    this.logger.debug(`Bot connector token fetched, aud=api.botframework.com, prefix=${token.slice(0, 20)}...`);
-
-    const baseUrl = serviceUrl.endsWith('/') ? serviceUrl.slice(0, -1) : serviceUrl;
-    // Do NOT encodeURIComponent — Bot connector expects the raw conversation ID in the path
-    const url = `${baseUrl}/v3/conversations/${conversationId}/activities`;
-    this.logger.debug(`Bot connector POST url=${url}`);
-
-    const body: Record<string, any> = { type };
-    if (text) body['text'] = text;
-    await this._graphPost(url, body, token);
-
-    this.logger.debug(`Bot connector ${type} sent to conversation=${conversationId}`);
+    const data = await res.json() as { access_token: string; expires_in: number };
+    this.botConnectorTokenCache = { token: data.access_token, expiresAt: now + data.expires_in * 1000 };
+    this.logger.debug('Bot connector token refreshed');
+    return this.botConnectorTokenCache.token;
   }
 
   private async _graphPost(url: string, body: unknown, token: string): Promise<void> {

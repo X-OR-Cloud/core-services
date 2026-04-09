@@ -146,7 +146,6 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     // Persist Teams conversation reference for proactive send (survives worker restarts)
     if (payload.platform === 'teams' && payload.teamsServiceUrl && payload.teamsConversationId) {
       const refKey = `teams:ref:${payload.connectionId}:${payload.channelId}`;
-      this.logger.debug(`Saving Teams conversation ref: key=${refKey}`);
       this.redisPub?.set(refKey, JSON.stringify({ serviceUrl: payload.teamsServiceUrl, conversationId: payload.teamsConversationId })).catch((err: Error) =>
         this.logger.error(`Failed to save Teams conversation ref: ${err.message}`),
       );
@@ -208,7 +207,6 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     // For Teams: resolve cached conversation reference for proactive send
     const refKey = `teams:ref:${connectionId}:${channelId}`;
     const refRaw = await this.redisPub?.get(refKey);
-    this.logger.debug(`outbound:direct teamsRef key=${refKey} found=${!!refRaw}`);
     const teamsRef = refRaw ? JSON.parse(refRaw) as { serviceUrl: string; conversationId: string } : null;
     const threadId = undefined;
     const teamsServiceUrl = teamsRef?.serviceUrl;
