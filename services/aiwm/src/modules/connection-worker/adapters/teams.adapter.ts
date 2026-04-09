@@ -97,24 +97,11 @@ export class TeamsAdapter extends BaseAdapter {
    * For channel messages, serverId (teamId) must be in AdapterTarget.
    */
   async send(target: AdapterTarget, text: string, _options?: SendOptions): Promise<void> {
-    // Teams conversation ID format: 19:xxx@thread.tacv2 (channel) or 19:xxx@thread.v2 (DM)
-    // For channel posts we use Graph API: /teams/{teamId}/channels/{channelId}/messages
-    // We store teamId in target as threadId (reusing the field)
-    const teamId = target.threadId;
-    const channelId = target.channelId;
-
-    if (teamId) {
-      const token = await this._getToken();
-      await this._graphPost(
-        `${GRAPH_API}/teams/${teamId}/channels/${channelId}/messages`,
-        { body: { contentType: 'text', content: text } },
-        token,
-      );
-    } else if (target.teamsServiceUrl && target.teamsConversationId) {
-      // DM / 1:1 chat — reply via Bot Framework connector API using the original conversation reference
+    if (target.teamsServiceUrl && target.teamsConversationId) {
+      // Both DM and channel messages — use Bot Framework connector API
       await this._botConnectorReply(target.teamsServiceUrl, target.teamsConversationId, text);
     } else {
-      this.logger.warn(`send() called without teamId or conversation reference for channelId=${channelId}; cannot send`);
+      this.logger.warn(`send() called without conversation reference for channelId=${target.channelId}; cannot send`);
     }
   }
 
