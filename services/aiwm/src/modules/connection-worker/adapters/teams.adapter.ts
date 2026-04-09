@@ -223,9 +223,12 @@ export class TeamsAdapter extends BaseAdapter {
 
     const tokenData = await tokenRes.json() as { access_token: string };
     const token = tokenData.access_token;
+    this.logger.debug(`Bot connector token fetched, aud=api.botframework.com, prefix=${token.slice(0, 20)}...`);
 
     const baseUrl = serviceUrl.endsWith('/') ? serviceUrl.slice(0, -1) : serviceUrl;
-    const url = `${baseUrl}/v3/conversations/${encodeURIComponent(conversationId)}/activities`;
+    // Do NOT encodeURIComponent — Bot connector expects the raw conversation ID in the path
+    const url = `${baseUrl}/v3/conversations/${conversationId}/activities`;
+    this.logger.debug(`Bot connector POST url=${url}`);
 
     await this._graphPost(url, {
       type: 'message',
