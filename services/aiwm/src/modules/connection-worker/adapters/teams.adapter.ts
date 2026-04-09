@@ -70,6 +70,10 @@ export class TeamsAdapter extends BaseAdapter {
     const teamId: string | undefined = channelData.team?.id;
     const tenantId: string | undefined = body.conversation?.tenantId || channelData.tenant?.id;
 
+    // Strip ;messageid=... suffix from channel conversation IDs (Teams reply threads)
+    const rawConversationId: string = body.conversation?.id || '';
+    const cleanConversationId = rawConversationId.split(';')[0];
+
     const isMention = Array.isArray(body.entities) &&
       body.entities.some((e: any) => e.type === 'mention' && e.mentioned?.role === 'bot');
 
@@ -77,11 +81,11 @@ export class TeamsAdapter extends BaseAdapter {
       provider: 'teams',
       externalUserId: body.from?.aadObjectId || body.from?.id || 'unknown',
       externalUsername: body.from?.name || 'unknown',
-      channelId: body.conversation?.id || '',
+      channelId: cleanConversationId,
       serverId: teamId,
       tenantId,
       teamsServiceUrl: body.serviceUrl,
-      teamsConversationId: body.conversation?.id,
+      teamsConversationId: cleanConversationId,
       text: cleanText,
       attachments: this._extractAttachments(body),
       isMention,
