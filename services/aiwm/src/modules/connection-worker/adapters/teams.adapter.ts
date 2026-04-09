@@ -201,12 +201,8 @@ export class TeamsAdapter extends BaseAdapter {
       throw new Error('Teams adapter requires appId and appPassword for Bot connector reply');
     }
 
-    // Derive the correct OAuth scope from the serviceUrl host
-    // webchat.botframework.com uses its own audience; all other Bot Framework hosts use api.botframework.com
-    const serviceHost = new URL(serviceUrl).hostname;
-    const scope = serviceHost === 'webchat.botframework.com'
-      ? 'https://webchat.botframework.com/.default'
-      : 'https://api.botframework.com/.default';
+    // All Bot Framework serviceUrl hosts use the same OAuth scope
+    const scope = 'https://api.botframework.com/.default';
 
     // Bot Framework token endpoint (tenant-independent)
     const tokenRes = await fetch('https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token', {
