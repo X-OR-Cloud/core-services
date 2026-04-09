@@ -29,6 +29,9 @@ export interface AdapterTarget {
   channelId: string;
   threadId?: string;
   replyToId?: string;
+  // Teams only — needed for DM/1:1 replies via Bot Framework connector
+  teamsServiceUrl?: string;
+  teamsConversationId?: string;
 }
 
 export interface SendOptions {

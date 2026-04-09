@@ -97,8 +97,6 @@ export class TeamsAdapter extends BaseAdapter {
    * For channel messages, serverId (teamId) must be in AdapterTarget.
    */
   async send(target: AdapterTarget, text: string, _options?: SendOptions): Promise<void> {
-    const token = await this._getToken();
-
     // Teams conversation ID format: 19:xxx@thread.tacv2 (channel) or 19:xxx@thread.v2 (DM)
     // For channel posts we use Graph API: /teams/{teamId}/channels/{channelId}/messages
     // We store teamId in target as threadId (reusing the field)
@@ -106,16 +104,17 @@ export class TeamsAdapter extends BaseAdapter {
     const channelId = target.channelId;
 
     if (teamId) {
+      const token = await this._getToken();
       await this._graphPost(
         `${GRAPH_API}/teams/${teamId}/channels/${channelId}/messages`,
         { body: { contentType: 'text', content: text } },
         token,
       );
+    } else if (target.teamsServiceUrl && target.teamsConversationId) {
+      // DM / 1:1 chat — reply via Bot Framework connector API using the original conversation reference
+      await this._botConnectorReply(target.teamsServiceUrl, target.teamsConversationId, text);
     } else {
-      // Fallback: direct message via conversation (1:1 chat)
-      // This requires the conversation reference from the original activity
-      // For now log a warning — full proactive DM requires conversation reference
-      this.logger.warn(`send() called without teamId for channelId=${channelId}; DM not yet supported`);
+      this.logger.warn(`send() called without teamId or conversation reference for channelId=${channelId}; cannot send`);
     }
   }
 
@@ -190,6 +189,47 @@ export class TeamsAdapter extends BaseAdapter {
 
     this.logger.debug('Teams OAuth token refreshed');
     return this.tokenCache.token;
+  }
+
+  /**
+   * Reply to a DM/1:1 conversation via Bot Framework connector API.
+   * Uses https://login.microsoftonline.com/botframework.com scope (not Graph).
+   */
+  private async _botConnectorReply(serviceUrl: string, conversationId: string, text: string): Promise<void> {
+    const { appId, appPassword } = this.config;
+    if (!appId || !appPassword) {
+      throw new Error('Teams adapter requires appId and appPassword for Bot connector reply');
+    }
+
+    // Bot Framework token endpoint (tenant-independent)
+    const tokenRes = await fetch('https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: appId,
+        client_secret: appPassword,
+        scope: 'https://api.botframework.com/.default',
+      }).toString(),
+    });
+
+    if (!tokenRes.ok) {
+      const body = await tokenRes.text();
+      throw new Error(`Bot connector token fetch failed: ${tokenRes.status} ${body}`);
+    }
+
+    const tokenData = await tokenRes.json() as { access_token: string };
+    const token = tokenData.access_token;
+
+    const baseUrl = serviceUrl.endsWith('/') ? serviceUrl.slice(0, -1) : serviceUrl;
+    const url = `${baseUrl}/v3/conversations/${encodeURIComponent(conversationId)}/activities`;
+
+    await this._graphPost(url, {
+      type: 'message',
+      text,
+    }, token);
+
+    this.logger.debug(`Bot connector reply sent to conversation=${conversationId}`);
   }
 
   private async _graphPost(url: string, body: unknown, token: string): Promise<void> {

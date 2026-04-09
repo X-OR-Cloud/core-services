@@ -96,9 +96,9 @@ export class ConnectionRunner {
    * channelId = platform chat destination (Discord channelId / Telegram chat.id)
    * threadId = optional topic thread (Telegram message_thread_id)
    */
-  async sendResponse(channelId: string, text: string, threadId?: string): Promise<void> {
+  async sendResponse(channelId: string, text: string, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
     if (!this.adapter) return;
-    await this.adapter.send({ channelId, threadId }, text);
+    await this.adapter.send({ channelId, threadId, teamsServiceUrl, teamsConversationId }, text);
   }
 
   /** Proactive send to a specific channel (no conversation context needed). */
@@ -134,6 +134,8 @@ export class ConnectionRunner {
       const isTeams = this.connection.provider === 'teams';
       const chatDest = isTelegram ? (msg.serverId ?? '') : (msg.channelId ?? msg.serverId ?? '');
       const threadId = isTelegram ? msg.channelId : isTeams ? msg.serverId : undefined;
+      const teamsServiceUrl = isTeams ? msg.teamsServiceUrl : undefined;
+      const teamsConversationId = isTeams ? msg.teamsConversationId : undefined;
 
       // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
@@ -197,7 +199,7 @@ export class ConnectionRunner {
           );
           const ignoreActionId = String((savedIgnoreAction as any)._id);
           this.onOutbound(resolved.conversationId, async (responseText: string) => {
-            await this.sendResponse(chatDest, responseText, threadId);
+            await this.sendResponse(chatDest, responseText, threadId, teamsServiceUrl, teamsConversationId);
           }, resolved.verboseActions, resolved.verboseLogsChannelId);
           this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
           this.onMessageNew({
@@ -244,7 +246,7 @@ export class ConnectionRunner {
 
       // Register outbound handler for this conversation
       this.onOutbound(resolved.conversationId, async (responseText: string) => {
-        await this.sendResponse(chatDest, responseText, threadId);
+        await this.sendResponse(chatDest, responseText, threadId, teamsServiceUrl, teamsConversationId);
       }, resolved.verboseActions, resolved.verboseLogsChannelId);
 
       // Signal ChatGateway (any api instance) to force agent into the conversation room
