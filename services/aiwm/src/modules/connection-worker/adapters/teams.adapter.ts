@@ -201,11 +201,11 @@ export class TeamsAdapter extends BaseAdapter {
       throw new Error('Teams adapter requires appId and appPassword for Bot connector reply');
     }
 
-    // All Bot Framework serviceUrl hosts use the same OAuth scope
+    // Bot Framework connector scope + tenant from config (or 'common' fallback)
     const scope = 'https://api.botframework.com/.default';
+    const tenant = this.config.tenantId ?? 'common';
 
-    // Bot Framework token endpoint (tenant-independent)
-    const tokenRes = await fetch('https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token', {
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
