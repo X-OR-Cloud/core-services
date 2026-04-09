@@ -29,7 +29,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
   private readonly conversationConnectionId = new Map<string, string>(); // conversationId → connectionId
   private readonly typingChannels = new Map<string, { channelId: string; threadId?: string; teamsServiceUrl?: string; teamsConversationId?: string }>(); // conversationId → chat destination
-  private readonly teamsConversationRefs = new Map<string, { serviceUrl: string; conversationId: string }>(); // connectionId:channelId → Teams conversation ref
+  // Teams conversation refs are persisted in Redis (key: teams:ref:{connectionId}:{channelId})
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
@@ -143,10 +143,10 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     // Track chat destination for this conversation — used to forward typing indicators
     this.typingChannels.set(payload.conversationId, { channelId: payload.channelId, threadId: payload.threadId, teamsServiceUrl: payload.teamsServiceUrl, teamsConversationId: payload.teamsConversationId });
 
-    // Cache Teams conversation reference for proactive send (keyed by connectionId:channelId)
+    // Persist Teams conversation reference for proactive send (survives worker restarts)
     if (payload.platform === 'teams' && payload.teamsServiceUrl && payload.teamsConversationId) {
-      const refKey = `${payload.connectionId}:${payload.channelId}`;
-      this.teamsConversationRefs.set(refKey, { serviceUrl: payload.teamsServiceUrl, conversationId: payload.teamsConversationId });
+      const refKey = `teams:ref:${payload.connectionId}:${payload.channelId}`;
+      this.redisPub?.set(refKey, JSON.stringify({ serviceUrl: payload.teamsServiceUrl, conversationId: payload.teamsConversationId })).catch(() => undefined);
     }
 
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
@@ -203,9 +203,10 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     // For Teams: resolve cached conversation reference for proactive send
-    const refKey = `${connectionId}:${channelId}`;
-    const teamsRef = this.teamsConversationRefs.get(refKey);
-    const threadId = teamsRef ? undefined : undefined;
+    const refKey = `teams:ref:${connectionId}:${channelId}`;
+    const refRaw = await this.redisPub?.get(refKey);
+    const teamsRef = refRaw ? JSON.parse(refRaw) as { serviceUrl: string; conversationId: string } : null;
+    const threadId = undefined;
     const teamsServiceUrl = teamsRef?.serviceUrl;
     const teamsConversationId = teamsRef?.conversationId;
 
