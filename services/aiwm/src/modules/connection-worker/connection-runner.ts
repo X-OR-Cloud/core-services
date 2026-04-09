@@ -119,9 +119,9 @@ export class ConnectionRunner {
     await this.adapter.sendEmbed({ channelId, threadId }, embed);
   }
 
-  async sendTyping(channelId: string, threadId?: string): Promise<void> {
+  async sendTyping(channelId: string, threadId?: string, teamsServiceUrl?: string, teamsConversationId?: string): Promise<void> {
     if (!this.adapter) return;
-    await this.adapter.sendTyping({ channelId, threadId });
+    await this.adapter.sendTyping({ channelId, threadId, teamsServiceUrl, teamsConversationId });
   }
 
   private async _handleInbound(msg: NormalizedInbound): Promise<void> {

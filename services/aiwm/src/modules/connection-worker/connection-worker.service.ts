@@ -28,7 +28,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly conversationVerboseActions = new Map<string, string[]>(); // conversationId → verboseActions
   private readonly conversationVerboseLogsChannelId = new Map<string, string>(); // conversationId → verboseLogsChannelId
   private readonly conversationConnectionId = new Map<string, string>(); // conversationId → connectionId
-  private readonly typingChannels = new Map<string, { channelId: string; threadId?: string }>(); // conversationId → chat destination
+  private readonly typingChannels = new Map<string, { channelId: string; threadId?: string; teamsServiceUrl?: string; teamsConversationId?: string }>(); // conversationId → chat destination
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
@@ -133,12 +133,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     channelId: string;
     serverId?: string;
     threadId?: string;          // Telegram: message_thread_id (topic)
+    teamsServiceUrl?: string;   // Teams only
+    teamsConversationId?: string; // Teams only
     connectionId: string;
     platform: string;
     skipAgent?: boolean;
   }): Promise<void> {
     // Track chat destination for this conversation — used to forward typing indicators
-    this.typingChannels.set(payload.conversationId, { channelId: payload.channelId, threadId: payload.threadId });
+    this.typingChannels.set(payload.conversationId, { channelId: payload.channelId, threadId: payload.threadId, teamsServiceUrl: payload.teamsServiceUrl, teamsConversationId: payload.teamsConversationId });
 
     // msgNonce is a unique ID per publish so multi-instance WS gateways can lock on it
     const msgNonce = `${payload.conversationId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -213,7 +215,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     const connectionId = this.conversationConnectionId.get(conversationId);
     const runner = connectionId ? this.runners.get(connectionId) : undefined;
     if (runner) {
-      await runner.sendTyping(target.channelId, target.threadId).catch((err: Error) =>
+      await runner.sendTyping(target.channelId, target.threadId, target.teamsServiceUrl, target.teamsConversationId).catch((err: Error) =>
         this.logger.warn(`Failed to forward typing to ${target.channelId}: ${err.message}`),
       );
     }

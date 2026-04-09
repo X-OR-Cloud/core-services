@@ -142,9 +142,13 @@ export class TeamsAdapter extends BaseAdapter {
   }
 
   async sendTyping(target: AdapterTarget): Promise<void> {
-    // Teams does not support typing indicators via Graph API for channel messages
-    // Bot Framework connector supports it, but we are using Graph API only
-    this.logger.debug(`sendTyping skipped for Teams (not supported via Graph API) channel=${target.channelId}`);
+    if (target.teamsServiceUrl && target.teamsConversationId) {
+      try {
+        await this._botConnectorReply(target.teamsServiceUrl, target.teamsConversationId, '', 'typing');
+      } catch (err: any) {
+        this.logger.debug(`sendTyping failed (non-critical): ${err.message}`);
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -195,7 +199,7 @@ export class TeamsAdapter extends BaseAdapter {
    * Reply to a DM/1:1 conversation via Bot Framework connector API.
    * Uses https://login.microsoftonline.com/botframework.com scope (not Graph).
    */
-  private async _botConnectorReply(serviceUrl: string, conversationId: string, text: string): Promise<void> {
+  private async _botConnectorReply(serviceUrl: string, conversationId: string, text: string, type = 'message'): Promise<void> {
     const { appId, appPassword } = this.config;
     if (!appId || !appPassword) {
       throw new Error('Teams adapter requires appId and appPassword for Bot connector reply');
@@ -230,12 +234,11 @@ export class TeamsAdapter extends BaseAdapter {
     const url = `${baseUrl}/v3/conversations/${conversationId}/activities`;
     this.logger.debug(`Bot connector POST url=${url}`);
 
-    await this._graphPost(url, {
-      type: 'message',
-      text,
-    }, token);
+    const body: Record<string, any> = { type };
+    if (text) body['text'] = text;
+    await this._graphPost(url, body, token);
 
-    this.logger.debug(`Bot connector reply sent to conversation=${conversationId}`);
+    this.logger.debug(`Bot connector ${type} sent to conversation=${conversationId}`);
   }
 
   private async _graphPost(url: string, body: unknown, token: string): Promise<void> {
