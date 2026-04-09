@@ -11,9 +11,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ConnectionConfigDto {
-  @ApiProperty({ description: 'Bot token from Discord/Telegram' })
+  @ApiProperty({ description: 'Bot token from Discord/Telegram', required: false })
+  @IsOptional()
   @IsString()
-  botToken: string;
+  botToken?: string;
 
   @ApiProperty({ description: 'Discord application/client ID', required: false })
   @IsOptional()
@@ -29,6 +30,21 @@ export class ConnectionConfigDto {
   @IsOptional()
   @IsBoolean()
   pollingMode?: boolean;
+
+  @ApiProperty({ description: 'Teams: Microsoft App ID', required: false })
+  @IsOptional()
+  @IsString()
+  appId?: string;
+
+  @ApiProperty({ description: 'Teams: Azure AD client secret', required: false })
+  @IsOptional()
+  @IsString()
+  appPassword?: string;
+
+  @ApiProperty({ description: 'Teams: Azure AD tenant ID', required: false })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
 }
 
 export class ConnectionRouteDto {
@@ -88,8 +104,8 @@ export class CreateConnectionDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ enum: ['discord', 'telegram'] })
-  @IsEnum(['discord', 'telegram'])
+  @ApiProperty({ enum: ['discord', 'telegram', 'teams'] })
+  @IsEnum(['discord', 'telegram', 'teams'])
   provider: string;
 
   @ApiProperty({ type: ConnectionConfigDto })
