@@ -50,11 +50,11 @@ export class Bot extends BaseSchema {
   @Prop({ required: true })
   maxEntrySize: number;
 
-  @Prop({ required: true })
-  stopLoss: number;
+  @Prop({ required: false })
+  stopLoss?: number;
 
-  @Prop({ required: true })
-  takeProfit: number;
+  @Prop({ required: false })
+  takeProfit?: number;
 
   @Prop({ required: true })
   maxDrawdownLimit: number;

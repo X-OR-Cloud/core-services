@@ -44,18 +44,6 @@ export class CreateBotDto {
   @Min(1)
   maxEntrySize: number;
 
-  @ApiProperty({ example: 2.5 })
-  @IsNumber()
-  @Min(0.1)
-  @Max(100)
-  stopLoss: number;
-
-  @ApiProperty({ example: 5.0 })
-  @IsNumber()
-  @Min(0.1)
-  @Max(100)
-  takeProfit: number;
-
   @ApiProperty({ example: 10 })
   @IsNumber()
   @Min(1)
@@ -109,16 +97,6 @@ export class UpdateBotDto {
   @IsNumber()
   @IsOptional()
   maxEntrySize?: number;
-
-  @ApiProperty({ required: false })
-  @IsNumber()
-  @IsOptional()
-  stopLoss?: number;
-
-  @ApiProperty({ required: false })
-  @IsNumber()
-  @IsOptional()
-  takeProfit?: number;
 
   @ApiProperty({ required: false })
   @IsNumber()
