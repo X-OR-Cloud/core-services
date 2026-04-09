@@ -253,7 +253,8 @@ export class SignalLlmCollector extends BaseCollector {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
-      response_format: { type: 'json_object' },
+      max_tokens: 2048,
+      stream: true,
     };
 
     // Record input for traceability
@@ -280,12 +281,29 @@ export class SignalLlmCollector extends BaseCollector {
             Authorization: `Bearer ${llmApiKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 30_000,
+          timeout: 120_000,
+          responseType: 'text',
         },
       );
 
-      llmRawResponse = response.data;
-      const content = response.data?.choices?.[0]?.message?.content;
+      // Parse SSE streaming response — accumulate delta.content chunks
+      const rawText: string = response.data;
+      let content = '';
+      for (const line of rawText.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (jsonStr === '[DONE]') break;
+        try {
+          const chunk = JSON.parse(jsonStr);
+          const delta = chunk?.choices?.[0]?.delta;
+          if (delta?.content) content += delta.content;
+        } catch {
+          // skip malformed chunk
+        }
+      }
+
+      llmRawResponse = { streaming: true, accumulatedContent: content };
       parsed = JSON.parse(content);
     } catch (error: any) {
       const status = error.response?.status;
