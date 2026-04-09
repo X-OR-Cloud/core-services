@@ -128,10 +128,12 @@ export class ConnectionRunner {
     try {
       // Resolve platform chat destination and optional thread (topic)
       // Telegram: serverId (chat.id) is the send target, channelId (message_thread_id) is the topic thread
-      // Discord/Teams: channelId is the send target, serverId is container only
+      // Discord: channelId is the send target, serverId is guild (container only)
+      // Teams: channelId is the send target, serverId (teamId) is passed as threadId for Graph API routing
       const isTelegram = this.connection.provider === 'telegram';
+      const isTeams = this.connection.provider === 'teams';
       const chatDest = isTelegram ? (msg.serverId ?? '') : (msg.channelId ?? msg.serverId ?? '');
-      const threadId = isTelegram ? msg.channelId : undefined;
+      const threadId = isTelegram ? msg.channelId : isTeams ? msg.serverId : undefined;
 
       // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
