@@ -145,13 +145,15 @@ export class DashboardService {
     return { priceCards: priceCards.filter(Boolean) };
   }
 
-  async getPortfolioHistory(userId: string, range: RangeKey) {
-    const account = await this.getDefaultAccount(userId);
-    const accountId = account._id as Types.ObjectId;
+  async getPortfolioHistory(userId: string, range: RangeKey, accountId?: string) {
+    const account = accountId
+      ? await this.getAccountById(accountId, userId)
+      : await this.getDefaultAccount(userId);
+    const accountId_ = account._id as Types.ObjectId;
     const from = this.rangeToDate(range);
     const to = new Date();
 
-    const snapshots = await this.snapshotService.findByRange(accountId, from, to) as PortfolioSnapshot[];
+    const snapshots = await this.snapshotService.findByRange(accountId_, from, to) as PortfolioSnapshot[];
 
     if (!snapshots.length) {
       return { range, data: [], summary: null };
@@ -450,6 +452,17 @@ export class DashboardService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async getAccountById(accountId: string, userId: string): Promise<any> {
+    const account = await this.accountModel
+      .findOne({ _id: accountId, 'owner.userId': userId, status: AccountStatus.ACTIVE })
+      .lean()
+      .exec();
+    if (!account) {
+      throw new NotFoundException(`Account ${accountId} not found`);
+    }
+    return account;
+  }
+
   private async getDefaultAccount(userId: string): Promise<any> {
     const account = await this.accountModel
       .findOne({ 'owner.userId': userId, isDefault: true, status: AccountStatus.ACTIVE })

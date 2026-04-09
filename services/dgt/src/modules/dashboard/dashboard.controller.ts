@@ -32,11 +32,13 @@ export class DashboardController {
   @Get('portfolio-history')
   @ApiOperation({ summary: 'Portfolio value history for chart' })
   @ApiQuery({ name: 'range', required: false, enum: ['7d', '30d', '90d', 'all'], example: '30d' })
+  @ApiQuery({ name: 'accountId', required: false, description: 'Specific account ID. Falls back to default account if omitted.' })
   getPortfolioHistory(
     @CurrentUser() ctx: RequestContext,
     @Query('range') range: '7d' | '30d' | '90d' | 'all' = '30d',
+    @Query('accountId') accountId?: string,
   ) {
-    return this.dashboardService.getPortfolioHistory(ctx.userId, range);
+    return this.dashboardService.getPortfolioHistory(ctx.userId, range, accountId);
   }
 
   @Get('ai-signal')
