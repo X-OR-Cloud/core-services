@@ -70,6 +70,11 @@ export async function verifyTeamsJwt(authorization: string, appId: string): Prom
     }
   } catch (err: any) {
     if (err instanceof UnauthorizedException) throw err;
+    // Reset JWKS cache on fetch/parse errors so next request retries
+    if (err.message?.includes('JSON') || err.message?.includes('fetch') || err.message?.includes('network')) {
+      _jwks = null;
+      _jwksUrl = null;
+    }
     logger.warn(`Teams JWT verification failed: ${err.message}`);
     throw new UnauthorizedException('Invalid Teams JWT');
   }
