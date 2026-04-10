@@ -6,7 +6,12 @@ import { SignalLlmCollector } from '../collectors/signal-llm.collector';
 import { SignalService } from '../modules/signal/signal.service';
 import { SignalStatus } from '../modules/signal/signal.schema';
 
-@Processor(QUEUE_NAMES.SIGNAL_GENERATION)
+@Processor(QUEUE_NAMES.SIGNAL_GENERATION, {
+  // LLM jobs can take up to 120s — set lockDuration well above that
+  // to prevent BullMQ from considering them stalled and losing the lock.
+  lockDuration: 300_000,  // 5 minutes
+  lockRenewTime: 120_000, // renew every 2 minutes
+})
 export class SignalGenerationProcessor extends WorkerHost {
   private readonly logger = createLogger('SignalGenerationProcessor');
 
