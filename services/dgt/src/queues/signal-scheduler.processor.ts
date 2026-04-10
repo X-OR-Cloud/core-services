@@ -32,12 +32,18 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
 
     this.logger.info('Initializing signal scheduler...');
 
-    // Clear old repeatable jobs to avoid duplicates on restart
-    const repeatableJobs = await this.signalGenerationQueue.getRepeatableJobs();
-    for (const job of repeatableJobs) {
-      await this.signalGenerationQueue.removeRepeatableByKey(job.key);
+    // Clear old repeatable jobs to avoid duplicates on restart.
+    // Wrapped in try-catch: if Redis is briefly read-only (e.g. replica failover),
+    // we skip the clear step rather than crashing the entire worker startup.
+    try {
+      const repeatableJobs = await this.signalGenerationQueue.getRepeatableJobs();
+      for (const job of repeatableJobs) {
+        await this.signalGenerationQueue.removeRepeatableByKey(job.key);
+      }
+      this.logger.info(`Cleared ${repeatableJobs.length} old repeatable jobs`);
+    } catch (err: any) {
+      this.logger.warn(`[init] Skipped clearing old repeatable jobs: ${err.message}`);
     }
-    this.logger.info(`Cleared ${repeatableJobs.length} old repeatable jobs`);
 
     // Fetch all active accounts
     const { data: accounts } = await this.accountService.findAll(
@@ -47,28 +53,38 @@ export class SignalSchedulerProcessor extends WorkerHost implements OnModuleInit
 
     // Register repeatable jobs per account
     let registered = 0;
+    let failed = 0;
 
     for (const account of accounts) {
       const accountId = (account as any)._id.toString();
-      await this.registerJobsForAccount(accountId);
-      registered += 3; // 15m + 1h + 4h
+      try {
+        await this.registerJobsForAccount(accountId);
+        registered += 3; // 15m + 1h + 4h
+      } catch (err: any) {
+        failed++;
+        this.logger.warn(`[init] Failed to register jobs for account ${accountId}: ${err.message}`);
+      }
     }
 
     // Register global expiry job
-    await this.signalGenerationQueue.add(
-      SIGNAL_JOB_TYPES.EXPIRE_SIGNALS,
-      { type: SIGNAL_JOB_TYPES.EXPIRE_SIGNALS, params: {} },
-      {
-        repeat: { every: 60_000 },
-        removeOnComplete: 100,
-        removeOnFail: 50,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 1000 },
-      },
-    );
-    registered++;
+    try {
+      await this.signalGenerationQueue.add(
+        SIGNAL_JOB_TYPES.EXPIRE_SIGNALS,
+        { type: SIGNAL_JOB_TYPES.EXPIRE_SIGNALS, params: {} },
+        {
+          repeat: { every: 60_000 },
+          removeOnComplete: 100,
+          removeOnFail: 50,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 1000 },
+        },
+      );
+      registered++;
+    } catch (err: any) {
+      this.logger.warn(`[init] Failed to register expire_signals job: ${err.message}`);
+    }
 
-    this.logger.info(`Signal scheduler initialized: ${registered} jobs registered for ${accounts.length} accounts`);
+    this.logger.info(`Signal scheduler initialized: ${registered} jobs registered for ${accounts.length} accounts${failed > 0 ? ` (${failed} failed)` : ''}`);
   }
 
   async process(job: Job): Promise<void> {
