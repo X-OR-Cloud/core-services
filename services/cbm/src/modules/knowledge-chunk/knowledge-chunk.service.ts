@@ -19,6 +19,13 @@ export class KnowledgeChunkService {
   }
 
   /**
+   * Delete all chunks for a collection
+   */
+  async deleteAllByCollectionId(collectionId: string): Promise<void> {
+    await this.chunkModel.deleteMany({ collectionId });
+  }
+
+  /**
    * Delete all chunks for a source (file or document)
    * Returns the qdrantPointIds for cleanup in Qdrant
    */

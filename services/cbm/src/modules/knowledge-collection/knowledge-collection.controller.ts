@@ -32,6 +32,7 @@ import { Model } from 'mongoose';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
 import { KnowledgeFile } from '../knowledge-file/knowledge-file.schema';
+import { KnowledgeChunkService } from '../knowledge-chunk/knowledge-chunk.service';
 
 @ApiTags('Knowledge Collections')
 @ApiBearerAuth()
@@ -41,6 +42,7 @@ export class KnowledgeCollectionController {
     private readonly collectionService: KnowledgeCollectionService,
     private readonly qdrantService: QdrantService,
     private readonly embeddingService: EmbeddingService,
+    private readonly chunkService: KnowledgeChunkService,
     @InjectModel(KnowledgeFile.name) private readonly fileModel: Model<KnowledgeFile>,
   ) {}
 
@@ -99,6 +101,43 @@ export class KnowledgeCollectionController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.collectionService.softDelete(new Types.ObjectId(id) as any, context);
+  }
+
+  @Delete(':id/data')
+  @ApiOperation({ summary: 'Clear all data inside a collection (files, chunks in MongoDB + Qdrant points) — keeps the collection record intact' })
+  @ApiDeleteErrors()
+  @UseGuards(JwtAuthGuard)
+  async clearData(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const collection = await this.collectionService.findByIdInternal(id);
+    if (!collection) {
+      return { deleted: { files: 0, chunks: 0, qdrantPoints: true } };
+    }
+
+    // 1. Delete all Qdrant points for this collection
+    if (collection.qdrantCollection) {
+      await this.qdrantService.deletePointsByFilter(collection.qdrantCollection, {
+        must: [{ key: 'collectionId', match: { value: id } }],
+      });
+    }
+
+    // 2. Hard delete all chunks in MongoDB
+    await this.chunkService.deleteAllByCollectionId(id);
+
+    // 3. Hard delete all files in MongoDB
+    const fileResult = await this.fileModel.deleteMany({ collectionId: id });
+
+    // 4. Reset collection stats
+    await this.collectionService.updateStats(id, context);
+
+    return {
+      deleted: {
+        files: fileResult.deletedCount,
+        qdrantPoints: true,
+      },
+    };
   }
 
   @Post(':id/reindex-all')
