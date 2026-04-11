@@ -254,7 +254,7 @@ export class SignalLlmCollector extends BaseCollector {
       ],
       temperature: 0.2,
       max_tokens: 8192,
-      stream: true,
+      stream: false,
     };
 
     // Record input for traceability
@@ -282,29 +282,13 @@ export class SignalLlmCollector extends BaseCollector {
             'Content-Type': 'application/json',
           },
           timeout: 120_000,
-          responseType: 'text',
         },
       );
 
-      // Parse SSE streaming response — accumulate delta.content chunks
-      const rawText: string = response.data;
-      let content = '';
-      for (const line of rawText.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const jsonStr = trimmed.slice(5).trim();
-        if (jsonStr === '[DONE]') break;
-        try {
-          const chunk = JSON.parse(jsonStr);
-          const delta = chunk?.choices?.[0]?.delta;
-          if (delta?.content) content += delta.content;
-        } catch {
-          // skip malformed chunk
-        }
-      }
-
-      llmRawResponse = { streaming: true, accumulatedContent: content };
-      this.logger.debug(`[SignalLLM] Accumulated content (${content.length} chars): ${content.slice(0, 500)}`);
+      // Extract content from non-streaming response
+      const content: string = response.data?.choices?.[0]?.message?.content ?? '';
+      llmRawResponse = { streaming: false, content };
+      this.logger.debug(`[SignalLLM] Response content (${content.length} chars): ${content.slice(0, 500)}`);
 
       // Strip markdown code fences nếu có (```json ... ```)
       let cleanContent = content.trim();
