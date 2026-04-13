@@ -640,10 +640,31 @@ export class SignalLlmCollector extends BaseCollector {
         }))
       : null;
 
+    // Calculate swing levels for SL/TP reference
+    const swingLow = Math.min(...candles.map((c: any) => c.low ?? c.close));
+    const swingHigh = Math.max(...candles.map((c: any) => c.high ?? c.close));
+    const recentLow = Math.min(...candles.slice(-5).map((c: any) => c.low ?? c.close));
+    const recentHigh = Math.max(...candles.slice(-5).map((c: any) => c.high ?? c.close));
+
+    const atr14 = indicator?.atr14 ?? 0;
+
     return `Analyze the following market data for ${asset} on the ${timeframe} timeframe and generate a trading signal.
 
-LATEST PRICE: ${latestCandle?.close ?? 'N/A'}
+LATEST PRICE: ${latestCandle?.close ?? 'N/A'} USD
 CANDLE COUNT: ${candles.length}
+
+VOLATILITY REFERENCE (for SL/TP calculation):
+- ATR14: ${atr14.toFixed(2)} USD (use this for stop-loss distance)
+- Swing Low (all ${candles.length} candles): ${swingLow.toFixed(2)} USD
+- Swing High (all ${candles.length} candles): ${swingHigh.toFixed(2)} USD
+- Recent Low (last 5 candles): ${recentLow.toFixed(2)} USD
+- Recent High (last 5 candles): ${recentHigh.toFixed(2)} USD
+
+IMPORTANT FOR STOPLOSS CALCULATION:
+- For LONG signals: SL = entry - (ATR14 × multiplier), where multiplier ∈ [0.8, 1.5, 2.0]
+  SL must be BELOW the recent swing low (${recentLow.toFixed(2)} USD)
+- For SHORT signals: SL = entry + (ATR14 × multiplier)
+  SL must be ABOVE the recent swing high (${recentHigh.toFixed(2)} USD)
 
 OHLCV DATA (oldest to newest, last ${candles.length} candles):
 ${JSON.stringify(candleData, null, 2)}
@@ -660,6 +681,6 @@ ${newsData ? JSON.stringify(newsData, null, 2) : 'No news articles available'}
 MACRO INDICATORS (latest values):
 ${macroData ? JSON.stringify(macroData, null, 2) : 'No macro data available'}
 
-Based on all available data (technical, sentiment, news articles, macro), generate a trading signal following the required JSON format.`;
+Based on all available data (technical, sentiment, news articles, macro), generate a trading signal following the required JSON format. Calculate entry, stop_loss, and take_profit using the ATR14 volatility reference provided above.`;
   }
 }
