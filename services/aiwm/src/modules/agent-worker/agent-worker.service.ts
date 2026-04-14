@@ -4,7 +4,11 @@ import { Model } from 'mongoose';
 import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { ConfigKey } from '@hydrabyte/shared';
-import { redisConfig } from '../../config/redis.config';
+import {
+  InstructionUpdatedEvent,
+  REDIS_CHANNEL_INSTRUCTION_UPDATED,
+  redisConfig,
+} from '../../config/redis.config';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
 import { ActionService } from '../action/action.service';
@@ -48,6 +52,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
   /** Shared Redis client for publish/set/get — shared across all runners */
   private redisPub: Redis | null = null;
+  /** Dedicated Redis subscriber for instruction-updated events. */
+  private redisSub: Redis | null = null;
   /** Map of agentId → dedicated Redis client for BLPOP (blocking, one per runner) */
   private readonly redisBlockingMap = new Map<string, Redis>();
   private readonly agentIdFilter: string[];
@@ -71,6 +77,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.lockService.connect();
     await this.spawnAgents();
     this.startHealthCheck();
+    await this.startInstructionSubscriber();
   }
 
   async onModuleDestroy() {
@@ -84,6 +91,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       this.redisBlockingMap.delete(agentId);
     }
     this.runners.clear();
+    this.redisSub?.disconnect();
+    this.redisSub = null;
     this.redisPub?.disconnect();
     this.redisPub = null;
     this.logger.log('All agent runners stopped');
@@ -306,6 +315,66 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         await this.agentService.addLog(agentId, { level: 'info', message: 'Runner claimed after unlock (failover or new agent)' });
         await this.spawnRunner(agent as unknown as AgentDocument);
       }
+    }
+  }
+
+  /**
+   * Subscribe to instruction-updated events and trigger runner reload for any
+   * runner on this instance whose agent uses the updated instruction.
+   */
+  private async startInstructionSubscriber() {
+    this.redisSub = new Redis(redisConfig);
+    try {
+      await this.redisSub.subscribe(REDIS_CHANNEL_INSTRUCTION_UPDATED);
+    } catch (err) {
+      this.logger.error(`Failed to subscribe to ${REDIS_CHANNEL_INSTRUCTION_UPDATED}: ${(err as Error).message}`);
+      return;
+    }
+
+    this.redisSub.on('message', (channel, raw) => {
+      if (channel !== REDIS_CHANNEL_INSTRUCTION_UPDATED) return;
+      this.handleInstructionUpdated(raw).catch((err: Error) =>
+        this.logger.error(`handleInstructionUpdated error: ${err.message}`, err.stack),
+      );
+    });
+
+    this.logger.log(`Subscribed to ${REDIS_CHANNEL_INSTRUCTION_UPDATED}`);
+  }
+
+  private async handleInstructionUpdated(raw: string) {
+    if (!this.runners.size) return;
+
+    let event: InstructionUpdatedEvent;
+    try {
+      event = JSON.parse(raw);
+    } catch (err) {
+      this.logger.warn(`Invalid instruction-updated payload: ${(err as Error).message}`);
+      return;
+    }
+    if (!event?.instructionId) return;
+
+    const ownedAgentIds = [...this.runners.keys()];
+    const agents = await this.agentModel
+      .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
+      .select('_id')
+      .lean()
+      .catch(() => []);
+
+    if (!agents.length) return;
+
+    for (const agent of agents) {
+      const agentId = (agent._id as { toString(): string }).toString();
+      const runner = this.runners.get(agentId);
+      if (!runner) continue;
+      this.logger.log(`[instruction-updated] reloading agent ${agentId} (instructionId=${event.instructionId})`);
+      await this.agentService.addLog(agentId, {
+        level: 'info',
+        message: 'Runner reload triggered — instruction updated',
+        data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
+      });
+      runner.triggerReload('event').catch((err: Error) =>
+        this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
+      );
     }
   }
 }
