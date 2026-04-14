@@ -85,7 +85,7 @@ export interface AgentRunnerConfig {
   /** RAG collection configs to search for context before LLM call */
   ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
   /** In-process RAG search callback — calls CBM knowledge search API */
-  searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string }>>;
+  searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string; sourceId: string; sourceType: 'file' | 'document' | '' }>>;
   /** Agent code identifier (optional) */
   agentCode?: string;
   /** Agent type — affects how SendFile tool uploads files */
@@ -810,7 +810,7 @@ export class AgentRunner {
     });
 
     // Tầng 2: Vector search across all collections
-    const allChunks: Array<{ score: number; content: string; collectionId: string }> = [];
+    const allChunks: Array<{ score: number; content: string; collectionId: string; sourceId: string; sourceType: 'file' | 'document' | '' }> = [];
     for (const col of this.config.ragCollections) {
       const results = await this.config.searchKnowledgeInternal(
         col.collectionId,
@@ -841,6 +841,8 @@ export class AgentRunner {
       content: c.content,
       score: c.score,
       collectionId: c.collectionId,
+      sourceId: c.sourceId,
+      sourceType: c.sourceType || undefined,
     }));
 
     // Publish tool_result — chunks retrieved
