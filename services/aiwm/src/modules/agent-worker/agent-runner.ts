@@ -429,6 +429,13 @@ export class AgentRunner {
       referencesBlock = `<references>\n${refLines.join('\n\n')}\n</references>\n\n`;
     }
 
+    // Defer while reloading — task will be drained after reload completes
+    if (this.isReloading) {
+      this.pendingTasks.set(conversationId, task);
+      this.logger.debug(`Deferred — runner is reloading (conv=${conversationId})`);
+      return;
+    }
+
     // Concurrency guard — store latest pending task in memory instead of requeuing to Redis
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
     if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
@@ -534,7 +541,7 @@ export class AgentRunner {
       try {
         const result = await generateText({
           model,
-          system: this.config.instruction.systemPrompt,
+          system: systemPrompt,
           messages: history,
           tools: Object.keys(tools).length > 0 ? tools : undefined,
           stopWhen: stepCountIs(this.maxSteps),
@@ -627,6 +634,37 @@ export class AgentRunner {
       return false;
     } finally {
       this.isReloading = false;
+      this.drainPendingTasks();
+    }
+  }
+
+  /**
+   * External trigger (event-driven reload). Skip if already reloading —
+   * the in-flight reload will pick up the latest DB state when it runs
+   * connectInternal, so a second reload is redundant.
+   */
+  async triggerReload(source: 'event' | 'manual' | 'health'): Promise<void> {
+    if (this.isReloading) {
+      this.logger.debug(`[triggerReload:${source}] skipped — already reloading`);
+      return;
+    }
+    this.logger.log(`[triggerReload:${source}] starting`);
+    await this.reload();
+  }
+
+  getAgentId(): string {
+    return this.config.agentId;
+  }
+
+  /** Drain deferred tasks queued while reloading. */
+  private drainPendingTasks(): void {
+    if (!this.pendingTasks.size) return;
+    const tasks = [...this.pendingTasks.entries()];
+    this.pendingTasks.clear();
+    for (const [, task] of tasks) {
+      this.handleTask(task).catch((err: Error) =>
+        this.logger.error(`handleTask (drain) error: ${err.message}`, err.stack),
+      );
     }
   }
 

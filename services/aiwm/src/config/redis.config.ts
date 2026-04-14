@@ -6,3 +6,11 @@ export const redisConfig = {
   db: parseInt(process.env['REDIS_DB'] || '0', 10),
   enableReadyCheck: false,
 };
+
+/** Pub/sub channel broadcast when an instruction is updated in DB. */
+export const REDIS_CHANNEL_INSTRUCTION_UPDATED = 'aiwm:instruction-updated';
+
+export interface InstructionUpdatedEvent {
+  instructionId: string;
+  updatedAt: string;
+}

@@ -1,8 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
+import Redis from 'ioredis';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, InstructionInUseException } from '@hydrabyte/shared';
+import {
+  InstructionUpdatedEvent,
+  REDIS_CHANNEL_INSTRUCTION_UPDATED,
+  redisConfig,
+} from '../../config/redis.config';
 import { Instruction } from './instruction.schema';
 import { Agent } from '../agent/agent.schema';
 import { CreateInstructionDto } from './instruction.dto';
@@ -13,12 +19,39 @@ import { CreateInstructionDto } from './instruction.dto';
  * Extends BaseService for automatic CRUD operations
  */
 @Injectable()
-export class InstructionService extends BaseService<Instruction> {
+export class InstructionService extends BaseService<Instruction> implements OnModuleDestroy {
+  private readonly instructionLogger = new Logger(InstructionService.name);
+  private redisPub: Redis | null = null;
+
   constructor(
     @InjectModel(Instruction.name) private instructionModel: Model<Instruction>,
     @InjectModel(Agent.name) private readonly agentModel: Model<Agent>
   ) {
     super(instructionModel);
+  }
+
+  onModuleDestroy() {
+    this.redisPub?.disconnect();
+    this.redisPub = null;
+  }
+
+  private getRedisPub(): Redis {
+    if (!this.redisPub) {
+      this.redisPub = new Redis(redisConfig);
+    }
+    return this.redisPub;
+  }
+
+  private publishInstructionUpdated(instructionId: string, updatedAt: Date | string | undefined) {
+    const payload: InstructionUpdatedEvent = {
+      instructionId,
+      updatedAt: (updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt) ?? new Date().toISOString(),
+    };
+    this.getRedisPub()
+      .publish(REDIS_CHANNEL_INSTRUCTION_UPDATED, JSON.stringify(payload))
+      .catch((err) => {
+        this.instructionLogger.warn(`Failed to publish instruction-updated event: ${(err as Error).message}`);
+      });
   }
   /**
    * Override create method to add custom validation or processing
@@ -73,7 +106,9 @@ export class InstructionService extends BaseService<Instruction> {
     }
 
     // Call parent update method
-    return super.update(id, updateData, context);
+    const updated = await super.update(id, updateData, context);
+    this.publishInstructionUpdated(id, (updated as { updatedAt?: Date })?.updatedAt);
+    return updated;
   }
 
   /**
