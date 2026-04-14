@@ -242,6 +242,22 @@ export class ChatGateway
               platform: 'portal',
               skipAgent: true,
             });
+            // Bridge notice to Connection Worker so user sees it on Discord/Telegram
+            if (this.redisPub) {
+              const outboundLockKey = `lock:outbound:sleep-${actionId}`;
+              this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
+                if (acquired && this.redisPub) {
+                  this.redisPub.publish(
+                    'outbound:message',
+                    JSON.stringify({ conversationId, text: noticeContent, actionType: 'notice' }),
+                  ).catch((err: Error) =>
+                    this.logger.error(`Failed to publish sleep notice outbound: ${err.message}`),
+                  );
+                }
+              }).catch((err: Error) =>
+                this.logger.error(`Failed to acquire outbound lock for sleep notice: ${err.message}`),
+              );
+            }
             this.logger.warn(
               `[Redis] Agent ${agentId} is sleeping — skipping routing. reason="${sleepReason}"`,
             );
