@@ -126,7 +126,21 @@ export class FileController {
     @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext,
   ) {
-    const options = parseQueryString(query);
+    const { collectionId, ownerKind, ownerId, ...rest } = query;
+
+    // Resolve (ownerKind, ownerId) from either explicit params or legacy `collectionId` shorthand.
+    // `collectionId` is kept as a convenience for clients listing knowledge files by collection.
+    const resolvedOwnerKind = ownerKind ?? (collectionId ? 'knowledge-collection' : undefined);
+    const resolvedOwnerId = ownerId ?? collectionId;
+
+    if (resolvedOwnerKind) {
+      rest['ownerRef.kind'] = resolvedOwnerKind;
+    }
+    if (resolvedOwnerId) {
+      rest['ownerRef.id'] = resolvedOwnerId;
+    }
+
+    const options = parseQueryString(rest);
     return this.fileService.findAll(options, context);
   }
 
