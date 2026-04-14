@@ -12,7 +12,7 @@ import { RequestContext } from '@hydrabyte/shared';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import { FileEntity, FilePurpose, OwnerRefKind } from './file.schema';
+import { FileEntity, FilePurpose, OwnerRefKind, EmbeddingStatus } from './file.schema';
 import { S3Service } from '../storage-shared/s3.service';
 
 const KNOWLEDGE_MIME_TYPES: Record<string, string> = {
@@ -221,6 +221,41 @@ export class FileService extends BaseService<FileEntity> {
       .limit(limit)
       .lean()
       .exec() as Promise<FileEntity[]>;
+  }
+
+  /**
+   * Get raw extracted content of a file (for UI "view source" and agent tool-calls).
+   * Only meaningful for knowledge files that have been indexed.
+   */
+  async getContent(
+    id: string,
+    context: RequestContext,
+  ): Promise<{
+    id: string;
+    fileName: string;
+    name: string;
+    mimeType: string;
+    fileSize: number;
+    content: string;
+    charCount: number;
+    embeddingStatus: EmbeddingStatus | null | undefined;
+  }> {
+    const file = (await super.findById(
+      new Types.ObjectId(id) as any,
+      context,
+    )) as FileEntity & { _id: Types.ObjectId };
+
+    const content = file.rawContent || '';
+    return {
+      id: String(file._id),
+      fileName: file.fileName,
+      name: file.name,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      content,
+      charCount: content.length,
+      embeddingStatus: file.embeddingStatus,
+    };
   }
 
   /**
