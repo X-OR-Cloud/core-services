@@ -41,6 +41,8 @@ export interface ActionSource {
   label?: string;              // display name for UI
   // rag-specific
   collectionId?: string;
+  sourceId?: string;
+  sourceType?: 'file' | 'document';
   // web-specific
   url?: string;
   // tool-specific

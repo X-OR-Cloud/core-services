@@ -85,7 +85,7 @@ export interface AgentRunnerConfig {
   /** RAG collection configs to search for context before LLM call */
   ragCollections?: Array<{ collectionId: string; topK: number; minScore: number }>;
   /** In-process RAG search callback — calls CBM knowledge search API */
-  searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string }>>;
+  searchKnowledgeInternal?: (collectionId: string, query: string, topK: number, minScore: number) => Promise<Array<{ score: number; content: string; sourceId: string; sourceType: 'file' | 'document' | '' }>>;
   /** Agent code identifier (optional) */
   agentCode?: string;
   /** Agent type — affects how SendFile tool uploads files */
@@ -429,6 +429,13 @@ export class AgentRunner {
       referencesBlock = `<references>\n${refLines.join('\n\n')}\n</references>\n\n`;
     }
 
+    // Defer while reloading — task will be drained after reload completes
+    if (this.isReloading) {
+      this.pendingTasks.set(conversationId, task);
+      this.logger.debug(`Deferred — runner is reloading (conv=${conversationId})`);
+      return;
+    }
+
     // Concurrency guard — store latest pending task in memory instead of requeuing to Redis
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
     if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
@@ -534,7 +541,7 @@ export class AgentRunner {
       try {
         const result = await generateText({
           model,
-          system: this.config.instruction.systemPrompt,
+          system: systemPrompt,
           messages: history,
           tools: Object.keys(tools).length > 0 ? tools : undefined,
           stopWhen: stepCountIs(this.maxSteps),
@@ -627,6 +634,37 @@ export class AgentRunner {
       return false;
     } finally {
       this.isReloading = false;
+      this.drainPendingTasks();
+    }
+  }
+
+  /**
+   * External trigger (event-driven reload). Skip if already reloading —
+   * the in-flight reload will pick up the latest DB state when it runs
+   * connectInternal, so a second reload is redundant.
+   */
+  async triggerReload(source: 'event' | 'manual' | 'health'): Promise<void> {
+    if (this.isReloading) {
+      this.logger.debug(`[triggerReload:${source}] skipped — already reloading`);
+      return;
+    }
+    this.logger.log(`[triggerReload:${source}] starting`);
+    await this.reload();
+  }
+
+  getAgentId(): string {
+    return this.config.agentId;
+  }
+
+  /** Drain deferred tasks queued while reloading. */
+  private drainPendingTasks(): void {
+    if (!this.pendingTasks.size) return;
+    const tasks = [...this.pendingTasks.entries()];
+    this.pendingTasks.clear();
+    for (const [, task] of tasks) {
+      this.handleTask(task).catch((err: Error) =>
+        this.logger.error(`handleTask (drain) error: ${err.message}`, err.stack),
+      );
     }
   }
 
@@ -772,7 +810,7 @@ export class AgentRunner {
     });
 
     // Tầng 2: Vector search across all collections
-    const allChunks: Array<{ score: number; content: string; collectionId: string }> = [];
+    const allChunks: Array<{ score: number; content: string; collectionId: string; sourceId: string; sourceType: 'file' | 'document' | '' }> = [];
     for (const col of this.config.ragCollections) {
       const results = await this.config.searchKnowledgeInternal(
         col.collectionId,
@@ -803,6 +841,8 @@ export class AgentRunner {
       content: c.content,
       score: c.score,
       collectionId: c.collectionId,
+      sourceId: c.sourceId,
+      sourceType: c.sourceType || undefined,
     }));
 
     // Publish tool_result — chunks retrieved

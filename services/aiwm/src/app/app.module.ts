@@ -25,7 +25,6 @@ import { ReportsModule } from '../modules/reports/reports.module';
 import { McpModule } from '../modules/mcp/mcp.module';
 import { UtilModule } from '../modules/util/util.module';
 import { ConversationModule } from '../modules/conversation/conversation.module';
-import { MessageModule } from '../modules/message/message.module';
 import { ActionModule } from '../modules/action/action.module';
 import { ConnectionModule } from '../modules/connection/connection.module';
 import { ChatModule } from '../modules/chat/chat.module';
@@ -68,7 +67,6 @@ import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared'
     McpModule,
     UtilModule,
     ConversationModule,
-    MessageModule,
     ActionModule,
     ConnectionModule,
     ChatModule,

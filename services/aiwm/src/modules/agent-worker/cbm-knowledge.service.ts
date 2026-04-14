@@ -4,6 +4,8 @@ import axios from 'axios';
 export interface RagChunk {
   score: number;
   content: string;
+  sourceId: string;
+  sourceType: 'file' | 'document' | '';
 }
 
 @Injectable()
@@ -34,6 +36,8 @@ export class CbmKnowledgeService {
         .map((r) => ({
           score: r.score as number,
           content: (r.payload?.content ?? '') as string,
+          sourceId: (r.payload?.sourceId ?? '') as string,
+          sourceType: (r.payload?.sourceType ?? '') as 'file' | 'document' | '',
         }));
     } catch (err: unknown) {
       this.logger.warn(

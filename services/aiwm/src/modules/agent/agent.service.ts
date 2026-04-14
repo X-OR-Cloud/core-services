@@ -1179,6 +1179,22 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       throw new BadRequestException('Agent is suspended. Heartbeat rejected.');
     }
 
+    // Auto-sleep gate: if agent is currently sleeping and sleepUntil hasn't
+    // elapsed, acknowledge heartbeat but do not hand out any task. When the
+    // deadline passes, clear sleep fields and fall through to normal flow.
+    if (
+      agent.status === 'sleep' &&
+      heartbeatDto.status !== 'sleep' &&
+      agent.sleepUntil &&
+      agent.sleepUntil.getTime() > Date.now()
+    ) {
+      await this.agentModel.updateOne(
+        { _id: agent._id },
+        { $set: { lastHeartbeatAt: new Date() } }
+      );
+      return { success: true };
+    }
+
     // Handle sleep status
     if (heartbeatDto.status === 'sleep') {
       if (!heartbeatDto.sleep) {
@@ -1227,6 +1243,23 @@ These blocks are system metadata, not questions. Never explain them. Never repea
 
     // Query next work when agent is idle
     if (heartbeatDto.status === 'idle' && accessToken) {
+      let resolved: {
+        work?: {
+          id: string;
+          title: string;
+          type: string;
+          status: string;
+          priorityLevel: number;
+        };
+        systemMessage: string;
+        systemTask: {
+          type: 'work' | 'reminders' | 'inbox' | 'alert';
+          id?: string;
+          title?: string;
+          reminders?: { id: string; content: string }[];
+        };
+      } | null = null;
+
       try {
         const workResult = await this.getNextWorkForAgent(
           agentId,
@@ -1234,8 +1267,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
           agent.owner?.orgId
         );
         if (workResult) {
-          return {
-            success: true,
+          resolved = {
             work: workResult.work,
             systemMessage: workResult.systemMessage,
             systemTask: workResult.systemTask,
@@ -1247,35 +1279,181 @@ These blocks are system metadata, not questions. Never explain them. Never repea
         );
       }
 
-      // No work found — check pending reminders
-      try {
-        const reminders = await this.reminderService.getPendingForHeartbeat(
-          agentId
-        );
-        if (reminders.length > 0) {
-          const reminderList = reminders
-            .map((r: any) => `- [${r._id || r.id}] ${r.content}`)
-            .join('\n');
-          return {
-            success: true,
-            systemMessage: `Bạn có ${reminders.length} reminder đang chờ xử lý:\n${reminderList}\n\nHãy xử lý từng reminder và gọi DoneReminder sau khi hoàn thành.`,
-            systemTask: {
-              type: 'reminders',
-              reminders: reminders.map((r: any) => ({
-                id: String(r._id || r.id),
-                content: r.content,
-              })),
-            },
-          };
+      if (!resolved) {
+        try {
+          const reminders = await this.reminderService.getPendingForHeartbeat(
+            agentId
+          );
+          if (reminders.length > 0) {
+            const reminderList = reminders
+              .map((r: any) => `- [${r._id || r.id}] ${r.content}`)
+              .join('\n');
+            resolved = {
+              systemMessage: `Bạn có ${reminders.length} reminder đang chờ xử lý:\n${reminderList}\n\nHãy xử lý từng reminder và gọi DoneReminder sau khi hoàn thành.`,
+              systemTask: {
+                type: 'reminders',
+                reminders: reminders.map((r: any) => ({
+                  id: String(r._id || r.id),
+                  content: r.content,
+                })),
+              },
+            };
+          }
+        } catch (error: any) {
+          this.logger.warn(
+            `Failed to query reminders for agent ${agentId}: ${error.message}`
+          );
         }
-      } catch (error: any) {
-        this.logger.warn(
-          `Failed to query reminders for agent ${agentId}: ${error.message}`
+      }
+
+      if (resolved) {
+        const circuitBreak = await this.applyTaskCircuitBreaker(agent, resolved.systemTask);
+        if (circuitBreak.sleep) {
+          return { success: true };
+        }
+        return {
+          success: true,
+          ...(resolved.work ? { work: resolved.work } : {}),
+          systemMessage: resolved.systemMessage,
+          systemTask: resolved.systemTask,
+        };
+      }
+
+      // Nothing to do — clear any stale currentTask so counters don't leak
+      // into a future, unrelated task.
+      if (agent.currentTask) {
+        await this.agentModel.updateOne(
+          { _id: agent._id },
+          { $set: { currentTask: null } }
         );
       }
     }
 
     return { success: true };
+  }
+
+  /**
+   * Task retry circuit breaker.
+   *
+   * Tracks consecutive heartbeats that resolve to the same systemTask. When
+   * the same task is dispatched more than `agent_taskRetryLimit` times in a
+   * row without the agent moving on (e.g. MCP tool broken, logic stuck), the
+   * agent is auto-slept for `agent_taskSleepMinutes` so that it stops
+   * burning tokens. A manager then needs to review and wake the agent.
+   */
+  private async applyTaskCircuitBreaker(
+    agent: AgentDocument,
+    systemTask: {
+      type: 'work' | 'reminders' | 'inbox' | 'alert';
+      id?: string;
+      title?: string;
+      reminders?: { id: string; content: string }[];
+    }
+  ): Promise<{ sleep: boolean }> {
+    const settings = (agent.settings ?? {}) as Record<string, unknown>;
+    const retryLimit = Math.max(
+      1,
+      Number(settings.agent_taskRetryLimit ?? 3)
+    );
+    const sleepMinutes = Math.max(
+      1,
+      Number(settings.agent_taskSleepMinutes ?? 240)
+    );
+
+    const taskKey = this.buildTaskKey(systemTask);
+    const now = new Date();
+
+    if (agent.currentTask?.taskKey === taskKey) {
+      const attemptCount = agent.currentTask.attemptCount + 1;
+
+      if (attemptCount > retryLimit) {
+        const sleepUntil = new Date(now.getTime() + sleepMinutes * 60_000);
+        const sleepReason = `[AUTO] Task ${taskKey} failed ${attemptCount - 1} attempts`;
+
+        await this.agentModel.updateOne(
+          { _id: agent._id },
+          {
+            $set: {
+              status: 'sleep',
+              sleepReason,
+              sleepSince: now,
+              sleepUntil,
+              currentTask: null,
+              lastHeartbeatAt: now,
+            },
+            $push: {
+              logs: {
+                $each: [
+                  {
+                    level: 'error',
+                    message: `Auto-sleep: ${sleepReason}`,
+                    time: now,
+                    data: {
+                      taskKey,
+                      attemptCount: attemptCount - 1,
+                      retryLimit,
+                      sleepMinutes,
+                      sleepUntil: sleepUntil.toISOString(),
+                    },
+                  },
+                ],
+                $slice: -100,
+              },
+            },
+          }
+        );
+
+        this.logger.warn('Agent auto-slept by task circuit breaker', {
+          agentId: String(agent._id),
+          taskKey,
+          attempts: attemptCount - 1,
+          retryLimit,
+          sleepUntil: sleepUntil.toISOString(),
+        });
+
+        return { sleep: true };
+      }
+
+      await this.agentModel.updateOne(
+        { _id: agent._id },
+        {
+          $set: {
+            'currentTask.attemptCount': attemptCount,
+            'currentTask.lastAttemptAt': now,
+          },
+        }
+      );
+      return { sleep: false };
+    }
+
+    // New / different task — (re)initialise counter
+    await this.agentModel.updateOne(
+      { _id: agent._id },
+      {
+        $set: {
+          currentTask: {
+            taskKey,
+            firstSeenAt: now,
+            lastAttemptAt: now,
+            attemptCount: 1,
+          },
+        },
+      }
+    );
+    return { sleep: false };
+  }
+
+  private buildTaskKey(systemTask: {
+    type: string;
+    id?: string;
+    reminders?: { id: string; content: string }[];
+  }): string {
+    if (systemTask.type === 'reminders' && systemTask.reminders?.length) {
+      const ids = systemTask.reminders.map((r) => r.id).sort().join(',');
+      const hash = crypto.createHash('sha1').update(ids).digest('hex').slice(0, 12);
+      return `reminders:${hash}`;
+    }
+    return `${systemTask.type}:${systemTask.id ?? 'unknown'}`;
   }
 
   /**
@@ -1608,6 +1786,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
           sleepReason: null,
           sleepSince: null,
           sleepUntil: null,
+          currentTask: null,
           updatedBy: context.userId,
         },
       }

@@ -138,6 +138,28 @@ export class ConversationController {
     return this.conversationService.updateConversation(id, dto, context);
   }
 
+  @Delete(':id/history')
+  @ApiOperation({
+    summary: 'Clear conversation chat history',
+    description:
+      'Soft-deletes all Action records for the conversation and resets counters. Requires organization.owner or universe.* role.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'History cleared successfully',
+    schema: {
+      type: 'object',
+      properties: { deletedActions: { type: 'number' } },
+    },
+  })
+  @ApiDeleteErrors()
+  async clearHistory(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<{ deletedActions: number }> {
+    return this.conversationService.clearHistory(id, context);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft delete conversation' })

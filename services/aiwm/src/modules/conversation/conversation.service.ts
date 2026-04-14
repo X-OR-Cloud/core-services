@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -9,6 +9,7 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { UtilService } from '../util/util.service';
 import { GenerateTextRequestDto } from '../util/dto/text-generation.dto';
 import { AgentConversationMode } from '../agent/agent.schema';
+import { Action, ActionDocument } from '../action/action.schema';
 
 @Injectable()
 export class ConversationService extends BaseService<Conversation> {
@@ -17,6 +18,8 @@ export class ConversationService extends BaseService<Conversation> {
   constructor(
     @InjectModel(Conversation.name)
     conversationModel: Model<ConversationDocument>,
+    @InjectModel(Action.name)
+    private readonly actionModel: Model<ActionDocument>,
     private readonly utilService: UtilService,
   ) {
     super(conversationModel as any);
@@ -605,8 +608,6 @@ export class ConversationService extends BaseService<Conversation> {
         );
       }
 
-      // TODO: Get last 10 messages from MessageService
-      // For now, use a placeholder user input
       const userInput = `Conversation ID: ${conversationId}, Total messages: ${conversation.totalMessages}, Agent: ${conversation.agentId}`;
 
       const request: GenerateTextRequestDto = {
@@ -706,6 +707,56 @@ export class ConversationService extends BaseService<Conversation> {
     this.logger.log(`Archived conversation ${id}`);
 
     return updated as Conversation;
+  }
+
+  /**
+   * Clear all chat history (Actions) belonging to a conversation.
+   * Soft-deletes Action documents and resets conversation counters.
+   * Access: organization.owner or any universe.* role.
+   */
+  async clearHistory(
+    id: string,
+    context: RequestContext,
+  ): Promise<{ deletedActions: number }> {
+    const isOwner = context.roles?.some(
+      (r) => r === 'organization.owner' || r.startsWith('universe.'),
+    );
+    if (!isOwner) {
+      throw new ForbiddenException(
+        'Only organization.owner or universe.* roles can clear conversation history',
+      );
+    }
+
+    const conversation = await this.model.findById(id).exec();
+    if (!conversation || (conversation as any).isDeleted) {
+      throw new NotFoundException(`Conversation ${id} not found`);
+    }
+    if ((conversation as any).owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Conversation does not belong to your organization');
+    }
+
+    const result = await this.actionModel.updateMany(
+      { conversationId: id, isDeleted: false },
+      { $set: { isDeleted: true, updatedBy: context.userId } },
+    ).exec();
+
+    await this.model.findByIdAndUpdate(id, {
+      $set: {
+        totalMessages: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        lastMessage: null,
+        contextSummary: '',
+        updatedBy: context.userId,
+      },
+    }).exec();
+
+    const deletedActions = (result as any).modifiedCount ?? 0;
+    this.logger.log(
+      `Cleared history for conversation ${id}: ${deletedActions} actions soft-deleted by ${context.userId}`,
+    );
+
+    return { deletedActions };
   }
 
   /**

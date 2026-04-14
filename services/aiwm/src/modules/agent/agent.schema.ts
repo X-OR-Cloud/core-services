@@ -128,7 +128,7 @@ export class Agent extends BaseSchema {
    * - claude_resume: boolean - Resume capability (default: true)
    * - claude_oauthToken: string - Claude OAuth token (optional)
    * - agent_taskRetryLimit: number - Max consecutive failures for same systemTask before auto-sleep (default: 3)
-   * - agent_taskSleepMinutes: number - Minutes to sleep after hitting taskRetryLimit (default: 30)
+   * - agent_taskSleepMinutes: number - Minutes to sleep after hitting taskRetryLimit (default: 240 = 4 hours)
    * - discord_token: string - Discord bot token (deprecated: use channels[])
    * - discord_channelIds: string[] - Discord channel IDs (deprecated: use channels[])
    * - discord_botId: string - Discord bot ID (deprecated: use channels[])
@@ -251,6 +251,24 @@ export class Agent extends BaseSchema {
 
   @Prop({ type: Date, default: null })
   sleepUntil?: Date | null;
+
+  // Task retry tracking — used by heartbeat circuit breaker to auto-sleep
+  // an agent that keeps failing the same systemTask
+  @Prop({
+    type: {
+      taskKey: { type: String, required: true },
+      firstSeenAt: { type: Date, required: true },
+      lastAttemptAt: { type: Date, required: true },
+      attemptCount: { type: Number, required: true, default: 1 },
+    },
+    default: null,
+  })
+  currentTask?: {
+    taskKey: string;
+    firstSeenAt: Date;
+    lastAttemptAt: Date;
+    attemptCount: number;
+  } | null;
 
   // Conversation scoping mode — applies to anonymous WS clients and Connection Worker users
   // Authenticated WS users select conversation manually and are not affected by this setting
