@@ -4,11 +4,13 @@ import { Conversation, ConversationSchema } from './conversation.schema';
 import { ConversationService } from './conversation.service';
 import { ConversationController } from './conversation.controller';
 import { UtilModule } from '../util/util.module';
+import { Action, ActionSchema } from '../action/action.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Conversation.name, schema: ConversationSchema },
+      { name: Action.name, schema: ActionSchema },
     ]),
     UtilModule, // For AI summary generation
   ],

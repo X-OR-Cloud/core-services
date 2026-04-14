@@ -31,8 +31,7 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 | Guardrail | `src/modules/guardrail/` | Safety constraints for agents |
 | PII | `src/modules/pii/` | PII detection and redaction |
 | Configuration | `src/modules/configuration/` | Key-value configuration management |
-| Conversation | `src/modules/conversation/` | Chat conversation management |
-| Message | `src/modules/message/` | Chat message storage and retrieval |
+| Conversation | `src/modules/conversation/` | Chat conversation management (history stored as Actions) |
 | Execution | `src/modules/execution/` | Workflow execution orchestration |
 | Workflow | `src/modules/workflow/` | Workflow definition and steps |
 | Resource | `src/modules/resource/` | Infrastructure resource management |
