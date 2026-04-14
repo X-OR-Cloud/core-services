@@ -1786,6 +1786,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
           sleepReason: null,
           sleepSince: null,
           sleepUntil: null,
+          currentTask: null,
           updatedBy: context.userId,
         },
       }

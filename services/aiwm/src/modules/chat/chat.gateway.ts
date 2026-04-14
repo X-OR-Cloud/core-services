@@ -201,7 +201,9 @@ export class ChatGateway
       if (channel === 'chat:message-new') {
         try {
           if (!this.server) return;
-          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, msgNonce, skipAgent } = JSON.parse(message);
+          const parsed = JSON.parse(message);
+          const { actionId, conversationId, agentId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, msgNonce } = parsed;
+          let { skipAgent } = parsed;
           // Distributed lock: only one WS instance processes each inbound message
           const lockKey = `lock:chat-msg:${msgNonce}`;
           const acquired = await this.redisPub!.set(lockKey, '1', 'EX', 10, 'NX');
@@ -209,6 +211,42 @@ export class ChatGateway
             this.logger.debug(`[Redis] chat:message-new skipped (lock taken) nonce=${msgNonce}`);
             return;
           }
+
+          // Sleep gate: load agent early so we can both (a) gate routing and
+          // (b) emit a sleep notice into the conversation for the user.
+          const agentDoc = agentId ? await this.agentService.findByIdInternal(agentId) : null;
+          if (!skipAgent && agentDoc?.status === 'sleep') {
+            skipAgent = true;
+            const sleepReason: string = agentDoc.sleepReason || 'agent is sleeping';
+            const noticeContent = `⚠️ Agent đang tạm nghỉ (${sleepReason}). Tin nhắn đã được ghi nhận nhưng agent sẽ không phản hồi cho đến khi được đánh thức.`;
+            try {
+              await this.actionService.createActionDirect(
+                {
+                  conversationId,
+                  type: ActionType.NOTICE,
+                  actor: { role: ActorRole.AGENT, agentId, displayName: agentId },
+                  content: noticeContent,
+                  metadata: { skipAgent: true },
+                },
+                { orgId: orgId || '', agentId, userId: userId || '' },
+              );
+            } catch (noticeErr: any) {
+              this.logger.warn(`Failed to persist sleep notice (redis path): ${noticeErr.message}`);
+            }
+            this.server.to(`conversation:${conversationId}`).emit('message:new', {
+              _id: `sleep-notice-${actionId}`,
+              conversationId,
+              role: 'assistant',
+              type: 'system',
+              content: noticeContent,
+              platform: 'portal',
+              skipAgent: true,
+            });
+            this.logger.warn(
+              `[Redis] Agent ${agentId} is sleeping — skipping routing. reason="${sleepReason}"`,
+            );
+          }
+
           const broadcastPayload = { _id: actionId, conversationId, orgId, role, content, attachments, userId, username, fullname, externalUsername, externalUserId, channelId, connectionId, platform, ...(skipAgent ? { skipAgent: true } : {}) };
           // Broadcast to user sockets in room regardless of agent type
           this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
@@ -217,7 +255,6 @@ export class ChatGateway
           // - assistant agent → Redis task queue (worker:agt consumes via BLPOP)
           // - engineer agent → already in room via WS, receives message:new above
           if (!skipAgent && agentId) {
-            const agentDoc = await this.agentService.findByIdInternal(agentId);
             if ((agentDoc as any)?.type === 'assistant') {
               const task = {
                 taskId: actionId,
@@ -834,6 +871,28 @@ export class ChatGateway
         `[WS-BROADCAST] room=conversation:${conversationId} | roomSize=${roomSize} | actionId=${actionId}`,
       );
 
+      // Sleep gate: if the target agent is currently sleeping, do not route
+      // the user message to it — the agent has been circuit-broken and must
+      // be woken up by a manager before accepting new work. Force skipAgent
+      // so that downstream engineer WS broadcast / assistant Redis queue
+      // routing both skip the sleeping agent.
+      let sleepNoticeContent: string | null = null;
+      if (!isAgent && agentId && !skipAgent) {
+        try {
+          const targetAgent = await this.agentService.findByIdInternal(agentId);
+          if (targetAgent?.status === 'sleep') {
+            skipAgent = true;
+            const sleepReason: string = targetAgent.sleepReason || 'agent is sleeping';
+            sleepNoticeContent = `⚠️ Agent đang tạm nghỉ (${sleepReason}). Tin nhắn đã được ghi nhận nhưng agent sẽ không phản hồi cho đến khi được đánh thức.`;
+            this.logger.warn(
+              `[WS-MSG-SEND] Agent ${agentId} is sleeping — skipping routing. reason="${sleepReason}"`,
+            );
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to check agent sleep status: ${err.message}`);
+        }
+      }
+
       const broadcastPayload = {
         ...messageDto,
         _id: actionId,
@@ -841,6 +900,32 @@ export class ChatGateway
         ...(skipAgent ? { skipAgent: true } : {}),
         ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username, fullname: client.data.fullname } : {}),
       };
+
+      if (sleepNoticeContent) {
+        try {
+          await this.actionService.createActionDirect(
+            {
+              conversationId,
+              type: ActionType.NOTICE,
+              actor: { role: ActorRole.AGENT, agentId, displayName: agentId },
+              content: sleepNoticeContent,
+              metadata: { skipAgent: true },
+            },
+            { orgId, agentId, userId: client.data.userId || '' },
+          );
+        } catch (noticeErr: any) {
+          this.logger.warn(`Failed to persist sleep notice: ${noticeErr.message}`);
+        }
+        this.server.to(`conversation:${conversationId}`).emit('message:new', {
+          _id: `sleep-notice-${actionId}`,
+          conversationId,
+          role: 'assistant',
+          type: 'system',
+          content: sleepNoticeContent,
+          platform: 'portal',
+          skipAgent: true,
+        });
+      }
 
       // Route message to agent:
       // - assistant agents (worker:agt) → Redis task queue (no WS round-trip)
