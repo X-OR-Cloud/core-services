@@ -328,6 +328,19 @@ export class KnowledgeFileController {
     return this.fileService.findById(new Types.ObjectId(id) as any, context);
   }
 
+  @Get(':id/content')
+  @ApiOperation({
+    summary: 'Get raw extracted text content of a file (for UI view source and agent context expansion)',
+  })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async getContent(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.fileService.getContent(id, context);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete file + all its chunks + Qdrant points' })
   @ApiDeleteErrors()
