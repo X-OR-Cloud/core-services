@@ -345,4 +345,32 @@ export class FileService extends BaseService<FileEntity> {
   ): Promise<void> {
     await this.fileModel.updateOne({ _id: new Types.ObjectId(id) }, { $set: patch });
   }
+
+  /**
+   * Adopt a file by setting ownerRef. Used by Document service when an
+   * attachment is first referenced inside a document's content body.
+   */
+  async assignOwnerRef(
+    id: string,
+    ownerRef: { kind: OwnerRefKind; id: string },
+  ): Promise<void> {
+    await this.fileModel.updateOne(
+      { _id: new Types.ObjectId(id), isDeleted: false },
+      { $set: { ownerRef } },
+    );
+  }
+
+  /**
+   * Soft-delete multiple files by id. Used by cascade handlers (e.g. document
+   * soft-delete → mark referenced attachments deleted).
+   */
+  async softDeleteManyByIds(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+    const result = await this.fileModel.updateMany(
+      { _id: { $in: objectIds }, isDeleted: false },
+      { $set: { isDeleted: true, deletedAt: new Date() } },
+    );
+    return result.modifiedCount;
+  }
 }

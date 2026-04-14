@@ -8,12 +8,19 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
   Res,
   HttpException,
   HttpStatus,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileService } from '../file/file.service';
 import {
   JwtAuthGuard,
   CurrentUser,
@@ -74,9 +81,94 @@ function wrapInHtmlPage(title: string, bodyHtml: string): string {
 export class DocumentController {
   constructor(
     private readonly documentService: DocumentService,
+    private readonly fileService: FileService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  // --- Notion-lite extension endpoints ---
+
+  @Post(':id/attachments')
+  @ApiOperation({ summary: 'Upload an attachment (image/video/file) to a document' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        name: { type: 'string' },
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAttachment(
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: 50 * 1024 * 1024 })],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body('name') name: string | undefined,
+    @CurrentUser() context: RequestContext,
+  ) {
+    // Verify document exists + caller has write access before uploading
+    const doc = await this.documentService.findById(
+      new Types.ObjectId(id) as any,
+      context,
+    );
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+    await this.documentService.assertCanWriteDocument(doc, context);
+
+    const uploaded = await this.fileService.uploadFile(
+      file,
+      {
+        purpose: 'attachment',
+        ownerKind: 'document',
+        ownerId: id,
+        name,
+      },
+      context,
+    );
+
+    const fileId = (uploaded as any)._id?.toString();
+    const placeholder = `file:${fileId}`;
+    const kind = file.mimetype.startsWith('video/')
+      ? 'video'
+      : file.mimetype.startsWith('image/')
+        ? 'image'
+        : 'file';
+
+    return {
+      fileId,
+      placeholder,
+      kind,
+      name: (uploaded as any).name,
+      fileName: (uploaded as any).fileName,
+      mimeType: (uploaded as any).mimeType,
+      fileSize: (uploaded as any).fileSize,
+    };
+  }
+
+  @Post(':id/commit')
+  @ApiOperation({
+    summary:
+      'Commit the collaborative draft into the document content (Plan #2 stub — real Yjs flush comes in Plan #3)',
+  })
+  @UseGuards(JwtAuthGuard)
+  async commit(
+    @Param('id') id: string,
+    @Body() body: { content?: string },
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.documentService.commitDraft(
+      new Types.ObjectId(id) as any,
+      body,
+      context,
+    );
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new document' })

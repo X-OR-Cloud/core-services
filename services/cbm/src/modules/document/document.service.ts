@@ -2,15 +2,23 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Document } from './document.schema';
 import { UpdateContentDto } from './document.dto';
 import { ProjectService } from '../project/project.service';
+import { FileService } from '../file/file.service';
 import { assertCanWriteDocument, canViewPrivateDocument, isSuperAdmin } from '../project/project-access.helper';
+import {
+  extractReferences,
+  diffRemovedAttachments,
+  AttachmentRef,
+  MentionRef,
+} from './markdown/extract-references';
 
 /**
  * DocumentService
@@ -19,19 +27,70 @@ import { assertCanWriteDocument, canViewPrivateDocument, isSuperAdmin } from '..
  */
 @Injectable()
 export class DocumentService extends BaseService<Document> {
+  protected readonly logger = new Logger(DocumentService.name);
+
   constructor(
     @InjectModel(Document.name) private documentModel: Model<Document>,
     private readonly projectService: ProjectService,
+    private readonly fileService: FileService,
   ) {
     super(documentModel);
   }
 
   /**
-   * Override create to force status as 'draft'
+   * Extract references and attach a matching `ownerRef` to any attachment files
+   * that do not yet point at this document. Safe to call on every save.
+   */
+  private async syncReferences(
+    docId: string,
+    content: string | undefined,
+  ): Promise<{ attachments: AttachmentRef[]; mentions: MentionRef[] }> {
+    const { attachments, mentions } = extractReferences(content || '');
+
+    // Adopt any attachment files that don't yet have ownerRef set to this doc.
+    // We intentionally do not reassign if ownerRef already points at a different
+    // document — that would indicate the user referenced a file shared from
+    // elsewhere, and we don't want silent cross-document ownership drift.
+    for (const att of attachments) {
+      try {
+        const file = await this.fileService.findByIdInternal(att.fileId);
+        if (!file) continue;
+        if (file.purpose !== 'attachment') continue;
+        const current = (file as any).ownerRef;
+        if (!current || !current.id) {
+          await this.fileService.assignOwnerRef(att.fileId, {
+            kind: 'document',
+            id: docId,
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `syncReferences: failed to adopt attachment ${att.fileId}: ${err.message}`,
+        );
+      }
+    }
+
+    return { attachments, mentions };
+  }
+
+  /**
+   * Override create to force status as 'draft' and extract references from content.
    */
   async create(data: any, context: RequestContext): Promise<Partial<Document>> {
     data.status = 'draft';
-    return super.create(data, context);
+    const { attachments, mentions } = extractReferences(data.content || '');
+    data.attachments = attachments;
+    data.mentions = mentions;
+
+    const created = await super.create(data, context);
+
+    // Adopt attachment files (set ownerRef) now that we know the document id.
+    const createdId = (created as any)?._id?.toString();
+    if (createdId && attachments.length > 0) {
+      await this.syncReferences(createdId, data.content);
+    }
+
+    return created;
   }
 
   /**
@@ -251,15 +310,37 @@ export class DocumentService extends BaseService<Document> {
     const ownerFilter: any = { _id: id, isDeleted: false };
     if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
 
+    // Keep attachments/mentions indexes in sync with the new content
+    const { attachments, mentions } = extractReferences(updatedContent);
+    const removedAttachmentIds = diffRemovedAttachments(
+      (document as any).attachments,
+      attachments,
+    );
+
     const updated = await this.documentModel
       .findOneAndUpdate(
         ownerFilter,
-        { content: updatedContent, updatedBy: context.agentId || context.userId },
+        {
+          content: updatedContent,
+          attachments,
+          mentions,
+          updatedBy: context.agentId || context.userId,
+        },
         { new: true }
       )
       .exec();
 
     if (!updated) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    await this.syncReferences(id.toString(), updatedContent);
+    if (removedAttachmentIds.length > 0) {
+      await this.fileService
+        .softDeleteManyByIds(removedAttachmentIds)
+        .catch((err) =>
+          this.logger.warn(`Failed to soft-delete orphaned attachments: ${err.message}`),
+        );
+    }
+
     return updated as Document;
   }
 
@@ -338,7 +419,7 @@ export class DocumentService extends BaseService<Document> {
    * - others: ForbiddenException
    */
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Document>> {
-    const doc = await this.findById(id, context);
+    const doc = await this.findByIdWithContent(id, context);
     if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
 
     const project = (doc as any).projectId
@@ -347,7 +428,29 @@ export class DocumentService extends BaseService<Document> {
 
     assertCanWriteDocument(doc, project, context);
 
-    return super.update(id, data, context);
+    // If content changed, re-extract references so attachments/mentions indexes stay in sync
+    let removedAttachmentIds: string[] = [];
+    if (data.content !== undefined && data.content !== doc.content) {
+      const { attachments, mentions } = extractReferences(data.content || '');
+      data.attachments = attachments;
+      data.mentions = mentions;
+      removedAttachmentIds = diffRemovedAttachments((doc as any).attachments, attachments);
+    }
+
+    const result = await super.update(id, data, context);
+
+    if (data.content !== undefined) {
+      await this.syncReferences(id.toString(), data.content);
+    }
+    if (removedAttachmentIds.length > 0) {
+      await this.fileService
+        .softDeleteManyByIds(removedAttachmentIds)
+        .catch((err) =>
+          this.logger.warn(`Failed to soft-delete orphaned attachments: ${err.message}`),
+        );
+    }
+
+    return result;
   }
 
   /**
@@ -367,6 +470,67 @@ export class DocumentService extends BaseService<Document> {
 
     assertCanWriteDocument(doc, project, context);
 
-    return super.softDelete(id, context);
+    const result = await super.softDelete(id, context);
+
+    // Cascade: soft-delete all attachments referenced by this document
+    const attachmentIds = ((doc as any).attachments || []).map((a: any) => a.fileId);
+    if (attachmentIds.length > 0) {
+      await this.fileService
+        .softDeleteManyByIds(attachmentIds)
+        .catch((err) =>
+          this.logger.warn(`Failed to cascade-delete document attachments: ${err.message}`),
+        );
+    }
+
+    return result;
+  }
+
+  /**
+   * Public guard used by DocumentController (e.g. attachment upload endpoint)
+   * to verify the caller has write access on a document without re-fetching.
+   */
+  async assertCanWriteDocument(doc: Document, context: RequestContext): Promise<void> {
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+    assertCanWriteDocument(doc, project, context);
+  }
+
+  /**
+   * Commit a collaborative draft into the canonical content body. Plan #2 stub
+   * implementation — returns the current state without touching draftState.
+   * Plan #3 will wire this up to the Hocuspocus server so that a commit flushes
+   * the Yjs state into markdown, clears draftState, and broadcasts to clients.
+   */
+  async commitDraft(
+    id: ObjectId,
+    body: { content?: string },
+    context: RequestContext,
+  ): Promise<{ hasActiveDraft: boolean; committed: boolean; message: string }> {
+    const doc = await this.findByIdWithContent(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+    assertCanWriteDocument(doc, project, context);
+
+    // Plan #2 stub: no Yjs session yet, so we accept a client-provided markdown
+    // body as a convenience save. Plan #3 will replace this with a Yjs flush.
+    if (body?.content !== undefined) {
+      await this.update(id, { content: body.content }, context);
+      return {
+        hasActiveDraft: false,
+        committed: true,
+        message: 'Content saved (no active draft session in Plan #2).',
+      };
+    }
+
+    return {
+      hasActiveDraft: false,
+      committed: false,
+      message:
+        'No active draft session. Realtime collaboration (Plan #3) is not enabled yet.',
+    };
   }
 }
