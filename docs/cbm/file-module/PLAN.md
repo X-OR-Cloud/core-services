@@ -25,7 +25,7 @@ Nâng cấp module `knowledge-file` hiện tại thành module `file` dùng chun
 - Chuyển `filePath` local disk → S3 key
 - Thêm `S3Service` trong `knowledge-shared` (hoặc module mới `storage-shared`)
 - Endpoint mới: generic upload `POST /files` + signed URL resolver `GET /files/:id/url`
-- Giữ alias routes `/knowledge-files/*` trỏ về service mới
+- **Xoá bỏ hoàn toàn** routes `/knowledge-files/*` cũ — FE sẽ cập nhật song song sang endpoint mới trong cùng phase
 - Migration script cho dữ liệu hiện có
 
 ### Ngoài phạm vi
@@ -112,19 +112,9 @@ FileSchema.index({ embeddingStatus: 1 });      // for knowledge-worker polling
 FileSchema.index({ createdAt: -1 });
 ```
 
-### 3.3. Virtual aliases (backwards compat)
+### 3.3. Không có virtual alias legacy
 
-Để code cũ đọc `collectionId` không vỡ:
-
-```typescript
-FileSchema.virtual('collectionId').get(function () {
-  return this.ownerRef?.kind === 'knowledge-collection' ? this.ownerRef.id : undefined;
-});
-
-FileSchema.virtual('filePath').get(function () {
-  return this.storageKey; // legacy alias
-});
-```
+Do xoá bỏ hoàn toàn endpoint cũ, schema không cần giữ `collectionId` / `filePath` virtuals. Code internal nào còn đọc field cũ phải cập nhật sang `ownerRef` / `storageKey` trong cùng phase.
 
 ## 4. Module layout
 
@@ -133,10 +123,8 @@ services/cbm/src/modules/file/
 ├── file.module.ts
 ├── file.schema.ts
 ├── file.service.ts              // CRUD + S3 upload/delete/signed URL
-├── file.controller.ts           // New: POST/GET /files, GET /files/:id/url
+├── file.controller.ts           // POST/GET /files, GET /files/:id/url
 ├── file.dto.ts
-├── legacy/
-│   └── knowledge-file.controller.ts   // Alias: /knowledge-files/* → file.service
 └── index.ts
 
 services/cbm/src/modules/storage-shared/   // NEW
@@ -145,7 +133,7 @@ services/cbm/src/modules/storage-shared/   // NEW
 └── index.ts
 ```
 
-`knowledge-worker` và `knowledge-chunk` import `FileService` thay vì `KnowledgeFileService`. Alias `KnowledgeFileService = FileService` giữ tạm 1 release rồi gỡ.
+`knowledge-worker`, `knowledge-chunk`, `knowledge-collection` import thẳng `FileService`. Module `knowledge-file` bị xoá hoàn toàn (bao gồm cả `knowledge-file.controller.ts`, `knowledge-file.service.ts`, `knowledge-file.dto.ts`, `knowledge-file.module.ts`). Các test controller (pdf-parse, pdf2json) trong `knowledge-file.controller.ts` được di chuyển sang `file.controller.ts` hoặc một controller test riêng `file-test.controller.ts` nếu cần giữ.
 
 ## 5. S3 integration
 
@@ -246,17 +234,27 @@ DELETE /files/:id
 
 Soft delete (không xoá S3 object), reuse logic knowledge-file hiện tại.
 
-### 6.5. Legacy endpoints (giữ nguyên)
+### 6.5. Endpoints bị xoá
+
+Các route cũ sau đây **bị xoá hoàn toàn** trong phase này. FE cập nhật sang endpoint mới song song:
 
 ```
-POST /knowledge-files/upload      → delegate: file.service.upload(purpose='knowledge', ...)
-GET  /knowledge-files              → delegate: file.service.findAll({ purpose: 'knowledge' })
-GET  /knowledge-files/:id
-DELETE /knowledge-files/:id
-POST /knowledge-files/:id/reindex
+POST   /knowledge-files/upload       → dùng POST /files với purpose='knowledge'
+GET    /knowledge-files               → dùng GET /files?purpose=knowledge
+GET    /knowledge-files/:id           → dùng GET /files/:id
+DELETE /knowledge-files/:id           → dùng DELETE /files/:id
+POST   /knowledge-files/:id/reindex   → dùng POST /files/:id/reindex (giữ action, chỉ đổi path)
 ```
 
-Alias controller giữ response shape cũ (`collectionId`, `filePath`, không có `purpose`) để FE hiện tại không vỡ.
+Response shape mới thống nhất theo `File` schema (có `purpose`, `ownerRef`, `storageKind`, `storageKey` thay cho `collectionId`, `filePath`). FE phải adapt.
+
+### 6.6. Reindex endpoint
+
+```
+POST /files/:id/reindex
+```
+
+Chỉ áp dụng khi `purpose='knowledge'`. Reset `embeddingStatus='pending'`. Giữ logic từ `knowledge-file.service.reindex` hiện tại.
 
 ## 7. Access control
 
@@ -322,19 +320,24 @@ Script riêng, chạy sau khi data migration ổn định:
 
 | Module | Impact | Xử lý |
 |---|---|---|
-| `knowledge-file` | Đổi tên → `file` | Viết lại + alias |
-| `knowledge-chunk` | Import `KnowledgeFile` | Đổi import → `File`, giữ alias type |
-| `knowledge-worker` | Poll `pending` files | Thêm filter `purpose='knowledge'` |
-| `knowledge-collection` | Gọi `KnowledgeFileService.updateStats` | Đổi sang `FileService` |
+| `knowledge-file` | **Xoá hoàn toàn** | Toàn bộ files trong module bị xoá; logic chuyển sang `file` |
+| `knowledge-chunk` | Import `KnowledgeFile` type | Đổi sang `File` type; field `sourceId` vẫn là fileId |
+| `knowledge-worker` | Poll `pending` files | Đổi sang `FileService.findPendingFiles` + filter `purpose='knowledge'` |
+| `knowledge-collection` | Gọi `KnowledgeFileService.updateStats` | Đổi sang `FileService.updateCollectionStats` |
 | `document` | Chưa dùng file | Plan #2 sẽ integrate |
 
 ### 9.2. MCP tools
 
-- `cbm/knowledge-base/tools.ts` có tool `upload-knowledge-file` → vẫn hoạt động (gọi endpoint legacy). Sau 1 release, cập nhật để dùng endpoint mới với `purpose='knowledge'`.
+- `cbm/knowledge-base/tools.ts` có tool `upload-knowledge-file` → cập nhật ngay trong cùng phase để dùng endpoint `POST /files` với `purpose='knowledge'`. MCP tool schema phơi ra cho agent cũng cập nhật theo.
 
 ### 9.3. Các service khác
 
 - `aiwm`, `iam`, `noti`, `mona`, `aivp`, `dgt` không phụ thuộc knowledge-file → không ảnh hưởng.
+
+### 9.4. Frontend
+
+- FE phụ thuộc `/knowledge-files/*` routes → **phải cập nhật song song** trong cùng phase deploy. Đây là breaking change có chủ đích (anh đã xác nhận).
+- BE và FE deploy cùng lúc (atomic). Nếu không kịp, rollback cả hai.
 
 ## 10. Testing checklist
 
@@ -361,17 +364,19 @@ Script riêng, chạy sau khi data migration ổn định:
 1. [ ] Tạo `storage-shared` module với `S3Service` (MVP: upload, delete, presignGet) + unit test với MinIO
 2. [ ] Thêm env vars + config trong `@hydrabyte/shared`
 3. [ ] Tạo `file.schema.ts` với fields mới
-4. [ ] Tạo `file.service.ts` — CRUD + S3 integration, copy logic `knowledge-file.service.ts`
-5. [ ] Tạo `file.controller.ts` với endpoints generic
-6. [ ] Tạo `legacy/knowledge-file.controller.ts` alias
-7. [ ] Cập nhật `knowledge-worker` filter `purpose='knowledge'`
-8. [ ] Cập nhật `knowledge-chunk`, `knowledge-collection` import
-9. [ ] Viết migration script `migrate-knowledge-files-to-files.ts`
-10. [ ] Viết migration script `migrate-local-to-s3.ts`
-11. [ ] Chạy migration trên staging, verify RAG pipeline regression
-12. [ ] Update Swagger docs + `docs/cbm/knowledge-base/API.md`
-13. [ ] Deploy production với feature flag `CBM_STORAGE_DRIVER`
-14. [ ] Sau 1 release ổn định: drop alias `KnowledgeFileService`, drop virtual fields legacy
+4. [ ] Tạo `file.service.ts` — CRUD + S3 integration, port logic từ `knowledge-file.service.ts`
+5. [ ] Tạo `file.controller.ts` với endpoints generic (`POST /files`, `GET /files`, `GET /files/:id`, `GET /files/:id/url`, `DELETE /files/:id`, `POST /files/:id/reindex`)
+6. [ ] Cập nhật `knowledge-worker` → `FileService.findPendingFiles` + filter `purpose='knowledge'`
+7. [ ] Cập nhật `knowledge-chunk`, `knowledge-collection` import và field references
+8. [ ] Cập nhật MCP tool `cbm/knowledge-base/tools.ts` dùng `POST /files`
+9. [ ] **Xoá** toàn bộ `services/cbm/src/modules/knowledge-file/` (service, controller, module, dto, schema)
+10. [ ] Unregister `KnowledgeFileModule` khỏi `AppModule`; register `FileModule`
+11. [ ] Viết migration script `migrate-knowledge-files-to-files.ts`
+12. [ ] Viết migration script `migrate-local-to-s3.ts`
+13. [ ] Chạy migration trên staging, verify RAG pipeline regression
+14. [ ] FE team update code song song — endpoint mới `/files/*`
+15. [ ] Update Swagger docs + `docs/cbm/knowledge-base/API.md`
+16. [ ] Coordinated deploy production: BE + FE atomic; feature flag `CBM_STORAGE_DRIVER`
 
 ## 12. Rủi ro & mitigation
 
@@ -381,7 +386,7 @@ Script riêng, chạy sau khi data migration ổn định:
 | Knowledge-worker đọc sai file vì thiếu `purpose` filter | Cao | Migration set `purpose='knowledge'` cho toàn bộ legacy docs; worker thêm filter trong cùng release |
 | S3 signed URL hết hạn giữa session user dài | Trung bình | FE cache 50% TTL, tự refresh khi 401/403 |
 | Local file mất khi chạy staging trước khi migration | Trung bình | `CBM_STORAGE_DRIVER=local` giữ nguyên hành vi cũ cho staging |
-| FE cũ vỡ vì response shape thay đổi | Trung bình | Alias controller giữ shape 100% giống cũ |
+| FE vỡ vì endpoint bị xoá | Cao | Coordinated deploy BE + FE cùng lúc; rollback cả hai nếu lỗi; staging verify trước |
 | MIME validation lỏng → upload file độc | Trung bình | Whitelist strict theo purpose, virus scan (phase sau) |
 
 ## 13. Câu hỏi mở
