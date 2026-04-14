@@ -15,7 +15,8 @@ import { ContentModule } from '../modules/content/content.module';
 import { ProjectModule } from '../modules/project/project.module';
 import { WorkModule } from '../modules/work/work.module';
 import { KnowledgeCollectionModule } from '../modules/knowledge-collection/knowledge-collection.module';
-import { KnowledgeFileModule } from '../modules/knowledge-file/knowledge-file.module';
+import { FileModule } from '../modules/file/file.module';
+import { StorageSharedModule } from '../modules/storage-shared/storage-shared.module';
 import { KnowledgeChunkModule } from '../modules/knowledge-chunk/knowledge-chunk.module';
 import { CompanyModule } from '../modules/company/company.module';
 import { ContactModule } from '../modules/contact/contact.module';
@@ -38,8 +39,9 @@ import { SkillModule } from '../skill/skill.module';
     ContentModule,
     ProjectModule,
     WorkModule,
+    StorageSharedModule,
+    FileModule,
     KnowledgeCollectionModule,
-    KnowledgeFileModule,
     KnowledgeChunkModule,
     // CRM modules
     CompanyModule,

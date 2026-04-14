@@ -31,7 +31,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { QdrantService } from '../knowledge-shared/qdrant.service';
 import { EmbeddingService } from '../knowledge-shared/embedding.service';
-import { KnowledgeFile } from '../knowledge-file/knowledge-file.schema';
+import { FileEntity } from '../file/file.schema';
+import { FileService } from '../file/file.service';
 import { KnowledgeChunkService } from '../knowledge-chunk/knowledge-chunk.service';
 
 @ApiTags('Knowledge Collections')
@@ -43,7 +44,8 @@ export class KnowledgeCollectionController {
     private readonly qdrantService: QdrantService,
     private readonly embeddingService: EmbeddingService,
     private readonly chunkService: KnowledgeChunkService,
-    @InjectModel(KnowledgeFile.name) private readonly fileModel: Model<KnowledgeFile>,
+    private readonly fileService: FileService,
+    @InjectModel(FileEntity.name) private readonly fileModel: Model<FileEntity>,
   ) {}
 
   @Post()
@@ -126,8 +128,12 @@ export class KnowledgeCollectionController {
     // 2. Hard delete all chunks in MongoDB
     await this.chunkService.deleteAllByCollectionId(id);
 
-    // 3. Hard delete all files in MongoDB
-    const fileResult = await this.fileModel.deleteMany({ collectionId: id });
+    // 3. Hard delete all knowledge files belonging to this collection
+    const fileResult = await this.fileModel.deleteMany({
+      purpose: 'knowledge',
+      'ownerRef.kind': 'knowledge-collection',
+      'ownerRef.id': id,
+    });
 
     // 4. Reset collection stats
     await this.collectionService.updateStats(id, context);
@@ -145,12 +151,9 @@ export class KnowledgeCollectionController {
   @UseGuards(JwtAuthGuard)
   async reindexAll(
     @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
   ) {
-    const result = await this.fileModel.updateMany(
-      { collectionId: id, isDeleted: false },
-      { $set: { embeddingStatus: 'pending', errorMessage: undefined, chunkCount: 0 } },
-    );
-    return { queued: result.modifiedCount };
+    return this.fileService.reindexCollection(id, context);
   }
 
   @Post(':id/search')

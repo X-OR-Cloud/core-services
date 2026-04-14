@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import * as path from 'path';
-import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 
-import { KnowledgeFile } from '../knowledge-file/knowledge-file.schema';
+import { FileEntity } from '../file/file.schema';
+import { FileService } from '../file/file.service';
 import { KnowledgeChunk } from '../knowledge-chunk/knowledge-chunk.schema';
 import { KnowledgeCollectionService } from '../knowledge-collection/knowledge-collection.service';
 import { ChunkingService } from '../knowledge-shared/chunking.service';
@@ -16,7 +15,6 @@ import { PdfParserService } from '../knowledge-shared/pdf-parser.service';
 
 // Document loaders
 import * as mammoth from 'mammoth';
-import { DocxLoader } from '@langchain/community/document_loaders/fs/docx';
 import { TextLoader } from '@langchain/classic/document_loaders/fs/text';
 
 // Batch size for embedding API calls
@@ -27,10 +25,11 @@ export class KnowledgeIndexerService {
   private readonly logger = new Logger(KnowledgeIndexerService.name);
 
   constructor(
-    @InjectModel(KnowledgeFile.name)
-    private readonly fileModel: Model<KnowledgeFile>,
+    @InjectModel(FileEntity.name)
+    private readonly fileModel: Model<FileEntity>,
     @InjectModel(KnowledgeChunk.name)
     private readonly chunkModel: Model<KnowledgeChunk>,
+    private readonly fileService: FileService,
     private readonly collectionService: KnowledgeCollectionService,
     private readonly chunkingService: ChunkingService,
     private readonly embeddingService: EmbeddingService,
@@ -40,47 +39,43 @@ export class KnowledgeIndexerService {
   ) {}
 
   /**
-   * Full indexing pipeline for a single file.
+   * Full indexing pipeline for a single knowledge file.
    * Steps: extract → chunk → embed → upsert Qdrant → update status
    */
   async indexFile(fileId: string): Promise<void> {
-    // 1. Load file record
-    const file = await this.fileModel
-      .findOne({ _id: new Types.ObjectId(fileId), isDeleted: false })
-      .lean()
-      .exec() as KnowledgeFile | null;
-
-    if (!file) {
-      this.logger.warn(`File ${fileId} not found or deleted — skipping`);
+    const file = await this.fileService.findByIdInternal(fileId);
+    if (!file || file.purpose !== 'knowledge') {
+      this.logger.warn(`File ${fileId} not found, deleted, or not a knowledge file — skipping`);
       return;
     }
 
-    // 2. Mark as processing
-    await this.fileModel.updateOne(
-      { _id: new Types.ObjectId(fileId) },
-      { $set: { embeddingStatus: 'processing', errorMessage: undefined } },
-    );
+    const collectionId = file.ownerRef?.id;
+    if (!collectionId) {
+      this.logger.warn(`File ${fileId} has no ownerRef.id — marking error`);
+      await this.fileService.updateIndexingStatus(fileId, {
+        embeddingStatus: 'error',
+        errorMessage: 'Missing ownerRef.id (collectionId)',
+      });
+      return;
+    }
+
+    await this.fileService.updateIndexingStatus(fileId, {
+      embeddingStatus: 'processing',
+      errorMessage: undefined,
+    });
 
     try {
-      // 3. Load collection config
-      const collection = await this.collectionService.findByIdInternal(file.collectionId);
+      const collection = await this.collectionService.findByIdInternal(collectionId);
       if (!collection) {
-        throw new Error(`KnowledgeCollection ${file.collectionId} not found`);
+        throw new Error(`KnowledgeCollection ${collectionId} not found`);
       }
 
-      // 4. Ensure Qdrant collection exists
       await this.qdrantService.ensureCollection(collection.qdrantCollection!);
 
-      // 5. Extract raw text from file
       const rawContent = await this.extractText(file);
 
-      // Save rawContent to file record
-      await this.fileModel.updateOne(
-        { _id: new Types.ObjectId(fileId) },
-        { $set: { rawContent } },
-      );
+      await this.fileService.updateIndexingStatus(fileId, { rawContent });
 
-      // 6. Chunk text using collection config
       const chunkingConfig = {
         ...this.chunkingService.getDefaultConfig(),
         ...(collection.chunkingConfig || {}),
@@ -89,21 +84,18 @@ export class KnowledgeIndexerService {
 
       if (textChunks.length === 0) {
         this.logger.warn(`File ${fileId} produced 0 chunks — marking ready with 0 chunks`);
-        await this.fileModel.updateOne(
-          { _id: new Types.ObjectId(fileId) },
-          { $set: { embeddingStatus: 'ready', chunkCount: 0 } },
-        );
+        await this.fileService.updateIndexingStatus(fileId, {
+          embeddingStatus: 'ready',
+          chunkCount: 0,
+        });
         return;
       }
 
-      // 7. Delete old chunks for this file (re-index scenario)
       await this.chunkModel.deleteMany({ sourceId: fileId });
 
-      // 8. Batch embedding
       const chunkTexts = textChunks.map((c) => c.content);
       const vectors = await this.embedInBatches(chunkTexts);
 
-      // 9. Build chunk records + Qdrant points
       const qdrantPoints = [];
       const chunkDocs = [];
 
@@ -113,7 +105,7 @@ export class KnowledgeIndexerService {
 
         chunkDocs.push({
           orgId: (file as any).owner?.orgId || '',
-          collectionId: file.collectionId,
+          collectionId,
           sourceType: 'file' as const,
           sourceId: fileId,
           chunkIndex: tc.chunkIndex,
@@ -127,116 +119,113 @@ export class KnowledgeIndexerService {
           id: pointId,
           vector: vectors[i],
           payload: {
-            chunkId: '', // will be set after mongo insert
+            chunkId: '',
             sourceId: fileId,
             sourceType: 'file' as const,
-            collectionId: file.collectionId,
+            collectionId,
             orgId: (file as any).owner?.orgId || '',
             content: tc.content,
           },
         });
       }
 
-      // 10. Insert chunks into MongoDB
       const insertedChunks = await this.chunkModel.insertMany(chunkDocs);
 
-      // 11. Update qdrant payloads with real chunkIds
       for (let i = 0; i < qdrantPoints.length; i++) {
         qdrantPoints[i].payload.chunkId = (insertedChunks[i] as any)._id.toString();
       }
 
-      // 12. Upsert into Qdrant
       await this.qdrantService.upsertPoints(collection.qdrantCollection!, qdrantPoints);
 
-      // 13. Update file: ready + chunkCount
-      await this.fileModel.updateOne(
-        { _id: new Types.ObjectId(fileId) },
-        { $set: { embeddingStatus: 'ready', chunkCount: textChunks.length } },
-      );
+      await this.fileService.updateIndexingStatus(fileId, {
+        embeddingStatus: 'ready',
+        chunkCount: textChunks.length,
+      });
 
       this.logger.log(`Indexed file ${fileId}: ${textChunks.length} chunks`);
     } catch (error: any) {
       this.logger.error(`Failed to index file ${fileId}: ${error.message}`, error.stack);
-      await this.fileModel.updateOne(
-        { _id: new Types.ObjectId(fileId) },
-        {
-          $set: {
-            embeddingStatus: 'error',
-            errorMessage: error.message?.slice(0, 500) || 'Unknown error',
-          },
-        },
-      );
+      await this.fileService.updateIndexingStatus(fileId, {
+        embeddingStatus: 'error',
+        errorMessage: error.message?.slice(0, 500) || 'Unknown error',
+      });
     }
 
     // Always update collection stats
-    const updatedFile = await this.fileModel
-      .findOne({ _id: new Types.ObjectId(fileId) })
-      .lean()
-      .exec() as KnowledgeFile | null;
-
-    if (updatedFile?.collectionId) {
-      await this.collectionService
-        .updateStats(updatedFile.collectionId, {} as any)
-        .catch((err) => this.logger.warn(`Stats update failed: ${err.message}`));
-    }
+    await this.collectionService
+      .updateStats(collectionId, {} as any)
+      .catch((err) => this.logger.warn(`Stats update failed: ${err.message}`));
   }
 
   /**
-   * Extract raw text from file using LangChain loaders
+   * Extract raw text from file using the FileService to abstract storage (S3 or local).
    */
-  private async extractText(file: KnowledgeFile): Promise<string> {
-    const storagePath = process.env.KB_STORAGE_PATH || '/data/cbm/knowledge';
-    const absolutePath = path.join(storagePath, file.filePath);
-
-    if (!fs.existsSync(absolutePath)) {
-      throw new Error(`File not found on disk: ${absolutePath}`);
-    }
-
+  private async extractText(file: FileEntity): Promise<string> {
     const mimeType = file.mimeType;
 
     try {
       if (mimeType === 'application/pdf') {
-        const buffer = fs.readFileSync(absolutePath);
+        const buffer = await this.fileService.readBuffer(file);
         const markdown = await this.pdfParserService.parseToMarkdown(buffer);
 
-        // Fallback to OCR if text is insufficient (image-based PDF)
         if (this.ocrService.isTextInsufficient(markdown)) {
           if (this.ocrService.isConfigured()) {
-            this.logger.log(`PDF text insufficient (${markdown.trim().length} chars) — falling back to OCR: ${file.fileName}`);
-            return this.ocrService.ocrPdf(absolutePath);
+            this.logger.log(
+              `PDF text insufficient (${markdown.trim().length} chars) — falling back to OCR: ${file.fileName}`,
+            );
+            const materialized = await this.fileService.materializeToLocalPath(file);
+            try {
+              return await this.ocrService.ocrPdf(materialized.path);
+            } finally {
+              materialized.cleanup();
+            }
           } else {
-            this.logger.warn(`PDF text insufficient for ${file.fileName} and OCR not configured (KB_OCR_API_URL not set)`);
+            this.logger.warn(
+              `PDF text insufficient for ${file.fileName} and OCR not configured (KB_OCR_API_URL not set)`,
+            );
           }
         }
 
         return markdown;
       }
 
-      if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        const buffer = fs.readFileSync(absolutePath);
+      if (
+        mimeType ===
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ) {
+        const buffer = await this.fileService.readBuffer(file);
         const result = await mammoth.extractRawText({ buffer });
         return result.value;
       }
 
       if (mimeType === 'text/plain' || mimeType === 'text/markdown') {
-        const loader = new TextLoader(absolutePath);
-        const docs = await loader.load();
-        return docs.map((d) => d.pageContent).join('\n\n');
+        const materialized = await this.fileService.materializeToLocalPath(file);
+        try {
+          const loader = new TextLoader(materialized.path);
+          const docs = await loader.load();
+          return docs.map((d) => d.pageContent).join('\n\n');
+        } finally {
+          materialized.cleanup();
+        }
       }
 
       if (mimeType === 'text/html') {
-        // Strip HTML tags using regex (no external dependency needed)
-        const htmlContent = fs.readFileSync(absolutePath, 'utf-8');
+        const buffer = await this.fileService.readBuffer(file);
+        const htmlContent = buffer.toString('utf-8');
         return htmlContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       }
 
-      if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-        // XLSX: read as binary and extract text via fallback
-        return fs.readFileSync(absolutePath, 'utf-8');
+      if (
+        mimeType ===
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ) {
+        const buffer = await this.fileService.readBuffer(file);
+        return buffer.toString('utf-8');
       }
 
       // Fallback: read as text
-      return fs.readFileSync(absolutePath, 'utf-8');
+      const buffer = await this.fileService.readBuffer(file);
+      return buffer.toString('utf-8');
     } catch (error: any) {
       throw new Error(`Text extraction failed for ${file.fileName}: ${error.message}`);
     }

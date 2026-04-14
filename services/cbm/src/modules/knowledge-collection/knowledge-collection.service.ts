@@ -64,12 +64,18 @@ export class KnowledgeCollectionService extends BaseService<KnowledgeCollection>
     const stats = await this.collectionModel.aggregate([
       {
         $lookup: {
-          from: 'knowledge_files',
+          from: 'files',
           let: { collectionId: { $toString: '$_id' } },
           pipeline: [
             {
               $match: {
-                $expr: { $eq: ['$collectionId', '$$collectionId'] },
+                $expr: {
+                  $and: [
+                    { $eq: ['$purpose', 'knowledge'] },
+                    { $eq: ['$ownerRef.kind', 'knowledge-collection'] },
+                    { $eq: ['$ownerRef.id', '$$collectionId'] },
+                  ],
+                },
                 isDeleted: false,
               },
             },

@@ -4,7 +4,7 @@ import { KnowledgeCollectionController } from './knowledge-collection.controller
 import { KnowledgeCollectionService } from './knowledge-collection.service';
 import { KnowledgeCollection, KnowledgeCollectionSchema } from './knowledge-collection.schema';
 import { KnowledgeSharedModule } from '../knowledge-shared/knowledge-shared.module';
-import { KnowledgeFile, KnowledgeFileSchema } from '../knowledge-file/knowledge-file.schema';
+import { FileModule } from '../file/file.module';
 import { KnowledgeChunk, KnowledgeChunkSchema } from '../knowledge-chunk/knowledge-chunk.schema';
 import { KnowledgeChunkService } from '../knowledge-chunk/knowledge-chunk.service';
 
@@ -12,10 +12,10 @@ import { KnowledgeChunkService } from '../knowledge-chunk/knowledge-chunk.servic
   imports: [
     MongooseModule.forFeature([
       { name: KnowledgeCollection.name, schema: KnowledgeCollectionSchema },
-      { name: KnowledgeFile.name, schema: KnowledgeFileSchema },
       { name: KnowledgeChunk.name, schema: KnowledgeChunkSchema },
     ]),
     KnowledgeSharedModule,
+    FileModule,
   ],
   controllers: [KnowledgeCollectionController],
   providers: [KnowledgeCollectionService, KnowledgeChunkService],

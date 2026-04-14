@@ -1,18 +1,14 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { KnowledgeFile } from '../knowledge-file/knowledge-file.schema';
+import { FileService } from '../file/file.service';
 import { KnowledgeLockService } from './knowledge-lock.service';
 import { KnowledgeIndexerService } from './knowledge-indexer.service';
 
-const POLL_INTERVAL_MS = 5000; // Poll every 5s for pending files
+const POLL_INTERVAL_MS = 5000;
 const MAX_CONCURRENT = parseInt(process.env.KB_WORKER_CONCURRENCY || '3', 10);
 
 /**
- * KnowledgeWorkerService — background loop that picks up pending files
+ * KnowledgeWorkerService — background loop that picks up pending knowledge files
  * and runs the indexing pipeline with Redis distributed lock.
- *
- * Multiple worker instances can run safely — lock prevents duplicate processing.
  */
 @Injectable()
 export class KnowledgeWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -22,8 +18,7 @@ export class KnowledgeWorkerService implements OnModuleInit, OnModuleDestroy {
   private activeJobs = 0;
 
   constructor(
-    @InjectModel(KnowledgeFile.name)
-    private readonly fileModel: Model<KnowledgeFile>,
+    private readonly fileService: FileService,
     private readonly lockService: KnowledgeLockService,
     private readonly indexerService: KnowledgeIndexerService,
   ) {}
@@ -60,12 +55,7 @@ export class KnowledgeWorkerService implements OnModuleInit, OnModuleDestroy {
     if (!this.isRunning || this.activeJobs >= MAX_CONCURRENT) return;
 
     const available = MAX_CONCURRENT - this.activeJobs;
-    const pendingFiles = await this.fileModel
-      .find({ embeddingStatus: 'pending', isDeleted: false })
-      .select('_id')
-      .limit(available * 2) // fetch extra to compensate for lock contention
-      .lean()
-      .exec();
+    const pendingFiles = await this.fileService.findPendingKnowledgeFiles(available * 2);
 
     if (pendingFiles.length === 0) return;
 

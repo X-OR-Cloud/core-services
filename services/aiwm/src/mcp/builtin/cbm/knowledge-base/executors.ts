@@ -108,7 +108,7 @@ export async function executeKbGetFileInfo(
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
 
     const response = await makeServiceRequest(
-      `${cbmBaseUrl}/knowledge-files/${args.fileId}`,
+      `${cbmBaseUrl}/files/${args.fileId}`,
       {
         method: 'GET',
         context,
@@ -119,7 +119,7 @@ export async function executeKbGetFileInfo(
     if (response.ok && contentType.includes('application/json')) {
       const json = await response.json();
       // Remove heavy/internal fields
-      const { owner, createdBy, updatedBy, __v, rawContent, filePath, ...rest } = json;
+      const { owner, createdBy, updatedBy, __v, rawContent, storageKey, ...rest } = json;
       return { content: [{ type: 'text', text: JSON.stringify(rest, null, 2) }] };
     }
 
