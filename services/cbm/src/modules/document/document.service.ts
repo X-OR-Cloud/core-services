@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -12,6 +13,7 @@ import { Document } from './document.schema';
 import { UpdateContentDto } from './document.dto';
 import { ProjectService } from '../project/project.service';
 import { FileService } from '../file/file.service';
+import { DocumentRtcService } from '../document-rtc/document-rtc.service';
 import { assertCanWriteDocument, canViewPrivateDocument, isSuperAdmin } from '../project/project-access.helper';
 import {
   extractReferences,
@@ -33,8 +35,30 @@ export class DocumentService extends BaseService<Document> {
     @InjectModel(Document.name) private documentModel: Model<Document>,
     private readonly projectService: ProjectService,
     private readonly fileService: FileService,
+    private readonly rtcService: DocumentRtcService,
   ) {
     super(documentModel);
+  }
+
+  /**
+   * Throw 409 DOCUMENT_IN_ACTIVE_SESSION if a realtime collab session is
+   * currently open on a document. Used by MCP write paths (updateContent,
+   * direct PATCH on content) to avoid clobbering live edits.
+   */
+  private async assertNoActiveSession(docId: string): Promise<void> {
+    const active = await this.rtcService.isSessionActive(docId);
+    if (!active) return;
+
+    const editorCount = await this.rtcService.getActiveEditorCount(docId);
+    throw new ConflictException({
+      error: 'DOCUMENT_IN_ACTIVE_SESSION',
+      statusCode: 409,
+      message:
+        `Document is currently being edited by ${editorCount || 'one or more'} user(s) in a live collaboration session. ` +
+        `Your edit was not applied. Please ask the user to apply your suggestion manually via chat, or retry later when the session ends.`,
+      documentId: docId,
+      activeUserCount: editorCount,
+    });
   }
 
   /**
@@ -272,6 +296,10 @@ export class DocumentService extends BaseService<Document> {
    *           append, append-after-text, append-to-section
    */
   async updateContent(id: ObjectId, updateDto: UpdateContentDto, context: RequestContext): Promise<Document> {
+    // MCP / direct write path — reject if there is a live collab session so we
+    // don't clobber a user's in-flight edits. Plan #3 error contract.
+    await this.assertNoActiveSession(id.toString());
+
     const document = await this.findByIdWithContent(id, context);
     if (!document) throw new NotFoundException(`Document with ID ${id} not found`);
 
@@ -419,6 +447,13 @@ export class DocumentService extends BaseService<Document> {
    * - others: ForbiddenException
    */
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Document>> {
+    // If the caller is updating the content body and there is an active
+    // collab session, reject with DOCUMENT_IN_ACTIVE_SESSION. Metadata-only
+    // updates (labels, status, shareMode, etc.) are allowed through.
+    if (data.content !== undefined) {
+      await this.assertNoActiveSession(id.toString());
+    }
+
     const doc = await this.findByIdWithContent(id, context);
     if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
 
@@ -497,10 +532,24 @@ export class DocumentService extends BaseService<Document> {
   }
 
   /**
-   * Commit a collaborative draft into the canonical content body. Plan #2 stub
-   * implementation — returns the current state without touching draftState.
-   * Plan #3 will wire this up to the Hocuspocus server so that a commit flushes
-   * the Yjs state into markdown, clears draftState, and broadcasts to clients.
+   * Commit a collaborative draft into the canonical content body.
+   *
+   * Plan #3: the client serializes the current BlockNote state to markdown
+   * via `editor.blocksToMarkdownLossy()` and posts it here. The server does
+   * NOT run BlockNote; we trust the caller (who must be authenticated + have
+   * write access) to provide the serialized form. In exchange we:
+   *   1. Verify the caller has write access.
+   *   2. Overwrite `content` markdown with the provided body.
+   *   3. Re-extract attachments/mentions and cascade orphans (same flow as
+   *      a normal update).
+   *   4. Clear `draftState` so the next fresh connection re-seeds from
+   *      markdown — this prevents stale Y.Doc blobs from overriding the
+   *      committed content on reconnect.
+   *   5. Publish a commit event on Redis so cbm:rtc can notify live clients.
+   *
+   * Important: unlike `update()`, this method intentionally does NOT reject
+   * when a session is active — the whole point of commit is to flush the
+   * active session's draft.
    */
   async commitDraft(
     id: ObjectId,
@@ -515,22 +564,85 @@ export class DocumentService extends BaseService<Document> {
       : null;
     assertCanWriteDocument(doc, project, context);
 
-    // Plan #2 stub: no Yjs session yet, so we accept a client-provided markdown
-    // body as a convenience save. Plan #3 will replace this with a Yjs flush.
-    if (body?.content !== undefined) {
-      await this.update(id, { content: body.content }, context);
+    if (body?.content === undefined) {
       return {
-        hasActiveDraft: false,
-        committed: true,
-        message: 'Content saved (no active draft session in Plan #2).',
+        hasActiveDraft: (doc as any).hasActiveDraft || false,
+        committed: false,
+        message:
+          'No content provided. Send the current editor state as `content` (markdown) to commit.',
       };
     }
 
+    const docIdStr = id.toString();
+
+    // Extract references + diff orphans against the existing content
+    const { attachments, mentions } = extractReferences(body.content);
+    const removedAttachmentIds = diffRemovedAttachments(
+      (doc as any).attachments,
+      attachments,
+    );
+
+    // Write the committed content + clear draft state in a single update
+    const ownerFilter: any = { _id: id, isDeleted: false };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
+    const updated = await this.documentModel
+      .findOneAndUpdate(
+        ownerFilter,
+        {
+          content: body.content,
+          attachments,
+          mentions,
+          draftState: null,
+          draftUpdatedAt: null,
+          hasActiveDraft: false,
+          updatedBy: context,
+        },
+        { new: true },
+      )
+      .exec();
+
+    if (!updated) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    // Sync attachment ownerRefs + cascade orphans (best effort)
+    await this.syncReferences(docIdStr, body.content);
+    if (removedAttachmentIds.length > 0) {
+      await this.fileService
+        .softDeleteManyByIds(removedAttachmentIds)
+        .catch((err) =>
+          this.logger.warn(`Failed to soft-delete orphaned attachments: ${err.message}`),
+        );
+    }
+
+    // Notify cbm:rtc so live clients can reload fresh content
+    await this.rtcService
+      .publishCommitted(docIdStr, context.userId || context.agentId || 'unknown')
+      .catch((err) =>
+        this.logger.warn(`Failed to publish commit event: ${err.message}`),
+      );
+
     return {
       hasActiveDraft: false,
-      committed: false,
-      message:
-        'No active draft session. Realtime collaboration (Plan #3) is not enabled yet.',
+      committed: true,
+      message: 'Draft committed successfully.',
+    };
+  }
+
+  /**
+   * Return the session status of a document for the FE editor UI (badge,
+   * active editor count). Called from GET /documents/:id/session-status.
+   */
+  async getSessionStatus(
+    id: ObjectId,
+    context: RequestContext,
+  ): Promise<{ hasActiveDraft: boolean; draftUpdatedAt: Date | null; activeEditorCount: number }> {
+    const doc = await this.findById(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+    const docIdStr = id.toString();
+
+    return {
+      hasActiveDraft: (doc as any).hasActiveDraft || false,
+      draftUpdatedAt: (doc as any).draftUpdatedAt || null,
+      activeEditorCount: await this.rtcService.getActiveEditorCount(docIdStr),
     };
   }
 }

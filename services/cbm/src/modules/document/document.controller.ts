@@ -155,7 +155,7 @@ export class DocumentController {
   @Post(':id/commit')
   @ApiOperation({
     summary:
-      'Commit the collaborative draft into the document content (Plan #2 stub — real Yjs flush comes in Plan #3)',
+      'Commit the collaborative draft into the document content. Send `content` with the serialized editor markdown (via blocksToMarkdownLossy).',
   })
   @UseGuards(JwtAuthGuard)
   async commit(
@@ -166,6 +166,22 @@ export class DocumentController {
     return this.documentService.commitDraft(
       new Types.ObjectId(id) as any,
       body,
+      context,
+    );
+  }
+
+  @Get(':id/session-status')
+  @ApiOperation({
+    summary: 'Get the realtime collaboration session status (draft flag + active editor count)',
+  })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async getSessionStatus(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.documentService.getSessionStatus(
+      new Types.ObjectId(id) as any,
       context,
     );
   }

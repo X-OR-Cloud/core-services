@@ -5,6 +5,7 @@
  * Modes:
  * - api (default): REST API server
  * - emb: Knowledge Base embedding worker
+ * - rtc: Realtime Collaboration server (Hocuspocus)
  */
 
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -20,6 +21,12 @@ async function bootstrap() {
   if (MODE === 'emb') {
     const { bootstrapKbWorker } = await import('./bootstrap-kb-worker');
     await bootstrapKbWorker();
+    return;
+  }
+
+  if (MODE === 'rtc') {
+    const { bootstrapRtc } = await import('./bootstrap-rtc');
+    await bootstrapRtc();
     return;
   }
 

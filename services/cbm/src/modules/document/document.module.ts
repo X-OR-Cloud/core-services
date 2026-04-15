@@ -9,6 +9,7 @@ import { DocumentService } from './document.service';
 import { Document, DocumentSchema } from './document.schema';
 import { ProjectModule } from '../project/project.module';
 import { FileModule } from '../file/file.module';
+import { DocumentRtcModule } from '../document-rtc/document-rtc.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { FileModule } from '../file/file.module';
     }),
     ProjectModule,
     FileModule,
+    DocumentRtcModule,
   ],
   controllers: [DocumentController],
   providers: [DocumentService],
