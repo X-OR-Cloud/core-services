@@ -384,14 +384,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Re-acquire the lock — between teardown and respawn another instance
-      // could theoretically have claimed it. If we lost it, leave it alone.
-      const reacquired = await this.lockService.tryAcquire(agentId);
-      if (!reacquired) {
-        this.logger.log(`[restart] lock no longer owned by this instance, skipping respawn`);
-        return;
-      }
-
+      // Lock is intentionally NOT released during teardown — this instance
+      // remains the owner throughout, so we can spawn directly without
+      // re-acquiring (tryAcquire would fail with SET NX since the key still
+      // exists, and renewAll keeps the TTL fresh).
       await this.spawnRunner(agent as unknown as AgentDocument);
       await this.agentService.addLog(agentId, {
         level: 'info',
