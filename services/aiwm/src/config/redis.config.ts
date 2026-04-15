@@ -14,3 +14,14 @@ export interface InstructionUpdatedEvent {
   instructionId: string;
   updatedAt: string;
 }
+
+/** Pub/sub channel broadcast for on-demand commands targeting agent workers. */
+export const REDIS_CHANNEL_AGENT_WORKER_CMD = 'aiwm:agent-worker-cmd';
+
+export interface AgentWorkerCmdEvent {
+  type: 'restart';
+  agentId: string;
+  requestedBy: string;
+  reason?: string;
+  ts: number;
+}

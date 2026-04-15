@@ -5,7 +5,9 @@ import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { ConfigKey } from '@hydrabyte/shared';
 import {
+  AgentWorkerCmdEvent,
   InstructionUpdatedEvent,
+  REDIS_CHANNEL_AGENT_WORKER_CMD,
   REDIS_CHANNEL_INSTRUCTION_UPDATED,
   redisConfig,
 } from '../../config/redis.config';
@@ -54,6 +56,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   private redisPub: Redis | null = null;
   /** Dedicated Redis subscriber for instruction-updated events. */
   private redisSub: Redis | null = null;
+  /** Dedicated Redis subscriber for on-demand worker commands (e.g. restart). */
+  private redisCmdSub: Redis | null = null;
+  /** Track in-flight on-demand restarts to dedup overlapping requests. */
+  private readonly restartingSet = new Set<string>();
   /** Map of agentId → dedicated Redis client for BLPOP (blocking, one per runner) */
   private readonly redisBlockingMap = new Map<string, Redis>();
   private readonly agentIdFilter: string[];
@@ -78,6 +84,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.spawnAgents();
     this.startHealthCheck();
     await this.startInstructionSubscriber();
+    await this.startWorkerCmdSubscriber();
   }
 
   async onModuleDestroy() {
@@ -85,7 +92,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.healthCheckTimer);
     }
     for (const [agentId, runner] of this.runners.entries()) {
-      runner.stop();
+      await runner.stopAsync();
       await this.lockService.release(agentId);
       this.redisBlockingMap.get(agentId)?.disconnect();
       this.redisBlockingMap.delete(agentId);
@@ -93,6 +100,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     this.runners.clear();
     this.redisSub?.disconnect();
     this.redisSub = null;
+    this.redisCmdSub?.disconnect();
+    this.redisCmdSub = null;
     this.redisPub?.disconnect();
     this.redisPub = null;
     this.logger.log('All agent runners stopped');
@@ -255,6 +264,18 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Tear down a runner's in-memory state and Redis BLPOP connection.
+   * Caller is responsible for awaiting the runner stop and respawning if needed.
+   */
+  private async teardownRunner(agentId: string, runner: AgentRunner): Promise<void> {
+    await runner.stopAsync();
+    this.redisBlockingMap.get(agentId)?.disconnect();
+    this.redisBlockingMap.delete(agentId);
+    this.runners.delete(agentId);
+    this.runnerConfigHash.delete(agentId);
+  }
+
+  /**
    * Check if any running agent has been updated (updatedAt changed).
    * Restarts the runner only if the agent is currently idle.
    */
@@ -284,12 +305,103 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log(`Agent ${agent.name} (${agentId}) config changed, restarting runner...`);
       await this.agentService.addLog(agentId, { level: 'info', message: 'Runner restarted — config changed' });
-      runner.stop();
-      this.redisBlockingMap.get(agentId)?.disconnect();
-      this.redisBlockingMap.delete(agentId);
-      this.runners.delete(agentId);
-      this.runnerConfigHash.delete(agentId);
+      await this.teardownRunner(agentId, runner);
       await this.spawnRunner(agent as unknown as AgentDocument);
+    }
+  }
+
+  /**
+   * Subscribe to broadcast worker commands (e.g. on-demand restart).
+   * Every `agt` instance listens; only the one currently holding the lock for
+   * the targeted agent will act on the message.
+   */
+  private async startWorkerCmdSubscriber() {
+    this.redisCmdSub = new Redis(redisConfig);
+    try {
+      await this.redisCmdSub.subscribe(REDIS_CHANNEL_AGENT_WORKER_CMD);
+    } catch (err) {
+      this.logger.error(`Failed to subscribe to ${REDIS_CHANNEL_AGENT_WORKER_CMD}: ${(err as Error).message}`);
+      return;
+    }
+
+    this.redisCmdSub.on('message', (channel, raw) => {
+      if (channel !== REDIS_CHANNEL_AGENT_WORKER_CMD) return;
+      this.handleWorkerCmd(raw).catch((err: Error) =>
+        this.logger.error(`handleWorkerCmd error: ${err.message}`, err.stack),
+      );
+    });
+
+    this.logger.log(`Subscribed to ${REDIS_CHANNEL_AGENT_WORKER_CMD}`);
+  }
+
+  private async handleWorkerCmd(raw: string) {
+    let event: AgentWorkerCmdEvent;
+    try {
+      event = JSON.parse(raw);
+    } catch (err) {
+      this.logger.warn(`Invalid agent-worker-cmd payload: ${(err as Error).message}`);
+      return;
+    }
+    if (event?.type !== 'restart' || !event.agentId) return;
+
+    const { agentId, requestedBy, reason } = event;
+    if (!this.runners.has(agentId)) return; // not owned by this instance
+    if (this.restartingSet.has(agentId)) {
+      this.logger.debug(`[restart] dedup — already restarting ${agentId}`);
+      return;
+    }
+
+    await this.restartRunnerOnDemand(agentId, requestedBy, reason);
+  }
+
+  /**
+   * On-demand restart: abort in-flight work, tear down, re-fetch agent, respawn.
+   * Unlike `restartUpdatedAgents`, this does NOT defer when the runner is busy —
+   * `restart` semantics require an immediate hard reset with the latest DB config.
+   */
+  private async restartRunnerOnDemand(
+    agentId: string,
+    requestedBy: string,
+    reason?: string,
+  ): Promise<void> {
+    this.restartingSet.add(agentId);
+    try {
+      const runner = this.runners.get(agentId);
+      if (!runner) return;
+
+      this.logger.log(`[restart] tearing down runner ${agentId} (requestedBy=${requestedBy})`);
+      runner.abortAll(reason ?? 'restart');
+      await this.teardownRunner(agentId, runner);
+
+      const agent = await this.agentModel
+        .findOne({ _id: agentId, isDeleted: { $ne: true } })
+        .select('+secret')
+        .lean()
+        .catch(() => null);
+      if (!agent) {
+        this.logger.warn(`[restart] agent ${agentId} not found after teardown`);
+        await this.lockService.release(agentId);
+        return;
+      }
+
+      // Re-acquire the lock — between teardown and respawn another instance
+      // could theoretically have claimed it. If we lost it, leave it alone.
+      const reacquired = await this.lockService.tryAcquire(agentId);
+      if (!reacquired) {
+        this.logger.log(`[restart] lock no longer owned by this instance, skipping respawn`);
+        return;
+      }
+
+      await this.spawnRunner(agent as unknown as AgentDocument);
+      await this.agentService.addLog(agentId, {
+        level: 'info',
+        message: 'Runner restarted on-demand',
+        data: { requestedBy, reason },
+      });
+    } catch (err) {
+      this.logger.error(`[restart] failed for ${agentId}: ${(err as Error).message}`, (err as Error).stack);
+    } finally {
+      this.restartingSet.delete(agentId);
     }
   }
 

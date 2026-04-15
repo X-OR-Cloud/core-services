@@ -141,6 +141,9 @@ export class AgentRunner {
   private currentWorkId: string | null = null;
   private lastConversationId: string | null = null;
   private cmdSubRedis: Redis | null = null;
+  /** Resolves when the BLPOP consumer loop has fully exited. Used by stopAsync to await teardown. */
+  private consumerStoppedPromise: Promise<void> | null = null;
+  private resolveConsumerStopped: (() => void) | null = null;
 
   private browserCtx: BrowserContext | null = null;
   private browserInstanceManager: BrowserInstanceManager | null = null;
@@ -203,7 +206,33 @@ export class AgentRunner {
     this.startHeartbeat();
   }
 
-  stop() {
+  /**
+   * Abort every in-flight LLM generation and notify each affected conversation.
+   * Used by on-demand restart so users don't sit waiting on a runner that's about to die.
+   */
+  abortAll(reason = 'restart'): void {
+    if (!this.abortMap.size) return;
+    const count = this.abortMap.size;
+    for (const [convId, controller] of this.abortMap.entries()) {
+      try {
+        controller.abort();
+        this.publishSystemMessage(
+          convId,
+          `Agent đang ${reason}. Cuộc hội thoại sẽ tiếp tục sau vài giây.`,
+        );
+      } catch (err) {
+        this.logger.warn(`abortAll failed for conv=${convId}: ${(err as Error).message}`);
+      }
+    }
+    this.abortMap.clear();
+    this.logger.log(`abortAll — aborted ${count} in-flight conversation(s)`);
+  }
+
+  /**
+   * Graceful teardown — awaits the BLPOP consumer loop to exit so a fresh runner
+   * spawned right after isn't racing two consumers against the same queue.
+   */
+  async stopAsync(): Promise<void> {
     this.isShuttingDown = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -212,7 +241,18 @@ export class AgentRunner {
     this.cmdSubRedis?.disconnect();
     this.cmdSubRedis = null;
     if (this.browserInstanceManager) {
-      this.browserInstanceManager.stop().catch(() => {/* silent */});
+      await this.browserInstanceManager.stop().catch(() => {/* silent */});
+    }
+    if (this.consumerStoppedPromise) {
+      // Cap the wait — BLPOP timeout is 5s, so 6s leaves a small margin.
+      await Promise.race([
+        this.consumerStoppedPromise,
+        new Promise<void>((r) => setTimeout(r, 6000)),
+      ]);
+    }
+    if (this.pendingTasks.size) {
+      this.logger.warn(`Discarded ${this.pendingTasks.size} pending in-memory task(s) on stop`);
+      this.pendingTasks.clear();
     }
     this.writeLog('info', 'Runner stopped');
     this.logger.log('Stopped');
@@ -295,22 +335,29 @@ export class AgentRunner {
   /** BLPOP loop — blocks waiting for tasks on chat:task:{agentId} */
   private startConsuming() {
     const queueKey = `chat:task:${this.config.agentId}`;
+    this.consumerStoppedPromise = new Promise<void>((resolve) => {
+      this.resolveConsumerStopped = resolve;
+    });
     const consume = async () => {
-      while (!this.isShuttingDown) {
-        try {
-          const result = await this.config.redisBlocking.blpop(queueKey, 5);
-          if (!result) continue; // timeout, loop again
-          const [, raw] = result;
-          const task: AgentTask = JSON.parse(raw);
-          this.handleTask(task).catch((err: Error) =>
-            this.logger.error(`handleTask error: ${err.message}`, err.stack),
-          );
-        } catch (err: unknown) {
-          if (!this.isShuttingDown) {
-            this.logger.error(`BLPOP error: ${(err as Error).message}`);
-            await new Promise((r) => setTimeout(r, 1000));
+      try {
+        while (!this.isShuttingDown) {
+          try {
+            const result = await this.config.redisBlocking.blpop(queueKey, 5);
+            if (!result) continue; // timeout, loop again
+            const [, raw] = result;
+            const task: AgentTask = JSON.parse(raw);
+            this.handleTask(task).catch((err: Error) =>
+              this.logger.error(`handleTask error: ${err.message}`, err.stack),
+            );
+          } catch (err: unknown) {
+            if (!this.isShuttingDown) {
+              this.logger.error(`BLPOP error: ${(err as Error).message}`);
+              await new Promise((r) => setTimeout(r, 1000));
+            }
           }
         }
+      } finally {
+        this.resolveConsumerStopped?.();
       }
     };
     consume();

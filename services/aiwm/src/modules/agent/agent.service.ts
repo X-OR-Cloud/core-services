@@ -1,5 +1,6 @@
 import {
   Injectable,
+  OnModuleDestroy,
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
@@ -13,6 +14,12 @@ import { firstValueFrom } from 'rxjs';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import Redis from 'ioredis';
+import {
+  AgentWorkerCmdEvent,
+  REDIS_CHANNEL_AGENT_WORKER_CMD,
+  redisConfig,
+} from '../../config/redis.config';
 import {
   BaseService,
   FindManyOptions,
@@ -51,7 +58,9 @@ import { MessageType } from '@hydrabyte/shared';
 import { ReminderService } from '../reminder/reminder.service';
 
 @Injectable()
-export class AgentService extends BaseService<Agent> {
+export class AgentService extends BaseService<Agent> implements OnModuleDestroy {
+  private redisPub: Redis | null = null;
+
   constructor(
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(Instruction.name) private instructionModel: Model<Instruction>,
@@ -66,6 +75,34 @@ export class AgentService extends BaseService<Agent> {
     private readonly reminderService: ReminderService
   ) {
     super(agentModel as any);
+  }
+
+  onModuleDestroy() {
+    this.redisPub?.disconnect();
+    this.redisPub = null;
+  }
+
+  private getRedisPub(): Redis {
+    if (!this.redisPub) {
+      this.redisPub = new Redis(redisConfig);
+    }
+    return this.redisPub;
+  }
+
+  private publishWorkerRestart(agentId: string, requestedBy: string, reason?: string) {
+    const payload: AgentWorkerCmdEvent = {
+      type: 'restart',
+      agentId,
+      requestedBy,
+      reason,
+      ts: Date.now(),
+    };
+    this.getRedisPub()
+      .publish(REDIS_CHANNEL_AGENT_WORKER_CMD, JSON.stringify(payload))
+      .catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this.logger as any)?.warn?.(`Failed to publish agent restart event: ${(err as Error).message}`);
+      });
   }
 
   /**
@@ -1904,9 +1941,15 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       by: context.userId,
     });
 
-    // Notify node to restart agent process (full config needed)
-    await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_RESTART, true, context);
-    // TODO: handle non-nodeId agents (self-deployed engineer / assistant)
+    if (agent.type === 'assistant') {
+      // In-process assistant agents are managed by the `agt` worker. Broadcast
+      // a restart command on Redis pub/sub — the instance currently holding the
+      // lock for this agent will tear down its AgentRunner and respawn from DB.
+      this.publishWorkerRestart(agentId, context.userId);
+    } else {
+      // Engineer agents: notify node to restart agent process (full config needed)
+      await this.sendLifecycleCommandToNode(agent, MessageType.AGENT_RESTART, true, context);
+    }
 
     return { success: true, status: 'inactive', previousStatus };
   }
