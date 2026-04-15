@@ -99,11 +99,23 @@ export class DocumentRtcService implements OnModuleDestroy {
    * Check whether a collaborative session is currently active on a document.
    * Used by cbm:api on the MCP update path: if active, external writes are
    * rejected with DOCUMENT_IN_ACTIVE_SESSION so the agent can re-plan.
+   *
+   * Fails open: if Redis is unreachable, we log a warning and treat the
+   * document as not-in-session. This keeps the MCP edit path usable when the
+   * realtime layer is degraded — the worst case is that a live editor gets
+   * clobbered, which is strictly better than MCP writes erroring out.
    */
   async isSessionActive(docId: string): Promise<boolean> {
-    await this.connect();
-    const exists = await this.redis.exists(SESSION_PREFIX + docId);
-    return exists === 1;
+    try {
+      await this.connect();
+      const exists = await this.redis.exists(SESSION_PREFIX + docId);
+      return exists === 1;
+    } catch (err: any) {
+      this.logger.warn(
+        `isSessionActive(${docId}) failed, assuming not active: ${err.message}`,
+      );
+      return false;
+    }
   }
 
   /**
@@ -130,9 +142,16 @@ export class DocumentRtcService implements OnModuleDestroy {
    * presence set that Hocuspocus awareness writes into — see hooks.
    */
   async getActiveEditorCount(docId: string): Promise<number> {
-    await this.connect();
-    const n = await this.redis.scard(`${SESSION_PREFIX}${docId}:users`);
-    return n || 0;
+    try {
+      await this.connect();
+      const n = await this.redis.scard(`${SESSION_PREFIX}${docId}:users`);
+      return n || 0;
+    } catch (err: any) {
+      this.logger.warn(
+        `getActiveEditorCount(${docId}) failed, returning 0: ${err.message}`,
+      );
+      return 0;
+    }
   }
 
   async addActiveEditor(docId: string, userKey: string): Promise<void> {
