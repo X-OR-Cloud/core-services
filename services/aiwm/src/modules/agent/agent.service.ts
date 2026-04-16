@@ -89,6 +89,10 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     return this.redisPub;
   }
 
+  private isOrgOwner(context: RequestContext): boolean {
+    return !!context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+  }
+
   private publishWorkerRestart(agentId: string, requestedBy: string, reason?: string) {
     const payload: AgentWorkerCmdEvent = {
       type: 'restart',
@@ -121,10 +125,18 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         .findOne({ _id: id, isDeleted: false })
         .populate('instructionId')
         .exec();
+      if (!agent) return null;
+      if (!this.isOrgOwner(context) && agent.owner?.userId !== context.userId) {
+        throw new ForbiddenException('You can only access agents you created');
+      }
       return agent as Agent;
     }
 
-    return super.findById(id, context);
+    const agent = await super.findById(id, context);
+    if (!this.isOrgOwner(context) && (agent as any)?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('You can only access agents you created');
+    }
+    return agent;
   }
 
   /**
@@ -151,6 +163,9 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     }
     options.selectFields = ['-secret', '-settings'];
     options.statisticFields = ['type','status','framework'];
+    if (!this.isOrgOwner(context)) {
+      options.filter = { ...options.filter, 'owner.userId': context.userId };
+    }
     const findResult = await super.findAll(options, context);
     return findResult;
   }
@@ -2476,6 +2491,13 @@ echo "Installation script placeholder - implement actual logic"
     updateAgentDto: UpdateAgentDto,
     context: RequestContext
   ): Promise<Partial<Agent> | null> {
+    if (!this.isOrgOwner(context)) {
+      const existing = await this.agentModel.findOne({ _id: id, isDeleted: false }).lean().exec();
+      if (!existing || (existing as any).owner?.userId !== context.userId) {
+        throw new ForbiddenException('You can only update agents you created');
+      }
+    }
+
     // Only organization.owner or universe.owner can set role to organization.owner
     if (updateAgentDto.role === 'organization.owner') {
       const isOrgOwner =
@@ -2571,6 +2593,10 @@ echo "Installation script placeholder - implement actual logic"
       _id: new Types.ObjectId(id),
       isDeleted: false,
     });
+
+    if (!this.isOrgOwner(context) && agent?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('You can only delete agents you created');
+    }
 
     // BaseService handles soft delete, permissions, and generic logging
     const result = await super.softDelete(

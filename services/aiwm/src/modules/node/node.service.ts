@@ -31,10 +31,17 @@ export class NodeService extends BaseService<Node> {
     super(nodeModel as any);
   }
 
+  private isOrgOwner(context: RequestContext): boolean {
+    return !!context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+  }
+
   async findAll(
     options: FindManyOptions,
     context: RequestContext
   ): Promise<FindManyResult<Node>> {
+    if (!this.isOrgOwner(context)) {
+      options.filter = { ...options.filter, 'owner.userId': context.userId };
+    }
     const findResult = await super.findAll(options, context);
     // Aggregate statistics by status
     const statusStats = await super.aggregate(
@@ -64,6 +71,14 @@ export class NodeService extends BaseService<Node> {
 
     findResult.statistics = statistics;
     return findResult;
+  }
+
+  async findById(id: string, context: RequestContext): Promise<Partial<Node>> {
+    const node = await super.findById(id, context);
+    if (!this.isOrgOwner(context) && (node as any)?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('You can only access nodes you created');
+    }
+    return node;
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import Redis from 'ioredis';
@@ -67,6 +67,10 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     return super.create(createData, context);
   }
 
+  private isOrgOwner(context: RequestContext): boolean {
+    return !!context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
+  }
+
   /**
    * Override findAll to handle statistics aggregation
    */
@@ -75,7 +79,10 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     context: RequestContext
   ): Promise<FindManyResult<Instruction>> {
     options.selectFields = ['-systemPrompt'];
-    options.statisticFields = ['status']; // Specify fields for statistics aggregation
+    options.statisticFields = ['status'];
+    if (!this.isOrgOwner(context)) {
+      options.filter = { ...options.filter, 'owner.userId': context.userId };
+    }
     return await super.findAll(options, context);
   }
 
@@ -84,7 +91,9 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
    */
   async findById(id: string, context: RequestContext): Promise<Partial<Instruction>> {
     const instruction = await super.findById(id, context);
-    // additional processing if needed
+    if (!this.isOrgOwner(context) && (instruction as any)?.owner?.userId !== context.userId) {
+      throw new ForbiddenException('You can only access instructions you created');
+    }
     return instruction;
   }
 
@@ -97,7 +106,13 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     updateData: Partial<Instruction>,
     context: RequestContext
   ): Promise<Partial<Instruction>> {
-    // Check if status is being changed to 'inactive'
+    if (!this.isOrgOwner(context)) {
+      const existing = await this.model.findOne({ _id: id, isDeleted: false }).lean().exec();
+      if (!existing || (existing as any).owner?.userId !== context.userId) {
+        throw new ForbiddenException('You can only update instructions you created');
+      }
+    }
+
     if (updateData.status === 'inactive') {
       const activeAgents = await this.checkActiveAgentDependencies(id);
       if (activeAgents.length > 0) {
@@ -105,7 +120,6 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
       }
     }
 
-    // Call parent update method
     const updated = await super.update(id, updateData, context);
     this.publishInstructionUpdated(id, (updated as { updatedAt?: Date })?.updatedAt);
     return updated;
@@ -119,11 +133,17 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     id: string,
     context: RequestContext
   ): Promise<Partial<Instruction>> {
+    if (!this.isOrgOwner(context)) {
+      const existing = await this.model.findOne({ _id: id, isDeleted: false }).lean().exec();
+      if (!existing || (existing as any).owner?.userId !== context.userId) {
+        throw new ForbiddenException('You can only delete instructions you created');
+      }
+    }
+
     const activeAgents = await this.checkActiveAgentDependencies(id);
     if (activeAgents.length > 0) {
       throw new InstructionInUseException(activeAgents, 'delete');
     }
-    // Call parent softDelete method
     return super.softDelete(id, context);
   }
 
