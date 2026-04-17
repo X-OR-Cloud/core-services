@@ -35,12 +35,17 @@ const MCP_PORT = parseInt(process.env.PORT || process.env.MCP_PORT || '3355', 10
 /**
  * Session data — each client connection gets its own isolated session
  */
+interface TokenRef {
+  token: string;
+  payload: any;
+}
+
 interface SessionData {
   mcpServer: McpServer;
   transport: StreamableHTTPServerTransport;
   agentId: string;
   orgId: string;
-  bearerToken: string;
+  tokenRef: TokenRef;
   createdAt: number;
 }
 
@@ -86,7 +91,16 @@ export async function bootstrapMcpServer() {
       const decoded = await jwtService.verifyAsync(token);
       return decoded;
     } catch (error) {
-      logger.error('JWT verification failed:', error.message);
+      // Decode without verification to extract agent context for diagnostics
+      let agentCtx = 'unknown';
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+          agentCtx = payload.agentId || payload.sub || 'unknown';
+        }
+      } catch {}
+      logger.error(`JWT verification failed [agent: ${agentCtx}]: ${error.message}`);
       throw new Error(`Invalid or expired token: ${error.message}`);
     }
   };
@@ -232,10 +246,9 @@ export async function bootstrapMcpServer() {
    * Each session gets its own isolated McpServer with tools based on the agent's permissions.
    */
   const createSessionMcpServer = async (
-    tokenPayload: any,
-    bearerToken: string
+    tokenRef: TokenRef
   ): Promise<McpServer> => {
-    const { orgId, agentId, userId, roles, groupId } = tokenPayload;
+    const { orgId, agentId, userId, roles, groupId } = tokenRef.payload;
 
     // Create a fresh McpServer for this session
     const sessionMcpServer = new McpServer({
@@ -315,26 +328,27 @@ export async function bootstrapMcpServer() {
               logger.debug(`Tool args:`, args);
 
               try {
-                // Fetch service URLs dynamically on each execution
+                // Read latest token from ref (supports token refresh without session teardown)
+                const currentPayload = tokenRef.payload;
                 const execContext: RequestContext = {
-                  userId: tokenPayload.userId || tokenPayload.sub || '',
-                  orgId: tokenPayload.orgId || '',
-                  agentId: tokenPayload.agentId || '',
-                  groupId: tokenPayload.groupId || '',
+                  userId: currentPayload.userId || currentPayload.sub || '',
+                  orgId: currentPayload.orgId || '',
+                  agentId: currentPayload.agentId || '',
+                  groupId: currentPayload.groupId || '',
                   appId: '',
-                  roles: tokenPayload.roles || [],
+                  roles: currentPayload.roles || [],
                 };
 
-                const serviceUrls = await fetchServiceUrls(tokenPayload.orgId, execContext);
+                const serviceUrls = await fetchServiceUrls(currentPayload.orgId, execContext);
 
-                // Build execution context with session's token
+                // Build execution context with latest token
                 const executionContext: BuiltInExecutionContext = {
-                  token: bearerToken,
-                  userId: tokenPayload.userId || tokenPayload.sub,
-                  orgId: tokenPayload.orgId,
-                  agentId: tokenPayload.agentId,
-                  groupId: tokenPayload.groupId,
-                  roles: tokenPayload.roles,
+                  token: tokenRef.token,
+                  userId: currentPayload.userId || currentPayload.sub,
+                  orgId: currentPayload.orgId,
+                  agentId: currentPayload.agentId,
+                  groupId: currentPayload.groupId,
+                  roles: currentPayload.roles,
                   cbmBaseUrl: serviceUrls.cbmBaseUrl,
                   iamBaseUrl: serviceUrls.iamBaseUrl,
                   aiwmBaseUrl: serviceUrls.aiwmBaseUrl,
@@ -395,7 +409,7 @@ export async function bootstrapMcpServer() {
 
           try {
             if (tool.type === 'api') {
-              return await executeApiTool(tool, args, tokenPayload);
+              return await executeApiTool(tool, args, tokenRef.payload);
             } else if (tool.type === 'mcp') {
               return {
                 content: [
@@ -552,9 +566,15 @@ export async function bootstrapMcpServer() {
       let session: SessionData;
 
       if (sessionId && sessions.has(sessionId)) {
-        // Reuse existing session
+        // Reuse existing session — update tokenRef in-place if token has changed
         session = sessions.get(sessionId)!;
-        logger.debug(`♻️  Reusing session: ${sessionId} (agent: ${session.agentId})`);
+        if (session.tokenRef.token !== bearerToken) {
+          logger.log(`🔄 Token refreshed for session: ${sessionId} (agent: ${session.agentId})`);
+          session.tokenRef.token = bearerToken;
+          session.tokenRef.payload = userContext;
+        } else {
+          logger.debug(`♻️  Reusing session: ${sessionId} (agent: ${session.agentId})`);
+        }
         resetSessionTimeout(sessionId);
       } else {
         // Create new session with its own McpServer
@@ -562,8 +582,12 @@ export async function bootstrapMcpServer() {
         logger.log(`🆕 Creating new session: ${newSessionId} for agent: ${userContext.agentId}`);
 
         try {
+          // Create a mutable token ref — closures inside McpServer read from this ref,
+          // so token updates propagate without tearing down the session.
+          const tokenRef: TokenRef = { token: bearerToken, payload: userContext };
+
           // Create McpServer with tools for this agent
-          const sessionMcpServer = await createSessionMcpServer(userContext, bearerToken);
+          const sessionMcpServer = await createSessionMcpServer(tokenRef);
 
           // Create transport
           // enableJsonResponse: true → respond with application/json instead of SSE stream.
@@ -582,7 +606,7 @@ export async function bootstrapMcpServer() {
             transport,
             agentId: userContext.agentId || userContext.sub,
             orgId: userContext.orgId,
-            bearerToken,
+            tokenRef,
             createdAt: Date.now(),
           };
 
