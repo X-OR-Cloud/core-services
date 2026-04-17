@@ -703,6 +703,23 @@ export class AgentRunner {
     return this.config.agentId;
   }
 
+  /**
+   * Decode the JWT access token and return the expiry timestamp (seconds since epoch).
+   * Returns null if the token is missing or malformed.
+   */
+  getAccessTokenExpiry(): number | null {
+    try {
+      const token = this.config.accessToken;
+      if (!token) return null;
+      const payloadB64 = token.split('.')[1];
+      if (!payloadB64) return null;
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+      return typeof payload.exp === 'number' ? payload.exp : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Drain deferred tasks queued while reloading. */
   private drainPendingTasks(): void {
     if (!this.pendingTasks.size) return;

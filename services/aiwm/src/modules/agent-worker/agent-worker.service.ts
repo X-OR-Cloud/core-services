@@ -250,8 +250,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Health check — runs every 30s:
-   * 1. Reconnect stale runners owned by this instance.
+   * 1. Reconnect stale runners whose agent config changed and are idle.
    * 2. Try to claim any unlocked agents (e.g. after another instance crashes).
+   * 3. Proactively refresh access tokens that expire within 1 hour.
    */
   private startHealthCheck() {
     this.healthCheckTimer = setInterval(async () => {
@@ -260,7 +261,37 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
       // 2. Try to claim agents not yet owned by any instance
       await this.claimUnlockedAgents();
+
+      // 3. Refresh tokens that are about to expire (< 1 hour remaining)
+      await this.refreshExpiredTokens();
     }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Proactively refresh access tokens for runners whose JWT will expire
+   * within 1 hour. Triggers a reload (re-calls connectInternal) so the
+   * runner picks up a fresh token without any downtime.
+   */
+  private async refreshExpiredTokens() {
+    if (!this.runners.size) return;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const refreshThresholdSec = 60 * 60; // 1 hour
+
+    for (const [agentId, runner] of this.runners.entries()) {
+      const exp = runner.getAccessTokenExpiry();
+      if (exp === null) continue;
+
+      const remainingSec = exp - nowSec;
+      if (remainingSec > refreshThresholdSec) continue;
+
+      this.logger.log(
+        `[token-refresh] agent ${agentId} token expires in ${Math.round(remainingSec / 60)}m — triggering reload`,
+      );
+      runner.triggerReload('health').catch((err: Error) =>
+        this.logger.error(`[token-refresh] reload failed for ${agentId}: ${err.message}`),
+      );
+    }
   }
 
   /**
