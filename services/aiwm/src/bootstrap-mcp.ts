@@ -270,8 +270,9 @@ export async function bootstrapMcpServer() {
       roles: roles || [],
     };
 
-    // Fetch agent to get allowedToolIds
-    const agent = await agentService.findById(agentId, context);
+    // Fetch agent to get allowedToolIds — use internal method to bypass RBAC.
+    // Agent JWT has userId: '' so standard findById would throw ForbiddenException.
+    const agent = await agentService.findByIdInternal(agentId);
     if (!agent) {
       logger.warn(`Agent not found: ${agentId}, returning empty McpServer`);
       return sessionMcpServer;
