@@ -46,7 +46,7 @@ This document defines the standardized port allocation strategy for all services
 | **AIVP** | Business | **3007** | 3370-3373 | 3374-3379 | AI Video Processing |
 | **DGT** | Business | **3008** | 3380-3383 | 3384-3389 | Digital Gold Trader |
 
-| Service-11 | 3009 | 3390-3393 | 3394-3399 | Reserved for future service |
+| **VSM** | Business | **3009** | 3390-3393 | 3394-3399 | Voice Service Management (PBX, SIP, WebRTC) |
 
 ---
 
@@ -288,6 +288,26 @@ pm2 start ecosystem.config.js --only core.dgt.api00
 
 ---
 
+### VSM Service (Voice Service Management)
+
+**Purpose**: Asterisk PBX management, SIP/WebRTC accounts, call routing, CDR logging
+
+```yaml
+Local Development:  3009
+Production:
+  API Instances:    3390, 3391, 3392, 3393  # 4 HTTP/REST instances
+  Reserved:         3394-3399                # Future modes (WebSocket events)
+  AMI Bridge:       No port (TCP to Asterisk :5038)
+```
+
+**Multi-Mode Service**:
+- **API Mode**: HTTP REST API — `nx run vsm:api`
+- **AMI Mode**: Asterisk AMI bridge worker — `nx run vsm:ami`
+
+**Default Port in Code**: `process.env.PORT || 3009`
+
+---
+
 ## 🚀 Production Deployment
 
 ### PM2 Ecosystem Configuration
@@ -400,6 +420,7 @@ When updating services to new port allocation:
 | MONA | http://localhost:3005 | http://localhost:3005/api-docs |
 | AIVP | http://localhost:3007 | http://localhost:3007/api-docs |
 | DGT | http://localhost:3008 | http://localhost:3008/api-docs |
+| VSM | http://localhost:3009 | http://localhost:3009/api-docs |
 
 ### Production URLs (Behind Nginx)
 
@@ -412,6 +433,7 @@ When updating services to new port allocation:
 | MONA | https://api.x-or.cloud/mona | 3350-3353 |
 | AIVP | https://api.x-or.cloud/aivp | 3370-3373 |
 | DGT | https://api.x-or.cloud/dgt | 3380-3383 |
+| VSM | https://api.x-or.cloud/vsm | 3390-3393 |
 
 ---
 
