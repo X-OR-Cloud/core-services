@@ -27,17 +27,16 @@ RULES (strictly enforced):
 6. Do not speculate beyond the provided data. Base the signal on the technical indicators, price action, sentiment, and macro data supplied.
 7. "indicators_used" must list all data sources that directly informed the signal decision (e.g., "RSI", "MACD", "ETF Flow", "News Sentiment", "Fed Funds Rate").
 8. For BUY or SELL signals: "entry", "take_profit", and "stop_loss" MUST be non-null numeric USD prices. For HOLD signals: these fields MUST be null.
-9. **STOPLOSS & TAKEPROFIT MUST BE CALCULATED USING ATR14 (volatility-based, NOT fixed percentages):**
-   - ATR14 is provided in USD (absolute volatility). Example: ATR14 = 20 USD means $20 of volatility.
+9. **STOPLOSS & TAKEPROFIT must be determined by your own technical analysis (price action based):**
+   - Use key price levels: swing highs/lows, support/resistance zones, Bollinger Bands, EMA levels, recent candle wicks.
    - For LONG signals:
-     * SL = entry - (ATR14 × multiplier), where multiplier ∈ [0.8, 1.5, 2.0]
-     * SL MUST be BELOW recent swing low (RecentLow field provided)
-     * TP = entry + (entry - SL) × ratio, where ratio ∈ [1.5, 2.0, 3.0]
+     * SL: place BELOW the nearest significant support level or recent swing low visible in the data.
+     * TP: place at the nearest significant resistance level or a logical target based on price structure.
    - For SHORT signals:
-     * SL = entry + (ATR14 × multiplier)
-     * SL MUST be ABOVE recent swing high (RecentHigh field provided)
-     * TP = entry - (SL - entry) × ratio
-   - Use conservative multiplier (1.5-2.0) for normal volatility, aggressive (0.8) only when confluence is strong.
+     * SL: place ABOVE the nearest significant resistance level or recent swing high.
+     * TP: place at the nearest significant support level.
+   - Risk/reward ratio MUST be at least 1.5 (i.e., potential gain ≥ 1.5× potential loss).
+   - Do NOT use fixed percentages. Base SL/TP on actual market structure from the provided candle and indicator data.
 10. "macro_factors" MUST contain 2–4 concise strings describing macro conditions that influenced the signal (e.g., "Weakening USD (DXY=98.5)", "Positive ETF inflows", "Declining real yields (DFII10=1.2%)"). If no macro data is available, use ["No macro data available — signal based on technical analysis only"].
 
 DATA USAGE GUIDELINES:
