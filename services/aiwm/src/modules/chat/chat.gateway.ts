@@ -1249,6 +1249,14 @@ export class ChatGateway
         return { success: false, error: `Conversation ${conversationId} not found` };
       }
 
+      // Anonymous users may only read conversations they own
+      if (isAnonymous) {
+        const ownerId = (conversation as any).userId;
+        if (!ownerId || ownerId !== client.data.userId) {
+          return { success: false, error: 'Access denied' };
+        }
+      }
+
       const result = await this.actionService.getConversationHistory(conversationId, {
         page,
         limit,
