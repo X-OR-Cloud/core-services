@@ -1264,8 +1264,13 @@ export class ChatGateway
         includeInternal,
       });
 
+      // TODO: remove this filter once client SDK supports filtering by action type.
+      // Currently only 'message' type is returned to avoid breaking older clients
+      // that don't know how to render notice/tool_use/tool_result/thinking etc.
+      const messages = result.data.filter((action: any) => action.type === 'message');
+
       // Map Action documents to message:new-shaped objects for uniform rendering
-      const data_ = result.data.map((action: any) => {
+      const data_ = messages.map((action: any) => {
         const isAgentActor = action.actor?.role === 'agent';
         return {
           _id: action._id?.toString(),
