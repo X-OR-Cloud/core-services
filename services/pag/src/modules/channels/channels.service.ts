@@ -93,7 +93,7 @@ export class ChannelsService extends BaseService<Channel> {
       newExpiresAt: newExpiresAt.toISOString()
     });
 
-    return updatedChannel;
+    return updatedChannel as Channel;
   }
 
   /**
@@ -413,7 +413,7 @@ export class ChannelsService extends BaseService<Channel> {
   // ==================== Discord Notifications ====================
 
   private async notifyDiscord(event: string, sender: any, extra: any = {}) {
-    const webhookUrl = process.env['DISCORD_WEBHOOK_URL'];
+    const webhookUrl = process.env['PAG_DISCORD_WEBHOOK_URL'];
     if (!webhookUrl) return;
 
     const colors: Record<string, number> = {

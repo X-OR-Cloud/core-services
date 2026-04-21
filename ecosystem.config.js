@@ -1054,6 +1054,91 @@ module.exports = {
       wait_ready: false,
       listen_timeout: 10000,
     },
+    // ========== PAG (Personal Agent Gateway) ==========
+    {
+      name: 'core.pag.api00',
+      script: './dist/services/pag/api.main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3360,
+        SERVICE_NAME: 'pag',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/pag-api-00-error.log',
+      out_file: './logs/pag-api-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.pag.api01',
+      script: './dist/services/pag/api.main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3361,
+        SERVICE_NAME: 'pag',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/pag-api-01-error.log',
+      out_file: './logs/pag-api-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.pag.wrk00',
+      script: './dist/services/pag/worker.main.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        SERVICE_NAME: 'pag',
+        WORKER_ID: '0',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/pag-wrk-00-error.log',
+      out_file: './logs/pag-wrk-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 10000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
     {
       name: 'core.dgt.mon00',
       script: './dist/services/dgt/main.js',

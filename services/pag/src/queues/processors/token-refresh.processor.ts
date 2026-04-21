@@ -40,6 +40,7 @@ export class TokenRefreshProcessor extends WorkerHost {
 
       for (const channel of channels) {
         if (!channel.credentials?.refreshToken) continue;
+        if (channel.status === 'error' || channel.status === 'inactive') continue;
 
         // Check if token expires within 1 hour
         if (channel.credentials.tokenExpiresAt) {

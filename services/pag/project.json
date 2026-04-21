@@ -59,6 +59,25 @@
           "buildTarget": "pag:build:production"
         }
       }
+    },
+    "wrk": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "pag:build",
+        "runBuildTargetDependencies": false,
+        "outputFileName": "worker.main.js"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "pag:build:development"
+        },
+        "production": {
+          "buildTarget": "pag:build:production"
+        }
+      }
     }
   },
   "tags": []
