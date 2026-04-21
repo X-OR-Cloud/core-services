@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -258,5 +258,27 @@ export class ReportsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getAIWorkloadOverview(@CurrentUser() context: RequestContext) {
     return this.reportsService.getAIWorkloadOverview(context);
+  }
+
+  @Get('agent-sla')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Agent SLA dashboard',
+    description:
+      'Returns SLA report for agents: alerts (unanswered conversations, offline agents), per-agent breakdown, and overall metrics. ' +
+      'Filter by agentIds (comma-separated). Supports preset=today|yesterday|7d|30d or custom from/to.',
+  })
+  @ApiResponse({ status: 200, description: 'Agent SLA report retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getAgentSla(
+    @Query('agentIds') agentIds: string,
+    @Query('preset') preset: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const ids = agentIds ? agentIds.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    return this.reportsService.getAgentSlaReport(ids, preset, from, to, context);
   }
 }

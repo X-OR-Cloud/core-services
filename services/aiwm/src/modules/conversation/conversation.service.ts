@@ -10,6 +10,14 @@ import { UtilService } from '../util/util.service';
 import { GenerateTextRequestDto } from '../util/dto/text-generation.dto';
 import { AgentConversationMode } from '../agent/agent.schema';
 import { Action, ActionDocument } from '../action/action.schema';
+import { ActionType } from '../action/action.enum';
+import {
+  computeFrt,
+  computeResponseDeltas,
+  computeAvg,
+  computeP90,
+  SlaAction,
+} from '../../core/sla.helper';
 
 @Injectable()
 export class ConversationService extends BaseService<Conversation> {
@@ -757,6 +765,77 @@ export class ConversationService extends BaseService<Conversation> {
     );
 
     return { deletedActions };
+  }
+
+  /**
+   * SLA metrics for a single conversation
+   */
+  async getConversationMetrics(id: string, context: RequestContext): Promise<Record<string, unknown>> {
+    const conversation = await this.model.findById(id).lean().exec() as any;
+    if (!conversation || conversation.isDeleted) {
+      throw new NotFoundException(`Conversation ${id} not found`);
+    }
+    if (conversation.owner?.orgId !== context.orgId) {
+      throw new ForbiddenException('Conversation does not belong to your organization');
+    }
+
+    const actions = await this.actionModel
+      .find({ conversationId: id, isDeleted: false })
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec() as any[];
+
+    const now = new Date();
+    const createdAt = new Date(conversation.createdAt);
+    const updatedAt = new Date(conversation.updatedAt);
+    const durationSeconds = Math.round(
+      ((conversation.status === 'active' ? now : updatedAt).getTime() - createdAt.getTime()) / 1000,
+    );
+
+    const slaActions: SlaAction[] = actions.map((a) => ({
+      type: a.type,
+      actor: { role: a.actor?.role },
+      createdAt: new Date(a.createdAt),
+    }));
+
+    const frt = computeFrt(slaActions);
+    const deltas = computeResponseDeltas(slaActions);
+
+    const byRole: Record<string, number> = { user: 0, agent: 0, system: 0 };
+    const errorCount = actions.filter((a) => a.type === ActionType.ERROR).length;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    for (const a of actions) {
+      if (a.actor?.role && byRole[a.actor.role] !== undefined) byRole[a.actor.role]++;
+      if (a.usage) {
+        totalInputTokens += a.usage.inputTokens ?? 0;
+        totalOutputTokens += a.usage.outputTokens ?? 0;
+      }
+    }
+
+    return {
+      conversationId: id,
+      agentId: conversation.agentId,
+      status: conversation.status,
+      createdAt: conversation.createdAt,
+      durationSeconds,
+      totalMessages: conversation.totalMessages ?? actions.length,
+      userMessages: byRole.user,
+      agentMessages: byRole.agent,
+      systemMessages: byRole.system,
+      firstResponseTime: {
+        ms: frt.ms,
+        slaBreached: frt.slaBreached,
+      },
+      avgResponseTimeMs: computeAvg(deltas),
+      p90ResponseTimeMs: computeP90(deltas),
+      errorCount,
+      tokenUsage: {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      },
+    };
   }
 
   /**
