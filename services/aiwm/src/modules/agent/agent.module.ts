@@ -15,6 +15,8 @@ import { NodeModule } from '../node/node.module';
 import { ReminderModule } from '../reminder/reminder.module';
 import { ApiKeyModule } from '../api-key/api-key.module';
 import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
+import { ConversationModule } from '../conversation/conversation.module';
+import { ActionModule } from '../action/action.module';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
     NodeModule, // Import to access NodeGateway for sending agent.start commands
     ReminderModule, // Import to access ReminderService for heartbeat reminder injection
     ApiKeyModule,
+    ConversationModule,
+    ActionModule,
   ],
   controllers: [AgentController],
   providers: [AgentService, ApiKeyOrJwtGuard],

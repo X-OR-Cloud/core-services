@@ -251,6 +251,51 @@ export class ConversationController {
     return this.conversationService.closeConversation(id, context);
   }
 
+  @Get(':id/metrics')
+  @ApiOperation({ summary: 'Get SLA metrics for a conversation' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Conversation SLA metrics',
+    schema: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string' },
+        agentId: { type: 'string' },
+        status: { type: 'string' },
+        createdAt: { type: 'string', format: 'date-time' },
+        durationSeconds: { type: 'number' },
+        totalMessages: { type: 'number' },
+        userMessages: { type: 'number' },
+        agentMessages: { type: 'number' },
+        systemMessages: { type: 'number' },
+        firstResponseTime: {
+          type: 'object',
+          properties: {
+            ms: { type: 'number', nullable: true },
+            slaBreached: { type: 'boolean' },
+          },
+        },
+        avgResponseTimeMs: { type: 'number', nullable: true },
+        p90ResponseTimeMs: { type: 'number', nullable: true },
+        errorCount: { type: 'number' },
+        tokenUsage: {
+          type: 'object',
+          properties: {
+            inputTokens: { type: 'number' },
+            outputTokens: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiReadErrors()
+  async getMetrics(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<Record<string, unknown>> {
+    return this.conversationService.getConversationMetrics(id, context);
+  }
+
   @Post(':id/summary')
   @ApiOperation({ summary: 'Generate context summary for conversation' })
   @ApiResponse({

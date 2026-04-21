@@ -8,6 +8,18 @@ import { Model } from '../model/model.schema';
 import { Deployment } from '../deployment/deployment.schema';
 import { Agent } from '../agent/agent.schema';
 import { Execution } from '../execution/execution.schema';
+import { ConversationService } from '../conversation/conversation.service';
+import { ActionService } from '../action/action.service';
+import { ActionType } from '../action/action.enum';
+import {
+  computeFrt,
+  computeAvg,
+  resolveTimeRange,
+  defaultGranularity,
+  SLA_FRT_THRESHOLD_MS,
+  SLA_UNANSWERED_THRESHOLD_MS,
+  SlaAction,
+} from '../../core/sla.helper';
 
 /**
  * Reports Service
@@ -30,7 +42,9 @@ export class ReportsService {
     private readonly deploymentModel: MongooseModel<Deployment>,
     @InjectModel(Agent.name) private readonly agentModel: MongooseModel<Agent>,
     @InjectModel(Execution.name)
-    private readonly executionModel: MongooseModel<Execution>
+    private readonly executionModel: MongooseModel<Execution>,
+    private readonly conversationService: ConversationService,
+    private readonly actionService: ActionService,
   ) {}
 
   /**
@@ -629,5 +643,160 @@ export class ReportsService {
     }
 
     return history;
+  }
+
+  async getAgentSlaReport(
+    agentIds: string[] | undefined,
+    preset: string | undefined,
+    from: string | undefined,
+    to: string | undefined,
+    context: RequestContext,
+  ): Promise<Record<string, unknown>> {
+    const timeRange = resolveTimeRange(preset, from, to);
+    const now = Date.now();
+
+    const agentFilter: Record<string, unknown> = { isDeleted: false, 'owner.orgId': context.orgId };
+    if (agentIds && agentIds.length > 0) agentFilter['_id'] = { $in: agentIds };
+    const agents = await this.agentModel.find(agentFilter).lean().exec() as any[];
+
+    const alerts: Record<string, unknown>[] = [];
+    let onlineCount = 0;
+    let totalConversations = 0;
+    let activeConversations = 0;
+    const allFrtValues: number[] = [];
+    let totalSlaBreaches = 0;
+
+    const agentBreakdown = await Promise.all(
+      agents.map(async (agent: any) => {
+        const agentId = String(agent._id);
+        const heartbeatAgeMs = agent.lastHeartbeatAt
+          ? now - new Date(agent.lastHeartbeatAt).getTime()
+          : null;
+        const isOnline = heartbeatAgeMs !== null && heartbeatAgeMs < 60_000;
+
+        if (isOnline) onlineCount++;
+        else {
+          alerts.push({
+            type: 'agent_offline',
+            severity: 'error',
+            agentId,
+            detail: heartbeatAgeMs !== null
+              ? `No heartbeat for ${Math.round(heartbeatAgeMs / 1000)} seconds`
+              : 'Agent has never sent a heartbeat',
+            since: agent.lastHeartbeatAt ? new Date(agent.lastHeartbeatAt).toISOString() : null,
+          });
+        }
+
+        // Conversations in period
+        const convs = await (this.conversationService as any).model
+          .find({
+            agentId,
+            isDeleted: false,
+            createdAt: { $gte: timeRange.from, $lte: timeRange.to },
+          })
+          .lean()
+          .exec() as any[];
+
+        // All active conversations (regardless of period) for unanswered detection
+        const activeConvs = await (this.conversationService as any).model
+          .find({ agentId, isDeleted: false, status: 'active' })
+          .lean()
+          .exec() as any[];
+
+        totalConversations += convs.length;
+        activeConversations += activeConvs.length;
+
+        // Unanswered detection
+        let unansweredCount = 0;
+        for (const conv of activeConvs) {
+          const lastMsg = conv.lastMessage;
+          if (lastMsg?.role === 'user') {
+            const unansweredMs = now - new Date(lastMsg.createdAt).getTime();
+            if (unansweredMs > SLA_UNANSWERED_THRESHOLD_MS) {
+              unansweredCount++;
+              alerts.push({
+                type: 'unanswered',
+                severity: 'warning',
+                agentId,
+                conversationId: String(conv._id),
+                detail: `User message unanswered for ${Math.round(unansweredMs / 1000)} seconds`,
+                since: new Date(lastMsg.createdAt).toISOString(),
+              });
+            }
+          }
+        }
+
+        // Compute FRT for period conversations
+        const convIds = convs.map((c: any) => String(c._id));
+        const allActions = convIds.length > 0
+          ? await (this.actionService as any).model
+              .find({ conversationId: { $in: convIds }, isDeleted: false, type: ActionType.MESSAGE })
+              .sort({ createdAt: 1 })
+              .lean()
+              .exec() as any[]
+          : [];
+
+        const actionsByConv = new Map<string, any[]>();
+        for (const a of allActions) {
+          const cid = String(a.conversationId);
+          if (!actionsByConv.has(cid)) actionsByConv.set(cid, []);
+          actionsByConv.get(cid)!.push(a);
+        }
+
+        const frtValues: number[] = [];
+        let agentSlaBreaches = 0;
+
+        for (const conv of convs) {
+          const actions = actionsByConv.get(String(conv._id)) ?? [];
+          const slaActions: SlaAction[] = actions.map((a: any) => ({
+            type: a.type,
+            actor: { role: a.actor?.role },
+            createdAt: new Date(a.createdAt),
+          }));
+          const frt = computeFrt(slaActions);
+          if (frt.ms !== null) {
+            frtValues.push(frt.ms);
+            allFrtValues.push(frt.ms);
+            if (frt.slaBreached) agentSlaBreaches++;
+          }
+        }
+
+        totalSlaBreaches += agentSlaBreaches;
+
+        const agentTotal = convs.length;
+        return {
+          agentId,
+          name: agent.name,
+          isOnline,
+          totalConversations: agentTotal,
+          activeConversations: activeConvs.length,
+          slaBreachRate: agentTotal > 0 ? Math.round((agentSlaBreaches / agentTotal) * 1000) / 10 : 0,
+          avgFrtMs: computeAvg(frtValues),
+          unansweredCount,
+        };
+      }),
+    );
+
+    const overallTotal = totalConversations;
+    const overallSlaBreachRate = overallTotal > 0
+      ? Math.round((totalSlaBreaches / overallTotal) * 1000) / 10
+      : 0;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: { from: timeRange.from, to: timeRange.to, preset: timeRange.preset },
+      slaThresholdMs: SLA_FRT_THRESHOLD_MS,
+      unansweredThresholdSeconds: SLA_UNANSWERED_THRESHOLD_MS / 1000,
+      overview: {
+        totalAgents: agents.length,
+        onlineAgents: onlineCount,
+        totalConversations,
+        activeConversations,
+        overallSlaBreachRate,
+        overallAvgFrtMs: computeAvg(allFrtValues),
+      },
+      alerts,
+      agentBreakdown,
+    };
   }
 }

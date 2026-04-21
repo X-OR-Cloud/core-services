@@ -8,6 +8,8 @@ import { Model, ModelSchema } from '../model/model.schema';
 import { Deployment, DeploymentSchema } from '../deployment/deployment.schema';
 import { Agent, AgentSchema } from '../agent/agent.schema';
 import { Execution, ExecutionSchema } from '../execution/execution.schema';
+import { ConversationModule } from '../conversation/conversation.module';
+import { ActionModule } from '../action/action.module';
 
 /**
  * Reports Module
@@ -30,6 +32,8 @@ import { Execution, ExecutionSchema } from '../execution/execution.schema';
       { name: Agent.name, schema: AgentSchema },
       { name: Execution.name, schema: ExecutionSchema },
     ]),
+    ConversationModule,
+    ActionModule,
   ],
   providers: [ReportsService],
   controllers: [ReportsController],

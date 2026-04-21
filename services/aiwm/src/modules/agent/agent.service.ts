@@ -56,6 +56,21 @@ import { NodeGateway } from '../node/node.gateway';
 import { NodeService } from '../node/node.service';
 import { MessageType } from '@hydrabyte/shared';
 import { ReminderService } from '../reminder/reminder.service';
+import { ConversationService } from '../conversation/conversation.service';
+import { ActionService } from '../action/action.service';
+import {
+  computeFrt,
+  computeResponseDeltas,
+  computeAvg,
+  computeP90,
+  getPeriodKey,
+  resolveTimeRange,
+  defaultGranularity,
+  SLA_FRT_THRESHOLD_MS,
+  SlaAction,
+  MetricsGranularity,
+} from '../../core/sla.helper';
+import { ActionType } from '../action/action.enum';
 
 @Injectable()
 export class AgentService extends BaseService<Agent> implements OnModuleDestroy {
@@ -72,7 +87,9 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
     private readonly httpService: HttpService,
-    private readonly reminderService: ReminderService
+    private readonly reminderService: ReminderService,
+    private readonly conversationService: ConversationService,
+    private readonly actionService: ActionService,
   ) {
     super(agentModel as any);
   }
@@ -3059,6 +3076,224 @@ echo "Installation script placeholder - implement actual logic"
     }
 
     return payload;
+  }
+
+  async getRealtimeStatus(agentIds: string[] | undefined, context: RequestContext): Promise<Record<string, unknown>> {
+    const filter: Record<string, unknown> = { isDeleted: false, 'owner.orgId': context.orgId };
+    if (agentIds && agentIds.length > 0) {
+      filter['_id'] = { $in: agentIds };
+    }
+
+    const agents = await this.agentModel.find(filter).lean().exec();
+    const now = Date.now();
+
+    const items = await Promise.all(
+      agents.map(async (agent: any) => {
+        const activeConversations = await (this.conversationService as any).model
+          .countDocuments({ agentId: String(agent._id), status: 'active', isDeleted: false })
+          .exec();
+
+        const heartbeatAgeSeconds = agent.lastHeartbeatAt
+          ? Math.round((now - new Date(agent.lastHeartbeatAt).getTime()) / 1000)
+          : null;
+
+        return {
+          agentId: String(agent._id),
+          name: agent.name,
+          status: agent.status,
+          heartbeatAgeSeconds,
+          isOnline: heartbeatAgeSeconds !== null && heartbeatAgeSeconds < 60,
+          activeConversations,
+          connectionCount: agent.connectionCount ?? 0,
+          circuitBreaker: {
+            sleeping: agent.status === 'sleep',
+            sleepReason: agent.sleepReason ?? null,
+            sleepUntil: agent.sleepUntil ?? null,
+          },
+          currentTask: agent.currentTask ?? null,
+        };
+      }),
+    );
+
+    return { generatedAt: new Date().toISOString(), agents: items };
+  }
+
+  async getRealtimeStatusById(id: string, context: RequestContext): Promise<Record<string, unknown>> {
+    const result = await this.getRealtimeStatus([id], context);
+    const agents = (result as any).agents as any[];
+    if (!agents || agents.length === 0) {
+      throw new NotFoundException(`Agent ${id} not found`);
+    }
+
+    const agentData = agents[0];
+
+    // Find the most recently updated active conversation for this agent
+    const lastConv = await (this.conversationService as any).model
+      .findOne({ agentId: id, isDeleted: false })
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec() as any;
+
+    let lastConversation: Record<string, unknown> | null = null;
+    if (lastConv) {
+      const lastMsg = lastConv.lastMessage;
+      let unansweredSince: string | null = null;
+      if (lastMsg?.role === 'user') {
+        unansweredSince = new Date(lastMsg.createdAt).toISOString();
+      }
+      lastConversation = {
+        conversationId: String(lastConv._id),
+        lastMessage: lastMsg
+          ? {
+              role: lastMsg.role,
+              content: lastMsg.content,
+              createdAt: new Date(lastMsg.createdAt).toISOString(),
+            }
+          : null,
+        unansweredSince,
+      };
+    }
+
+    return { ...agentData, lastConversation };
+  }
+
+  async getAgentMetrics(
+    agentIds: string[] | undefined,
+    preset: string | undefined,
+    from: string | undefined,
+    to: string | undefined,
+    granularity: MetricsGranularity | undefined,
+    context: RequestContext,
+  ): Promise<Record<string, unknown>> {
+    const timeRange = resolveTimeRange(preset, from, to);
+    const gran: MetricsGranularity = granularity ?? defaultGranularity(timeRange.preset);
+
+    const agentFilter: Record<string, unknown> = { isDeleted: false, 'owner.orgId': context.orgId };
+    if (agentIds && agentIds.length > 0) agentFilter['_id'] = { $in: agentIds };
+    const agents = await this.agentModel.find(agentFilter).lean().exec();
+
+    const agentResults = await Promise.all(
+      agents.map(async (agent: any) => {
+        const conversations = await (this.conversationService as any).model
+          .find({
+            agentId: String(agent._id),
+            isDeleted: false,
+            createdAt: { $gte: timeRange.from, $lte: timeRange.to },
+          })
+          .lean()
+          .exec() as any[];
+
+        const convIds = conversations.map((c: any) => String(c._id));
+
+        // Fetch all actions for these conversations in one query
+        const allActions = convIds.length > 0
+          ? await (this.actionService as any).model
+              .find({ conversationId: { $in: convIds }, isDeleted: false, type: ActionType.MESSAGE })
+              .sort({ createdAt: 1 })
+              .lean()
+              .exec() as any[]
+          : [];
+
+        // Group actions by conversationId
+        const actionsByConv = new Map<string, any[]>();
+        for (const a of allActions) {
+          const cid = String(a.conversationId);
+          if (!actionsByConv.has(cid)) actionsByConv.set(cid, []);
+          actionsByConv.get(cid)!.push(a);
+        }
+
+        const frtValues: number[] = [];
+        let slaBreachCount = 0;
+        const allDeltas: number[] = [];
+        let errorConvCount = 0;
+        let resolvedCount = 0;
+        let totalDurationSeconds = 0;
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+
+        // Time-series buckets
+        const buckets = new Map<string, { conversations: number; frtValues: number[]; slaBreaches: number; errors: number }>();
+
+        for (const conv of conversations) {
+          const cid = String(conv._id);
+          const actions = actionsByConv.get(cid) ?? [];
+
+          const slaActions: SlaAction[] = actions.map((a: any) => ({
+            type: a.type,
+            actor: { role: a.actor?.role },
+            createdAt: new Date(a.createdAt),
+          }));
+
+          const frt = computeFrt(slaActions);
+          if (frt.ms !== null) {
+            frtValues.push(frt.ms);
+            if (frt.slaBreached) slaBreachCount++;
+          }
+
+          const deltas = computeResponseDeltas(slaActions);
+          allDeltas.push(...deltas);
+
+          if (conv.status === 'closed') resolvedCount++;
+
+          const createdAt = new Date(conv.createdAt);
+          const endAt = conv.status === 'active' ? new Date() : new Date(conv.updatedAt);
+          totalDurationSeconds += Math.round((endAt.getTime() - createdAt.getTime()) / 1000);
+
+          // Token usage from conversation totals
+          totalInputTokens += 0; // Actions-level token not aggregated here (use conversation totals)
+          totalOutputTokens += 0;
+
+          // Check errors via action count
+          const hasError = actions.some((a: any) => a.type === ActionType.ERROR);
+          if (hasError) errorConvCount++;
+
+          // Bucket
+          const bucketKey = getPeriodKey(createdAt, gran);
+          if (!buckets.has(bucketKey)) {
+            buckets.set(bucketKey, { conversations: 0, frtValues: [], slaBreaches: 0, errors: 0 });
+          }
+          const bucket = buckets.get(bucketKey)!;
+          bucket.conversations++;
+          if (frt.ms !== null) bucket.frtValues.push(frt.ms);
+          if (frt.slaBreached) bucket.slaBreaches++;
+          if (hasError) bucket.errors++;
+        }
+
+        const total = conversations.length;
+
+        const summary = {
+          totalConversations: total,
+          resolvedConversations: resolvedCount,
+          resolutionRate: total > 0 ? Math.round((resolvedCount / total) * 1000) / 10 : 0,
+          avgFirstResponseTimeMs: computeAvg(frtValues),
+          p90FirstResponseTimeMs: computeP90(frtValues),
+          slaBreachCount,
+          slaBreachRate: total > 0 ? Math.round((slaBreachCount / total) * 1000) / 10 : 0,
+          avgResponseTimeMs: computeAvg(allDeltas),
+          avgConversationDurationSeconds: total > 0 ? Math.round(totalDurationSeconds / total) : 0,
+          errorRate: total > 0 ? Math.round((errorConvCount / total) * 1000) / 10 : 0,
+          totalInputTokens,
+          totalOutputTokens,
+        };
+
+        const timeSeries = Array.from(buckets.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([period, b]) => ({
+            period,
+            conversations: b.conversations,
+            avgFrtMs: computeAvg(b.frtValues),
+            slaBreaches: b.slaBreaches,
+            errors: b.errors,
+          }));
+
+        return { agentId: String(agent._id), name: agent.name, summary, timeSeries };
+      }),
+    );
+
+    return {
+      period: { from: timeRange.from, to: timeRange.to, preset: timeRange.preset, granularity: gran },
+      agents: agentResults,
+    };
   }
 
   /**

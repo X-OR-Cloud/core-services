@@ -5,6 +5,7 @@ import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { AgentService } from './agent.service';
+import { MetricsGranularity } from '../../core/sla.helper';
 import {
   CreateAgentDto,
   UpdateAgentDto,
@@ -56,6 +57,36 @@ export class AgentController {
     return this.agentService.findAll(parseQueryString(query), context);
   }
 
+  @Get('realtime-status')
+  @ApiOperation({ summary: 'Realtime status of all agents', description: 'Snapshot of agent status, heartbeat, active conversations. Filter by agentIds (comma-separated).' })
+  @ApiResponse({ status: 200, description: 'Realtime agent status' })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getRealtimeStatus(
+    @Query('agentIds') agentIds: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const ids = agentIds ? agentIds.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    return this.agentService.getRealtimeStatus(ids, context);
+  }
+
+  @Get('metrics')
+  @ApiOperation({ summary: 'Agent performance metrics', description: 'SLA metrics aggregated by time range. Supports preset=today|yesterday|7d|30d or custom from/to. Filter by agentIds.' })
+  @ApiResponse({ status: 200, description: 'Agent metrics' })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getMetrics(
+    @Query('agentIds') agentIds: string,
+    @Query('preset') preset: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('granularity') granularity: MetricsGranularity,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const ids = agentIds ? agentIds.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    return this.agentService.getAgentMetrics(ids, preset, from, to, granularity, context);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get agent by ID or code', description: 'Retrieve a single agent by ObjectId or code (e.g. jack-bold). Use ?populate=instruction to include instruction details.' })
   @ApiResponse({ status: 200, description: 'Agent found' })
@@ -104,6 +135,19 @@ export class AgentController {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     await this.agentService.remove(resolvedId, context);
     return { message: 'Agent deleted successfully' };
+  }
+
+  @Get(':id/realtime-status')
+  @ApiOperation({ summary: 'Realtime status of a single agent', description: 'Snapshot of agent status including last conversation and unanswered message detection.' })
+  @ApiResponse({ status: 200, description: 'Realtime agent status' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async getRealtimeStatusById(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.agentService.getRealtimeStatusById(resolvedId, context);
   }
 
   @Get(':id/instruction')
