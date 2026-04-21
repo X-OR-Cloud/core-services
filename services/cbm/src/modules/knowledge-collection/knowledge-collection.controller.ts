@@ -200,7 +200,7 @@ export class KnowledgeCollectionController {
       if (fileIds.length > 0) {
         const files = await this.fileModel
           .find({ _id: { $in: fileIds }, isDeleted: false })
-          .select('-rawContent -storageKey')
+          .select('-storageKey')
           .lean()
           .exec();
 
