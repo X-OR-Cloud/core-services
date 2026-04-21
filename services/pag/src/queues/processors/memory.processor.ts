@@ -83,7 +83,7 @@ export class MemoryProcessor extends WorkerHost {
       const prompt = this.buildMemoryExtractionPrompt(recentMessages);
       
       const result = await this.genAI.models.generateContent({
-        model: soul?.llm?.model || 'gemini-2.5-flash-preview-04-17',
+        model: soul?.llm?.model || 'gemini-2.5-flash',
         contents: prompt,
       });
       const response = result.text || '';
