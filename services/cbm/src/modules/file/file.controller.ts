@@ -119,14 +119,14 @@ export class FileController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List files (excludes rawContent and storageKey)' })
+  @ApiOperation({ summary: 'List files (excludes rawContent and storageKey). Use ?search=keyword to filter by file content (case-insensitive).' })
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
     @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext,
   ) {
-    const { collectionId, ownerKind, ownerId, ...rest } = query;
+    const { collectionId, ownerKind, ownerId, search, ...rest } = query;
 
     // Resolve (ownerKind, ownerId) from either explicit params or legacy `collectionId` shorthand.
     // `collectionId` is kept as a convenience for clients listing knowledge files by collection.
@@ -141,7 +141,7 @@ export class FileController {
     }
 
     const options = parseQueryString(rest);
-    return this.fileService.findAll(options, context);
+    return this.fileService.findAll({ ...options, search }, context);
   }
 
   @Get(':id')

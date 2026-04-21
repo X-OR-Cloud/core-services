@@ -50,11 +50,17 @@ export class FileService extends BaseService<FileEntity> {
    * Override findAll: exclude rawContent and storageKey from list view.
    */
   async findAll(
-    options: FindManyOptions,
+    options: FindManyOptions & { search?: string },
     context: RequestContext,
   ): Promise<FindManyResult<FileEntity>> {
     options.selectFields = ['-rawContent', '-storageKey'];
     options.statisticFields = ['embeddingStatus', 'purpose'];
+    if (options.search) {
+      options.filter = {
+        ...options.filter,
+        rawContent: { $regex: options.search, $options: 'i' },
+      };
+    }
     return super.findAll(options, context);
   }
 
