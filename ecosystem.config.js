@@ -1056,7 +1056,7 @@ module.exports = {
     },
     // ========== PAG (Personal Agent Gateway) ==========
     {
-      name: 'core.pag.api00',
+      name: 'biz.pag.api00',
       script: './dist/services/pag/api.main.js',
       instances: 1,
       exec_mode: 'cluster',
@@ -1084,7 +1084,7 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
-      name: 'core.pag.api01',
+      name: 'biz.pag.api01',
       script: './dist/services/pag/api.main.js',
       instances: 1,
       exec_mode: 'cluster',
@@ -1112,7 +1112,7 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
-      name: 'core.pag.wrk00',
+      name: 'biz.pag.wrk00',
       script: './dist/services/pag/worker.main.js',
       instances: 1,
       exec_mode: 'fork',
