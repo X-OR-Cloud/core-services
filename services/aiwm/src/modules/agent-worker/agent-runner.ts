@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
-import { generateText, stepCountIs } from 'ai';
+import { generateText, stepCountIs, hasToolCall } from 'ai';
 import { ActionSource } from '../action/action.schema';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -587,31 +587,21 @@ export class AgentRunner {
       this.writeLog('info', 'MCP tools loaded', { count: toolNames.length, tools: toolNames });
       this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
-      // When KnowledgeSearch is the only non-chat tool, call it once manually and
-      // inject result into history — avoids multi-step KB loops and TPM spikes.
+      // When KnowledgeSearch is the only non-chat tool, force it on step 1 then stop —
+      // the model synthesizes the answer in a follow-up generateText call with toolChoice auto.
+      // This prevents multi-step KB loops that spike TPM.
       const nonChatTools = toolNames.filter((n) => !n.startsWith('mcp__Chat__'));
       const forceKbFirst = nonChatTools.length > 0 && nonChatTools.every((n) => n === KNOWLEDGE_SEARCH_TOOL_NAME);
-
-      if (forceKbFirst && this.config.searchKnowledgeInternal) {
-        const userQuery = typeof history[history.length - 1]?.content === 'string'
-          ? history[history.length - 1].content as string
-          : content;
-        const kbResult = await this.augmentWithRagContext(history, userQuery, conversationId, this.currentWorkId);
-        history = kbResult.history;
-      }
-
-      // Remove KnowledgeSearch from tools when forcing via RAG injection — model should not call it again
-      const effectiveTools = forceKbFirst
-        ? Object.fromEntries(Object.entries(tools).filter(([n]) => n !== KNOWLEDGE_SEARCH_TOOL_NAME))
-        : tools;
 
       try {
         const result = await generateText({
           model,
           system: systemPrompt,
           messages: history,
-          tools: Object.keys(effectiveTools).length > 0 ? effectiveTools : undefined,
-          stopWhen: stepCountIs(this.maxSteps),
+          tools: Object.keys(tools).length > 0 ? tools : undefined,
+          ...(forceKbFirst
+            ? { toolChoice: { type: 'tool', toolName: KNOWLEDGE_SEARCH_TOOL_NAME }, stopWhen: hasToolCall(KNOWLEDGE_SEARCH_TOOL_NAME) }
+            : { stopWhen: stepCountIs(this.maxSteps) }),
           abortSignal: abortController.signal,
           onStepFinish: (step) => {
             for (const call of step.toolCalls ?? []) {
@@ -647,10 +637,32 @@ export class AgentRunner {
         });
 
         this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
+
+        // forceKbFirst: step 1 only has tool_use+tool_result, need a 2nd call to synthesize
+        let finalText = result.text;
+        if (forceKbFirst && result.finishReason === 'tool-calls') {
+          const stepMessages = result.steps.flatMap((s) => [
+            ...(s.toolCalls?.length ? [{ role: 'assistant' as const, content: s.toolCalls }] : []),
+            ...(s.toolResults?.length ? [{ role: 'tool' as const, content: s.toolResults }] : []),
+          ]);
+          const synthesisMessages = [...history, ...stepMessages];
+          const synthesis = await generateText({
+            model,
+            system: systemPrompt,
+            messages: synthesisMessages,
+            tools: Object.keys(tools).length > 0 ? tools : undefined,
+            toolChoice: 'auto',
+            stopWhen: stepCountIs(this.maxSteps),
+            abortSignal: abortController.signal,
+          });
+          this.logger.debug(`[llm] synthesis done steps=${synthesis.steps?.length} finishReason=${synthesis.finishReason} outputLen=${synthesis.text?.length}`);
+          finalText = synthesis.text;
+        }
+
         this.publishResponse(conversationId, {
           type: 'message',
           role: 'assistant',
-          content: result.text,
+          content: finalText,
           isFinal: true,
           ...(ragSources.length ? { sources: ragSources } : {}),
           ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
