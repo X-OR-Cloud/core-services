@@ -3,7 +3,7 @@
  * Used by api.main.ts for API-only instances
  */
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { HealthModule, JwtStrategy, CorrelationIdMiddleware } from '@hydrabyte/base';
@@ -25,10 +25,14 @@ import { TasksModule } from '../modules/tasks/tasks.module';
       isGlobal: true,
       envFilePath: 'services/pag/.env',
     }),
-    MongooseModule.forRoot(
-      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
-      { dbName: 'core_pag' },
-    ),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        uri: config.get('MONGODB_URI') || 'mongodb://localhost:27017',
+        dbName: 'core_pag',
+      }),
+    }),
     PassportModule,
     HealthModule,
     QueueModule, // Producers only (for enqueuing from webhook)

@@ -3,7 +3,7 @@
  * Used by worker.main.ts for worker-only instances
  */
 import { Module, Logger } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { QueueModule } from '../queues/queue.module';
 import { ProcessorsModule } from '../queues/processors.module';
@@ -14,10 +14,14 @@ import { ProcessorsModule } from '../queues/processors.module';
       isGlobal: true,
       envFilePath: 'services/pag/.env',
     }),
-    MongooseModule.forRoot(
-      process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
-      { dbName: 'core_pag' },
-    ),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        uri: config.get('MONGODB_URI') || 'mongodb://localhost:27017',
+        dbName: 'core_pag',
+      }),
+    }),
     QueueModule,
     ProcessorsModule,
   ],
