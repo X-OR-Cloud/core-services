@@ -21,10 +21,10 @@ class SendMessageDto {
   @IsString()
   content: string;
 
-  @ApiPropertyOptional({ description: 'Also deliver to user via Zalo OA API', default: false })
+  @ApiPropertyOptional({ description: 'Also deliver to user via channel (Zalo OA API)', default: false })
   @IsOptional()
   @IsBoolean()
-  sendToZalo?: boolean;
+  sendToChannel?: boolean;
 }
 
 @ApiTags('messages')
@@ -69,8 +69,8 @@ export class MessagesController {
       content: dto.content,
     } as any, context);
 
-    if (!dto.sendToZalo) {
-      return { saved: true, zaloDelivered: false };
+    if (!dto.sendToChannel) {
+      return { saved: true, channelDelivered: false };
     }
 
     const conversation = await this.conversationModel
@@ -95,11 +95,11 @@ export class MessagesController {
       { headers: { 'access_token': channel.credentials.accessToken, 'Content-Type': 'application/json' }, timeout: 10000 },
     );
 
-    const zaloOk = response.data.error === 0;
+    const ok = response.data.error === 0;
     return {
       saved: true,
-      zaloDelivered: zaloOk,
-      ...(zaloOk ? {} : { zaloError: response.data.message }),
+      channelDelivered: ok,
+      ...(ok ? {} : { channelError: response.data.message }),
     };
   }
 }
