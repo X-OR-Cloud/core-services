@@ -44,6 +44,69 @@ export class ConversationService extends BaseService<Conversation> {
       options.filter['participants'] = { $elemMatch: { type: 'agent', id: agentId } };
     }
 
+    // Extract special cross-collection filters
+    const keyword = options.filter?.keyword as string | undefined;
+    const unanswered = options.filter?.unanswered === 'true' || options.filter?.unanswered === true;
+    const lowResponseRate = options.filter?.lowResponseRate === 'true' || options.filter?.lowResponseRate === true;
+    delete options.filter?.keyword;
+    delete options.filter?.unanswered;
+    delete options.filter?.lowResponseRate;
+
+    const idSets: string[][] = [];
+
+    if (keyword) {
+      const ids = await this.actionModel.distinct('conversationId', {
+        type: ActionType.MESSAGE,
+        content: { $regex: keyword, $options: 'i' },
+        isDeleted: false,
+      });
+      idSets.push(ids.map(String));
+    }
+
+    if (unanswered) {
+      // Last action per conversation is from user and older than 30s (no agent reply yet)
+      const threshold = new Date(Date.now() - 30_000);
+      const results = await this.actionModel.aggregate([
+        { $match: { type: ActionType.MESSAGE, isDeleted: false } },
+        { $sort: { conversationId: 1, createdAt: -1 } },
+        { $group: { _id: '$conversationId', lastRole: { $first: '$actor.role' }, lastAt: { $first: '$createdAt' } } },
+        { $match: { lastRole: 'user', lastAt: { $lt: threshold } } },
+      ]);
+      idSets.push(results.map((r: any) => String(r._id)));
+    }
+
+    if (lowResponseRate) {
+      // Conversations where agent action count < user action count
+      const results = await this.actionModel.aggregate([
+        { $match: { type: ActionType.MESSAGE, isDeleted: false } },
+        { $group: { _id: { conversationId: '$conversationId', role: '$actor.role' }, count: { $sum: 1 } } },
+        { $group: { _id: '$_id.conversationId', counts: { $push: { role: '$_id.role', count: '$count' } } } },
+        {
+          $project: {
+            userCount: {
+              $ifNull: [
+                { $arrayElemAt: [{ $map: { input: { $filter: { input: '$counts', cond: { $eq: ['$$this.role', 'user'] } } }, in: '$$this.count' } }, 0] },
+                0,
+              ],
+            },
+            agentCount: {
+              $ifNull: [
+                { $arrayElemAt: [{ $map: { input: { $filter: { input: '$counts', cond: { $eq: ['$$this.role', 'agent'] } } }, in: '$$this.count' } }, 0] },
+                0,
+              ],
+            },
+          },
+        },
+        { $match: { $expr: { $lt: ['$agentCount', '$userCount'] } } },
+      ]);
+      idSets.push(results.map((r: any) => String(r._id)));
+    }
+
+    if (idSets.length > 0) {
+      const intersected = idSets.reduce((a, b) => a.filter((id) => b.includes(id)));
+      options.filter = { ...options.filter, _id: { $in: intersected } };
+    }
+
     return await super.findAll(options, context);
   }
 

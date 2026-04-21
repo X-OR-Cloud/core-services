@@ -11,7 +11,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Types } from 'mongoose';
 import {
   JwtAuthGuard,
@@ -57,6 +57,12 @@ export class ConversationController {
     description: 'Conversations retrieved successfully',
     type: [Conversation],
   })
+  @ApiQuery({ name: 'keyword', required: false, description: 'Search in message content (case-insensitive)' })
+  @ApiQuery({ name: 'unanswered', required: false, type: Boolean, description: 'Filter conversations where last user message has no agent reply after 30s' })
+  @ApiQuery({ name: 'lowResponseRate', required: false, type: Boolean, description: 'Filter conversations where agent action count is less than user action count' })
+  @ApiQuery({ name: 'userId', required: false, description: 'Filter by userId or anonymousId' })
+  @ApiQuery({ name: 'createdAt:gte', required: false, description: 'Filter by start date (ISO 8601)' })
+  @ApiQuery({ name: 'createdAt:lte', required: false, description: 'Filter by end date (ISO 8601)' })
   @ApiReadErrors({ notFound: false })
   async findAll(
     @Query() query: Record<string, any>,
