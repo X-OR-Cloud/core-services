@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body, Param, Delete, UseGuards, Query, NotFoundException, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Param, Delete, UseGuards, Query, NotFoundException, ValidationPipe, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -18,10 +18,11 @@ export class ConversationsController {
   @ApiQuery({ name: 'channelId', required: false, description: 'Filter by channel ID' })
   @ApiQuery({ name: 'soulId', required: false, description: 'Filter by soul ID' })
   @ApiQuery({ name: 'status', required: false, description: 'Filter by status (active, idle, closed)' })
+  @ApiQuery({ name: 'platformUserId', required: false, description: 'Filter by Zalo/platform user ID' })
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: PaginationQueryDto & { channelId?: string; soulId?: string; status?: string },
+    @Query() query: PaginationQueryDto & { channelId?: string; soulId?: string; status?: string; platformUserId?: string },
     @CurrentUser() context: RequestContext,
   ) {
     // Build filter object for queries
@@ -29,6 +30,7 @@ export class ConversationsController {
     if (query.channelId) filter.channelId = query.channelId;
     if (query.soulId) filter.soulId = query.soulId;
     if (query.status) filter.status = query.status;
+    if (query.platformUserId) filter['platformUser.id'] = query.platformUserId;
 
     const options = {
       ...query,
@@ -71,6 +73,19 @@ export class ConversationsController {
       throw new NotFoundException(`Conversation with ID ${id} not found`);
     }
     return updated;
+  }
+
+  @Post(':id/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset conversation', description: 'Soft-delete all messages and reset message count' })
+  @ApiResponse({ status: 200, description: 'Conversation reset successfully' })
+  @ApiParam({ name: 'id', description: 'Conversation ID' })
+  @UseGuards(JwtAuthGuard)
+  async reset(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.conversationsService.resetConversation(id, context);
   }
 
   @Delete(':id')

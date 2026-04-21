@@ -18,6 +18,8 @@ import { ConversationsModule } from '../modules/conversations/conversations.modu
 import { MessagesModule } from '../modules/messages/messages.module';
 import { MemoriesModule } from '../modules/memories/memories.module';
 import { TasksModule } from '../modules/tasks/tasks.module';
+import { StatsModule } from '../modules/stats/stats.module';
+import { QueuesAdminModule } from '../modules/queues-admin/queues-admin.module';
 
 @Module({
   imports: [
@@ -42,6 +44,8 @@ import { TasksModule } from '../modules/tasks/tasks.module';
     MessagesModule,
     MemoriesModule,
     TasksModule,
+    StatsModule,
+    QueuesAdminModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

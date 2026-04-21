@@ -1,14 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Conversation } from './conversations.schema';
+import { Message, MessageSchema } from '../messages/messages.schema';
 
 @Injectable()
 export class ConversationsService extends BaseService<Conversation> {
 
-  constructor(@InjectModel(Conversation.name) conversationModel: Model<Conversation>) {
+  constructor(
+    @InjectModel(Conversation.name) conversationModel: Model<Conversation>,
+    @InjectModel(Message.name) private readonly messageModel: Model<Message>,
+  ) {
     super(conversationModel as any);
   }
 
@@ -96,6 +100,22 @@ export class ConversationsService extends BaseService<Conversation> {
    * @param soulId - Soul ID to filter by
    * @returns Array of active conversations
    */
+  async resetConversation(conversationId: string, context: RequestContext): Promise<{ deletedMessages: number }> {
+    const conversation = await this.model.findOne({ _id: conversationId, isDeleted: false });
+    if (!conversation) throw new NotFoundException(`Conversation ${conversationId} not found`);
+
+    const result = await this.messageModel.updateMany(
+      { conversationId, isDeleted: false },
+      { $set: { isDeleted: true, deletedAt: new Date() } },
+    );
+
+    await this.model.findByIdAndUpdate(conversationId, {
+      $set: { messageCount: 0, lastActiveAt: null, updatedBy: context },
+    });
+
+    return { deletedMessages: result.modifiedCount };
+  }
+
   async findActiveWithin48h(soulId: string): Promise<Conversation[]> {
     this.logger.debug(`Finding active conversations within 48h for soul: ${soulId}`);
 
