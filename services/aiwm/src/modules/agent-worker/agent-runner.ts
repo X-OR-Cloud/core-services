@@ -585,6 +585,7 @@ export class AgentRunner {
       const { tools, clients: mcpClients } = await this.resolveMcpTools(conversationId);
       const toolNames = Object.keys(tools);
       this.writeLog('info', 'MCP tools loaded', { count: toolNames.length, tools: toolNames });
+      this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
       try {
         const result = await generateText({
