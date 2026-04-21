@@ -9,6 +9,7 @@ import { BrowserContext } from './browser/browser.types';
 import { BrowserInstanceManager } from './browser/browser-instance.manager';
 import { createBrowserTools, BROWSER_TOOL_FUNCTIONS } from './browser/browser-mcp.server';
 import { createChannelSendTools } from './channel-send.tool';
+import { createKnowledgeSearchTools, KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-search.tool';
 
 
 export interface McpServerConfig {
@@ -779,6 +780,17 @@ export class AgentRunner {
     if (this.browserCtx?.instanceId) {
       const browserTools = createBrowserTools(this.browserCtx);
       for (const [toolName, toolDef] of Object.entries(browserTools)) {
+        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        toolMap[toolName] = toolDef;
+      }
+    }
+
+    // In-process knowledge search tool — calls CBM directly without MCP hop
+    if (this.config.searchKnowledgeInternal) {
+      const knowledgeTools = createKnowledgeSearchTools({
+        searchKnowledgeInternal: this.config.searchKnowledgeInternal,
+      });
+      for (const [toolName, toolDef] of Object.entries(knowledgeTools)) {
         if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
         toolMap[toolName] = toolDef;
       }
