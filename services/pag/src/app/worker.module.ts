@@ -12,7 +12,6 @@ import { ProcessorsModule } from '../queues/processors.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/pag/.env',
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],

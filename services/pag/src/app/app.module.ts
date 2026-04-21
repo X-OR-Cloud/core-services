@@ -19,7 +19,6 @@ import { MemoriesModule } from '../modules/memories/memories.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/pag/.env',
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],

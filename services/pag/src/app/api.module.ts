@@ -23,7 +23,6 @@ import { TasksModule } from '../modules/tasks/tasks.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'services/pag/.env',
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
