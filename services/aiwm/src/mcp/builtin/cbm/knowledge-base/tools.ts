@@ -15,7 +15,7 @@ import {
 
 export const KnowledgeBaseTools: ToolDefinition[] = [
   {
-    name: 'kb_search',
+    name: 'KnowledgeSearch',
     description:
       'Search a knowledge collection using natural language query (RAG). Returns top-K most relevant chunks with content and metadata. Use this to answer questions based on internal documents.',
     type: 'builtin',
