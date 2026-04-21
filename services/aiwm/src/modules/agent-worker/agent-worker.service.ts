@@ -63,6 +63,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   /** Map of agentId → dedicated Redis client for BLPOP (blocking, one per runner) */
   private readonly redisBlockingMap = new Map<string, Redis>();
   private readonly agentIdFilter: string[];
+  private readonly agentIdIgnore: string[];
 
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
@@ -75,6 +76,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {
     this.agentIdFilter = process.env.AGENT_IDS
       ? process.env.AGENT_IDS.split(',').filter(Boolean)
+      : [];
+    this.agentIdIgnore = process.env.AGENT_IGNORE_IDS
+      ? process.env.AGENT_IGNORE_IDS.split(',').filter(Boolean)
       : [];
   }
 
@@ -111,6 +115,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
+    }
+    if (this.agentIdIgnore.length) {
+      query._id = { ...(query._id ?? {}), $nin: this.agentIdIgnore };
     }
 
     const agents = await this.agentModel.find(query).select('+secret').lean();
@@ -440,6 +447,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
+    }
+    if (this.agentIdIgnore.length) {
+      query._id = { ...(query._id ?? {}), $nin: this.agentIdIgnore };
     }
 
     const agents = await this.agentModel.find(query).select('+secret').lean().catch(() => []);

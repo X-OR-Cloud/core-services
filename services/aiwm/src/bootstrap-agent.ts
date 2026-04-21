@@ -24,11 +24,13 @@ export async function bootstrapAgentWorker() {
   const wsUrl = process.env.WS_CHAT_URL || 'http://localhost:3003';
   const mcpUrl = process.env.MCP_SERVER_URL || 'http://localhost:3355';
   const agentIds = process.env.AGENT_IDS ? process.env.AGENT_IDS.split(',').filter(Boolean) : [];
+  const agentIgnoreIds = process.env.AGENT_IGNORE_IDS ? process.env.AGENT_IGNORE_IDS.split(',').filter(Boolean) : [];
 
   logger.log('Agent Worker Configuration:');
   logger.log(`  - WS Chat URL: ${wsUrl}`);
   logger.log(`  - MCP Server URL: ${mcpUrl}`);
   logger.log(`  - Agent filter: ${agentIds.length ? agentIds.join(', ') : 'all hosted agents'}`);
+  logger.log(`  - Agent ignore: ${agentIgnoreIds.length ? agentIgnoreIds.join(', ') : 'none'}`);
   logger.log(`  - MongoDB: ${process.env.MONGODB_URI?.indexOf('@') > 0 ? process.env.MONGODB_URI?.split('@')[1] : process.env.MONGODB_URI}`);
 
   logger.log('✅ AIWM Agent Worker started successfully');
