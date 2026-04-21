@@ -587,12 +587,18 @@ export class AgentRunner {
       this.writeLog('info', 'MCP tools loaded', { count: toolNames.length, tools: toolNames });
       this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
+      // Force KnowledgeSearch on first step when it's the only non-chat tool —
+      // some models ignore tool instructions without explicit toolChoice.
+      const nonChatTools = toolNames.filter((n) => !n.startsWith('mcp__Chat__'));
+      const forceKbFirst = nonChatTools.length > 0 && nonChatTools.every((n) => n === KNOWLEDGE_SEARCH_TOOL_NAME);
+
       try {
         const result = await generateText({
           model,
           system: systemPrompt,
           messages: history,
           tools: Object.keys(tools).length > 0 ? tools : undefined,
+          ...(forceKbFirst ? { toolChoice: { type: 'tool', toolName: KNOWLEDGE_SEARCH_TOOL_NAME } } : {}),
           stopWhen: stepCountIs(this.maxSteps),
           abortSignal: abortController.signal,
           onStepFinish: (step) => {
