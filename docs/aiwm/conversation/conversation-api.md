@@ -1,6 +1,6 @@
 # Conversation API — AIWM Service
 
-Base URL: `http://localhost:3003` (dev) · `https://api.example.com` (prod, port 3330–3339)  
+Base URL: `http://localhost:3003` (dev) · `https://api.x-or.cloud/dev/aiwm` (prod, port 3330–3339)  
 Tất cả endpoint đều yêu cầu header `Authorization: Bearer <jwt_token>`.
 
 ---
@@ -666,7 +666,141 @@ Tự động sinh tóm tắt ngữ cảnh hội thoại bằng AI và lưu vào 
 
 ---
 
-## 3. Bảng tóm tắt endpoints
+## 3. Tìm kiếm Action trong hội thoại
+
+Lịch sử hội thoại (tin nhắn, sự kiện) được lưu trong module `Action`, không nhúng trong Conversation. Để tìm kiếm action, dùng endpoint `GET /actions` với các query param sau.
+
+---
+
+### GET /actions — Tìm kiếm action theo hội thoại
+
+**Query Parameters**
+
+| Param | Kiểu | Ý nghĩa | Ví dụ |
+|-------|------|---------|-------|
+| `conversationId` | string (ObjectId) | **Bắt buộc khi tìm theo hội thoại.** Lọc action thuộc conversation cụ thể | `"684a1f77bcf86cd799430001"` |
+| `content:regex` | string | Tìm theo từ khóa trong nội dung, không phân biệt hoa thường | `"doanh thu"` |
+| `type` | string (enum) | Lọc theo loại action | `"message"` |
+| `type:in` | string | Lọc nhiều loại, cách nhau dấu phẩy | `"message,notice"` |
+| `actor.role` | string (enum) | Lọc theo vai trò người gửi: `user`, `agent`, `system` | `"user"` |
+| `createdAt:gte` | string (ISO 8601) | Từ thời điểm (bao gồm) | `"2025-04-21T08:00:00.000Z"` |
+| `createdAt:lte` | string (ISO 8601) | Đến thời điểm (bao gồm) | `"2025-04-21T18:00:00.000Z"` |
+| `page` | number | Trang hiện tại (mặc định: `1`) | `2` |
+| `limit` | number | Số bản ghi mỗi trang (mặc định: `10`) | `50` |
+| `sort` | string | Sắp xếp (mặc định: `createdAt:desc`) | `"createdAt:asc"` |
+
+**Enum `type`**
+
+| Giá trị | Ý nghĩa |
+|---------|---------|
+| `message` | Tin nhắn thông thường của user hoặc agent |
+| `notice` | Tin nhắn hệ thống hiển thị cho user |
+| `thinking` | Khối reasoning nội bộ của agent (ẩn với user) |
+| `tool_use` | Agent gọi một tool |
+| `tool_result` | Kết quả trả về từ tool |
+| `error` | Sự kiện lỗi |
+| `command` | Slash command có hiệu lực (`/stop`, `/reload`) |
+| `joined` | Người tham gia vào hội thoại |
+| `left` | Người rời khỏi hội thoại |
+| `handoff` | Chuyển giao hội thoại |
+
+**Enum `actor.role`**
+
+| Giá trị | Ý nghĩa |
+|---------|---------|
+| `user` | Tin nhắn từ người dùng (authenticated hoặc anonymous) |
+| `agent` | Phản hồi từ AI agent |
+| `system` | Sự kiện nội bộ hệ thống |
+
+**Request Samples**
+
+```
+# Toàn bộ action của một hội thoại, sắp xếp cũ → mới
+GET /actions?conversationId=684a1f77bcf86cd799430001&sort=createdAt:asc&limit=50
+
+# Tìm tin nhắn chứa từ khóa
+GET /actions?conversationId=684a1f77bcf86cd799430001&type=message&content:regex=doanh+thu
+
+# Lọc theo khoảng thời gian
+GET /actions?conversationId=684a1f77bcf86cd799430001&createdAt:gte=2025-04-21T08:00:00.000Z&createdAt:lte=2025-04-21T18:00:00.000Z
+
+# Chỉ lấy tin nhắn user và agent (bỏ tool_use, thinking, v.v.)
+GET /actions?conversationId=684a1f77bcf86cd799430001&type:in=message,notice&sort=createdAt:asc
+
+# Kết hợp keyword + khoảng thời gian + phân trang
+GET /actions?conversationId=684a1f77bcf86cd799430001&content:regex=báo+cáo&createdAt:gte=2025-04-01T00:00:00.000Z&page=1&limit=20
+```
+
+**Response**
+
+`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "_id": "684a2f77bcf86cd799430010",
+      "conversationId": "684a1f77bcf86cd799430001",
+      "type": "message",
+      "actor": {
+        "role": "user",
+        "userId": "user_abc123",
+        "displayName": "Nguyễn Văn A"
+      },
+      "content": "Cho em hỏi về doanh thu Q1 2025 như thế nào?",
+      "status": "completed",
+      "createdAt": "2025-04-21T08:01:00.000Z",
+      "updatedAt": "2025-04-21T08:01:00.000Z"
+    },
+    {
+      "_id": "684a2f77bcf86cd799430011",
+      "conversationId": "684a1f77bcf86cd799430001",
+      "type": "message",
+      "actor": {
+        "role": "agent",
+        "agentId": "507f1f77bcf86cd799439011",
+        "displayName": "Sales Assistant"
+      },
+      "content": "Doanh thu Q1 2025 đạt 12 tỷ đồng, tăng 12% so với cùng kỳ năm ngoái.",
+      "usage": {
+        "inputTokens": 320,
+        "outputTokens": 85,
+        "duration": 1240
+      },
+      "status": "completed",
+      "createdAt": "2025-04-21T08:01:02.000Z",
+      "updatedAt": "2025-04-21T08:01:02.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 8
+  },
+  "statistics": {
+    "total": 8,
+    "byStatus": { "completed": 8 },
+    "byType": { "message": 6, "tool_use": 1, "tool_result": 1 }
+  }
+}
+```
+
+`401 Unauthorized` — Thiếu hoặc sai JWT
+
+---
+
+### Khi nào dùng endpoint nào
+
+| Mục đích | Endpoint |
+|---------|---------|
+| Lấy toàn bộ lịch sử chat theo thứ tự thời gian | `GET /actions/conversation/:conversationId` |
+| Tìm kiếm từ khóa / lọc theo thời gian / phân trang linh hoạt | `GET /actions?conversationId=...&content:regex=...` |
+| Lấy N tin nhắn gần nhất | `GET /actions/conversation/:conversationId/last/:count` |
+| Thống kê số lượt theo role và type | `GET /actions/conversation/:conversationId/statistics` |
+
+---
+
+## 4. Bảng tóm tắt endpoints
 
 | Method | URL | Mô tả |
 |--------|-----|-------|
@@ -684,10 +818,11 @@ Tự động sinh tóm tắt ngữ cảnh hội thoại bằng AI và lưu vào 
 | `POST` | `/conversations/:id/close` | Đóng hội thoại |
 | `GET` | `/conversations/:id/metrics` | Chỉ số SLA của hội thoại |
 | `POST` | `/conversations/:id/summary` | Sinh tóm tắt ngữ cảnh bằng AI |
+| `GET` | `/actions?conversationId=...` | Tìm kiếm action theo keyword, thời gian, phân trang |
 
 ---
 
-## 4. Ghi chú đặc biệt
+## 5. Ghi chú đặc biệt
 
 ### Filter nâng cao trong GET /conversations
 
