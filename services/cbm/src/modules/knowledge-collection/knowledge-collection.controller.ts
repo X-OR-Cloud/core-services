@@ -157,7 +157,7 @@ export class KnowledgeCollectionController {
   }
 
   @Post(':id/search')
-  @ApiOperation({ summary: 'Vector search within collection (RAG query)' })
+  @ApiOperation({ summary: 'Vector search within collection (RAG query). Set includeSource=true in body to attach source file object to each result.' })
   @UseGuards(JwtAuthGuard)
   async search(
     @Param('id') id: string,
@@ -186,6 +186,36 @@ export class KnowledgeCollectionController {
         topK: searchDto.topK || 5,
       },
     );
+
+    // 3. Optionally populate source file objects
+    if (searchDto.includeSource) {
+      const fileIds = [
+        ...new Set(
+          results
+            .filter((r) => r.payload?.sourceType === 'file' && r.payload?.sourceId)
+            .map((r) => r.payload.sourceId as string),
+        ),
+      ];
+
+      if (fileIds.length > 0) {
+        const files = await this.fileModel
+          .find({ _id: { $in: fileIds }, isDeleted: false })
+          .select('-rawContent -storageKey')
+          .lean()
+          .exec();
+
+        const fileMap = new Map(files.map((f: any) => [String(f._id), f]));
+
+        return {
+          results: results.map((r) => ({
+            ...r,
+            source: r.payload?.sourceType === 'file'
+              ? (fileMap.get(r.payload.sourceId as string) ?? null)
+              : null,
+          })),
+        };
+      }
+    }
 
     return { results };
   }

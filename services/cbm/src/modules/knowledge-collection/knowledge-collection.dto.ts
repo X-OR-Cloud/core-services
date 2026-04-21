@@ -5,10 +5,12 @@ import {
   IsOptional,
   IsObject,
   IsNumber,
+  IsBoolean,
   Min,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { Type } from 'class-transformer';
 
 class ChunkingConfigDto {
@@ -95,4 +97,13 @@ export class SearchKnowledgeCollectionDto {
   @IsNumber()
   @Min(1)
   topK?: number = 5;
+
+  @ApiPropertyOptional({
+    description: 'Include source file object in each result (only applies to results with sourceType=file)',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  includeSource?: boolean;
 }
