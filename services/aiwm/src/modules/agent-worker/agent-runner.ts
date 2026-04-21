@@ -587,18 +587,30 @@ export class AgentRunner {
       this.writeLog('info', 'MCP tools loaded', { count: toolNames.length, tools: toolNames });
       this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
-      // Force KnowledgeSearch on first step when it's the only non-chat tool —
-      // some models ignore tool instructions without explicit toolChoice.
+      // When KnowledgeSearch is the only non-chat tool, call it once manually and
+      // inject result into history — avoids multi-step KB loops and TPM spikes.
       const nonChatTools = toolNames.filter((n) => !n.startsWith('mcp__Chat__'));
       const forceKbFirst = nonChatTools.length > 0 && nonChatTools.every((n) => n === KNOWLEDGE_SEARCH_TOOL_NAME);
+
+      if (forceKbFirst && this.config.searchKnowledgeInternal) {
+        const userQuery = typeof history[history.length - 1]?.content === 'string'
+          ? history[history.length - 1].content as string
+          : content;
+        const kbResult = await this.augmentWithRagContext(history, userQuery, conversationId, this.currentWorkId);
+        history = kbResult.history;
+      }
+
+      // Remove KnowledgeSearch from tools when forcing via RAG injection — model should not call it again
+      const effectiveTools = forceKbFirst
+        ? Object.fromEntries(Object.entries(tools).filter(([n]) => n !== KNOWLEDGE_SEARCH_TOOL_NAME))
+        : tools;
 
       try {
         const result = await generateText({
           model,
           system: systemPrompt,
           messages: history,
-          tools: Object.keys(tools).length > 0 ? tools : undefined,
-          ...(forceKbFirst ? { toolChoice: { type: 'tool', toolName: KNOWLEDGE_SEARCH_TOOL_NAME } } : {}),
+          tools: Object.keys(effectiveTools).length > 0 ? effectiveTools : undefined,
           stopWhen: stepCountIs(this.maxSteps),
           abortSignal: abortController.signal,
           onStepFinish: (step) => {
