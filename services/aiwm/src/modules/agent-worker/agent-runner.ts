@@ -597,20 +597,30 @@ export class AgentRunner {
           onStepFinish: (step) => {
             for (const call of step.toolCalls ?? []) {
               this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
+              let toolUseContent = call.toolName;
+              if (call.toolName === KNOWLEDGE_SEARCH_TOOL_NAME) {
+                const input = call.input as { query?: string; collectionId?: string };
+                toolUseContent = `🧠 **Knowledge Search**\n${input.query ?? ''}`;
+              }
               this.publishResponse(conversationId, {
                 type: 'tool_use',
                 role: 'assistant',
-                content: call.toolName,
+                content: toolUseContent,
                 ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }
             for (const res of step.toolResults ?? []) {
-              const outputStr = JSON.stringify(res.output).slice(0, 200);
-              this.logger.debug(`  [tool:result] ${res.toolName} → ${outputStr}`);
+              this.logger.debug(`  [tool:result] ${res.toolName} → ${JSON.stringify(res.output).slice(0, 200)}`);
+              let toolResultContent = JSON.stringify(res.output).slice(0, 200);
+              if (res.toolName === KNOWLEDGE_SEARCH_TOOL_NAME) {
+                const output = res.output as Array<{ score: number; content: string }> | undefined;
+                const count = Array.isArray(output) ? output.length : 0;
+                toolResultContent = `Retrieved ${count} knowledge chunk(s).`;
+              }
               this.publishResponse(conversationId, {
                 type: 'tool_result',
                 role: 'assistant',
-                content: outputStr,
+                content: toolResultContent,
                 ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }
