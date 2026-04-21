@@ -5,6 +5,7 @@ import { Message, MessageSchema } from '../messages/messages.schema';
 import { Channel, ChannelSchema } from '../channels/channels.schema';
 import { Memory, MemorySchema } from '../memories/memories.schema';
 import { Task, TaskSchema } from '../tasks/tasks.schema';
+import { MessagesModule } from '../messages/messages.module';
 import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 
@@ -17,6 +18,7 @@ import { StatsController } from './stats.controller';
       { name: Memory.name, schema: MemorySchema },
       { name: Task.name, schema: TaskSchema },
     ]),
+    MessagesModule,
   ],
   providers: [StatsService],
   controllers: [StatsController],
