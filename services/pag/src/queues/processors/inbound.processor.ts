@@ -131,7 +131,7 @@ export class InboundProcessor extends WorkerHost {
 
       const contents = this.buildContents(soul, memories, recentMessages, data.messageText, pendingTasks);
       const result = await this.genAI.models.generateContent({
-        model: soul.llm?.model || 'gemini-2.0-flash',
+        model: soul.llm?.model || 'gemini-2.0-flash-lite',
         contents,
       });
       const aiResponse = result.text || '';
@@ -152,7 +152,7 @@ export class InboundProcessor extends WorkerHost {
         role: 'assistant',
         content: cleanResponse || aiResponse,
         llmProvider: 'google',
-        llmModel: soul.llm?.model || 'gemini-2.0-flash',
+        llmModel: soul.llm?.model || 'gemini-2.0-flash-lite',
         llmTokensUsed: {
           input: result.usageMetadata?.promptTokenCount || 0,
           output: result.usageMetadata?.candidatesTokenCount || 0,

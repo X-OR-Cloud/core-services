@@ -148,7 +148,7 @@ export class HeartbeatProcessor extends WorkerHost {
           role: 'assistant',
           content: proactiveMessage.text,
           llmProvider: 'google',
-          llmModel: soul.llm?.model || 'gemini-2.0-flash-exp',
+          llmModel: soul.llm?.model || 'gemini-2.0-flash-lite',
           llmTokensUsed: proactiveMessage.tokensUsed || { input: 0, output: 0, total: 0 },
         }, this.systemContext);
 
@@ -210,7 +210,7 @@ export class HeartbeatProcessor extends WorkerHost {
       const prompt = this.buildProactiveMessagePrompt(soul, conversation, memories, dueReminders);
       
       const result = await this.genAI.models.generateContent({
-        model: soul.llm?.model || 'gemini-2.0-flash',
+        model: soul.llm?.model || 'gemini-2.0-flash-lite',
         contents: prompt,
       });
       const messageText = (result.text || '').trim();
