@@ -133,6 +133,9 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__DoneReminder',
     'mcp__Builtin__DeleteReminder',
   ],
+  KnowledgeManagement: [
+    'mcp__Builtin__KnowledgeSearch',
+  ],
   BrowserAutomation: [
     'mcp__Browser__OpenTab',
     'mcp__Browser__CloseTab',
