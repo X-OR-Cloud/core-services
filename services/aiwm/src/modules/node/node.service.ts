@@ -183,9 +183,9 @@ export class NodeService extends BaseService<Node> {
     // Resolve URLs from config with fallbacks (org-specific → global → default)
     const orgId = context.orgId;
     const [baseApiUrl, baseWsUrl, monaBaseUrl] = await Promise.all([
-      this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, orgId, 'http://localhost:3003'),
-      this.configService.getOrDefault(ConfigKey.AIWM_BASE_WS_URL, orgId, 'ws://localhost:3003'),
-      this.configService.getOrDefault(ConfigKey.MONA_BASE_API_URL, orgId, 'http://localhost:3005'),
+      this.configService.getOrDefaultFromDb(ConfigKey.AIWM_BASE_API_URL, orgId, 'http://localhost:3003'),
+      this.configService.getOrDefaultFromDb(ConfigKey.AIWM_BASE_WS_URL, orgId, 'ws://localhost:3003'),
+      this.configService.getOrDefaultFromDb(ConfigKey.MONA_BASE_API_URL, orgId, 'http://localhost:3005'),
     ]);
 
     const bootstrapUrl = `${baseApiUrl}/nodes/auth/bootstrap`;

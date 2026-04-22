@@ -73,6 +73,38 @@ export class ConfigService implements OnModuleInit {
   }
 
   /**
+   * Get configuration value directly from DB (bypasses cache).
+   * Lookup order: org-specific → global → null.
+   */
+  async getFromDb<T = string>(key: ConfigKey, orgId?: string): Promise<T | null> {
+    if (orgId) {
+      const orgDoc = await this.configModel.findOne({
+        key,
+        'owner.orgId': orgId,
+        scope: 'org',
+        isDeleted: false,
+        value: { $nin: [null, ''] },
+      }).exec();
+      if (orgDoc) return this.parseValue(key, orgDoc.value) as T;
+    }
+
+    const globalDoc = await this.configModel.findOne({
+      key,
+      scope: 'global',
+      isDeleted: false,
+      value: { $nin: [null, ''] },
+    }).exec();
+    if (globalDoc) return this.parseValue(key, globalDoc.value) as T;
+
+    return null;
+  }
+
+  async getOrDefaultFromDb<T = string>(key: ConfigKey, orgId: string | undefined, defaultValue: T): Promise<T> {
+    const value = await this.getFromDb<T>(key, orgId);
+    return value !== null ? value : defaultValue;
+  }
+
+  /**
    * Get all active configurations as object (merged: global overridden by org)
    */
   async getAll(orgId?: string): Promise<Record<string, any>> {
