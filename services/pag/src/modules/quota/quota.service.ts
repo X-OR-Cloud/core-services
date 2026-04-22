@@ -11,6 +11,7 @@ export interface ChatQuotaResult {
   messageCount: number;
   limit: number | null;       // null = unlimited
   warningNeeded: boolean;     // true if crossed 80% threshold
+  planSlug: string;           // effective plan slug for UX messaging
 }
 
 export interface TaskQuotaResult {
@@ -41,7 +42,7 @@ export class QuotaService {
     // Unlimited plan
     if (limit === null) {
       await this.dailyUsagesService.incrementMessageCount(platformUserId);
-      return { allowed: true, messageCount: 0, limit: null, warningNeeded: false };
+      return { allowed: true, messageCount: 0, limit: null, warningNeeded: false, planSlug };
     }
 
     const { allowed, messageCount } = await this.dailyUsagesService.tryIncrementIfAllowed(
@@ -50,7 +51,7 @@ export class QuotaService {
     );
 
     if (!allowed) {
-      return { allowed: false, messageCount, limit, warningNeeded: false };
+      return { allowed: false, messageCount, limit, warningNeeded: false, planSlug };
     }
 
     // Check if 80% warning should be sent (exact crossing: messageCount hits 80% threshold)
@@ -60,12 +61,12 @@ export class QuotaService {
       const usage = await this.dailyUsagesService.getToday(platformUserId);
       if (usage?.warningAt80Sent) {
         // Already sent today — don't resend
-        return { allowed: true, messageCount, limit, warningNeeded: false };
+        return { allowed: true, messageCount, limit, warningNeeded: false, planSlug };
       }
       await this.dailyUsagesService.markWarningAt80Sent(platformUserId);
     }
 
-    return { allowed: true, messageCount, limit, warningNeeded };
+    return { allowed: true, messageCount, limit, warningNeeded, planSlug };
   }
 
   /**
