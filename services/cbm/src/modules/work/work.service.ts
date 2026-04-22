@@ -966,7 +966,7 @@ export class WorkService extends BaseService<Work> {
   async calculateTaskStatus(
     taskId: ObjectId,
     context: RequestContext
-  ): Promise<'in_progress' | 'done'> {
+  ): Promise<'in_progress' | 'review'> {
     const task = await this.findById(taskId, context);
     if (!task || task.type !== 'task') {
       throw new BadRequestException('Task not found');
@@ -985,7 +985,7 @@ export class WorkService extends BaseService<Work> {
     );
     const someDone = subtasks.some(s => s.status === 'done');
 
-    if (allDoneOrCancelled && someDone) return 'done';
+    if (allDoneOrCancelled && someDone) return 'review';
 
     return 'in_progress';
   }
