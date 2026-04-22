@@ -13,7 +13,6 @@ import { SignalLlmCollector } from '../collectors/signal-llm.collector';
 import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
 import { NewsArticleModule } from '../modules/news-article/news-article.module';
 import { LlmProviderModule } from '../modules/llm-provider/llm-provider.module';
-import { LlmRouterService } from '../shared/llm-router.service';
 
 @Module({
   imports: [
@@ -35,7 +34,6 @@ import { LlmRouterService } from '../shared/llm-router.service';
     SignalSchedulerProcessor,
     SignalGenerationProcessor,
     SignalLlmCollector,
-    LlmRouterService,
   ],
   exports: [
     SignalSchedulerProcessor,

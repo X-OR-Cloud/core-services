@@ -5,7 +5,6 @@ import { SignalService } from './signal.service';
 import { Signal, SignalSchema } from './signal.schema';
 import { SignalLlmCollector } from '../../collectors/signal-llm.collector';
 import { LlmProviderModule } from '../llm-provider/llm-provider.module';
-import { LlmRouterService } from '../../shared/llm-router.service';
 import { MarketPriceModule } from '../market-price/market-price.module';
 import { TechnicalIndicatorModule } from '../technical-indicator/technical-indicator.module';
 import { AccountModule } from '../account/account.module';
@@ -27,7 +26,7 @@ import { NewsArticleModule } from '../news-article/news-article.module';
     LlmProviderModule,
   ],
   controllers: [SignalController],
-  providers: [SignalService, SignalLlmCollector, LlmRouterService],
+  providers: [SignalService, SignalLlmCollector],
   exports: [SignalService, MongooseModule],
 })
 export class SignalModule {}
