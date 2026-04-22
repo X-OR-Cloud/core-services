@@ -82,6 +82,12 @@ export class Invoice extends BaseSchema {
   @Prop({ type: Object })
   eInvoice?: EInvoiceLink; // link to e-invoice provider (Phase 3)
 
+  @Prop({ type: String })
+  contractId?: string; // ref: Contract (optional)
+
+  @Prop({ type: String })
+  contractAnnexId?: string; // ref: ContractAnnex (optional)
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
 }
 
@@ -96,4 +102,6 @@ InvoiceSchema.index({ dueDate: 1, status: 1 }); // for overdue detection
 InvoiceSchema.index({ issuedDate: -1 });
 InvoiceSchema.index({ 'owner.orgId': 1 });
 InvoiceSchema.index({ createdAt: -1 });
+InvoiceSchema.index({ contractId: 1 });
+InvoiceSchema.index({ contractAnnexId: 1 });
 InvoiceSchema.index({ code: 'text', notes: 'text' }); // Full-text search

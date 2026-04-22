@@ -27,6 +27,8 @@ import { InvoiceModule } from '../modules/invoice/invoice.module';
 import { ExpenseModule } from '../modules/expense/expense.module';
 import { PaymentModule } from '../modules/payment/payment.module';
 import { TransactionModule } from '../modules/transaction/transaction.module';
+import { ContractModule } from '../modules/contract/contract.module';
+import { ContractAnnexModule } from '../modules/contract-annex/contract-annex.module';
 import { SkillModule } from '../skill/skill.module';
 
 @Module({
@@ -54,6 +56,9 @@ import { SkillModule } from '../skill/skill.module';
     InvoiceModule,
     ExpenseModule,
     PaymentModule,
+    // Contract modules (CRM)
+    ContractModule,
+    ContractAnnexModule,
     // Skill manifest endpoint
     SkillModule,
   ],

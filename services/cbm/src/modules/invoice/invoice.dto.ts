@@ -101,6 +101,16 @@ export class CreateInvoiceDto {
   @IsString()
   companyId?: string;
 
+  @ApiPropertyOptional({ description: 'Contract ID (optional)' })
+  @IsOptional()
+  @IsString()
+  contractId?: string;
+
+  @ApiPropertyOptional({ description: 'Contract Annex ID (optional)' })
+  @IsOptional()
+  @IsString()
+  contractAnnexId?: string;
+
   @ApiPropertyOptional({
     description: 'Line items',
     type: [InvoiceItemDto],
@@ -184,6 +194,16 @@ export class UpdateInvoiceDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+
+  @ApiPropertyOptional({ description: 'Contract ID (optional)' })
+  @IsOptional()
+  @IsString()
+  contractId?: string;
+
+  @ApiPropertyOptional({ description: 'Contract Annex ID (optional)' })
+  @IsOptional()
+  @IsString()
+  contractAnnexId?: string;
 
   @ApiPropertyOptional({ type: [InvoiceItemDto] })
   @IsOptional()
