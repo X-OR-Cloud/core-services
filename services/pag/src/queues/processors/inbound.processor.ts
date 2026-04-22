@@ -14,6 +14,7 @@ import { ChannelsService } from '../../modules/channels/channels.service';
 import { MemoryProducer } from '../producers/memory.producer';
 import { TaskProducer } from '../producers/task.producer';
 import { TasksService } from '../../modules/tasks/tasks.service';
+import { QuotaService } from '../../modules/quota/quota.service';
 
 interface TaskBlock {
   title: string;
@@ -57,6 +58,7 @@ export class InboundProcessor extends WorkerHost {
     private memoryProducer: MemoryProducer,
     private taskProducer: TaskProducer,
     private tasksService: TasksService,
+    private quotaService: QuotaService,
   ) {
     super();
     const apiKey = process.env['GOOGLE_API_KEY'];
@@ -123,7 +125,20 @@ export class InboundProcessor extends WorkerHost {
         (soul as any)._id.toString(),
       );
 
-      // 5a. Build prompt & call LLM
+      // 5a. Check daily chat quota (atomic check-and-consume)
+      const quotaResult = await this.quotaService.tryConsumeChatQuota(data.platformUserId);
+      if (!quotaResult.allowed) {
+        const msg = `Hôm nay bạn đã dùng hết ${quotaResult.limit} tin nhắn miễn phí. Hãy nâng cấp lên gói Immortal để nhắn thêm nhé! 🚀`;
+        await this.sendZaloReply(data.channelId, data.platformUserId, msg);
+        await this.messagesService.create({
+          conversationId: new Types.ObjectId(data.conversationId) as any,
+          role: 'assistant',
+          content: msg,
+        }, this.systemContext);
+        return { processed: false, reason: 'quota_exceeded', platformUserId: data.platformUserId };
+      }
+
+      // 5b. Build prompt & call LLM
       if (!this.genAI) {
         this.logger.error('GenAI not initialized - cannot process message');
         throw new Error('GOOGLE_API_KEY not configured');
@@ -163,6 +178,13 @@ export class InboundProcessor extends WorkerHost {
       // 7. Strip markdown & reply via Zalo OA API
       const plainResponse = this.stripMarkdown(cleanResponse || aiResponse);
       await this.sendZaloReply(data.channelId, data.platformUserId, plainResponse);
+
+      // 7a. Send 80% quota warning as a follow-up message if needed
+      if (quotaResult.warningNeeded && quotaResult.limit !== null) {
+        const remaining = quotaResult.limit - quotaResult.messageCount;
+        const warningMsg = `⚠️ Bạn đã dùng 80% quota hôm nay (còn ${remaining}/${quotaResult.limit} tin nhắn). Nâng cấp lên Immortal để không bị gián đoạn nhé!`;
+        await this.sendZaloReply(data.channelId, data.platformUserId, warningMsg);
+      }
 
       // 8. Update conversation.lastActiveAt
       await this.conversationsService.update(
@@ -308,6 +330,13 @@ export class InboundProcessor extends WorkerHost {
     soul: any,
   ): Promise<void> {
     try {
+      // Check task quota before creating
+      const taskQuota = await this.quotaService.checkTaskQuota(inboundData.platformUserId);
+      if (!taskQuota.allowed) {
+        this.logger.warn(`Task quota exceeded for user ${inboundData.platformUserId} (${taskQuota.activeCount}/${taskQuota.limit})`);
+        return;
+      }
+
       const remindAt = taskData.remindAt
         ? new Date(taskData.remindAt)
         : taskData.dueAt
