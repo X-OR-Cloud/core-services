@@ -1647,9 +1647,12 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       // Priority 5: Reporter = agent, work in review → need to review
       systemMessage =
         `Công việc (Work) @work:${workId} "${title}" đang chờ review.\n` +
-        `- Hãy kiểm tra kết quả thực hiện\n` +
-        `- Gọi mcp__Builtin__CompleteWork nếu đạt yêu cầu\n` +
-        `- Gọi mcp__Builtin__RejectReviewForWork nếu cần làm lại (kèm feedback)`;
+        `- Hãy kiểm tra kết quả thực hiện và Document đính kèm (nếu có)\n` +
+        `- Gọi mcp__Builtin__CompleteWork nếu kết quả đạt yêu cầu\n` +
+        `- Gọi mcp__Builtin__RejectReviewForWork kèm feedback rõ ràng nếu:\n` +
+        `  • Kết quả hoặc Document chưa đạt yêu cầu\n` +
+        `  • Có câu hỏi mở cần xác nhận phương án trước khi tiếp tục\n` +
+        `  → Feedback phải đủ để assignee hiểu cần điều chỉnh gì và submit review lại`;
     }
 
     this.logger.debug('Next work found for agent', {
