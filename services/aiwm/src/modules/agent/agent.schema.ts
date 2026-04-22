@@ -118,7 +118,8 @@ export class Agent extends BaseSchema {
    *
    * Supported settings:
    * - auth_roles: string[] - Agent roles for RBAC (default: ['agent'])
-   * - assistant_maxConcurrency: number - Max concurrent conversations (assistant agents, default: 5)
+   * - assistant_numRunners: number - Parallel runners per agent per instance (default: 1)
+   * - assistant_maxConcurrency: number - Max concurrent conversations per runner (default: 5)
    * - assistant_idleTimeoutMs: number - Disconnect after idle ms (assistant agents, default: 300000)
    * - assistant_reconnectDelayMs: number - Reconnect delay ms (assistant agents, default: 5000)
    * - assistant_maxSteps: number - Max tool call steps per generateText (assistant agents, default: 10)

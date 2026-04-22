@@ -10,6 +10,7 @@ import { BrowserInstanceManager } from './browser/browser-instance.manager';
 import { createBrowserTools, BROWSER_TOOL_FUNCTIONS } from './browser/browser-mcp.server';
 import { createChannelSendTools } from './channel-send.tool';
 import { createKnowledgeSearchTools, KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-search.tool';
+import { AgentLockService } from './agent-lock.service';
 
 
 export interface McpServerConfig {
@@ -50,6 +51,8 @@ export interface HeartbeatResponse {
 
 export interface AgentRunnerConfig {
   agentId: string;
+  /** Unique runner ID: "{agentId}:{index}" — used as conv lock owner identifier */
+  runnerId: string;
   agentName: string;
   accessToken: string;
   instruction: { id: string; systemPrompt: string };
@@ -67,6 +70,8 @@ export interface AgentRunnerConfig {
   redisBlocking: Redis;
   /** Shared Redis client for publish/set/get */
   redisPub: Redis;
+  /** Lock service — used for conversation-level distributed lock in multi-runner mode */
+  lockService: AgentLockService;
   /** In-process connect callback — avoids HTTP round-trip through LB */
   connectInternal: (agentId: string) => Promise<AgentConnectResult>;
   /** In-process heartbeat callback */
@@ -333,9 +338,18 @@ export class AgentRunner {
     this.publishResponse(conversationId, { role: 'assistant', isFinal: true, ...payload });
   }
 
-  /** BLPOP loop — blocks waiting for tasks on chat:task:{agentId} */
+  /**
+   * BLPOP loop — competing consumer pattern.
+   *
+   * Multiple runners share the same queue (chat:task:{agentId}). After popping
+   * a task, this runner tries to acquire a conversation-level distributed lock
+   * (agt:conv:{conversationId}). If another runner is already processing that
+   * conversation, the task is re-pushed to the tail of the queue (RPUSH) and
+   * this runner loops back to BLPOP — no busy-wait, no message loss.
+   */
   private startConsuming() {
     const queueKey = `chat:task:${this.config.agentId}`;
+    const { runnerId, lockService } = this.config;
     this.consumerStoppedPromise = new Promise<void>((resolve) => {
       this.resolveConsumerStopped = resolve;
     });
@@ -347,6 +361,18 @@ export class AgentRunner {
             if (!result) continue; // timeout, loop again
             const [, raw] = result;
             const task: AgentTask = JSON.parse(raw);
+
+            // Conversation-level lock — ensures ordering when multiple runners share queue
+            const convLockAcquired = await lockService.tryAcquireConv(task.conversationId, runnerId);
+            if (!convLockAcquired) {
+              // Another runner owns this conversation — re-push to tail and keep consuming
+              await this.config.redisBlocking.rpush(queueKey, raw);
+              // Brief yield to avoid tight spin when all queued tasks are for busy conversations
+              await new Promise((r) => setTimeout(r, 20));
+              continue;
+            }
+
+            // Process task — conv lock will be released inside handleTask's finally block
             this.handleTask(task).catch((err: Error) =>
               this.logger.error(`handleTask error: ${err.message}`, err.stack),
             );
@@ -362,8 +388,8 @@ export class AgentRunner {
       }
     };
     consume();
-    this.writeLog('info', 'Redis consumer started', { queue: queueKey });
-    this.logger.log(`Consuming queue: ${queueKey}`);
+    this.writeLog('info', 'Redis consumer started', { queue: queueKey, runnerId });
+    this.logger.log(`Consuming queue: ${queueKey} (runnerId=${runnerId})`);
   }
 
   /** Subscribe to chat:cmd:{agentId} for /stop, /reload, /inspect */
@@ -484,12 +510,11 @@ export class AgentRunner {
       return;
     }
 
-    // Concurrency guard — store latest pending task in memory instead of requeuing to Redis
+    // In-memory concurrency guard — limits simultaneous conversations on this runner
     const activeCount = [...this.processingMap.values()].filter(Boolean).length;
-    if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
-      // Keep only the latest pending task per conversation (newer message replaces older)
+    if (activeCount >= this.maxConcurrency) {
       this.pendingTasks.set(conversationId, task);
-      this.logger.debug(`Queued in memory — conversation ${conversationId} busy (active=${activeCount}/${this.maxConcurrency})`);
+      this.logger.debug(`Queued in memory — runner at capacity (active=${activeCount}/${this.maxConcurrency})`);
       return;
     }
 
@@ -596,6 +621,9 @@ export class AgentRunner {
           stopWhen: stepCountIs(this.maxSteps),
           abortSignal: abortController.signal,
           onStepFinish: (step) => {
+            // Renew conv lock on each step — prevents expiry during long multi-step calls
+            this.config.lockService.renewConv(conversationId, this.config.runnerId).catch(() => {/* silent */});
+
             for (const call of step.toolCalls ?? []) {
               this.logger.debug(`  [tool:call] ${call.toolName}(${JSON.stringify(call.input).slice(0, 120)})`);
               let toolUseContent = call.toolName;
@@ -660,6 +688,9 @@ export class AgentRunner {
       this.abortMap.delete(conversationId);
       this.currentWorkId = null;
       this.publishResponse(conversationId, { type: 'typing', isTyping: false });
+
+      // Release conv lock so another runner (or this runner on next task) can pick up
+      await this.config.lockService.releaseConv(conversationId, this.config.runnerId);
 
       // Drain pending task for this conversation (if any)
       const pending = this.pendingTasks.get(conversationId);

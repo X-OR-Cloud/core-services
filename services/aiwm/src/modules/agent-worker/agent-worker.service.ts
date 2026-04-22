@@ -33,21 +33,38 @@ function agentConfigHash(agent: any): string {
   return createHash('md5').update(key).digest('hex');
 }
 
+/** Extract numRunners from agent settings (default 1) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getNumRunners(agent: any): number {
+  const n = Number(agent?.settings?.['assistant_numRunners'] ?? 1);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 
 /**
  * AgentWorkerService — orchestrates all hosted agent runners.
  *
- * Scaling strategy (Option B — Redis distributed lock):
- * - On startup, each `agt` instance tries to acquire a lock per agent.
- * - Only the instance that wins the lock spawns the runner for that agent.
- * - Locks are renewed every 15s (TTL 45s) to prevent expiry while alive.
- * - On instance crash/shutdown, locks expire → other instances pick them up
- *   on the next health check cycle.
+ * Multi-runner scaling (Phase 3):
+ * - Each agent can have N runners (assistant_numRunners setting, default 1).
+ * - All runners for an agent share the same Redis List queue (chat:task:{agentId}).
+ * - Ordering per conversation is guaranteed by a conversation-level distributed lock
+ *   (agt:conv:{conversationId}) acquired inside each runner before processing.
+ * - runners Map key: "{agentId}:{index}" — allows multiple runners per agent.
+ * - Runner registry (agt:runners:{agentId} Redis Set) tracks active runners across
+ *   all instances for observability.
+ *
+ * Backward compat: numRunners=1 behaves identically to the old single-runner mode,
+ * except the agent-level exclusive lock is no longer used (registry replaces it).
  */
 @Injectable()
 export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentWorkerService.name);
+
+  /**
+   * Key: runnerId = "{agentId}:{index}"
+   * Allows multiple runners per agent.
+   */
   private readonly runners = new Map<string, AgentRunner>();
   private readonly runnerConfigHash = new Map<string, string>();
   private healthCheckTimer: NodeJS.Timeout | null = null;
@@ -60,7 +77,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   private redisCmdSub: Redis | null = null;
   /** Track in-flight on-demand restarts to dedup overlapping requests. */
   private readonly restartingSet = new Set<string>();
-  /** Map of agentId → dedicated Redis client for BLPOP (blocking, one per runner) */
+  /** Map of runnerId → dedicated Redis client for BLPOP (blocking, one per runner) */
   private readonly redisBlockingMap = new Map<string, Redis>();
   private readonly agentIdFilter: string[];
   private readonly agentIdIgnore: string[];
@@ -95,11 +112,12 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
     }
-    for (const [agentId, runner] of this.runners.entries()) {
+    for (const [runnerId, runner] of this.runners.entries()) {
+      const agentId = runnerIdToAgentId(runnerId);
       await runner.stopAsync();
-      await this.lockService.release(agentId);
-      this.redisBlockingMap.get(agentId)?.disconnect();
-      this.redisBlockingMap.delete(agentId);
+      await this.lockService.unregisterRunner(agentId, runnerId);
+      this.redisBlockingMap.get(runnerId)?.disconnect();
+      this.redisBlockingMap.delete(runnerId);
     }
     this.runners.clear();
     this.redisSub?.disconnect();
@@ -127,56 +145,43 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log(`Found ${agents.length} assistant agent(s). Competing for locks...`);
+    const numRunnersList = agents.map((a) => getNumRunners(a));
+    const totalRunners = numRunnersList.reduce((s, n) => s + n, 0);
+    this.logger.log(`Found ${agents.length} assistant agent(s), spawning ${totalRunners} runner(s) total...`);
 
     await Promise.allSettled(
-      agents.map((agent) => this.trySpawnRunner(agent as unknown as AgentDocument)),
+      agents.flatMap((agent, i) =>
+        Array.from({ length: numRunnersList[i] }, (_, idx) =>
+          this.spawnRunner(agent as unknown as AgentDocument, idx),
+        ),
+      ),
     );
 
-    this.logger.log(
-      `Spawned ${this.runners.size}/${agents.length} runner(s) on this instance.`,
-    );
+    this.logger.log(`Spawned ${this.runners.size} runner(s) on this instance.`);
   }
 
-  /**
-   * Try to acquire lock for an agent, then spawn runner if successful.
-   * Silently skips if another instance already owns the lock.
-   */
-  private async trySpawnRunner(agent: AgentDocument) {
+  private async spawnRunner(agent: AgentDocument, runnerIndex: number) {
     const agentId = (agent as any)._id.toString();
-    const acquired = await this.lockService.tryAcquire(agentId);
-
-    if (!acquired) {
-      this.logger.log(`Skipping agent ${agent.name} (${agentId}) — owned by another instance`);
-      return;
-    }
-
-    await this.spawnRunner(agent);
-  }
-
-  private async spawnRunner(agent: AgentDocument) {
-    const agentId = (agent as any)._id.toString();
+    const runnerId = `${agentId}:${runnerIndex}`;
 
     try {
-      // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
       const connectResp = await this.agentService.connectInternal(agentId);
-
       const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections, agentCode } = connectResp;
 
       this.logger.debug(
-        `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
+        `connectResp for ${agentId} runner[${runnerIndex}]: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
       );
 
       const browserApiUrl = await this.configService.getString(ConfigKey.PINCHTAB_API_URL);
       const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, 'http://localhost:3003');
 
-      // Each runner needs its own blocking Redis connection for BLPOP
       const redisBlocking = new Redis(redisConfig);
-      this.redisBlockingMap.set(agentId, redisBlocking);
+      this.redisBlockingMap.set(runnerId, redisBlocking);
 
       const runner = new AgentRunner({
         agentId,
-        agentName: agent.name,
+        runnerId,
+        agentName: `${agent.name}[${runnerIndex}]`,
         accessToken,
         instruction,
         deployment,
@@ -186,6 +191,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         redisBlocking,
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         redisPub: this.redisPub!,
+        lockService: this.lockService,
         agentType: (agent.type as 'assistant' | 'engineer') ?? 'assistant',
         apiBaseUrl: aiwmApiBaseUrl,
         browserApiUrl: browserApiUrl ?? undefined,
@@ -197,8 +203,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
             const ext = filePath.split('.').pop() ?? 'bin';
             const mimeType = ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
             this.logger.debug(`[browser] sendFile conv=${conversationId} file=${filePath}`);
-            // Publish via runner's Redis — runner exposes publishMessage for this purpose
-            this.runners.get(agentId)?.publishMessage(conversationId, {
+            this.runners.get(runnerId)?.publishMessage(conversationId, {
               type: 'file',
               content: caption,
               file: { data: base64, mimeType, filename: filePath.split('/').pop() ?? 'file' },
@@ -235,13 +240,16 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       });
 
       runner.start();
-      this.runners.set(agentId, runner);
-      this.runnerConfigHash.set(agentId, agentConfigHash(agent));
-      this.logger.log(`Runner started: ${agent.name} (${agentId})`);
+      this.runners.set(runnerId, runner);
+      this.runnerConfigHash.set(runnerId, agentConfigHash(agent));
+      await this.lockService.registerRunner(agentId, runnerId);
+
+      this.logger.log(`Runner started: ${agent.name}[${runnerIndex}] (${runnerId})`);
       await this.agentService.addLog(agentId, {
         level: 'info',
-        message: 'Runner spawned',
+        message: `Runner[${runnerIndex}] spawned`,
         data: {
+          runnerId,
           deployment: deployment?.id,
           model: deployment?.model,
           mcpServers: Object.keys(mcpServers || {}),
@@ -249,43 +257,31 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         },
       });
     } catch (err: unknown) {
-      this.logger.error(`Failed to spawn runner for ${agent.name} (${agentId}): ${(err as Error).message}`);
-      // Release lock so another instance can pick it up
-      await this.lockService.release(agentId);
+      this.logger.error(`Failed to spawn runner ${runnerId}: ${(err as Error).message}`);
     }
   }
 
   /**
    * Health check — runs every 30s:
-   * 1. Reconnect stale runners whose agent config changed and are idle.
-   * 2. Try to claim any unlocked agents (e.g. after another instance crashes).
+   * 1. Restart runners whose agent config changed and are idle.
+   * 2. Spawn runners for agents that have no runners on this instance.
    * 3. Proactively refresh access tokens that expire within 1 hour.
    */
   private startHealthCheck() {
     this.healthCheckTimer = setInterval(async () => {
-      // 1. Restart runners whose agent config changed and are idle
       await this.restartUpdatedAgents();
-
-      // 2. Try to claim agents not yet owned by any instance
       await this.claimUnlockedAgents();
-
-      // 3. Refresh tokens that are about to expire (< 1 hour remaining)
       await this.refreshExpiredTokens();
     }, HEALTH_CHECK_INTERVAL_MS);
   }
 
-  /**
-   * Proactively refresh access tokens for runners whose JWT will expire
-   * within 1 hour. Triggers a reload (re-calls connectInternal) so the
-   * runner picks up a fresh token without any downtime.
-   */
   private async refreshExpiredTokens() {
     if (!this.runners.size) return;
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const refreshThresholdSec = 60 * 60; // 1 hour
+    const refreshThresholdSec = 60 * 60;
 
-    for (const [agentId, runner] of this.runners.entries()) {
+    for (const [runnerId, runner] of this.runners.entries()) {
       const exp = runner.getAccessTokenExpiry();
       if (exp === null) continue;
 
@@ -293,34 +289,29 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       if (remainingSec > refreshThresholdSec) continue;
 
       this.logger.log(
-        `[token-refresh] agent ${agentId} token expires in ${Math.round(remainingSec / 60)}m — triggering reload`,
+        `[token-refresh] runner ${runnerId} token expires in ${Math.round(remainingSec / 60)}m — triggering reload`,
       );
       runner.triggerReload('health').catch((err: Error) =>
-        this.logger.error(`[token-refresh] reload failed for ${agentId}: ${err.message}`),
+        this.logger.error(`[token-refresh] reload failed for ${runnerId}: ${err.message}`),
       );
     }
   }
 
-  /**
-   * Tear down a runner's in-memory state and Redis BLPOP connection.
-   * Caller is responsible for awaiting the runner stop and respawning if needed.
-   */
-  private async teardownRunner(agentId: string, runner: AgentRunner): Promise<void> {
+  private async teardownRunner(runnerId: string, runner: AgentRunner): Promise<void> {
+    const agentId = runnerIdToAgentId(runnerId);
     await runner.stopAsync();
-    this.redisBlockingMap.get(agentId)?.disconnect();
-    this.redisBlockingMap.delete(agentId);
-    this.runners.delete(agentId);
-    this.runnerConfigHash.delete(agentId);
+    await this.lockService.unregisterRunner(agentId, runnerId);
+    this.redisBlockingMap.get(runnerId)?.disconnect();
+    this.redisBlockingMap.delete(runnerId);
+    this.runners.delete(runnerId);
+    this.runnerConfigHash.delete(runnerId);
   }
 
-  /**
-   * Check if any running agent has been updated (updatedAt changed).
-   * Restarts the runner only if the agent is currently idle.
-   */
   private async restartUpdatedAgents() {
     if (!this.runners.size) return;
 
-    const agentIds = [...this.runners.keys()];
+    // Collect unique agentIds owned by this instance
+    const agentIds = [...new Set([...this.runners.keys()].map(runnerIdToAgentId))];
     const agents = await this.agentModel
       .find({ _id: { $in: agentIds }, isDeleted: { $ne: true } })
       .lean()
@@ -328,31 +319,40 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
     for (const agent of agents) {
       const agentId = (agent._id as { toString(): string }).toString();
-      const runner = this.runners.get(agentId);
-      if (!runner) continue;
-
-      const knownHash = this.runnerConfigHash.get(agentId);
       const currentHash = agentConfigHash(agent);
+      const numRunners = getNumRunners(agent);
 
-      if (knownHash === currentHash) continue;
+      // Find all runners for this agent on this instance
+      const agentRunners = [...this.runners.entries()].filter(
+        ([rid]) => runnerIdToAgentId(rid) === agentId,
+      );
 
-      if (runner.isBusy) {
-        this.logger.log(`Agent ${agent.name} (${agentId}) config changed but is busy — will restart on next cycle`);
+      const configChanged = agentRunners.some(
+        ([rid]) => this.runnerConfigHash.get(rid) !== currentHash,
+      );
+      if (!configChanged && agentRunners.length === numRunners) continue;
+
+      const anyBusy = agentRunners.some(([, r]) => r.isBusy);
+      if (anyBusy) {
+        this.logger.log(`Agent ${agent.name} (${agentId}) config changed but has busy runners — will restart on next cycle`);
         continue;
       }
 
-      this.logger.log(`Agent ${agent.name} (${agentId}) config changed, restarting runner...`);
-      await this.agentService.addLog(agentId, { level: 'info', message: 'Runner restarted — config changed' });
-      await this.teardownRunner(agentId, runner);
-      await this.spawnRunner(agent as unknown as AgentDocument);
+      this.logger.log(`Agent ${agent.name} (${agentId}) config changed or numRunners changed (${agentRunners.length}→${numRunners}), restarting runners...`);
+      await this.agentService.addLog(agentId, { level: 'info', message: 'Runners restarted — config changed' });
+
+      // Tear down all existing runners for this agent
+      for (const [rid, runner] of agentRunners) {
+        await this.teardownRunner(rid, runner);
+      }
+
+      // Respawn with new config and possibly new numRunners
+      for (let i = 0; i < numRunners; i++) {
+        await this.spawnRunner(agent as unknown as AgentDocument, i);
+      }
     }
   }
 
-  /**
-   * Subscribe to broadcast worker commands (e.g. on-demand restart).
-   * Every `agt` instance listens; only the one currently holding the lock for
-   * the targeted agent will act on the message.
-   */
   private async startWorkerCmdSubscriber() {
     this.redisCmdSub = new Redis(redisConfig);
     try {
@@ -383,7 +383,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     if (event?.type !== 'restart' || !event.agentId) return;
 
     const { agentId, requestedBy, reason } = event;
-    if (!this.runners.has(agentId)) return; // not owned by this instance
+
+    // Check if this instance owns any runners for this agent
+    const agentRunnerIds = [...this.runners.keys()].filter(
+      (rid) => runnerIdToAgentId(rid) === agentId,
+    );
+    if (!agentRunnerIds.length) return;
+
     if (this.restartingSet.has(agentId)) {
       this.logger.debug(`[restart] dedup — already restarting ${agentId}`);
       return;
@@ -392,11 +398,6 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.restartRunnerOnDemand(agentId, requestedBy, reason);
   }
 
-  /**
-   * On-demand restart: abort in-flight work, tear down, re-fetch agent, respawn.
-   * Unlike `restartUpdatedAgents`, this does NOT defer when the runner is busy —
-   * `restart` semantics require an immediate hard reset with the latest DB config.
-   */
   private async restartRunnerOnDemand(
     agentId: string,
     requestedBy: string,
@@ -404,12 +405,19 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     this.restartingSet.add(agentId);
     try {
-      const runner = this.runners.get(agentId);
-      if (!runner) return;
+      const agentRunners = [...this.runners.entries()].filter(
+        ([rid]) => runnerIdToAgentId(rid) === agentId,
+      );
+      if (!agentRunners.length) return;
 
-      this.logger.log(`[restart] tearing down runner ${agentId} (requestedBy=${requestedBy})`);
-      runner.abortAll(reason ?? 'restart');
-      await this.teardownRunner(agentId, runner);
+      this.logger.log(`[restart] tearing down ${agentRunners.length} runner(s) for agent ${agentId} (requestedBy=${requestedBy})`);
+
+      for (const [, runner] of agentRunners) {
+        runner.abortAll(reason ?? 'restart');
+      }
+      for (const [rid, runner] of agentRunners) {
+        await this.teardownRunner(rid, runner);
+      }
 
       const agent = await this.agentModel
         .findOne({ _id: agentId, isDeleted: { $ne: true } })
@@ -418,19 +426,18 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         .catch(() => null);
       if (!agent) {
         this.logger.warn(`[restart] agent ${agentId} not found after teardown`);
-        await this.lockService.release(agentId);
         return;
       }
 
-      // Lock is intentionally NOT released during teardown — this instance
-      // remains the owner throughout, so we can spawn directly without
-      // re-acquiring (tryAcquire would fail with SET NX since the key still
-      // exists, and renewAll keeps the TTL fresh).
-      await this.spawnRunner(agent as unknown as AgentDocument);
+      const numRunners = getNumRunners(agent);
+      for (let i = 0; i < numRunners; i++) {
+        await this.spawnRunner(agent as unknown as AgentDocument, i);
+      }
+
       await this.agentService.addLog(agentId, {
         level: 'info',
-        message: 'Runner restarted on-demand',
-        data: { requestedBy, reason },
+        message: 'Runners restarted on-demand',
+        data: { requestedBy, reason, numRunners },
       });
     } catch (err) {
       this.logger.error(`[restart] failed for ${agentId}: ${(err as Error).message}`, (err as Error).stack);
@@ -440,8 +447,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Query all assistant agents and try to claim any that are not locked.
-   * Handles: new agents created after startup, or instance crashed releasing locks.
+   * Spawn runners for agents that have no runners on this instance yet.
+   * Handles: new agents created after startup, or brand new instances joining.
    */
   private async claimUnlockedAgents() {
     const query: any = { type: 'assistant', isDeleted: { $ne: true } };
@@ -456,21 +463,21 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
     for (const agent of agents) {
       const agentId = (agent as any)._id.toString();
-      if (this.runners.has(agentId)) continue; // Already running on this instance
+      const hasRunners = [...this.runners.keys()].some(
+        (rid) => runnerIdToAgentId(rid) === agentId,
+      );
+      if (hasRunners) continue;
 
-      const acquired = await this.lockService.tryAcquire(agentId);
-      if (acquired) {
-        this.logger.log(`Claimed unlocked agent: ${agent.name} (${agentId})`);
-        await this.agentService.addLog(agentId, { level: 'info', message: 'Runner claimed after unlock (failover or new agent)' });
-        await this.spawnRunner(agent as unknown as AgentDocument);
+      this.logger.log(`Spawning runners for agent: ${agent.name} (${agentId})`);
+      await this.agentService.addLog(agentId, { level: 'info', message: 'Runners spawned (new agent or instance joined)' });
+
+      const numRunners = getNumRunners(agent);
+      for (let i = 0; i < numRunners; i++) {
+        await this.spawnRunner(agent as unknown as AgentDocument, i);
       }
     }
   }
 
-  /**
-   * Subscribe to instruction-updated events and trigger runner reload for any
-   * runner on this instance whose agent uses the updated instruction.
-   */
   private async startInstructionSubscriber() {
     this.redisSub = new Redis(redisConfig);
     try {
@@ -502,7 +509,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     if (!event?.instructionId) return;
 
-    const ownedAgentIds = [...this.runners.keys()];
+    const ownedAgentIds = [...new Set([...this.runners.keys()].map(runnerIdToAgentId))];
     const agents = await this.agentModel
       .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
       .select('_id')
@@ -513,17 +520,25 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
     for (const agent of agents) {
       const agentId = (agent._id as { toString(): string }).toString();
-      const runner = this.runners.get(agentId);
-      if (!runner) continue;
-      this.logger.log(`[instruction-updated] reloading agent ${agentId} (instructionId=${event.instructionId})`);
-      await this.agentService.addLog(agentId, {
-        level: 'info',
-        message: 'Runner reload triggered — instruction updated',
-        data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
-      });
-      runner.triggerReload('event').catch((err: Error) =>
-        this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
-      );
+      // Trigger reload on all runners for this agent
+      for (const [rid, runner] of this.runners.entries()) {
+        if (runnerIdToAgentId(rid) !== agentId) continue;
+        this.logger.log(`[instruction-updated] reloading runner ${rid} (instructionId=${event.instructionId})`);
+        await this.agentService.addLog(agentId, {
+          level: 'info',
+          message: 'Runner reload triggered — instruction updated',
+          data: { runnerId: rid, instructionId: event.instructionId, updatedAt: event.updatedAt },
+        });
+        runner.triggerReload('event').catch((err: Error) =>
+          this.logger.error(`triggerReload error for ${rid}: ${err.message}`, err.stack),
+        );
+      }
     }
   }
+}
+
+/** Extract agentId from runnerId ("{agentId}:{index}") */
+function runnerIdToAgentId(runnerId: string): string {
+  const lastColon = runnerId.lastIndexOf(':');
+  return lastColon === -1 ? runnerId : runnerId.slice(0, lastColon);
 }
