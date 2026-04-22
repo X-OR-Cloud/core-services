@@ -174,6 +174,32 @@ See [`services/<name>/CLAUDE.md`] and [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLO
 - **Redis**: shared instance — BullMQ queues, Socket.IO adapter, caching
 - **BullMQ**: async job processing, event-driven architecture
 
+### MongoDB Access
+
+Connection string is in the root `.env` file (`MONGODB_URI`). Use it to inspect data directly when the user asks to check or debug data in any service database.
+
+Known databases:
+
+| Database | Service |
+|----------|---------|
+| `core_aiwm` | aiwm |
+| `core_iam` | iam |
+| `core_cbm` | cbm |
+| `core_mona` | mona |
+
+Example queries via `mongosh`:
+```bash
+# Connect
+mongosh "$(grep MONGODB_URI .env | cut -d= -f2)"
+
+# List collections in a db
+use core_aiwm
+show collections
+
+# Query documents
+db.<collection>.find({ ... }).limit(10)
+```
+
 ---
 
 ## Creating New Services
