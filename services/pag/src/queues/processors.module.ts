@@ -16,6 +16,7 @@ import { MessagesModule } from '../modules/messages/messages.module';
 import { MemoriesModule } from '../modules/memories/memories.module';
 import { ChannelsModule } from '../modules/channels/channels.module';
 import { TasksModule } from '../modules/tasks/tasks.module';
+import { QuotaModule } from '../modules/quota/quota.module';
 
 // Import queue config
 import { QUEUE_NAMES } from '../config/queue.config';
@@ -37,6 +38,7 @@ import { QUEUE_NAMES } from '../config/queue.config';
     MemoriesModule,
     ChannelsModule,
     TasksModule,
+    QuotaModule,
   ],
   providers: [
     InboundProcessor,

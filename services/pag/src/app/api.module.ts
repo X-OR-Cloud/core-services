@@ -20,6 +20,9 @@ import { MemoriesModule } from '../modules/memories/memories.module';
 import { TasksModule } from '../modules/tasks/tasks.module';
 import { StatsModule } from '../modules/stats/stats.module';
 import { QueuesAdminModule } from '../modules/queues-admin/queues-admin.module';
+import { PlansModule } from '../modules/plans/plans.module';
+import { UserPlansModule } from '../modules/user-plans/user-plans.module';
+import { QuotaModule } from '../modules/quota/quota.module';
 
 @Module({
   imports: [
@@ -46,6 +49,9 @@ import { QueuesAdminModule } from '../modules/queues-admin/queues-admin.module';
     TasksModule,
     StatsModule,
     QueuesAdminModule,
+    PlansModule,
+    UserPlansModule,
+    QuotaModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
