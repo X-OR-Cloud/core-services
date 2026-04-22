@@ -1333,7 +1333,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
         const workResult = await this.getNextWorkForAgent(
           agentId,
           accessToken,
-          agent.owner?.orgId
+          agent.owner?.orgId,
+          {
+            mcpConnected: heartbeatDto.mcpConnected,
+            availableFunctions: heartbeatDto.availableFunctions,
+          }
         );
         if (workResult) {
           resolved = {
@@ -1531,7 +1535,8 @@ These blocks are system metadata, not questions. Never explain them. Never repea
   private async getNextWorkForAgent(
     agentId: string,
     accessToken: string,
-    orgId?: string
+    orgId?: string,
+    capabilities?: { mcpConnected?: boolean; availableFunctions?: string[] }
   ): Promise<{
     work: {
       id: string;
@@ -1584,6 +1589,33 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       status: work.status,
       priorityLevel,
     };
+
+    // Guard: skip work assignment if agent reports MCP is not connected
+    if (capabilities?.mcpConnected === false) {
+      this.logger.debug('Skipping work assignment — agent MCP not connected', { agentId });
+      return null;
+    }
+
+    // Guard: if agent reports availableFunctions, verify required tools are present
+    if (capabilities?.availableFunctions) {
+      const fns = capabilities.availableFunctions;
+      const REQUIRED_BY_PRIORITY: Record<string, string[]> = {
+        low: ['mcp__Builtin__StartWork', 'mcp__Builtin__BlockWork'],
+        blocked: ['mcp__Builtin__UnblockWork', 'mcp__Builtin__BlockWork'],
+        review: ['mcp__Builtin__CompleteWork', 'mcp__Builtin__RejectReviewForWork'],
+      };
+      const bucket =
+        priorityLevel <= 3 ? 'low' : priorityLevel === 4 ? 'blocked' : 'review';
+      const required = REQUIRED_BY_PRIORITY[bucket];
+      const missing = required.filter((fn) => !fns.includes(fn));
+      if (missing.length > 0) {
+        this.logger.debug('Skipping work assignment — agent missing required functions', {
+          agentId,
+          missing,
+        });
+        return null;
+      }
+    }
 
     let systemMessage: string;
 

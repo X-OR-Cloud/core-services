@@ -550,6 +550,24 @@ export class AgentHeartbeatDto {
   @Type(() => AgentSleepInfoDto)
   sleep?: AgentSleepInfoDto;
 
+  @ApiPropertyOptional({
+    description: 'Whether agent has an active MCP session. If false, server will not assign Work.',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  mcpConnected?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'List of function/tool names currently available to the agent. Server uses this to verify agent has required tools before assigning Work. Omit to skip capability check (backward compatible).',
+    example: ['mcp__Builtin__StartWork', 'mcp__Builtin__CompleteWork', 'mcp__Builtin__RequestReviewForWork'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  availableFunctions?: string[];
+
   @ApiPropertyOptional({ description: 'Optional metrics', required: false })
   @IsOptional()
   @IsObject()
