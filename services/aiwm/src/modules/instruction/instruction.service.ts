@@ -71,6 +71,19 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     return !!context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
   }
 
+  private isAgent(context: RequestContext): boolean {
+    return !!context.agentId && (context.roles as string[])?.includes('agent') === true;
+  }
+
+  private async isAgentAssignedToInstruction(instructionId: string, agentId: string): Promise<boolean> {
+    const agent = await this.agentModel
+      .findOne({ _id: agentId, instructionId, isDeleted: false })
+      .select('_id')
+      .lean()
+      .exec();
+    return !!agent;
+  }
+
   /**
    * Override findAll to handle statistics aggregation
    */
@@ -91,7 +104,12 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
    */
   async findById(id: string, context: RequestContext): Promise<Partial<Instruction>> {
     const instruction = await super.findById(id, context);
-    if (!this.isOrgOwner(context) && (instruction as any)?.owner?.userId !== context.userId) {
+    if (this.isOrgOwner(context)) return instruction;
+    if (this.isAgent(context)) {
+      if (await this.isAgentAssignedToInstruction(id, context.agentId!)) return instruction;
+      throw new ForbiddenException('Agent is not assigned to this instruction');
+    }
+    if ((instruction as any)?.owner?.userId !== context.userId) {
       throw new ForbiddenException('You can only access instructions you created');
     }
     return instruction;
@@ -107,9 +125,15 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
     context: RequestContext
   ): Promise<Partial<Instruction>> {
     if (!this.isOrgOwner(context)) {
-      const existing = await this.model.findOne({ _id: id, isDeleted: false }).lean().exec();
-      if (!existing || (existing as any).owner?.userId !== context.userId) {
-        throw new ForbiddenException('You can only update instructions you created');
+      if (this.isAgent(context)) {
+        if (!(await this.isAgentAssignedToInstruction(id, context.agentId!))) {
+          throw new ForbiddenException('Agent is not assigned to this instruction');
+        }
+      } else {
+        const existing = await this.model.findOne({ _id: id, isDeleted: false }).lean().exec();
+        if (!existing || (existing as any).owner?.userId !== context.userId) {
+          throw new ForbiddenException('You can only update instructions you created');
+        }
       }
     }
 
