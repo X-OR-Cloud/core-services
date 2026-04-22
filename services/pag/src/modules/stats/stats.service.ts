@@ -7,6 +7,7 @@ import { Channel } from '../channels/channels.schema';
 import { Memory } from '../memories/memories.schema';
 import { Task } from '../tasks/tasks.schema';
 import { MessagesService } from '../messages/messages.service';
+import { UserPlansService } from '../user-plans/user-plans.service';
 
 @Injectable()
 export class StatsService {
@@ -17,6 +18,7 @@ export class StatsService {
     @InjectModel(Memory.name) private memoryModel: Model<Memory>,
     @InjectModel(Task.name) private taskModel: Model<Task>,
     private readonly messagesService: MessagesService,
+    private readonly userPlansService: UserPlansService,
   ) {}
 
   async getOverallStats() {
@@ -94,7 +96,7 @@ export class StatsService {
   }
 
   async getUserProfile(platformUserId: string) {
-    const [conversations, memories, tasks] = await Promise.all([
+    const [conversations, memories, tasks, userPlan] = await Promise.all([
       this.conversationModel
         .find({ 'platformUser.id': platformUserId, isDeleted: false })
         .select('-isDeleted -deletedAt')
@@ -110,8 +112,15 @@ export class StatsService {
         .select('-isDeleted -deletedAt')
         .sort({ createdAt: -1 })
         .exec(),
+      this.userPlansService.getOrCreate(platformUserId),
     ]);
 
-    return { platformUserId, conversations, memories, tasks };
+    const plan = {
+      planSlug: userPlan.planSlug,
+      expiresAt: userPlan.expiresAt,
+      activatedAt: userPlan.activatedAt,
+    };
+
+    return { platformUserId, plan, conversations, memories, tasks };
   }
 }
