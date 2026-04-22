@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Body, Param, Delete, UseGuards, Query, NotFoundException, ValidationPipe, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Param, Delete, UseGuards, Query, NotFoundException, ValidationPipe, HttpCode, HttpStatus, DefaultValuePipe, ParseIntPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -38,6 +38,17 @@ export class ConversationsController {
     };
 
     return this.conversationsService.findAll(options, context);
+  }
+
+  @Get('unanswered')
+  @ApiOperation({ summary: 'Unanswered conversations', description: 'Conversations where the last message is from user (no assistant reply yet)' })
+  @ApiResponse({ status: 200, description: 'Unanswered conversations retrieved' })
+  @ApiQuery({ name: 'sinceHours', required: false, description: 'Look back window in hours', example: 24 })
+  @UseGuards(JwtAuthGuard)
+  async getUnanswered(
+    @Query('sinceHours', new DefaultValuePipe(24), ParseIntPipe) sinceHours: number,
+  ) {
+    return this.conversationsService.getUnansweredConversations(sinceHours);
   }
 
   @Get(':id')

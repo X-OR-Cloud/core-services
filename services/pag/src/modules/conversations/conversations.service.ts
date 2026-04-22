@@ -116,6 +116,44 @@ export class ConversationsService extends BaseService<Conversation> {
     return { deletedMessages: result.modifiedCount };
   }
 
+  async getUnansweredConversations(sinceHours = 24) {
+    const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+
+    const conversations = await this.model
+      .find({ status: { $in: ['active', 'idle'] }, lastActiveAt: { $gte: since }, isDeleted: false })
+      .select('_id channelId soulId platformUser lastActiveAt')
+      .sort({ lastActiveAt: -1 })
+      .exec();
+
+    if (!conversations.length) return { total: 0, sinceHours, conversations: [] };
+
+    const ids = conversations.map(c => (c as any)._id.toString());
+
+    const lastMsgResults = await this.messageModel.aggregate([
+      { $match: { conversationId: { $in: ids }, isDeleted: false } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$conversationId', role: { $first: '$role' }, content: { $first: '$content' }, at: { $first: '$createdAt' } } },
+    ]);
+    const lastMessages: Record<string, any> = Object.fromEntries(
+      lastMsgResults.map(r => [r._id, { role: r.role, content: r.content, at: r.at }])
+    );
+
+    const unanswered = conversations
+      .filter(c => {
+        const last = lastMessages[(c as any)._id.toString()];
+        return !last || last.role === 'user';
+      })
+      .map(c => ({
+        conversationId: (c as any)._id,
+        platformUserId: c.platformUser?.id,
+        platformUserName: c.platformUser?.username,
+        lastActiveAt: c.lastActiveAt,
+        lastMessage: lastMessages[(c as any)._id.toString()] || null,
+      }));
+
+    return { total: unanswered.length, sinceHours, conversations: unanswered };
+  }
+
   async findActiveWithin48h(soulId: string): Promise<Conversation[]> {
     this.logger.debug(`Finding active conversations within 48h for soul: ${soulId}`);
 

@@ -2,22 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Conversation } from '../conversations/conversations.schema';
-import { Message } from '../messages/messages.schema';
 import { Channel } from '../channels/channels.schema';
 import { Memory } from '../memories/memories.schema';
 import { Task } from '../tasks/tasks.schema';
-import { MessagesService } from '../messages/messages.service';
 import { UserPlansService } from '../user-plans/user-plans.service';
 
 @Injectable()
 export class StatsService {
   constructor(
     @InjectModel(Conversation.name) private conversationModel: Model<Conversation>,
-    @InjectModel(Message.name) private messageModel: Model<Message>,
     @InjectModel(Channel.name) private channelModel: Model<Channel>,
     @InjectModel(Memory.name) private memoryModel: Model<Memory>,
     @InjectModel(Task.name) private taskModel: Model<Task>,
-    private readonly messagesService: MessagesService,
     private readonly userPlansService: UserPlansService,
   ) {}
 
@@ -63,36 +59,6 @@ export class StatsService {
       tasks: { pending: pendingTasks },
       generatedAt: now.toISOString(),
     };
-  }
-
-  async getUnansweredConversations(sinceHours = 24) {
-    const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
-
-    const conversations = await this.conversationModel
-      .find({ status: { $in: ['active', 'idle'] }, lastActiveAt: { $gte: since }, isDeleted: false })
-      .select('_id channelId soulId platformUser lastActiveAt')
-      .sort({ lastActiveAt: -1 })
-      .exec();
-
-    if (!conversations.length) return { total: 0, conversations: [] };
-
-    const ids = conversations.map(c => (c as any)._id.toString());
-    const lastMessages = await this.messagesService.getLastMessageByConversations(ids);
-
-    const unanswered = conversations
-      .filter(c => {
-        const last = lastMessages[(c as any)._id.toString()];
-        return !last || last.role === 'user';
-      })
-      .map(c => ({
-        conversationId: (c as any)._id,
-        platformUserId: c.platformUser?.id,
-        platformUserName: c.platformUser?.username,
-        lastActiveAt: c.lastActiveAt,
-        lastMessage: lastMessages[(c as any)._id.toString()] || null,
-      }));
-
-    return { total: unanswered.length, sinceHours, conversations: unanswered };
   }
 
   async getUserProfile(platformUserId: string) {
