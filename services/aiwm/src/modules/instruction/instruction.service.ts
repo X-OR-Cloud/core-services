@@ -72,7 +72,7 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
   }
 
   private isAgent(context: RequestContext): boolean {
-    return !!context.agentId && (context.roles as string[])?.includes('agent') === true;
+    return !!context.agentId && !context.userId;
   }
 
   private async isAgentAssignedToInstruction(instructionId: string, agentId: string): Promise<boolean> {
