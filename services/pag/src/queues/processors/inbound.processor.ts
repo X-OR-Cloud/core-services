@@ -128,7 +128,8 @@ export class InboundProcessor extends WorkerHost {
       // 5a. Check daily chat quota (atomic check-and-consume)
       const quotaResult = await this.quotaService.tryConsumeChatQuota(data.platformUserId);
       if (!quotaResult.allowed) {
-        const msg = `Hôm nay bạn đã dùng hết ${quotaResult.limit} tin nhắn miễn phí. Hãy nâng cấp lên gói Immortal để nhắn thêm nhé! 🚀`;
+        const planName = this.getPlanDisplayName(quotaResult.planSlug);
+        const msg = `Hôm nay bạn đã dùng hết ${quotaResult.limit} tin nhắn (gói ${planName}).\nQuota sẽ reset lúc 0h đêm nay (GMT+7).\nNâng cấp lên Immortal để có 200 tin nhắn/ngày nhé! 💪`;
         await this.sendZaloReply(data.channelId, data.platformUserId, msg);
         await this.messagesService.create({
           conversationId: new Types.ObjectId(data.conversationId) as any,
@@ -182,7 +183,8 @@ export class InboundProcessor extends WorkerHost {
       // 7a. Send 80% quota warning as a follow-up message if needed
       if (quotaResult.warningNeeded && quotaResult.limit !== null) {
         const remaining = quotaResult.limit - quotaResult.messageCount;
-        const warningMsg = `⚠️ Bạn đã dùng 80% quota hôm nay (còn ${remaining}/${quotaResult.limit} tin nhắn). Nâng cấp lên Immortal để không bị gián đoạn nhé!`;
+        const planName = this.getPlanDisplayName(quotaResult.planSlug);
+        const warningMsg = `⚠️ Bạn còn ${remaining}/${quotaResult.limit} tin nhắn hôm nay (gói ${planName}). Nâng cấp lên Immortal để không bị gián đoạn nhé!`;
         await this.sendZaloReply(data.channelId, data.platformUserId, warningMsg);
       }
 
@@ -221,6 +223,26 @@ export class InboundProcessor extends WorkerHost {
    */
   private async handleTaskCommand(data: InboundJobData): Promise<any | null> {
     const text = data.messageText.trim().toLowerCase();
+
+    // "quota" — check remaining quota without consuming it
+    if (text === 'quota' || text === 'còn bao nhiêu' || text === 'còn bao nhiêu tin') {
+      const summary = await this.quotaService.getUserQuotaSummary(data.platformUserId);
+      const planName = this.getPlanDisplayName(summary.planSlug);
+      let reply: string;
+      if (summary.chat.limit === null) {
+        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n− Tin nhắn: không giới hạn`;
+      } else {
+        const remaining = Math.max(0, summary.chat.limit - summary.chat.messageCount);
+        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n− Đã dùng: ${summary.chat.messageCount}/${summary.chat.limit} tin nhắn\n− Còn lại: ${remaining} tin nhắn\n− Reset lúc: 0h đêm nay (GMT+7)`;
+      }
+      await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: reply,
+      }, this.systemContext);
+      return { processed: true, taskCommand: 'quota_check' };
+    }
 
     // "xong" or "done" — mark most recent notified task as done
     if (text === 'xong' || text === 'done' || text === 'hoàn thành') {
@@ -481,6 +503,18 @@ Quy tắc:
       // Clean up multiple blank lines
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  /**
+   * Map plan slug to display name
+   */
+  private getPlanDisplayName(planSlug: string): string {
+    const names: Record<string, string> = {
+      mortal: 'Mortal',
+      immortal: 'Immortal',
+      god: 'God',
+    };
+    return names[planSlug] || planSlug;
   }
 
   /**
