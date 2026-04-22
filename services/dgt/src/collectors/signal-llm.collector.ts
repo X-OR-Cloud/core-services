@@ -263,6 +263,11 @@ export class SignalLlmCollector extends BaseCollector {
       model: llmModel,
       systemPrompt: SIGNAL_SYSTEM_PROMPT,
       userPrompt,
+      requestParams: {
+        temperature: llmRequestBody.temperature,
+        max_tokens: llmRequestBody.max_tokens,
+        stream: llmRequestBody.stream,
+      },
       candleCount: candles.length,
       sentimentCount: sentimentSignals.length,
       macroCount: macroIndicators.length,
@@ -284,10 +289,20 @@ export class SignalLlmCollector extends BaseCollector {
           timeout: 120_000,
         },
       );
+      const durationMs = Date.now() - startTime;
+      llmInput['durationMs'] = durationMs;
 
       // Extract content from non-streaming response
-      const content: string = response.data?.choices?.[0]?.message?.content ?? '';
-      llmRawResponse = { streaming: false, content };
+      const rawContent: string = response.data?.choices?.[0]?.message?.content ?? '';
+      const finishReason: string | null = response.data?.choices?.[0]?.finish_reason ?? null;
+      const usage = response.data?.usage ?? null;
+
+      // Separate <think>...</think> block from main content
+      const thinkMatch = rawContent.match(/<think>([\s\S]*?)<\/think>/);
+      const thinkingContent = thinkMatch ? thinkMatch[1].trim() : null;
+      const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+      llmRawResponse = { streaming: false, content, thinkingContent, finishReason, usage };
       this.logger.debug(`[SignalLLM] Response content (${content.length} chars): ${content.slice(0, 500)}`);
 
       // Strip markdown code fences nếu có (```json ... ```)
