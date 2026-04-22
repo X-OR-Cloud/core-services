@@ -114,4 +114,46 @@ export class SignalController {
     if (!updated) throw new NotFoundException(`Signal ${id} not found`);
     return updated;
   }
+
+  @Get(':id/context')
+  @ApiOperation({ summary: '[DEBUG] Full data context used to generate this signal — indicators, macro, sentiment, news, candles' })
+  @ApiReadErrors()
+  async getContext(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const signal = await this.signalService.findById(id, context) as any;
+    if (!signal) throw new NotFoundException(`Signal ${id} not found`);
+    return {
+      signalId: signal._id,
+      asset: signal.asset,
+      timeframe: signal.timeframe,
+      signalType: signal.signalType,
+      confidence: signal.confidence,
+      confidenceLabel: signal.confidenceLabel,
+      priceAtCreation: signal.priceAtCreation,
+      entry: signal.entry,
+      takeProfit: signal.takeProfit,
+      stopLoss: signal.stopLoss,
+      createdAt: signal.createdAt,
+      dataSnapshot: signal.dataSnapshot ?? null,
+    };
+  }
+
+  @Get(':id/raw-llm')
+  @ApiOperation({ summary: '[DEBUG] Raw LLM prompt input and completion response for this signal' })
+  @ApiReadErrors()
+  async getRawLlm(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const signal = await this.signalService.findById(id, context) as any;
+    if (!signal) throw new NotFoundException(`Signal ${id} not found`);
+    return {
+      signalId: signal._id,
+      llmModel: signal.llmModel ?? null,
+      llmInput: signal.llmInput ?? null,
+      llmRawResponse: signal.llmRawResponse ?? null,
+    };
+  }
 }
