@@ -1024,7 +1024,7 @@ export class WorkService extends BaseService<Work> {
     if (!parent || parent.type !== 'task') return;
 
     // Only cascade if parent task is in a cascadable state
-    if (parent.status === 'todo' || parent.status === 'in_progress') {
+    if (parent.status === 'backlog' || parent.status === 'todo' || parent.status === 'in_progress') {
       await this.recalculateTaskStatus(
         new Types.ObjectId(work.parentId) as any,
         context
