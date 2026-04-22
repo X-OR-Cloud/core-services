@@ -6,6 +6,7 @@ import { Channel, ChannelSchema } from '../channels/channels.schema';
 import { Memory, MemorySchema } from '../memories/memories.schema';
 import { Task, TaskSchema } from '../tasks/tasks.schema';
 import { MessagesModule } from '../messages/messages.module';
+import { UserPlansModule } from '../user-plans/user-plans.module';
 import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 
@@ -19,6 +20,7 @@ import { StatsController } from './stats.controller';
       { name: Task.name, schema: TaskSchema },
     ]),
     MessagesModule,
+    UserPlansModule,
   ],
   providers: [StatsService],
   controllers: [StatsController],
