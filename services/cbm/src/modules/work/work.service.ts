@@ -382,6 +382,8 @@ export class WorkService extends BaseService<Work> {
 
     // Trigger epic recalculation if this is a task
     await this.triggerParentEpicRecalculation(updated, context);
+    // Trigger task recalculation if this is a subtask
+    await this.triggerParentTaskRecalculation(updated, context);
 
     return updated;
   }
@@ -575,6 +577,7 @@ export class WorkService extends BaseService<Work> {
       });
 
       await this.triggerParentEpicRecalculation(updated, context);
+      await this.triggerParentTaskRecalculation(updated, context);
       return updated;
     }
 
@@ -611,6 +614,7 @@ export class WorkService extends BaseService<Work> {
       });
 
       await this.triggerParentEpicRecalculation(updated, context);
+      await this.triggerParentTaskRecalculation(updated, context);
       return updated;
     }
 
@@ -631,6 +635,7 @@ export class WorkService extends BaseService<Work> {
 
     // Trigger epic recalculation if this is a task
     await this.triggerParentEpicRecalculation(updated, context);
+    await this.triggerParentTaskRecalculation(updated, context);
 
     return updated;
   }
@@ -681,6 +686,7 @@ export class WorkService extends BaseService<Work> {
 
     // Trigger epic recalculation if this is a task
     await this.triggerParentEpicRecalculation(updated, context);
+    await this.triggerParentTaskRecalculation(updated, context);
 
     return updated;
   }
@@ -722,6 +728,7 @@ export class WorkService extends BaseService<Work> {
 
     // Trigger epic recalculation if this is a task
     await this.triggerParentEpicRecalculation(updated, context);
+    await this.triggerParentTaskRecalculation(updated, context);
 
     return updated;
   }
@@ -951,6 +958,77 @@ export class WorkService extends BaseService<Work> {
           context
         );
       }
+    }
+  }
+
+  // =============== Task Status Management ===============
+
+  async calculateTaskStatus(
+    taskId: ObjectId,
+    context: RequestContext
+  ): Promise<'in_progress' | 'done'> {
+    const task = await this.findById(taskId, context);
+    if (!task || task.type !== 'task') {
+      throw new BadRequestException('Task not found');
+    }
+
+    const subtasks = await this.workModel.find({
+      parentId: taskId.toString(),
+      type: 'subtask',
+      isDeleted: false,
+    });
+
+    if (subtasks.length === 0) return 'in_progress';
+
+    const allDoneOrCancelled = subtasks.every(s =>
+      s.status === 'done' || s.status === 'cancelled'
+    );
+    const someDone = subtasks.some(s => s.status === 'done');
+
+    if (allDoneOrCancelled && someDone) return 'done';
+
+    return 'in_progress';
+  }
+
+  private async recalculateTaskStatus(
+    taskId: ObjectId,
+    context: RequestContext
+  ): Promise<Work> {
+    const newStatus = await this.calculateTaskStatus(taskId, context);
+
+    const updated = await this.workModel.findByIdAndUpdate(
+      taskId,
+      { status: newStatus, updatedBy: context },
+      { new: true }
+    ).exec();
+
+    if (!updated) throw new BadRequestException('Failed to update task status');
+
+    // If task status changed, cascade up to epic
+    await this.triggerParentEpicRecalculation(updated as Work, context);
+
+    return updated as Work;
+  }
+
+  private async triggerParentTaskRecalculation(
+    work: Work,
+    context: RequestContext
+  ): Promise<void> {
+    if (work.type !== 'subtask' || !work.parentId) return;
+
+    const parent = await this.findById(
+      new Types.ObjectId(work.parentId) as any,
+      context
+    );
+
+    if (!parent || parent.type !== 'task') return;
+
+    // Only cascade if parent task is in a cascadable state
+    if (parent.status === 'todo' || parent.status === 'in_progress') {
+      await this.recalculateTaskStatus(
+        new Types.ObjectId(work.parentId) as any,
+        context
+      );
     }
   }
 
