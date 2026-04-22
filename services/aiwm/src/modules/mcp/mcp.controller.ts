@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req, HttpCode, Options, Res } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, HttpCode, Options, Res, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '@hydrabyte/base';
@@ -12,6 +12,8 @@ import {
 @ApiTags('MCP')
 @Controller('mcp')
 export class McpController {
+  private readonly logger = new Logger(McpController.name);
+
   constructor(private readonly mcpService: McpService) {}
 
   /**
@@ -40,14 +42,12 @@ export class McpController {
     @Req() req: any,
     @Body() rpcRequest: JsonRpcRequest,
   ): Promise<JsonRpcSuccessResponse | JsonRpcErrorResponse> {
-    // Debug: log received request
-    console.log('MCP Request received:', JSON.stringify(rpcRequest, null, 2));
-
     const { jsonrpc, id, method, params } = rpcRequest;
+    const agentId = req.user?.agentId ?? 'unknown';
+    const t0 = Date.now();
 
-    // Validate JSON-RPC version (check if field exists and has correct value)
     if (!jsonrpc || jsonrpc !== '2.0') {
-      console.log('Invalid jsonrpc:', { jsonrpc, fullBody: rpcRequest });
+      this.logger.warn(`[MCP] agentId=${agentId} invalid_jsonrpc body=${JSON.stringify(rpcRequest)}`);
       return {
         jsonrpc: '2.0',
         id: id ?? null,
@@ -59,8 +59,8 @@ export class McpController {
     }
 
     try {
-      const agentId = req.user?.agentId;
-      if (!agentId) {
+      if (!req.user?.agentId) {
+        this.logger.warn(`[MCP] agentId=missing method=${method} — JWT has no agentId`);
         return {
           jsonrpc: '2.0',
           id,
@@ -71,19 +71,26 @@ export class McpController {
         };
       }
 
-      // Route based on method
+      this.logger.log(`[MCP] agentId=${agentId} method=${method}${method === 'tools/call' ? ` tool=${(params as any)?.name}` : ''}`);
+
+      let result: JsonRpcSuccessResponse | JsonRpcErrorResponse;
+
       switch (method) {
         case 'initialize':
-          return await this.handleInitialize(id, params, agentId);
+          result = await this.handleInitialize(id, params, agentId);
+          break;
 
         case 'tools/list':
-          return await this.handleToolsList(id, params, agentId);
+          result = await this.handleToolsList(id, params, agentId);
+          break;
 
         case 'tools/call':
-          return await this.handleToolsCall(id, params, agentId, req);
+          result = await this.handleToolsCall(id, params, agentId, req);
+          break;
 
         default:
-          return {
+          this.logger.warn(`[MCP] agentId=${agentId} method_not_found=${method}`);
+          result = {
             jsonrpc: '2.0',
             id,
             error: {
@@ -92,8 +99,24 @@ export class McpController {
             },
           };
       }
+
+      const isError = 'error' in result;
+      const durationMs = Date.now() - t0;
+      if (isError) {
+        this.logger.warn(
+          `[MCP] agentId=${agentId} method=${method}${method === 'tools/call' ? ` tool=${(params as any)?.name}` : ''} status=error code=${'error' in result ? result.error.code : ''} msg=${'error' in result ? result.error.message : ''} duration=${durationMs}ms`,
+        );
+      } else {
+        this.logger.debug(`[MCP] agentId=${agentId} method=${method} status=ok duration=${durationMs}ms`);
+      }
+
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `[MCP] agentId=${agentId} method=${method}${method === 'tools/call' ? ` tool=${(params as any)?.name}` : ''} status=exception duration=${Date.now() - t0}ms error=${errorMessage}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       return {
         jsonrpc: '2.0',
         id,
@@ -214,7 +237,6 @@ export class McpController {
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
-    console.log('CORS preflight request handled for /mcp');
     res.end();
   }
 }
