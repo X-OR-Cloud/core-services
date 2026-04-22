@@ -41,6 +41,9 @@ import { InsightsModule } from '../modules/insights/insights.module';
 // Group 7: Activity Logs
 import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
 
+// Group 8: LLM Provider Management
+import { LlmProviderModule } from '../modules/llm-provider/llm-provider.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -87,6 +90,9 @@ import { SystemActivityLogModule } from '../modules/system-activity-log/system-a
 
     // Group 7: Activity Logs
     SystemActivityLogModule,
+
+    // Group 8: LLM Provider Management
+    LlmProviderModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

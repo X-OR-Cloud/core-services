@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import axios from 'axios';
 import { Types } from 'mongoose';
 import { BaseCollector } from './base.collector';
 import { SignalService } from '../modules/signal/signal.service';
@@ -19,6 +18,7 @@ import { NotificationService } from '../shared/notification.service';
 import { SystemActivityLogService } from '../modules/system-activity-log/system-activity-log.service';
 import { SystemWorkerType, SystemActivityStatus } from '../modules/system-activity-log/system-activity-log.schema';
 import { NewsArticleService } from '../modules/news-article/news-article.service';
+import { LlmRouterService } from '../shared/llm-router.service';
 
 const SYSTEM_CONTEXT: RequestContext = {
   userId: 'system',
@@ -42,6 +42,7 @@ export class SignalLlmCollector extends BaseCollector {
     private readonly notificationService: NotificationService,
     private readonly systemActivityLogService: SystemActivityLogService,
     private readonly newsArticleService: NewsArticleService,
+    private readonly llmRouterService: LlmRouterService,
   ) {
     super();
   }
@@ -210,103 +211,46 @@ export class SignalLlmCollector extends BaseCollector {
       recentNewsArticles,
     );
 
-    // Step 8: Call LLM
-    const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
-    const llmApiKey = process.env['LLM_API_KEY'] || '';
-    const llmModel =
-      process.env['LLM_SIGNAL_MODEL'] ||
-      process.env['LLM_MODEL'] ||
-      'gpt-4o-mini';
-
-    if (!llmBaseUrl || !llmApiKey) {
-      this.logger.warn(`[${this.name}] No LLM config, generating fallback HOLD signal`);
-      await this.saveSignal(accountId, asset, timeframe, {
-        signalType: SignalType.HOLD,
-        confidence: 0,
-        insight: 'Signal engine unavailable. Market analysis could not be completed.',
-        indicatorsUsed: [],
-        keyFactors: [],
-        macroFactors: [],
-        llmModel: undefined,
-        llmInput: null,
-        llmRawResponse: null,
-        dataSnapshot,
-      });
-      this.systemActivityLogService.logActivity({
-        workerType: SystemWorkerType.SIGNAL_GEN,
-        source: llmModel,
-        symbol: asset,
-        action: 'generate_signal',
-        status: SystemActivityStatus.WARNING,
-        details: `LLM not configured — fallback HOLD for ${asset}/${timeframe}`,
-        metadata: { accountId, asset, timeframe },
-        durationMs: Date.now() - startTime,
-      });
-      return;
-    }
-
-    const llmEndpoint = `${llmBaseUrl}/chat/completions`;
-    const llmRequestBody = {
-      model: llmModel,
-      messages: [
-        { role: 'system', content: SIGNAL_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 8192,
-      stream: false,
-    };
-
-    // Record input for traceability
-    const llmInput = {
-      endpoint: llmEndpoint,
-      model: llmModel,
-      systemPrompt: SIGNAL_SYSTEM_PROMPT,
-      userPrompt,
-      requestParams: {
-        temperature: llmRequestBody.temperature,
-        max_tokens: llmRequestBody.max_tokens,
-        stream: llmRequestBody.stream,
-      },
-      candleCount: candles.length,
-      sentimentCount: sentimentSignals.length,
-      macroCount: macroIndicators.length,
-      requestedAt: new Date().toISOString(),
-    };
-
-    this.logger.info(`[SignalLLM] Calling LLM: ${llmEndpoint} model=${llmModel}`);
+    // Step 8: Call LLM via LlmRouterService (handles provider selection, fallback, stats)
     let parsed: any;
+    let llmInput: any;
     let llmRawResponse: any;
+    let llmModel = 'unknown';
     try {
-      const response = await axios.post(
-        llmEndpoint,
-        llmRequestBody,
-        {
-          headers: {
-            Authorization: `Bearer ${llmApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 120_000,
-        },
-      );
-      const durationMs = Date.now() - startTime;
-      llmInput['durationMs'] = durationMs;
+      this.logger.info(`[SignalLLM] Calling LLM router for ${asset}/${timeframe}`);
+      const llmResult = await this.llmRouterService.call({
+        systemPrompt: SIGNAL_SYSTEM_PROMPT,
+        userPrompt,
+        params: { temperature: 0.2, max_tokens: 8192, stream: false },
+      });
+      llmModel = llmResult.model;
 
-      // Extract content from non-streaming response
-      const rawContent: string = response.data?.choices?.[0]?.message?.content ?? '';
-      const finishReason: string | null = response.data?.choices?.[0]?.finish_reason ?? null;
-      const usage = response.data?.usage ?? null;
+      llmInput = {
+        providerId: llmResult.providerId,
+        providerName: llmResult.providerName,
+        model: llmResult.model,
+        systemPrompt: SIGNAL_SYSTEM_PROMPT,
+        userPrompt,
+        requestParams: { temperature: 0.2, max_tokens: 8192, stream: false },
+        candleCount: candles.length,
+        sentimentCount: sentimentSignals.length,
+        macroCount: macroIndicators.length,
+        requestedAt: new Date().toISOString(),
+        durationMs: llmResult.durationMs,
+      };
 
-      // Separate <think>...</think> block from main content
-      const thinkMatch = rawContent.match(/<think>([\s\S]*?)<\/think>/);
-      const thinkingContent = thinkMatch ? thinkMatch[1].trim() : null;
-      const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      llmRawResponse = {
+        streaming: false,
+        content: llmResult.content,
+        thinkingContent: llmResult.thinkingContent,
+        finishReason: llmResult.finishReason,
+        usage: llmResult.usage,
+      };
 
-      llmRawResponse = { streaming: false, content, thinkingContent, finishReason, usage };
-      this.logger.debug(`[SignalLLM] Response content (${content.length} chars): ${content.slice(0, 500)}`);
+      this.logger.debug(`[SignalLLM] Response (${llmResult.content.length} chars, ${llmResult.durationMs}ms): ${llmResult.content.slice(0, 500)}`);
 
       // Strip markdown code fences nếu có (```json ... ```)
-      let cleanContent = content.trim();
+      let cleanContent = llmResult.content.trim();
       const fenceMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (fenceMatch) cleanContent = fenceMatch[1].trim();
 
@@ -316,9 +260,7 @@ export class SignalLlmCollector extends BaseCollector {
 
       parsed = JSON.parse(cleanContent);
     } catch (error: any) {
-      const status = error.response?.status;
-      const body = JSON.stringify(error.response?.data)?.slice(0, 300);
-      this.logger.error(`[${this.name}] LLM call failed: ${error.message} | status=${status} | body=${body}`);
+      this.logger.error(`[${this.name}] LLM call failed: ${error.message}`);
       await this.saveSignal(accountId, asset, timeframe, {
         signalType: SignalType.HOLD,
         confidence: 0,
@@ -327,8 +269,8 @@ export class SignalLlmCollector extends BaseCollector {
         keyFactors: [],
         macroFactors: [],
         llmModel,
-        llmInput,
-        llmRawResponse: { error: error.message, status, body },
+        llmInput: llmInput ?? null,
+        llmRawResponse: { error: error.message },
         dataSnapshot,
       });
       this.systemActivityLogService.logActivity({
@@ -338,7 +280,7 @@ export class SignalLlmCollector extends BaseCollector {
         action: 'generate_signal',
         status: SystemActivityStatus.ERROR,
         details: `LLM call failed for ${asset}/${timeframe}: ${error.message}`,
-        metadata: { accountId, asset, timeframe, httpStatus: status, llmModel },
+        metadata: { accountId, asset, timeframe, llmModel },
         durationMs: Date.now() - startTime,
       });
       return;
