@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -203,6 +204,7 @@ export class InstructionController {
   }
 
   @Put(':id')
+  @Patch(':id')
   @ApiOperation({ summary: 'Update an instruction' })
   @ApiUpdateErrors()
   async update(

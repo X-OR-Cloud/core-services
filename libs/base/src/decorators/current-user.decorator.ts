@@ -81,7 +81,7 @@ export const CurrentUser = createParamDecorator(
 
     // Map JWT payload to RequestContext
     let context: RequestContext = {
-      userId: user.sub || user.userId || '',
+      userId: user.type === 'agent' ? '' : (user.sub || user.userId || ''),
       roles: user.roles || [],
       orgId: user.orgId || '',
       groupId: user.groupId || '',
