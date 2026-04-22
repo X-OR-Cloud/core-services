@@ -1,85 +1,160 @@
-# CLAUDE.md - DGT Service
+# CLAUDE.md — DGT Service
+
+Guidance for AI Agent when working with the **dgt** service.
+
+## Behavioral Guidelines
+
+### 1. Think Before Coding
+
+Before implementing:
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+### 3. Surgical Changes
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+- Remove only imports/variables/functions that YOUR changes made unused.
+
+### 4. Goal-Driven Execution
+
+Transform tasks into verifiable goals before starting:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+---
 
 ## Service Overview
 
-DGT (Digital Gold Trader) is a paper trading and market data service for gold & crypto assets. Port 3008 (dev), 3380-3389 (prod).
+**DGT** (Digital Gold Trader) — paper trading and market data service for gold & crypto assets.
 
-Three modes: **api** (HTTP REST), **shd** (scheduler worker), **ing** (data ingestion worker).
+| | Dev | Prod |
+|---|---|---|
+| Port | 3008 | 3380–3389 |
+| Database | `core_dgt` | `core_dgt` |
+
+---
+
+## Run Targets
+
+```bash
+nx run dgt:build        # Build
+nx run dgt:api          # API mode (REST + Swagger, port 3008)
+nx run dgt:wrk:shd      # Scheduler — registers BullMQ repeatable jobs
+nx run dgt:wrk:ing      # Data ingestion — consumes jobs, runs collectors
+nx run dgt:wrk:sig      # Signal generation — LLM signal processor
+nx run dgt:wrk:mon      # SL/TP monitoring — polls open positions every 10s
+```
+
+Mode selection: `process.argv[2]` overrides `process.env.MODE` (nx targets pass via args).
+
+---
 
 ## Modules
 
+### Group 1 — User & Account (BaseService + RBAC)
+
 | Module | Path | Description |
 |--------|------|-------------|
-| Account | `src/modules/account/` | Trading accounts (paper/live), exchange config, balance tracking |
-| RiskProfile | `src/modules/risk-profile/` | Risk parameters per account (stop-loss, position size, leverage) |
-| MarketPrice | `src/modules/market-price/` | OHLCV price data from 6 sources, read-only API |
-| TechnicalIndicator | `src/modules/technical-indicator/` | Computed indicators (RSI, MACD, EMA, BB, ATR...), read-only API |
-| MacroIndicator | `src/modules/macro-indicator/` | FRED macro series (Fed Funds, CPI, DXY...), read-only API |
-| SentimentSignal | `src/modules/sentiment-signal/` | News sentiment, ETF flows, funding rates, read-only API |
-| Order | `src/modules/order/` | Paper trading orders (market/limit/stop_limit) |
-| Trade | `src/modules/trade/` | Executed trade records (immutable after creation) |
+| Account | `src/modules/account/` | Trading accounts (paper/live), exchange config, balance |
+| RiskProfile | `src/modules/risk-profile/` | Risk parameters per account (SL, position size, leverage) |
+
+### Group 2 — Market Data (SharedDataService, no RBAC)
+
+Read-only API — data written only by workers.
+
+| Module | Path | Description |
+|--------|------|-------------|
+| MarketPrice | `src/modules/market-price/` | OHLCV data from 6 sources |
+| TechnicalIndicator | `src/modules/technical-indicator/` | RSI, MACD, EMA, Bollinger Bands, ATR, HV, VolumeRatio |
+| MacroIndicator | `src/modules/macro-indicator/` | FRED macro series (Fed Funds, CPI, DXY…) |
+| SentimentSignal | `src/modules/sentiment-signal/` | News sentiment, ETF flows, funding rates |
+| NewsArticle | `src/modules/news-article/` | News articles for LLM analysis |
+
+### Group 3 — Trading (BaseService + RBAC)
+
+| Module | Path | Description |
+|--------|------|-------------|
+| Order | `src/modules/order/` | Paper orders (market / limit / stop_limit) |
+| Trade | `src/modules/trade/` | Executed trade records — append-only, immutable after creation |
 | Position | `src/modules/position/` | Open/closed positions with PnL tracking |
-| Signal | `src/modules/signal/` | AI-generated trading signals (BUY/SELL/HOLD) with LLM insight |
-| Bot | `src/modules/bot/` | Bot state machine (CREATED/RUNNING/PAUSED/STOPPED/ERROR) |
-| BotActivityLog | `src/modules/bot-activity-log/` | Append-only activity log for bot actions, TTL 90 days |
-| PortfolioSnapshot | `src/modules/portfolio-snapshot/` | Daily equity snapshots for equity curve & drawdown charts |
-| Analytics | `src/modules/analytics/` | Aggregated stats, PnL chart, equity curve, drawdown, CSV export |
 
-## Module Groups
+### Group 4 — Analytics (read-only aggregation)
 
-### Group 1: User & Account (BaseService + RBAC)
-- `Account`, `RiskProfile` — user-owned, full CRUD, filtered by `owner.userId`
+| Module | Path | Description |
+|--------|------|-------------|
+| PortfolioSnapshot | `src/modules/portfolio-snapshot/` | Daily equity snapshots (written by monitor worker) |
+| Analytics | `src/modules/analytics/` | PnL, equity curve, drawdown, CSV export — no own collection |
+| Dashboard | `src/modules/dashboard/` | Dashboard aggregation |
 
-### Group 2: Market Data (SharedDataService, no RBAC)
-- `MarketPrice`, `TechnicalIndicator`, `MacroIndicator`, `SentimentSignal` — shared data, read-only API, written only by workers
+### Group 5 — AI Signal & Bot (BaseService + RBAC)
 
-### Group 3: Trading (BaseService + RBAC)
-- `Order`, `Trade`, `Position` — user-owned, Trade is append-only (no update/delete)
+| Module | Path | Description |
+|--------|------|-------------|
+| Signal | `src/modules/signal/` | AI-generated BUY/SELL/HOLD signals with LLM insight; TTL 90 days |
+| Bot | `src/modules/bot/` | Bot state machine (CREATED → RUNNING → PAUSED → STOPPED / ERROR) |
+| BotActivityLog | `src/modules/bot-activity-log/` | Append-only activity log; TTL 90 days |
 
-### Group 4: Analytics (read-only aggregation)
-- `PortfolioSnapshot` — daily snapshots written by monitoring worker; read by analytics
-- `Analytics` — no MongoDB collection; aggregates from Position, Trade, PortfolioSnapshot
+### Group 6 — Logging
 
-### Group 5: AI Signal & Bot (BaseService + RBAC)
-- `Signal` — per-account LLM-generated signals, filtered by owner.userId; TTL 90 days
-- `Bot` — bot lifecycle management with state machine validation
-- `BotActivityLog` — append-only, no update/delete; TTL 90 days
+| Module | Path | Description |
+|--------|------|-------------|
+| SystemActivityLog | `src/modules/system-activity-log/` | System-wide activity logging |
+| Insights | `src/modules/insights/` | Market insights and analysis data |
+
+---
 
 ## Key Architecture Patterns
 
-### NotificationService
-`src/shared/notification.service.ts` — sends alerts to Discord (embed format) and/or Telegram (Markdown).
-- Config per account: `account.notifications.{discordWebhookUrl, telegramBotToken, telegramChatId, enabled}`
-- Called from monitoring worker on SL/TP hit, trade execution, bot state changes
-- Uses `Promise.allSettled` — one channel failure does not block the other
-
 ### SharedDataService
-`src/shared/shared-data.service.ts` — generic service for Group 2. Does NOT extend BaseService (no RBAC ownership checks).
+
+`src/shared/shared-data.service.ts` — used by all Group 2 modules. Does **not** extend BaseService (no RBAC).
+
 Methods: `insert`, `insertMany`, `upsert`, `findLatest`, `findByRange`, `findAll`.
 
-### Worker Modes
-- **shd** (Scheduler): Registers 10 repeatable BullMQ jobs on startup (`onModuleInit`). Clears old jobs first to prevent duplicates on restart.
-- **ing** (Data Ingestion): Consumes jobs, dispatches to collectors via switch/case in `DataIngestionProcessor`.
-- Both use `AppWorkerModule` (no HTTP), bootstrapped via `NestFactory.createApplicationContext()`.
+### NotificationService
 
-### Worker Modes (Updated)
-- **shd** (Scheduler): Data ingestion scheduler
-- **ing** (Data Ingestion): Data collectors processor
-- **sig** (Signal): Signal generation scheduler + LLM processor (queue: dgt-signal-generation)
-- **mon** (Monitor): SL/TP monitoring worker — polls open positions every 10s, auto-closes on SL/TP hit
+`src/shared/notification.service.ts` — Discord (embed) and Telegram (Markdown) alerts.
+- Config per account: `account.notifications.{discordWebhookUrl, telegramBotToken, telegramChatId, enabled}`
+- Uses `Promise.allSettled` — one channel failure does not block the other.
 
 ### Collector Pattern
-`src/collectors/base.collector.ts` — abstract base class with:
-- `fetchWithRetry()`: exponential backoff, 429 rate-limit handling (waits retry-after), 401/403 no-retry
-- Each collector implements `collect()`: Fetch → Transform → Save
+
+`src/collectors/base.collector.ts` — abstract base with `fetchWithRetry()`:
+- Exponential backoff; 429 → waits `retry-after`; 401/403 → no retry.
+- Each collector implements `collect()`: Fetch → Transform → Save.
 
 ### Technical Indicator Computation
-Triggered as a scheduled job (`compute_indicators`, every 5 min) — NOT post-save hooks.
-- `math.util.ts`: pure functions (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, HV, VolumeRatio)
-- `indicator-computation.service.ts`: reads last 220 MarketPrice candles, computes 17 fields, upserts TechnicalIndicator
 
-### Mode Selection (main.ts)
-`process.argv[2]` takes priority over `process.env.MODE` (important: nx targets pass mode via args).
+Triggered by scheduled BullMQ job (`compute_indicators`, every 5 min) — not post-save hooks.
+- `src/indicators/math.util.ts`: pure functions (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, HV, VolumeRatio).
+- `src/indicators/indicator-computation.service.ts`: reads last 220 MarketPrice candles → computes 17 fields → upserts TechnicalIndicator.
+
+### Exchange Adapters
+
+`src/exchange/adapters/` — Binance, Bybit, OKX, local simulation (paper trading).
+`exchange-adapter.factory.ts` creates adapter instances from account exchange config.
+
+### Worker Bootstrap
+
+Workers use `NestFactory.createApplicationContext()` (no HTTP). Each mode loads its own NestJS module:
+- `AppSchedulerModule` — shd
+- `AppIngestionModule` — ing
+- `AppSignalModule` — sig
+- `AppMonitorModule` — mon
+
+---
 
 ## Datasource Schedules
 
@@ -90,13 +165,15 @@ Triggered as a scheduled job (`compute_indicators`, every 5 min) — NOT post-sa
 | Binance Futures (PAXG) | 1 min | MarketPrice + SentimentSignal |
 | OKX (PAXG/USDT) | 5 min | MarketPrice |
 | Bitfinex (XAUT/USD) | 5 min | MarketPrice |
-| Yahoo Finance (6 symbols) | 1 hour | MarketPrice |
-| NewsAPI + LLM | 1 hour | SentimentSignal |
+| Yahoo Finance (6 symbols: GC=F, VIX, BTC, SPX, CL, DXY) | 1 hour | MarketPrice |
+| NewsAPI + LLM analysis | 1 hour | SentimentSignal |
 | FRED (11 macro series) | Daily | MacroIndicator |
 | ByteTree BOLD (ETF flows) | Daily | SentimentSignal |
 | compute_indicators | 5 min | TechnicalIndicator |
-| Signal Generation (LLM) | 1h / 4h per account | Signal |
-| Signal Expiry Check | 1 min | Signal (status→EXPIRED) |
+| Signal generation (LLM) | 1h / 4h per account | Signal |
+| Signal expiry check | 1 min | Signal (status → EXPIRED) |
+
+---
 
 ## Environment Variables
 
@@ -108,21 +185,20 @@ REDIS_HOST           # BullMQ Redis host
 REDIS_PORT           # BullMQ Redis port
 REDIS_PASSWORD       # Redis password (optional)
 REDIS_DB             # Redis DB index
-GOLDAPI_KEY          # GoldAPI.io key (required for goldapi collector)
-FRED_API_KEY         # FRED API key (required for fred collector)
-NEWSAPI_KEY          # NewsAPI.org key (required for newsapi collector)
-LLM_BASE_URL         # OpenAI-compatible base URL (e.g. https://api.openai.com/v1)
+
+GOLDAPI_KEY          # GoldAPI.io key
+FRED_API_KEY         # FRED API key
+NEWSAPI_KEY          # NewsAPI.org key
+BINANCE_API_KEY      # Optional, for private endpoints
+BINANCE_SECRET_KEY   # Optional
+
+LLM_BASE_URL         # OpenAI-compatible base URL
 LLM_API_KEY          # LLM API key
-LLM_MODEL            # Default LLM model (e.g. gpt-4o-mini, gemini-2.0-flash-exp)
-LLM_SIGNAL_MODEL     # LLM model for signal generation (fallback: LLM_MODEL → gpt-4o-mini)
-BINANCE_API_KEY      # Binance API key (optional, for private endpoints)
-BINANCE_SECRET_KEY   # Binance secret key (optional)
+LLM_MODEL            # Default model (e.g. gpt-4o-mini)
+LLM_SIGNAL_MODEL     # Model for signal generation (fallback: LLM_MODEL → gpt-4o-mini)
 ```
 
 ### LLM Provider Support
-
-`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` use the OpenAI-compatible `/chat/completions` format.
-Supported providers (set `LLM_BASE_URL` accordingly):
 
 | Provider | LLM_BASE_URL | Example model |
 |----------|-------------|---------------|
@@ -134,16 +210,7 @@ Supported providers (set `LLM_BASE_URL` accordingly):
 | LM Studio (local) | `http://localhost:1234/v1` | any loaded model |
 | LiteLLM (self-hosted) | custom URL | multi-provider proxy |
 
-## Commands
-
-```bash
-nx run dgt:build     # Build
-nx run dgt:api       # API mode (REST, port 3008)
-nx run dgt:wrk:shd   # Scheduler worker
-nx run dgt:wrk:ing   # Data ingestion worker
-nx run dgt:wrk:sig   # Signal generation worker
-nx run dgt:wrk:mon   # SL/TP monitoring worker
-```
+---
 
 ## Debug / Testing Endpoints
 
@@ -154,9 +221,23 @@ No auth required — **disable in production**.
 | POST | `/signals/trigger-generation` | `{ accountId, asset?, timeframe? }` | Trigger LLM signal immediately |
 | POST | `/positions/debug-create` | `{ accountId, symbol, side, entryPrice, quantity, stopLossPrice?, takeProfitPrice? }` | Create position directly |
 
-## Module-Specific Documentation
+---
 
-- **Architecture**: `docs/dgt/01-ARCHITECTURE.md`
-- **Entity Design**: `docs/dgt/02-ENTITY-DESIGN.md`
-- **Data Ingestion Flow**: `docs/dgt/03-DATA-INGESTION-FLOW.md`
-- **Implementation Plan**: `docs/dgt/PLAN-MVP-v1.0.md`
+## Verification
+
+```bash
+nx run dgt:build
+npx tsc --noEmit -p services/dgt/tsconfig.app.json
+nx run dgt:api
+curl http://localhost:3008/health
+open http://localhost:3008/api-docs
+```
+
+---
+
+## Related Docs
+
+- [`docs/dgt/01-ARCHITECTURE.md`](../../docs/dgt/01-ARCHITECTURE.md) — Architecture overview
+- [`docs/dgt/02-ENTITY-DESIGN.md`](../../docs/dgt/02-ENTITY-DESIGN.md) — Entity & schema design
+- [`docs/dgt/03-DATA-INGESTION-FLOW.md`](../../docs/dgt/03-DATA-INGESTION-FLOW.md) — Data ingestion flow
+- [`docs/dgt/PLAN-MVP-v1.0.md`](../../docs/dgt/PLAN-MVP-v1.0.md) — MVP implementation plan
