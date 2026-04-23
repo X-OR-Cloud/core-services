@@ -5,403 +5,237 @@ Hướng dẫn tích hợp agent loại `engineer` với AIWM. Engineer agent l�
 ## Flow tổng quan
 
 ```
-1. POST /agents/connect          → lấy JWT token + config
-2. Connect WS /ws/chat           → nhận message, command
-3. emit agent:heartbeat          → báo status, nhận work assignment
-4. Lắng nghe message:new        → filter và xử lý tin nhắn
-5. emit message:send             → gửi response
-6. Lắng nghe agent:command      → xử lý lệnh từ admin
+1. POST /agents/connect      → xác thực bằng secret, nhận JWT token + full config
+2. Connect WS /ws/chat       → dùng JWT để mở kết nối realtime
+3. agent:heartbeat (WS)      → báo status định kỳ, nhận work assignment
+4. message:new (WS)          → nhận tin nhắn từ user (cần filter đúng)
+5. message:send (WS)         → gửi response về conversation
+6. agent:command (WS)        → nhận lệnh điều khiển từ admin
+7. POST /agents/disconnect   → graceful shutdown
 ```
 
 ---
 
-## 1. Authentication — POST /agents/connect
+## 1. POST /agents/connect
 
-**Endpoint:** `POST /agents/connect`
 **Auth:** Public (không cần JWT)
 
-**Request:**
-```json
-{
-  "id": "<agentId>",
-  "secret": "<agent-secret>",
-  "version": "1.0.0"
-}
-```
+**Request body:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `id` | string, required | Agent ID |
+| `secret` | string, required | Agent secret |
+| `version` | string, optional | Phiên bản agent (để server log) |
 
-**Response:**
-```typescript
-{
-  id: string;                    // Agent ID
-  name: string;                  // Agent name
-  accessToken: string;           // JWT token (expires 24h) — dùng để auth WS + heartbeat
-  expiresIn: number;             // Seconds until token expires (86400)
-  tokenType: "bearer";
-  instruction: {
-    id: string;
-    systemPrompt: string;        // Full instruction text đã merge
-  };
-  tools: Array<{
-    _id: string;
-    name: string;
-    type: "builtin" | "custom" | "mcp" | "api";
-    description: string;
-    schema: { inputSchema: object; outputSchema: object };
-  }>;
-  allowedFunctions: string[];    // Danh sách function names được phép gọi
-  framework: "claude-agent-sdk" | "vercel-ai-sdk";
-  deployment?: {
-    id: string;
-    provider: string;
-    model: string;
-    baseAPIEndpoint: string;
-    apiEndpoint: string;
-    multimodal?: boolean;
-  };
-  settings: Record<string, unknown>;   // Runtime config từ admin
-  mcpServers: Record<string, {
-    type: string;
-    url: string;
-    headers?: Record<string, string>;
-  }>;
-  ragEnabled: boolean;
-  ragCollections: Array<{
-    collectionId: string;
-    topK: number;
-    minScore: number;
-  }>;
-  agentCode?: string;
-  browserApiUrl?: string | null;
-  browserApiKey?: string | null;
-}
-```
+**Response fields:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `accessToken` | string | JWT token, dùng để auth WS và HTTP heartbeat |
+| `expiresIn` | number | Số giây đến khi token hết hạn (thường 86400 = 24h) |
+| `tokenType` | string | `"bearer"` |
+| `id` | string | Agent ID |
+| `name` | string | Tên agent |
+| `instruction.systemPrompt` | string | Nội dung system prompt đã merge đầy đủ |
+| `allowedFunctions` | string[] | Danh sách function names agent được phép gọi |
+| `tools` | Tool[] | Chi tiết các tool (name, type, description, schema) |
+| `mcpServers` | Record<string, McpServerConfig> | MCP server configs (type, url, headers) |
+| `deployment` | object, optional | Model deployment config (provider, model, apiEndpoint, ...) |
+| `framework` | string | `"claude-agent-sdk"` hoặc `"vercel-ai-sdk"` |
+| `settings` | Record<string, unknown> | Runtime config tùy chỉnh từ admin |
+| `ragEnabled` | boolean | RAG có được bật không |
+| `ragCollections` | object[] | Các RAG collection (collectionId, topK, minScore) |
+| `agentCode` | string, optional | Agent code identifier |
+| `browserApiUrl` | string, optional | Browser automation API URL |
+| `browserApiKey` | string, optional | Browser automation API key |
 
-> **Deprecated:** `POST /agents/:id/connect` (agentId trên URL) vẫn hoạt động nhưng sẽ bị xóa trong tương lai. Dùng endpoint mới.
+> **Deprecated:** `POST /agents/:id/connect` (agentId trên URL) vẫn hoạt động nhưng sẽ bị xóa. Dùng endpoint mới.
 
-**Lưu lại `accessToken`** để dùng cho WS auth và HTTP heartbeat.
+**Lưu ý về token refresh:** Token hết hạn sau `expiresIn` giây. Agent nên tính thời điểm refresh dựa trên `expiresIn` thực tế (không hardcode 23h), và luôn gọi lại `/agents/connect` để lấy token mới trước khi reconnect WS. Không nên dùng cached token sau khi restart.
 
 ---
 
-## 2. WebSocket — Connect /ws/chat
+## 2. WebSocket /ws/chat
 
-```typescript
-import { io } from 'socket.io-client';
+**URL:** `wss://<host>/ws/chat`
+**Auth:** JWT token từ bước connect, truyền qua `auth.token` trong handshake.
 
-const wsUrl = 'wss://skt.x-or.cloud'; // origin
-const socket = io(`${wsUrl}/ws/chat`, {
-  auth: { token: accessToken },
-  transports: ['websocket'],
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 5000,
-});
-
-socket.on('connect', () => {
-  console.log('Connected, socketId:', socket.id);
-  // Không cần emit conversation:join — server tự rejoin các conversation active
-});
-
-socket.on('disconnect', (reason) => {
-  console.warn('Disconnected:', reason);
-  // socket.io tự reconnect
-});
-```
-
-**Sau khi connect**, server tự động:
-- Thêm socket vào Redis presence `presence:agent:{agentId}`
-- Rejoin tất cả conversation active của agent (không cần emit `conversation:join`)
-- Broadcast `presence:update { type: 'agent', agentId, status: 'online' }` cho các client khác
+**Sau khi connect thành công, server tự động:**
+- Đăng ký socket vào Redis presence (`presence:agent:{agentId}`)
+- Rejoin tất cả conversation đang active của agent — agent **không cần tự emit `conversation:join`**
+- Broadcast `presence:update` báo agent online cho các client khác
 
 ---
 
-## 3. Heartbeat — agent:heartbeat (WS)
+## 3. agent:heartbeat
 
-Dùng WS event thay vì HTTP để tránh round-trip và trigger work assignment ngay lập tức.
+**Mục đích:** Báo status định kỳ để server biết agent còn sống. Khi `status: 'idle'`, server có thể trả về work assignment hoặc reminder trong ack.
 
-**emit:**
-```typescript
-socket.emit('agent:heartbeat', {
-  status: 'idle' | 'busy' | 'sleep',
+**Ưu tiên dùng WS event** thay vì HTTP endpoint để tránh round-trip và nhận work assignment ngay lập tức.
 
-  // Khi status = 'sleep'
-  sleep?: {
-    reason: string;      // Lý do sleep
-    since: string;       // ISO timestamp khi bắt đầu sleep
-    until?: string;      // ISO timestamp khi dự kiến wake (null = indefinite)
-  },
+**Payload gửi lên:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `status` | `'idle' \| 'busy' \| 'sleep'` | Trạng thái hiện tại |
+| `mcpConnected` | boolean, optional | Agent có MCP session đang hoạt động không. Server dùng để quyết định có assign work không |
+| `availableFunctions` | string[], optional | Danh sách function names đang khả dụng. Server kiểm tra agent có đủ tool trước khi assign work |
+| `sleep.reason` | string | Lý do sleep (required khi status='sleep') |
+| `sleep.since` | string (ISO) | Thời điểm bắt đầu sleep |
+| `sleep.until` | string (ISO), optional | Thời điểm dự kiến wake. Null = vô thời hạn |
+| `metrics` | object, optional | Metrics tùy chỉnh |
 
-  // Nên gửi khi có để server assign work chính xác hơn
-  mcpConnected?: boolean;          // Agent đang có MCP session không
-  availableFunctions?: string[];   // Danh sách function names hiện có
+**Ack response:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `success` | boolean | |
+| `systemMessage` | string, optional | Nội dung cần inject vào context của agent |
+| `systemTask.type` | `'work' \| 'reminders' \| 'inbox' \| 'alert'` | Loại task được giao |
+| `systemTask.id` | string, optional | ID của work item |
+| `systemTask.title` | string, optional | Tiêu đề work item |
+| `systemTask.reminders` | object[], optional | Danh sách reminders `{id, content}` |
+| `work` | object, optional | Work item được assign (id, title, type, status, priorityLevel) |
 
-  metrics?: Record<string, unknown>;
-}, (ack) => {
-  // ack response
-});
-```
+**Khuyến nghị:** Gửi heartbeat mỗi 30–60 giây. Gửi ngay `status: 'idle'` sau khi hoàn thành task để nhận việc tiếp theo nhanh hơn thay vì chờ đến interval tiếp theo.
 
-**ack response:**
-```typescript
-{
-  success: boolean;
-
-  // Khi server có việc cần giao (status = 'idle')
-  work?: {
-    id: string;
-    title: string;
-    type: string;
-    status: string;
-    priorityLevel: number;
-  };
-  systemMessage?: string;          // Nội dung inject vào context agent
-  systemTask?: {
-    type: 'work' | 'reminders' | 'inbox' | 'alert';
-    id?: string;
-    title?: string;
-    reminders?: { id: string; content: string }[];
-  };
-}
-```
-
-**Khuyến nghị:**
-- Gửi mỗi 30–60 giây
-- Gửi ngay `status: 'idle'` sau khi xử lý xong một task để nhận việc tiếp theo nhanh hơn
-
-**Fallback HTTP** (khi WS không khả dụng):
-```
-POST /agents/heartbeat
-Authorization: Bearer <accessToken>
-Body: { status, mcpConnected, availableFunctions, metrics, sleep }
-```
+**Fallback HTTP:** `POST /agents/heartbeat` — cùng payload, cùng response. Dùng khi WS không khả dụng.
 
 ---
 
-## 4. Nhận tin nhắn — message:new
+## 4. message:new
 
-Server broadcast **tất cả** event vào conversation room, agent phải tự filter.
-
-**Payload nhận được:**
-```typescript
-{
-  _id: string;                    // Action ID — dùng để dedup
-  conversationId: string;
-  role: 'user' | 'assistant';
-  type?: 'message' | 'system' | 'tool_use' | 'tool_result' | 'thinking' | 'error';
-  content: string;
-  skipAgent?: boolean;            // Nếu true → bỏ qua
-  agentId?: string;               // Sender agent ID
-  userId?: string;                // Sender user ID
-  username?: string;
-  fullname?: string;
-  externalUsername?: string;      // Discord/Telegram username
-  externalUserId?: string;
-  channelId?: string;
-  connectionId?: string;
-  platform: string;
-  workId?: string;
-  attachments?: Array<{
-    type: string; url: string; filename?: string; mimeType?: string; size?: number;
-  }>;
-}
-```
-
-**Filter rules (bắt buộc):**
-```typescript
-const seenIds = new Set<string>();
-
-socket.on('message:new', (msg) => {
-  // 1. Dedup — tránh xử lý 2 lần khi có nhiều WS instance
-  if (msg._id && seenIds.has(msg._id)) return;
-  if (msg._id) {
-    seenIds.add(msg._id);
-    if (seenIds.size > 200) seenIds.delete(seenIds.values().next().value);
-  }
-
-  // 2. Chỉ xử lý user message
-  if (msg.role === 'assistant') return;            // Echo lại message của agent
-  if (msg.skipAgent === true) return;              // /ignore hoặc /igr
-  if (msg.type && msg.type !== 'message') return;  // system/tool_use/tool_result/thinking
-
-  // 3. Xử lý
-  handleUserMessage(msg);
-});
-```
-
----
-
-## 5. Gửi response — message:send
-
-```typescript
-socket.emit('message:send', {
-  conversationId: string;      // Required
-  role: 'assistant';
-  content: string;
-
-  // Optional
-  type?: 'message' | 'tool_use' | 'tool_result' | 'thinking';
-  workId?: string;
-  attachments?: Array<{
-    type: string; url: string; filename?: string; mimeType?: string; size?: number;
-  }>;
-  sources?: Array<{
-    type: string; content: string; score?: number; label?: string;
-    collectionId?: string; url?: string; toolName?: string;
-  }>;
-});
-```
-
----
-
-## 6. Nhận lệnh — agent:command
-
-Server gửi khi admin nhắn slash command (`/inspect`, `/reload`, `/sleep`, `/wake`) hoặc trigger từ platform (Discord/Telegram).
+**Mục đích:** Server broadcast tất cả sự kiện trong conversation room vào event này — bao gồm message của user, response của agent, các internal step. Agent phải tự filter để chỉ xử lý đúng tin nhắn của user.
 
 **Payload:**
-```typescript
-socket.on('agent:command', (payload: {
-  type: 'inspect' | 'reload' | 'sleep' | 'wake';
-  conversationId?: string;
-  reason?: string;
-}) => {
-  switch (payload.type) {
-    case 'inspect':
-      // Trả về runtime info dưới dạng system message
-      // emit message:send với type: 'system' và nội dung JSON runtime state
-      break;
-    case 'reload':
-      // Re-fetch config từ AIWM (gọi lại /agents/connect)
-      break;
-    case 'sleep':
-      // Dừng nhận task mới
-      break;
-    case 'wake':
-      // Resume nhận task
-      break;
-  }
-});
-```
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `_id` | string | Action ID — dùng để dedup |
+| `conversationId` | string | |
+| `role` | `'user' \| 'assistant'` | |
+| `type` | `'message' \| 'system' \| 'tool_use' \| 'tool_result' \| 'thinking' \| 'error'` | |
+| `content` | string | |
+| `skipAgent` | boolean, optional | `true` = bỏ qua, không xử lý |
+| `userId` | string, optional | Sender user ID |
+| `agentId` | string, optional | Sender agent ID |
+| `username` | string, optional | |
+| `fullname` | string, optional | |
+| `externalUsername` | string, optional | Username trên Discord/Telegram |
+| `externalUserId` | string, optional | User ID trên Discord/Telegram |
+| `platform` | string | `'portal'`, `'discord'`, `'telegram'`, ... |
+| `channelId` | string, optional | Platform channel ID |
+| `connectionId` | string, optional | Connection ID (Discord/Telegram connection) |
+| `workId` | string, optional | Work item liên quan |
+| `attachments` | object[], optional | File đính kèm |
 
-> **Lưu ý:** Các command `stop`, `start`, `restart`, `update` được xử lý ở tầng Node (system-managed), agent không nhận các command này trực tiếp.
+**Filter rules — bắt buộc phải áp dụng:**
 
----
+| Điều kiện | Hành động | Lý do |
+|-----------|-----------|-------|
+| `_id` đã thấy | Bỏ qua | Dedup khi có nhiều WS instance |
+| `role === 'assistant'` | Bỏ qua | Echo lại response của chính agent |
+| `skipAgent === true` | Bỏ qua | Tin nhắn dùng `/ignore` hoặc `/igr` |
+| `type` khác `'message'` | Bỏ qua | Internal steps (tool_use, thinking, ...) |
 
-## 7. Disconnect
-
-```
-POST /agents/disconnect
-Authorization: Bearer <accessToken>
-Body: { "reason": "graceful shutdown" }   // optional
-```
-
-Gọi khi shutdown graceful (SIGINT/SIGTERM). Server sẽ xóa socket khỏi Redis presence và broadcast `presence:update { status: 'offline' }`.
+Dedup set nên giới hạn tối đa ~200 entries, rotate oldest khi đầy.
 
 ---
 
-## 8. Token refresh
+## 5. message:send
 
-JWT expire sau 24h. Cần reconnect trước khi hết hạn:
+**Mục đích:** Gửi response của agent vào conversation.
 
-```typescript
-// Reconnect mỗi 23h
-setInterval(async () => {
-  const newConfig = await post('/agents/connect', { id, secret });
-  socket.auth = { token: newConfig.accessToken };
-  socket.disconnect().connect();   // Reconnect với token mới
-}, 23 * 60 * 60 * 1000);
-```
+**Payload:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `conversationId` | string, required | |
+| `role` | string, required | `'assistant'` cho response thông thường |
+| `content` | string, required | Nội dung |
+| `type` | string, optional | Mặc định `'message'`. Dùng `'tool_use'`, `'tool_result'`, `'thinking'` cho internal steps |
+| `workId` | string, optional | Gắn message với work item |
+| `attachments` | object[], optional | File đính kèm |
+| `sources` | object[], optional | RAG sources hoặc references |
 
 ---
 
-## 9. Slash commands từ platform (Discord/Telegram)
+## 6. agent:command
 
-Khi user nhắn slash command trên Discord/Telegram, **Connection Worker** intercept trước khi forward tới agent:
+**Mục đích:** Server gửi lệnh điều khiển đến agent — từ admin nhắn slash command trên portal/Discord/Telegram, hoặc từ hệ thống tự động.
 
-| Command | Xử lý |
-|---------|-------|
-| `/ignore <text>` hoặc `/igr <text>` | Bỏ qua hoàn toàn — không lưu DB, không gửi tới agent |
+**Payload:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `type` | string | Loại lệnh (xem bảng dưới) |
+| `conversationId` | string, optional | Conversation liên quan |
+| `reason` | string, optional | Lý do (thường từ `/sleep <reason>`) |
+
+**Các command type agent nhận được:**
+
+| type | Mô tả | Agent nên làm gì |
+|------|-------|-----------------|
+| `inspect` | Yêu cầu runtime info | Emit `message:send` với `type: 'system'` chứa JSON runtime state (model, memory usage, isBusy, ...) |
+| `reload` | Reload config từ AIWM | Gọi lại `/agents/connect` để lấy instruction/tools mới, áp dụng mà không cần restart |
+| `sleep` | Dừng nhận task mới | Emit heartbeat `status: 'sleep'` và tạm dừng vòng lặp xử lý |
+| `wake` | Resume sau khi sleep | Emit heartbeat `status: 'idle'` và tiếp tục xử lý |
+
+> **Lưu ý:** Các command `stop`, `start`, `restart`, `update` được xử lý ở tầng Node (system-managed) — agent không bao giờ nhận các command này qua `agent:command`.
+
+---
+
+## 7. Slash commands từ platform
+
+Connection Worker intercept các slash command trước khi forward tin nhắn tới agent:
+
+| Command | Hành động |
+|---------|-----------|
+| `/ignore <text>` hoặc `/igr <text>` | Bỏ qua hoàn toàn — không lưu DB, không forward tới agent |
 | `/inspect` | Server emit `agent:command { type: 'inspect' }` |
 | `/reload` | Server emit `agent:command { type: 'reload' }` |
-| `/stop`, `/start`, `/restart` | Xử lý qua NodeGateway — agent không nhận |
-| `/sleep`, `/wake` | Server emit `agent:command { type: 'sleep' | 'wake' }` |
+| `/sleep [reason]` | Server emit `agent:command { type: 'sleep', reason }` |
+| `/wake` | Server emit `agent:command { type: 'wake' }` |
+| `/stop`, `/start`, `/restart`, `/update` | Xử lý qua NodeGateway — agent không nhận |
 
 ---
 
-## 10. Startup flow đầy đủ
+## 8. POST /agents/disconnect
 
-```typescript
-async function startAgent() {
-  // 1. Connect lấy config
-  const config = await post('/agents/connect', { id: AGENT_ID, secret: AGENT_SECRET });
+**Auth:** JWT (Bearer token)
 
-  // 2. Init Claude SDK hoặc framework từ config
-  initClaudeSDK({
-    model: config.deployment?.model,
-    systemPrompt: config.instruction.systemPrompt,
-    allowedFunctions: config.allowedFunctions,
-    mcpServers: config.mcpServers,
-  });
+**Request body:**
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `reason` | string, optional | Lý do disconnect |
 
-  // 3. Connect WS
-  const socket = io(`${WS_ORIGIN}/ws/chat`, {
-    auth: { token: config.accessToken },
-    transports: ['websocket'],
-    reconnection: true,
-    reconnectionDelay: 5000,
-  });
+Gọi khi shutdown graceful. Server xóa socket khỏi Redis presence và broadcast `presence:update { status: 'offline' }`.
 
-  // 4. Heartbeat
-  setInterval(() => {
-    socket.emit('agent:heartbeat', {
-      status: isBusy ? 'busy' : 'idle',
-      mcpConnected: true,
-      availableFunctions: config.allowedFunctions,
-    });
-  }, 30_000);
+---
 
-  // 5. Nhận message
-  const seenIds = new Set<string>();
-  socket.on('message:new', (msg) => {
-    if (msg._id && seenIds.has(msg._id)) return;
-    if (msg._id) { seenIds.add(msg._id); if (seenIds.size > 200) seenIds.delete(seenIds.values().next().value); }
-    if (msg.role === 'assistant') return;
-    if (msg.skipAgent === true) return;
-    if (msg.type && msg.type !== 'message') return;
-    handleMessage(msg, socket, config);
-  });
+## 9. presence:update
 
-  // 6. Nhận command
-  socket.on('agent:command', (cmd) => handleCommand(cmd, socket));
+Server broadcast event này khi agent hoặc user thay đổi trạng thái online/offline.
 
-  // 7. Token refresh mỗi 23h
-  setInterval(() => startAgent(), 23 * 60 * 60 * 1000);
-
-  // 8. Graceful shutdown
-  process.on('SIGTERM', async () => {
-    await post('/agents/disconnect', {}, { Authorization: `Bearer ${config.accessToken}` });
-    socket.disconnect();
-    process.exit(0);
-  });
-}
+**Payload (agent):**
+```
+{ type: 'agent', agentId, status: 'online' | 'offline', timestamp }
 ```
 
 ---
 
-## Tóm tắt endpoints
+## Tóm tắt
+
+**Endpoints:**
 
 | Endpoint | Auth | Mô tả |
 |----------|------|-------|
-| `POST /agents/connect` | Public | Lấy JWT + config. Body: `{id, secret, version?}` |
-| `POST /agents/heartbeat` | JWT | HTTP heartbeat fallback. Body: AgentHeartbeatDto |
-| `POST /agents/disconnect` | JWT | Graceful disconnect. Body: `{reason?}` |
-| ~~`POST /agents/:id/connect`~~ | Public | **Deprecated** — dùng endpoint trên |
-| ~~`POST /agents/:id/heartbeat`~~ | JWT | **Deprecated** — dùng WS hoặc `/agents/heartbeat` |
+| `POST /agents/connect` | Public | Xác thực, lấy JWT + full config |
+| `POST /agents/heartbeat` | JWT | HTTP heartbeat (fallback) |
+| `POST /agents/disconnect` | JWT | Graceful disconnect |
+| ~~`POST /agents/:id/connect`~~ | Public | **Deprecated** |
+| ~~`POST /agents/:id/heartbeat`~~ | JWT | **Deprecated** |
 
-## Tóm tắt WS events
+**WS Events:**
 
 | Event | Chiều | Mô tả |
 |-------|-------|-------|
-| `agent:heartbeat` | emit → ack | Báo status, nhận work assignment |
-| `message:new` | server → agent | Tin nhắn trong conversation (cần filter) |
+| `agent:heartbeat` | agent → server (ack) | Báo status, nhận work assignment |
+| `message:new` | server → agent | Tin nhắn trong conversation — phải filter |
 | `message:send` | agent → server | Gửi response |
-| `agent:command` | server → agent | Lệnh từ admin: inspect, reload, sleep, wake |
-| `presence:update` | server → all | Thông báo online/offline của agent/user |
+| `agent:command` | server → agent | Lệnh điều khiển: inspect, reload, sleep, wake |
+| `presence:update` | server → all | Thông báo online/offline |
