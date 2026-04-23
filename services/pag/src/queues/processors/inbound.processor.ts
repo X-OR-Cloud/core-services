@@ -15,6 +15,7 @@ import { MemoryProducer } from '../producers/memory.producer';
 import { TaskProducer } from '../producers/task.producer';
 import { TasksService } from '../../modules/tasks/tasks.service';
 import { QuotaService } from '../../modules/quota/quota.service';
+import { PlansService } from '../../modules/plans/plans.service';
 
 interface TaskBlock {
   title: string;
@@ -59,6 +60,7 @@ export class InboundProcessor extends WorkerHost {
     private taskProducer: TaskProducer,
     private tasksService: TasksService,
     private quotaService: QuotaService,
+    private plansService: PlansService,
   ) {
     super();
     const apiKey = process.env['GOOGLE_API_KEY'];
@@ -125,7 +127,11 @@ export class InboundProcessor extends WorkerHost {
         (soul as any)._id.toString(),
       );
 
-      // 5a. Check daily chat quota (atomic check-and-consume)
+      // 5a. Load plan+quota context for LLM
+      const quotaSummary = await this.quotaService.getUserQuotaSummary(data.platformUserId);
+      const planDoc = await this.plansService.findBySlug(quotaSummary.planSlug);
+
+      // 5c. Check daily chat quota (atomic check-and-consume)
       const quotaResult = await this.quotaService.tryConsumeChatQuota(data.platformUserId);
       if (!quotaResult.allowed) {
         const planName = this.getPlanDisplayName(quotaResult.planSlug);
@@ -145,7 +151,7 @@ export class InboundProcessor extends WorkerHost {
         throw new Error('GOOGLE_API_KEY not configured');
       }
 
-      const contents = this.buildContents(soul, memories, recentMessages, data.messageText, pendingTasks);
+      const contents = this.buildContents(soul, memories, recentMessages, data.messageText, pendingTasks, quotaSummary, planDoc);
       const result = await this.genAI.models.generateContent({
         model: soul.llm?.model || 'gemini-2.5-flash',
         contents,
@@ -194,7 +200,7 @@ export class InboundProcessor extends WorkerHost {
       if (quotaResult.warningNeeded && quotaResult.limit !== null) {
         const remaining = quotaResult.limit - quotaResult.messageCount;
         const planName = this.getPlanDisplayName(quotaResult.planSlug);
-        const warningMsg = `⚠️ Bạn còn ${remaining}/${quotaResult.limit} tin nhắn hôm nay (gói ${planName}). Nâng cấp lên Immortal để không bị gián đoạn nhé!`;
+        const warningMsg = `⚠️ Bạn còn ${remaining} tin nhắn hôm nay (gói ${planName}, giới hạn ${quotaResult.limit}/ngày).\nNâng cấp lên Immortal để có 200 tin/ngày + 30 task đang chờ + nhắc nhở lặp lại nhé!`;
         await this.sendZaloReply(data.channelId, data.platformUserId, warningMsg);
       }
 
@@ -270,6 +276,44 @@ export class InboundProcessor extends WorkerHost {
         content: reply,
       }, this.systemContext);
       return { processed: true, taskCommand: 'quota_check' };
+    }
+
+    // "plan" — show current plan card (instant, no LLM)
+    if (text === 'plan' || text === 'gói của tôi' || text === 'gói của mình') {
+      const summary = await this.quotaService.getUserQuotaSummary(data.platformUserId);
+      const planDoc = await this.plansService.findBySlug(summary.planSlug);
+      const planName = planDoc?.name || this.getPlanDisplayName(summary.planSlug);
+
+      const expiryLine = summary.planSlug === 'mortal'
+        ? '− Gói: Mortal (miễn phí)'
+        : `− Gói: ${planName}`;
+
+      let chatLine: string;
+      if (summary.chat.limit === null) {
+        chatLine = '− Tin nhắn/ngày: không giới hạn';
+      } else {
+        const remaining = Math.max(0, summary.chat.limit - summary.chat.messageCount);
+        chatLine = `− Tin nhắn/ngày: ${summary.chat.limit} (hôm nay dùng ${summary.chat.messageCount}, còn ${remaining})`;
+      }
+
+      let taskLine: string;
+      if (summary.tasks.limit === null) {
+        taskLine = `− Tasks tối đa: không giới hạn (đang dùng ${summary.tasks.activeCount})`;
+      } else {
+        taskLine = `− Tasks tối đa: ${summary.tasks.limit} đang chờ (đang dùng ${summary.tasks.activeCount})`;
+      }
+
+      const recurringLine = `− Nhắc nhở lặp lại: ${summary.features.recurringTasks ? 'có' : 'không'}`;
+
+      const reply = `📋 Thông tin gói của bạn:\n${expiryLine}\n${chatLine}\n${taskLine}\n${recurringLine}`;
+
+      await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: reply,
+      }, this.systemContext);
+      return { processed: true, taskCommand: 'plan_info' };
     }
 
     // "xong" or "done" — mark most recent notified task as done
@@ -449,7 +493,7 @@ export class InboundProcessor extends WorkerHost {
   /**
    * Build Gemini API contents array from soul config, memories, history, and current message
    */
-  private buildContents(soul: any, memories: any[], recentMessages: any[], currentMessage: string, pendingTasks: any[] = []): string {
+  private buildContents(soul: any, memories: any[], recentMessages: any[], currentMessage: string, pendingTasks: any[] = [], quotaSummary?: any, planDoc?: any): string {
     const parts: string[] = [];
 
     // System prompt + timezone
@@ -482,6 +526,19 @@ Quy tắc:
       }
     } else {
       parts.push('\nEm chưa biết nhiều về người dùng này. Nếu họ hỏi em nhớ gì, hãy nói em chưa biết nhiều và muốn tìm hiểu thêm.');
+    }
+
+    // Plan & quota context
+    if (quotaSummary && planDoc) {
+      const planName = planDoc.name || this.getPlanDisplayName(quotaSummary.planSlug);
+      const chatLine = quotaSummary.chat.limit === null
+        ? 'không giới hạn'
+        : `${quotaSummary.chat.messageCount}/${quotaSummary.chat.limit} đã dùng (còn ${Math.max(0, quotaSummary.chat.limit - quotaSummary.chat.messageCount)})`;
+      const taskLine = quotaSummary.tasks.limit === null
+        ? `${quotaSummary.tasks.activeCount} (không giới hạn)`
+        : `${quotaSummary.tasks.activeCount}/${quotaSummary.tasks.limit} slot`;
+      const recurringLine = quotaSummary.features.recurringTasks ? 'có' : 'không';
+      parts.push(`\nTHÔNG TIN GÓI CỦA NGƯỜI DÙNG:\n− Gói hiện tại: ${planName}\n− Tin nhắn hôm nay: ${chatLine}\n− Tasks đang chờ: ${taskLine}\n− Nhắc nhở lặp lại: ${recurringLine}\nNếu người dùng hỏi về plan, quota, gói dịch vụ, số tin nhắn còn lại — hãy dùng thông tin trên để trả lời chính xác, thân thiện.`);
     }
 
     // Pending tasks context
