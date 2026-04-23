@@ -14,7 +14,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
-import { redisConfig } from '../../config/redis.config';
 import { PresenceService } from '../presence/presence.service';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { Conversation, ConversationDocument } from '../conversation/conversation.schema';
@@ -54,9 +53,16 @@ export class AgentGateway
       this.logger.log(`Skipping Redis subscriptions in MODE=${mode}`);
       return;
     }
-
-    this.redisSub = new Redis(redisConfig);
-    this.redisPub = new Redis(redisConfig);
+    const cfg = {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      username: process.env.REDIS_USERNAME || undefined,
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: parseInt(process.env.REDIS_DB || '0', 10),
+      enableReadyCheck: false,
+    };
+    this.redisSub = new Redis(cfg);
+    this.redisPub = new Redis(cfg);
 
     await this.redisSub.subscribe('agent:join-room', 'chat:message-new', 'outbound:command');
 

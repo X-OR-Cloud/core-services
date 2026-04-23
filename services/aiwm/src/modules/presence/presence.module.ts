@@ -1,32 +1,35 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { PresenceService } from './presence.service';
-import { ConfigModule } from '@nestjs/config';
-
-function buildRedisUrl(): string {
-  if (process.env.REDIS_URL) return process.env.REDIS_URL;
-  const host = process.env.REDIS_HOST || 'localhost';
-  const port = process.env.REDIS_PORT || '6379';
-  const user = process.env.REDIS_USERNAME || '';
-  const pass = process.env.REDIS_PASSWORD || '';
-
-  console.log(`Using Redis configuration: host=${host}, port=${port}, user=${user ? '***' : '(none)'}, pass=${pass ? '***' : '(none)'}`);
-  return pass
-    ? `redis://${user}:${encodeURIComponent(pass)}@${host}:${port}`
-    : `redis://${host}:${port}`;
-}
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    RedisModule.forRoot({
-      type: 'single',
-      url: buildRedisUrl(),
-      options: {
-        enableReadyCheck: false,
-        retryStrategy: (times: number) => Math.min(times * 50, 2000),
-        maxRetriesPerRequest: 3,
+    RedisModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => {
+        const url =
+          configService.get<string>('REDIS_URL') ||
+          (() => {
+            const host = configService.get<string>('REDIS_HOST') || 'localhost';
+            const port = configService.get<string>('REDIS_PORT') || '6379';
+            const user = configService.get<string>('REDIS_USERNAME') || '';
+            const pass = configService.get<string>('REDIS_PASSWORD') || '';
+            return pass
+              ? `redis://${user}:${encodeURIComponent(pass)}@${host}:${port}`
+              : `redis://${host}:${port}`;
+          })();
+        return {
+          type: 'single' as const,
+          url,
+          options: {
+            enableReadyCheck: false,
+            retryStrategy: (times: number) => Math.min(times * 50, 2000),
+            maxRetriesPerRequest: 3,
+          },
+        };
       },
+      inject: [ConfigService],
     }),
   ],
   providers: [PresenceService],
