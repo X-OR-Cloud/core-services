@@ -156,17 +156,27 @@ export class InboundProcessor extends WorkerHost {
 
       // 5.5. Parse and handle <task> blocks
       const { cleanResponse, tasks } = this.extractTaskBlocks(aiResponse);
+      let taskQuotaExceededMsg: string | undefined;
       if (tasks.length > 0) {
         for (const taskData of tasks) {
-          await this.createAndScheduleTask(taskData, data, soul);
+          const result = await this.createAndScheduleTask(taskData, data, soul);
+          // Collect at most 1 quota warning (don't repeat for each blocked task)
+          if (result.quotaExceededMsg && !taskQuotaExceededMsg) {
+            taskQuotaExceededMsg = result.quotaExceededMsg;
+          }
         }
       }
+
+      // Build final reply: cleanResponse + optional task quota warning
+      const finalResponse = taskQuotaExceededMsg
+        ? `${cleanResponse || aiResponse}\n\n${taskQuotaExceededMsg}`
+        : (cleanResponse || aiResponse);
 
       // 6. Save assistant message to DB (clean response without task blocks)
       await this.messagesService.create({
         conversationId: new Types.ObjectId(data.conversationId) as any,
         role: 'assistant',
-        content: cleanResponse || aiResponse,
+        content: finalResponse,
         llmProvider: 'google',
         llmModel: soul.llm?.model || 'gemini-2.5-flash',
         llmTokensUsed: {
@@ -177,7 +187,7 @@ export class InboundProcessor extends WorkerHost {
       }, this.systemContext);
 
       // 7. Strip markdown & reply via Zalo OA API
-      const plainResponse = this.stripMarkdown(cleanResponse || aiResponse);
+      const plainResponse = this.stripMarkdown(finalResponse);
       await this.sendZaloReply(data.channelId, data.platformUserId, plainResponse);
 
       // 7a. Send 80% quota warning as a follow-up message if needed
@@ -228,12 +238,30 @@ export class InboundProcessor extends WorkerHost {
     if (text === 'quota' || text === 'còn bao nhiêu' || text === 'còn bao nhiêu tin') {
       const summary = await this.quotaService.getUserQuotaSummary(data.platformUserId);
       const planName = this.getPlanDisplayName(summary.planSlug);
-      let reply: string;
+
+      // Chat quota line
+      let chatLine: string;
       if (summary.chat.limit === null) {
-        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n− Tin nhắn: không giới hạn`;
+        chatLine = '− Tin nhắn: không giới hạn';
       } else {
         const remaining = Math.max(0, summary.chat.limit - summary.chat.messageCount);
-        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n− Đã dùng: ${summary.chat.messageCount}/${summary.chat.limit} tin nhắn\n− Còn lại: ${remaining} tin nhắn\n− Reset lúc: 0h đêm nay (GMT+7)`;
+        chatLine = `− Tin nhắn: ${summary.chat.messageCount}/${summary.chat.limit} đã dùng (còn ${remaining})`;
+      }
+
+      // Task quota line
+      let taskLine: string;
+      if (summary.tasks.limit === null) {
+        taskLine = `− Tasks đang chờ: ${summary.tasks.activeCount} (không giới hạn)`;
+      } else {
+        const taskRemaining = Math.max(0, summary.tasks.limit - summary.tasks.activeCount);
+        taskLine = `− Tasks đang chờ: ${summary.tasks.activeCount}/${summary.tasks.limit} (còn ${taskRemaining} slot)`;
+      }
+
+      let reply: string;
+      if (summary.chat.limit === null) {
+        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n${chatLine}\n${taskLine}`;
+      } else {
+        reply = `📊 Quota hôm nay của bạn:\n− Gói: ${planName}\n${chatLine}\n${taskLine}\n− Reset lúc: 0h đêm nay (GMT+7)`;
       }
       await this.sendZaloReply(data.channelId, data.platformUserId, reply);
       await this.messagesService.create({
@@ -344,19 +372,24 @@ export class InboundProcessor extends WorkerHost {
   }
 
   /**
-   * Create a task document and schedule the BullMQ delayed job
+   * Create a task document and schedule the BullMQ delayed job.
+   * Returns { created, quotaExceededMsg } — quotaExceededMsg is set when quota is full.
    */
   private async createAndScheduleTask(
     taskData: TaskBlock,
     inboundData: InboundJobData,
     soul: any,
-  ): Promise<void> {
+  ): Promise<{ created: boolean; quotaExceededMsg?: string }> {
     try {
       // Check task quota before creating
       const taskQuota = await this.quotaService.checkTaskQuota(inboundData.platformUserId);
       if (!taskQuota.allowed) {
         this.logger.warn(`Task quota exceeded for user ${inboundData.platformUserId} (${taskQuota.activeCount}/${taskQuota.limit})`);
-        return;
+        const planName = this.getPlanDisplayName(taskQuota.planSlug);
+        return {
+          created: false,
+          quotaExceededMsg: `Lưu ý: Mình đã đạt giới hạn ${taskQuota.activeCount}/${taskQuota.limit} task đang chờ (gói ${planName}). Hoàn thành bớt task cũ hoặc nâng cấp gói để tạo thêm nhé!`,
+        };
       }
 
       const remindAt = taskData.remindAt
@@ -406,8 +439,10 @@ export class InboundProcessor extends WorkerHost {
       }
 
       this.logger.log(`Task created: ${taskId} — "${taskData.title}" (remind: ${remindAt?.toISOString() || 'none'})`);
+      return { created: true };
     } catch (error) {
       this.logger.error(`Failed to create task: ${error.message}`);
+      return { created: false };
     }
   }
 

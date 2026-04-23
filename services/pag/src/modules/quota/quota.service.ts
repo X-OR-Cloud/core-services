@@ -18,6 +18,7 @@ export interface TaskQuotaResult {
   allowed: boolean;
   activeCount: number;
   limit: number | null;
+  planSlug: string;
 }
 
 @Injectable()
@@ -85,10 +86,10 @@ export class QuotaService {
     }).exec();
 
     if (limit === null) {
-      return { allowed: true, activeCount, limit: null };
+      return { allowed: true, activeCount, limit: null, planSlug };
     }
 
-    return { allowed: activeCount < limit, activeCount, limit };
+    return { allowed: activeCount < limit, activeCount, limit, planSlug };
   }
 
   /**
