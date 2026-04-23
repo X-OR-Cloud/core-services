@@ -281,7 +281,21 @@ export class ConnectionRunner {
       });
 
       this.logger.debug(
-        `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}`,
+        `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}\n` +
+        JSON.stringify({
+          actionId,
+          conversationId: resolved.conversationId,
+          agentId: resolved.agentId,
+          role: 'user',
+          content: msg.text,
+          attachments: msg.attachments,
+          externalUserId: msg.externalUserId,
+          externalUsername: msg.externalUsername,
+          channelId: chatDest,
+          serverId: msg.serverId,
+          threadId,
+          platform: this.connection.provider,
+        }, null, 2),
       );
       this.writeLog('info', `Inbound message routed`, {
         provider: msg.provider,
