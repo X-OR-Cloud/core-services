@@ -2,12 +2,14 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { createHash } from 'crypto';
-import * as RssParser from 'rss-parser';
 import { QUEUE_NAMES, QUEUE_EVENTS } from '../../config/queue.config';
 import { NewsSourcesService } from '../../modules/news-sources/news-sources.service';
 import { NewsItemsService } from '../../modules/news-items/news-items.service';
 
-const rssParser = new RssParser({ timeout: 15000 });
+// rss-parser is CJS — require for correct constructor interop with webpack
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RssParserCtor = require('rss-parser');
+const rssParser = new RssParserCtor({ timeout: 15000 });
 
 function hashUrl(url: string): string {
   return createHash('sha256').update(url.trim().toLowerCase()).digest('hex');
