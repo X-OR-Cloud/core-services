@@ -316,16 +316,18 @@ export class ChatGateway
           if (!this.server) return;
           const { agentId, conversationId, command, reason } = JSON.parse(message);
           const agent = await this.agentService.findByIdInternal(agentId);
+          this.logger.log(`[outbound:command] /${command} agentId=${agentId} agentType=${agent?.type ?? 'NOT_FOUND'} conversationId=${conversationId}`);
           if (agent?.type === 'assistant' && this.redisPub) {
             await this.redisPub.publish(`chat:cmd:${agentId}`, JSON.stringify({ type: command, conversationId, reason }));
-            this.logger.debug(`[Redis] outbound:command /${command} → chat:cmd:${agentId}`);
+            this.logger.log(`[outbound:command] published → chat:cmd:${agentId}`);
           } else {
             const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+            this.logger.log(`[outbound:command] engineer path socketIds=${JSON.stringify(agentSocketIds)}`);
             if (agentSocketIds.length > 0) {
               this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
-              this.logger.debug(`[Redis] outbound:command /${command} → agentId=${agentId} sockets=${agentSocketIds.length}`);
+              this.logger.log(`[outbound:command] emitted agent:command → sockets=${agentSocketIds.length}`);
             } else {
-              this.logger.warn(`[Redis] outbound:command /${command} — agent ${agentId} not connected`);
+              this.logger.warn(`[outbound:command] /${command} — agent ${agentId} not connected (type=${agent?.type ?? 'NOT_FOUND'})`);
             }
           }
         } catch (err: any) {
