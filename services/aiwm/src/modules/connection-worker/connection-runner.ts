@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { inspect } from 'util';
 import { Connection, ConnectionLogLevel } from '../connection/connection.schema';
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
@@ -282,7 +283,7 @@ export class ConnectionRunner {
 
       this.logger.debug(
         `Inbound [${msg.provider}] ${msg.externalUsername} → agent ${resolved.agentId} conv ${resolved.conversationId}\n` +
-        JSON.stringify({
+        inspect({
           actionId,
           conversationId: resolved.conversationId,
           agentId: resolved.agentId,
@@ -295,7 +296,7 @@ export class ConnectionRunner {
           serverId: msg.serverId,
           threadId,
           platform: this.connection.provider,
-        }, null, 2),
+        }, { depth: null, colors: false }),
       );
       this.writeLog('info', `Inbound message routed`, {
         provider: msg.provider,
