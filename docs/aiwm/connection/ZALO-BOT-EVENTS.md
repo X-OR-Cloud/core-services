@@ -141,7 +141,9 @@ Người dùng gửi sticker.
 
 ### 4. `message.unsupported.received`
 
-Các loại message mà Zalo Bot API chưa hỗ trợ đầy đủ: **contact, quote tin nhắn, reaction, file, location, v.v.** Payload chỉ có metadata, **không có trường content.**
+Các loại message mà Zalo Bot API không expose nội dung: **file, contact, location, quote tin nhắn, reaction, v.v.** Payload chỉ có metadata, **không có trường content.**
+
+> Đã xác nhận qua test thực tế: file và contact đều trả về `message.unsupported.received` không có data.
 
 ```json
 {
