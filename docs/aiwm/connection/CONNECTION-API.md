@@ -46,13 +46,15 @@
 | `botToken` | `string` | Discord, Telegram, Zalo Bot | Token xác thực bot với nền tảng |
 | `applicationId` | `string` | Discord | Application/Client ID |
 | `webhookUrl` | `string` | Telegram | URL webhook công khai (nếu dùng webhook mode) |
-| `pollingMode` | `boolean` | Telegram | Dùng long-polling thay vì webhook (default: `true`) |
+| `pollingMode` | `boolean` | Telegram, Zalo Bot | Chế độ nhận tin: `true` = long-polling (default), `false` = webhook |
 | `appId` | `string` | Teams | Microsoft App ID |
 | `appPassword` | `string` | Teams | Azure AD client secret |
 | `tenantId` | `string` | Teams | Azure AD tenant ID |
 | `zaloSecretToken` | `string` | Zalo Bot | Secret token để validate header `X-Bot-Api-Secret-Token` khi nhận webhook |
 
 > **Bảo mật:** Trường `config` chỉ trả về ở `GET /connections/:id`, không có trong danh sách `GET /connections`.
+
+> **Zalo Bot — `pollingMode`:** Khi FE gọi `PUT` để đổi `config.pollingMode`, server tự động gọi `setWebhook` hoặc `deleteWebhook` lên Zalo platform. FE không cần thao tác thêm.
 
 #### `ConnectionRoute`
 
@@ -137,9 +139,7 @@ Authorization: Bearer <JWT>
     "pollingMode": true
   },
   "routes": [
-    {
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d"
-    }
+    { "agentId": "665f1a2b3c4d5e6f7a8b9c0d" }
   ]
 }
 ```
@@ -164,41 +164,54 @@ Authorization: Bearer <JWT>
 }
 ```
 
-**Request — Zalo Bot:**
+**Request — Zalo Bot (long-polling, mặc định):**
 ```json
 {
   "name": "Zalo CSKH Bot",
   "provider": "zalo-bot",
   "config": {
     "botToken": "12345689:abc-xyz",
+    "pollingMode": true,
     "zaloSecretToken": "my-webhook-secret"
   },
   "routes": [
-    {
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "allowAnonymous": true
-    }
+    { "agentId": "665f1a2b3c4d5e6f7a8b9c0d", "allowAnonymous": true }
   ]
 }
 ```
+
+**Request — Zalo Bot (webhook mode):**
+```json
+{
+  "name": "Zalo CSKH Bot",
+  "provider": "zalo-bot",
+  "config": {
+    "botToken": "12345689:abc-xyz",
+    "pollingMode": false,
+    "zaloSecretToken": "my-webhook-secret"
+  },
+  "routes": [
+    { "agentId": "665f1a2b3c4d5e6f7a8b9c0d", "allowAnonymous": true }
+  ]
+}
+```
+
+> Khi tạo mới với `pollingMode: false`, webhook **chưa** được đăng ký tự động. Cần gọi `PUT /connections/:id` với `config.pollingMode: false` sau khi connection đã tồn tại để trigger sync.
 
 **Response 201:**
 ```json
 {
   "_id": "684a1b2c3d4e5f6a7b8c9d0e",
   "name": "Zalo CSKH Bot",
-  "description": null,
   "provider": "zalo-bot",
   "status": "inactive",
   "config": {
     "botToken": "12345689:abc-xyz",
+    "pollingMode": true,
     "zaloSecretToken": "my-webhook-secret"
   },
   "routes": [
-    {
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "allowAnonymous": true
-    }
+    { "agentId": "665f1a2b3c4d5e6f7a8b9c0d", "allowAnonymous": true }
   ],
   "owner": { "orgId": "org123", "userId": "user456" },
   "createdBy": "user456",
@@ -227,7 +240,7 @@ Authorization: Bearer <JWT>
 | `status` | Lọc theo trạng thái | `?status=active` |
 | `name:regex` | Tìm theo tên | `?name:regex=support` |
 
-> Response **không bao gồm** `config` và `routes` (bảo mật botToken, giảm payload).
+> Response **không bao gồm** `config` và `routes`. Có thêm `routeCount` để hiển thị số route.
 
 **Response 200:**
 ```json
@@ -238,6 +251,7 @@ Authorization: Bearer <JWT>
       "name": "Zalo CSKH Bot",
       "provider": "zalo-bot",
       "status": "active",
+      "routeCount": 2,
       "owner": { "orgId": "org123", "userId": "user456" },
       "createdAt": "2026-04-23T08:00:00.000Z",
       "updatedAt": "2026-04-23T08:30:00.000Z"
@@ -269,6 +283,7 @@ Authorization: Bearer <JWT>
   "status": "active",
   "config": {
     "botToken": "12345689:abc-xyz",
+    "pollingMode": true,
     "zaloSecretToken": "my-webhook-secret"
   },
   "routes": [
@@ -288,11 +303,7 @@ Authorization: Bearer <JWT>
 
 **Response 404:**
 ```json
-{
-  "statusCode": 404,
-  "message": "Connection not found",
-  "error": "Not Found"
-}
+{ "statusCode": 404, "message": "Connection not found", "error": "Not Found" }
 ```
 
 ---
@@ -321,15 +332,19 @@ Tất cả fields đều optional. Dùng để đổi tên, cập nhật config,
 { "status": "active" }
 ```
 
-**Request — Đổi botToken:**
+**Request — Chuyển Zalo Bot sang webhook mode:**
 ```json
-{
-  "config": {
-    "botToken": "12345689:new-token",
-    "zaloSecretToken": "new-secret"
-  }
-}
+{ "config": { "pollingMode": false } }
 ```
+
+> Server tự động gọi `setWebhook` lên Zalo platform với URL `{AIWM_BASE_URL}/connections/{id}/webhook` và `secret_token` từ `config.zaloSecretToken`.
+
+**Request — Chuyển Zalo Bot về polling mode:**
+```json
+{ "config": { "pollingMode": true } }
+```
+
+> Server tự động gọi `deleteWebhook` lên Zalo platform.
 
 **Response 200:** Trả về document đã cập nhật (tương tự `GET /connections/:id`).
 
@@ -362,7 +377,7 @@ POST /connections/:id/routes
 Authorization: Bearer <JWT>
 ```
 
-Thêm một route vào cuối danh sách. Connection runner tự restart sau khi route thay đổi.
+Thêm một route vào cuối danh sách. Connection runner tự restart sau khi thêm route.
 
 **Body:**
 
@@ -376,7 +391,7 @@ Thêm một route vào cuối danh sách. Connection runner tự restart sau khi
 | `verboseActions` | `string[]` | ❌ | `[]` = message only, `['*']` = tất cả |
 | `verboseLogsChannelId` | `string` | ❌ | Channel nhận toàn bộ action logs |
 
-**Request — Route cho một group chat cụ thể (Zalo Bot):**
+**Request — Route cho một group chat Zalo:**
 ```json
 {
   "serverId": "1234567890",
@@ -409,21 +424,14 @@ Cập nhật một route theo index (0-based). Chỉ các field được gửi m
 
 **Request:**
 ```json
-{
-  "requireMention": true,
-  "verboseActions": ["*"]
-}
+{ "requireMention": true, "verboseActions": ["*"] }
 ```
 
 **Response 200:** Trả về Connection document với `routes` đã cập nhật.
 
-**Response 404 — Index không tồn tại:**
+**Response 404:**
 ```json
-{
-  "statusCode": 404,
-  "message": "Route index 5 not found",
-  "error": "Not Found"
-}
+{ "statusCode": 404, "message": "Route index 5 not found", "error": "Not Found" }
 ```
 
 ---
@@ -448,7 +456,7 @@ GET /connections/:id/logs
 Authorization: Bearer <JWT>
 ```
 
-Lấy debug logs của connection runner — ghi lại lifecycle: kết nối, routing, lỗi, v.v. Tối đa **200 entries** (FIFO, cũ nhất bị xóa khi đầy).
+Lấy debug logs của connection runner — ghi lại lifecycle: kết nối, routing, lỗi. Tối đa **200 entries** (FIFO, cũ nhất bị xóa khi đầy).
 
 > `logs` không có trong `GET /connections` hay `GET /connections/:id`.
 
@@ -464,16 +472,8 @@ Lấy debug logs của connection runner — ghi lại lifecycle: kết nối, r
 ```json
 {
   "logs": [
-    {
-      "level": "info",
-      "message": "Runner starting",
-      "time": "2026-04-23T07:00:00.000Z"
-    },
-    {
-      "level": "info",
-      "message": "Connected to zalo-bot",
-      "time": "2026-04-23T07:00:01.234Z"
-    },
+    { "level": "info", "message": "Runner starting", "time": "2026-04-23T07:00:00.000Z" },
+    { "level": "info", "message": "Connected to zalo-bot", "time": "2026-04-23T07:00:01.234Z" },
     {
       "level": "info",
       "message": "Inbound message routed",
@@ -505,19 +505,18 @@ POST /connections/:id/webhook
 
 > Không cần JWT. Xác thực theo từng provider.
 
-Endpoint nhận event từ nền tảng gửi vào. Dispatch theo `provider` của connection.
+Endpoint nhận event từ nền tảng. Dispatch theo `provider` của connection.
 
 | Provider | Xác thực | Hành động |
 |----------|----------|-----------|
 | `teams` | Verify JWT Bearer từ Microsoft Bot Service | Publish `inbound:teams:{id}` lên Redis |
 | `zalo-bot` | So sánh header `X-Bot-Api-Secret-Token` với `config.zaloSecretToken` | Publish `inbound:zalo-bot:{id}` lên Redis |
 
-**Cấu hình webhook URL cho Zalo Bot:**
+**Zalo Bot — webhook URL được đăng ký tự động:**
 ```
-https://api.your-domain.com/connections/<connectionId>/webhook
+{AIWM_SERVICE_URL}/connections/<connectionId>/webhook
 ```
-
-Đăng ký URL này trên [bot.zapps.me](https://bot.zapps.me) với secret token tương ứng với `config.zaloSecretToken`.
+Khi FE gọi `PUT /connections/:id` với `config.pollingMode: false`, server tự đăng ký URL này lên Zalo kèm `secret_token`. Không cần thao tác thủ công trên bot.zapps.me.
 
 **Teams — URL validation challenge:**
 ```
@@ -527,11 +526,7 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 
 **Response 400 — Secret không hợp lệ (Zalo Bot):**
 ```json
-{
-  "statusCode": 400,
-  "message": "Invalid X-Bot-Api-Secret-Token",
-  "error": "Bad Request"
-}
+{ "statusCode": 400, "message": "Invalid X-Bot-Api-Secret-Token", "error": "Bad Request" }
 ```
 
 ---
@@ -541,9 +536,9 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 | Method | URL | Auth | Mô tả |
 |--------|-----|------|-------|
 | `POST` | `/connections` | JWT | Tạo connection mới |
-| `GET` | `/connections` | JWT | Danh sách (không có config/routes) |
+| `GET` | `/connections` | JWT | Danh sách (không có config/routes, có routeCount) |
 | `GET` | `/connections/:id` | JWT | Chi tiết (có config/routes) |
-| `PUT` | `/connections/:id` | JWT | Cập nhật connection |
+| `PUT` | `/connections/:id` | JWT | Cập nhật; Zalo Bot tự sync webhook khi đổi pollingMode |
 | `DELETE` | `/connections/:id` | JWT | Xóa mềm connection |
 | `GET` | `/connections/:id/logs` | JWT | Debug logs của runner |
 | `POST` | `/connections/:id/routes` | JWT | Thêm route |
@@ -561,29 +556,40 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 2. Copy **Bot Token** và **Application ID**
 3. Tạo Connection với `provider: "discord"`, `config.botToken`, `config.applicationId`
 4. Thêm route với `serverId` (Guild ID) và/hoặc `channelId`
-5. Đặt `status: "active"` để khởi động runner
+5. Đặt `status: "active"`
 
 ### Telegram
 1. Tạo bot qua [@BotFather](https://t.me/BotFather), lấy token
-2. Tạo Connection với `provider: "telegram"`, `config.botToken`
-3. **Polling mode** (dev/đơn giản): `config.pollingMode: true` — không cần cấu hình thêm
-4. **Webhook mode** (production): set `config.webhookUrl` = URL công khai của server
-5. Route: `serverId` = chat.id của group (lấy từ Telegram API), bỏ trống = nhận từ mọi chat
+2. Tạo Connection với `provider: "telegram"`, `config.botToken`, `config.pollingMode: true`
+3. Thêm route (`serverId` = chat.id của group, bỏ trống = nhận từ mọi chat)
+4. Đặt `status: "active"`
 
 ### Teams
-1. Đăng ký bot tại [Azure Bot Service](https://portal.azure.com)
-2. Lấy **App ID**, **App Password**, **Tenant ID**
-3. Tạo Connection với `provider: "teams"`, điền đủ `config`
-4. Đăng ký webhook URL `POST /connections/:id/webhook` trong Azure Bot Service
-5. Route: `serverId` = Teams team ID, `channelId` = channel ID
+1. Đăng ký bot tại [Azure Bot Service](https://portal.azure.com), lấy **App ID**, **App Password**, **Tenant ID**
+2. Tạo Connection với `provider: "teams"`, điền đủ `config`
+3. Đăng ký webhook URL `{AIWM_SERVICE_URL}/connections/:id/webhook` trong Azure Bot Service
+4. Thêm route (`serverId` = Teams team ID, `channelId` = channel ID)
+5. Đặt `status: "active"`
 
 ### Zalo Bot
-1. Tạo bot tại [bot.zapps.me](https://bot.zapps.me) (tên phải bắt đầu bằng "Bot")
-2. Lấy **Bot Token** từ Zalo Bot Creator
-3. Tạo Connection với `provider: "zalo-bot"`, `config.botToken`, `config.zaloSecretToken`
-4. Đăng ký webhook URL `POST /connections/:id/webhook` trên bot.zapps.me với secret token tương ứng
-5. Route: `serverId` = chat.id của group/user (lấy từ event payload), bỏ trống = nhận từ mọi chat
-6. Đặt `status: "active"`
+
+#### Long-polling mode (dev / mạng nội bộ)
+1. Tạo bot tại [bot.zapps.me](https://bot.zapps.me) (tên phải bắt đầu bằng "Bot"), lấy **Bot Token**
+2. Tạo Connection:
+```json
+{
+  "provider": "zalo-bot",
+  "config": { "botToken": "...", "pollingMode": true, "zaloSecretToken": "..." }
+}
+```
+3. Thêm route, đặt `status: "active"` → bot tự poll
+
+#### Webhook mode (production)
+1. Tạo Connection với `pollingMode: true` trước (để lưu botToken)
+2. Thêm route, đặt `status: "active"`
+3. Gọi `PUT /connections/:id` với `{ "config": { "pollingMode": false } }` → server tự đăng ký webhook lên Zalo
+
+> **`serverId`** trong route = `chat.id` từ Zalo event payload. Có thể xem trong server log (`body=...`) khi Zalo gửi webhook lần đầu.
 
 ---
 
@@ -592,35 +598,36 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 ```
 Platform Message
       │
-      ├── Discord/Telegram: Adapter (polling/webhook) ──► NormalizedInbound
-      └── Teams/Zalo Bot:   HTTP POST /connections/:id/webhook
-                                    │
-                               Redis publish
-                            inbound:{provider}:{id}
-                                    │
-                           ConnectionWorkerService
-                           (pmessage handler)
-                                    │
-                           ConnectionRunner
-                           ._handleInbound()
-                                    │
-                            RoutingService
-                         (match route → agentId)
-                                    │
-                        Redis: chat:message-new
-                                    │
-                            ChatGateway (API)
-                                    │
-                              Agent xử lý
-                                    │
-                        Redis: outbound:message
-                                    │
-                       ConnectionWorkerService
-                         .handleOutbound()
-                                    │
-                       Adapter.send() → Platform
+      ├── Discord / Telegram:  Adapter (polling/webhook) ──► NormalizedInbound
+      └── Teams / Zalo Bot:    HTTP POST /connections/:id/webhook
+                                      │
+                                 Redis publish
+                              inbound:{provider}:{id}
+                                      │
+                             ConnectionWorkerService
+                             (pmessage handler)
+                                      │
+                             ConnectionRunner
+                             ._handleInbound()
+                                      │
+                              RoutingService
+                           (match route → agentId)
+                                      │
+                          Redis: chat:message-new
+                                      │
+                              ChatGateway (API)
+                                      │
+                                Agent xử lý
+                                      │
+                          Redis: outbound:message
+                                      │
+                         ConnectionWorkerService
+                           .handleOutbound()
+                                      │
+                         Adapter.send() → Platform
 ```
 
 - **`ConnectionWorkerService`** load tất cả Connection `status=active` khi khởi động, tạo `ConnectionRunner` cho từng cái.
 - Health check mỗi **30 giây**: stop runner bị deactivate, start runner mới được activate.
-- Khi route thay đổi (`PUT /connections/:id` hoặc route endpoints), runner tự restart để áp dụng config mới.
+- Khi config/route thay đổi, runner tự restart để áp dụng config mới.
+- **Zalo Bot webhook sync**: `PUT /connections/:id` với `config.pollingMode` thay đổi → server gọi Zalo API `setWebhook`/`deleteWebhook` tự động.
