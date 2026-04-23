@@ -8,6 +8,7 @@ export const QUEUE_NAMES = {
   MEMORY_EXTRACT: 'pag-memory-extract',
   TOKEN_REFRESH: 'pag-token-refresh',
   TASKS: 'pag-tasks',
+  PLAN_LIFECYCLE: 'pag-plan-lifecycle',
   
   // Dynamic queue getter (future use)
   getInboundQueue: getInboundQueueName,
@@ -28,4 +29,7 @@ export const QUEUE_EVENTS = {
 
   // Task reminders
   TASK_REMIND: 'task.remind',
+
+  // Plan lifecycle
+  PLAN_LIFECYCLE: 'plan.lifecycle',
 };

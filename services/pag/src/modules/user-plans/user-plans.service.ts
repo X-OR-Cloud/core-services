@@ -48,6 +48,28 @@ export class UserPlansService {
   }
 
   /**
+   * Get users whose paid plan expires within the given number of days.
+   */
+  async getExpiringSoon(days: number): Promise<UserPlanDocument[]> {
+    const now = new Date();
+    const future = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    return this.userPlanModel.find({
+      planSlug: { $ne: 'mortal' },
+      expiresAt: { $gt: now, $lte: future },
+    }).exec();
+  }
+
+  /**
+   * Get users whose paid plan has already expired (but not yet downgraded).
+   */
+  async getExpired(): Promise<UserPlanDocument[]> {
+    return this.userPlanModel.find({
+      planSlug: { $ne: 'mortal' },
+      expiresAt: { $lte: new Date() },
+    }).exec();
+  }
+
+  /**
    * Check if plan is expired and downgrade to mortal if needed.
    * Returns the effective plan slug.
    */
