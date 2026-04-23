@@ -140,8 +140,13 @@ export class ZaloBotAdapter extends BaseAdapter {
         }
       } catch (err: any) {
         if (!this.stopped) {
-          this.logger.error(`Zalo polling error: ${err.message}`);
-          this.emitError(err);
+          // 408 = long-poll timeout (no new messages) — expected, retry silently
+          if (err.message?.includes('[408]')) {
+            this.logger.debug('Zalo long-poll timeout, retrying...');
+          } else {
+            this.logger.error(`Zalo polling error: ${err.message}`);
+            this.emitError(err);
+          }
         }
       }
       if (!this.stopped) {
