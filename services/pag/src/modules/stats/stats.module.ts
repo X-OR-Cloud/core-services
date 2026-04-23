@@ -5,6 +5,7 @@ import { Channel, ChannelSchema } from '../channels/channels.schema';
 import { Memory, MemorySchema } from '../memories/memories.schema';
 import { Task, TaskSchema } from '../tasks/tasks.schema';
 import { UserPlansModule } from '../user-plans/user-plans.module';
+import { QuotaModule } from '../quota/quota.module';
 import { StatsService } from './stats.service';
 import { StatsController } from './stats.controller';
 
@@ -17,6 +18,7 @@ import { StatsController } from './stats.controller';
       { name: Task.name, schema: TaskSchema },
     ]),
     UserPlansModule,
+    QuotaModule,
   ],
   providers: [StatsService],
   controllers: [StatsController],
