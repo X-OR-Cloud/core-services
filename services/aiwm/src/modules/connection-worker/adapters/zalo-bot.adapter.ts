@@ -174,11 +174,12 @@ export class ZaloBotAdapter extends BaseAdapter {
     if (eventName === 'message.text.received') {
       text = msg.text ?? '';
     } else if (eventName === 'message.image.received') {
-      text = msg.caption ?? '';
+      text = msg.caption || '[image]';
       if (msg.photo_url) {
         attachments.push({ type: 'image', url: msg.photo_url });
       }
     } else if (eventName === 'message.sticker.received') {
+      text = '[sticker]';
       if (msg.url) {
         attachments.push({ type: 'image', url: msg.url, fileId: msg.sticker });
       }
