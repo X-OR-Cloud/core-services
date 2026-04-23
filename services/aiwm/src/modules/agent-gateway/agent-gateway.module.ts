@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AgentGateway } from './agent.gateway';
-import { ChatModule } from '../chat/chat.module';
+import { PresenceModule } from '../presence/presence.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { AgentModule } from '../agent/agent.module';
 import { ActionModule } from '../action/action.module';
@@ -20,8 +20,7 @@ import { ActionModule } from '../action/action.module';
       inject: [ConfigService],
     }),
 
-    // ChatModule already registers RedisModule — no need to re-register here
-    ChatModule,
+    PresenceModule,
     ConversationModule,
     AgentModule,
     ActionModule,

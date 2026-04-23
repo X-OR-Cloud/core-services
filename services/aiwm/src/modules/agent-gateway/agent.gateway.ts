@@ -13,7 +13,7 @@ import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.config';
-import { ChatService } from '../chat/chat.service';
+import { PresenceService } from '../presence/presence.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { AgentService } from '../agent/agent.service';
 import { ActionService } from '../action/action.service';
@@ -33,7 +33,7 @@ export class AgentGateway
   private redisPub: Redis | null = null;
 
   constructor(
-    private readonly chatService: ChatService,
+    private readonly presenceService: PresenceService,
     private readonly jwtService: JwtService,
     private readonly conversationService: ConversationService,
     private readonly agentService: AgentService,
@@ -61,7 +61,7 @@ export class AgentGateway
         try {
           const { agentId, conversationId } = JSON.parse(message);
           if (!this.server) return;
-          const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+          const agentSocketIds = await this.presenceService.getAgentSocketIds(agentId);
           if (agentSocketIds.length > 0) {
             this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
             this.logger.debug(
@@ -111,7 +111,7 @@ export class AgentGateway
 
           // Ensure agent sockets are in the conversation room, then broadcast message:new
           if (!skipAgent && agentId) {
-            const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+            const agentSocketIds = await this.presenceService.getAgentSocketIds(agentId);
             if (agentSocketIds.length > 0) {
               this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
             }
@@ -153,7 +153,7 @@ export class AgentGateway
           // AgentGateway only handles engineer agents
           if (agent?.type !== 'engineer') return;
 
-          const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+          const agentSocketIds = await this.presenceService.getAgentSocketIds(agentId);
           this.logger.log(
             `[outbound:command] /${command} agentId=${agentId} socketIds=${JSON.stringify(agentSocketIds)}`,
           );
@@ -217,8 +217,8 @@ export class AgentGateway
         (client.handshake.query?.token as string) ||
         '';
 
-      await this.chatService.setAgentOnline(agentId, client.id);
-      await this.chatService.setSocketSession(client.id, {
+      await this.presenceService.setAgentOnline(agentId, client.id);
+      await this.presenceService.setSocketSession(client.id, {
         type: 'agent',
         actorId: agentId,
         conversationId: '',
@@ -231,8 +231,8 @@ export class AgentGateway
         for (const conv of activeConvs) {
           const convId = (conv as any)._id.toString();
           client.join(`conversation:${convId}`);
-          await this.chatService.updateSocketConversation(client.id, convId);
-          await this.chatService.addSocketToConversation(convId, client.id);
+          await this.presenceService.updateSocketConversation(client.id, convId);
+          await this.presenceService.addSocketToConversation(convId, client.id);
         }
         if (activeConvs.length > 0) {
           this.logger.log(
@@ -265,9 +265,9 @@ export class AgentGateway
     if (client.data.type === 'agent' && client.data.agentId) {
       const agentId: string = client.data.agentId;
       const conversationId: string = client.data.conversationId;
-      await this.chatService.setAgentOffline(agentId, client.id);
-      await this.chatService.clearAgentStatus(agentId);
-      await this.chatService.removeSocketSession(client.id, conversationId);
+      await this.presenceService.setAgentOffline(agentId, client.id);
+      await this.presenceService.clearAgentStatus(agentId);
+      await this.presenceService.removeSocketSession(client.id, conversationId);
       this.logger.debug(
         `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${agentId}`,
       );
@@ -304,12 +304,12 @@ export class AgentGateway
       const { agentId, token } = client.data;
       client.data.lastHeartbeatAt = Date.now();
 
-      const presenceSockets = await this.chatService.getAgentSocketIds(agentId);
+      const presenceSockets = await this.presenceService.getAgentSocketIds(agentId);
       this.logger.debug(
         `[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)} mcpConnected=${data.mcpConnected ?? 'n/a'} availableFunctions=${data.availableFunctions?.length ?? 'n/a'}`,
       );
 
-      await this.chatService.setAgentStatus(agentId, {
+      await this.presenceService.setAgentStatus(agentId, {
         status: data.status === 'sleep' ? 'idle' : data.status,
         lastHeartbeat: new Date().toISOString(),
         conversationId: client.data.conversationId || '',
