@@ -80,7 +80,8 @@ export class ZaloBotAdapter extends BaseAdapter {
   }
 
   async send(target: AdapterTarget, text: string, _options?: SendOptions): Promise<void> {
-    const chunks = this._chunkText(text, MAX_TEXT_LENGTH);
+    const plain = this._stripMarkdown(text);
+    const chunks = this._chunkText(plain, MAX_TEXT_LENGTH);
     for (const chunk of chunks) {
       await this.callApi('sendMessage', { chat_id: target.channelId, text: chunk });
     }
@@ -203,6 +204,36 @@ export class ZaloBotAdapter extends BaseAdapter {
     };
 
     this.emitMessage(normalized);
+  }
+
+  private _stripMarkdown(text: string): string {
+    return text
+      // Code blocks (``` ... ```) — replace with content only
+      .replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => code.trim())
+      // Inline code
+      .replace(/`([^`]+)`/g, '$1')
+      // Bold/italic: ***text***, **text**, *text*, ___text___, __text__, _text_
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+      .replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
+      // Strikethrough ~~text~~
+      .replace(/~~([^~]+)~~/g, '$1')
+      // Headers # ## ###
+      .replace(/^#{1,6}\s+/gm, '')
+      // Blockquotes
+      .replace(/^>\s+/gm, '')
+      // Horizontal rules
+      .replace(/^[-*_]{3,}\s*$/gm, '')
+      // Links [text](url) → text (url)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+      // Images ![alt](url) → alt
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      // Unordered list markers
+      .replace(/^[\s]*[-*+]\s+/gm, '- ')
+      // Ordered list markers (keep numbering)
+      .replace(/^[\s]*(\d+)\.\s+/gm, '$1. ')
+      // Collapse multiple blank lines
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   private _chunkText(text: string, maxLength: number): string[] {
