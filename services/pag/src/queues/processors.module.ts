@@ -8,6 +8,7 @@ import { HeartbeatProcessor } from './processors/heartbeat.processor';
 import { TokenRefreshProcessor } from './processors/token-refresh.processor';
 import { TaskProcessor } from './processors/task.processor';
 import { PlanLifecycleProcessor } from './processors/plan-lifecycle.processor';
+import { NewsFetchProcessor } from './processors/news-fetch.processor';
 import { MemoryProducer } from './producers/memory.producer';
 import { TaskProducer } from './producers/task.producer';
 
@@ -21,6 +22,8 @@ import { TasksModule } from '../modules/tasks/tasks.module';
 import { QuotaModule } from '../modules/quota/quota.module';
 import { UserPlansModule } from '../modules/user-plans/user-plans.module';
 import { PlansModule } from '../modules/plans/plans.module';
+import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
+import { NewsItemsModule } from '../modules/news-items/news-items.module';
 import { Conversation, ConversationSchema } from '../modules/conversations/conversations.schema';
 import { Channel, ChannelSchema } from '../modules/channels/channels.schema';
 
@@ -37,6 +40,7 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
       { name: QUEUE_NAMES.TOKEN_REFRESH },
       { name: QUEUE_NAMES.TASKS },
       { name: QUEUE_NAMES.PLAN_LIFECYCLE },
+      { name: QUEUE_NAMES.NEWS_FETCH },
     ),
     // Models needed by PlanLifecycleProcessor
     MongooseModule.forFeature([
@@ -53,6 +57,8 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
     QuotaModule,
     UserPlansModule,
     PlansModule,
+    NewsSourcesModule,
+    NewsItemsModule,
   ],
   providers: [
     InboundProcessor,
@@ -61,6 +67,7 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
     TokenRefreshProcessor,
     TaskProcessor,
     PlanLifecycleProcessor,
+    NewsFetchProcessor,
     MemoryProducer,
     TaskProducer,
   ],
@@ -71,6 +78,7 @@ export class ProcessorsModule implements OnModuleInit {
   constructor(
     @InjectQueue(QUEUE_NAMES.TOKEN_REFRESH) private tokenRefreshQueue: Queue,
     @InjectQueue(QUEUE_NAMES.PLAN_LIFECYCLE) private planLifecycleQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.NEWS_FETCH) private newsFetchQueue: Queue,
   ) {}
 
   async onModuleInit() {
@@ -99,5 +107,18 @@ export class ProcessorsModule implements OnModuleInit {
       removeOnFail: 3,
     });
     this.logger.log('Plan lifecycle check scheduled: daily at 7h GMT+7');
+
+    // Schedule news fetch every 30 minutes
+    const newsJobName = 'scheduled-news-fetch';
+    const existingNews = await this.newsFetchQueue.getRepeatableJobs();
+    for (const job of existingNews) {
+      await this.newsFetchQueue.removeRepeatableByKey(job.key);
+    }
+    await this.newsFetchQueue.add(newsJobName, { triggeredAt: new Date().toISOString() }, {
+      repeat: { every: 30 * 60 * 1000 },
+      removeOnComplete: 5,
+      removeOnFail: 5,
+    });
+    this.logger.log('News fetch scheduled: every 30 minutes');
   }
 }

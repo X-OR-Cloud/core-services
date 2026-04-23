@@ -25,6 +25,7 @@ import { UserPlansModule } from '../modules/user-plans/user-plans.module';
 import { QuotaModule } from '../modules/quota/quota.module';
 import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
 import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.module';
+import { NewsItemsModule } from '../modules/news-items/news-items.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.
     QuotaModule,
     NewsSourcesModule,
     UserNewsPrefsModule,
+    NewsItemsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

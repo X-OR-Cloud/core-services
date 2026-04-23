@@ -9,7 +9,8 @@ export const QUEUE_NAMES = {
   TOKEN_REFRESH: 'pag-token-refresh',
   TASKS: 'pag-tasks',
   PLAN_LIFECYCLE: 'pag-plan-lifecycle',
-  
+  NEWS_FETCH: 'pag-news-fetch',
+
   // Dynamic queue getter (future use)
   getInboundQueue: getInboundQueueName,
 };
@@ -32,4 +33,7 @@ export const QUEUE_EVENTS = {
 
   // Plan lifecycle
   PLAN_LIFECYCLE: 'plan.lifecycle',
+
+  // News fetch
+  NEWS_FETCH: 'news.fetch',
 };
