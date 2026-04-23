@@ -10,6 +10,7 @@ import {
   CreateAgentDto,
   UpdateAgentDto,
   AgentConnectDto,
+  AgentConnectBodyDto,
   AgentConnectResponseDto,
   AgentHeartbeatDto,
   AgentCredentialsResponseDto,
@@ -212,23 +213,33 @@ export class AgentController {
     return this.agentService.getAgentConfig(resolvedId, context, token);
   }
 
-  @Post(':id/connect')
+  @Post('connect')
   @ApiOperation({
     summary: 'Agent connection/authentication (for engineer agents)',
-    description: 'Public endpoint for engineer agent to connect and authenticate using secret. Returns JWT token + instruction + tools config.'
+    description: 'Public endpoint for engineer agent to connect and authenticate using secret. Returns JWT token + instruction + tools config.',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Agent connected successfully',
-    type: AgentConnectResponseDto
+  @ApiResponse({ status: 200, description: 'Agent connected successfully', type: AgentConnectResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid credentials or agent suspended' })
+  @ApiResponse({ status: 404, description: 'Agent not found' })
+  async connectSelf(
+    @Body() connectDto: AgentConnectBodyDto,
+  ): Promise<AgentConnectResponseDto> {
+    return this.agentService.connect(connectDto.id, connectDto);
+  }
+
+  // @deprecated Use POST /agents/connect instead. Will be removed in a future release.
+  @Post(':id/connect')
+  @ApiOperation({
+    summary: '[Deprecated] Agent connection/authentication',
+    description: 'Deprecated. Use POST /agents/connect instead. Kept for backward compatibility.',
   })
+  @ApiResponse({ status: 200, description: 'Agent connected successfully', type: AgentConnectResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials or agent suspended' })
   @ApiResponse({ status: 404, description: 'Agent not found' })
   async connect(
     @Param('id') id: string,
     @Body() connectDto: AgentConnectDto,
   ): Promise<AgentConnectResponseDto> {
-    // connect is public (no JwtAuthGuard) — resolve by ObjectId only, code not supported here
     return this.agentService.connect(id, connectDto);
   }
 

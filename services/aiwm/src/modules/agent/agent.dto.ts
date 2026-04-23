@@ -398,6 +398,23 @@ export class AgentConnectDto {
   version?: string;
 }
 
+export class AgentConnectBodyDto {
+  @ApiProperty({ description: 'Agent ID', example: '507f1f77bcf86cd799439011' })
+  @IsNotEmpty()
+  @IsString()
+  id: string;
+
+  @ApiProperty({ description: 'Agent secret for authentication', example: 'agent-secret-key-here' })
+  @IsNotEmpty()
+  @IsString()
+  secret: string;
+
+  @ApiPropertyOptional({ description: 'Agent version string', example: '1.2.3' })
+  @IsOptional()
+  @IsString()
+  version?: string;
+}
+
 /**
  * Response DTO for agent connection
  * Matches IAM TokenData structure with agent-specific additions
