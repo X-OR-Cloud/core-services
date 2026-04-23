@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Conversation, ConversationSchema } from '../conversations/conversations.schema';
 import { Channel, ChannelSchema } from '../channels/channels.schema';
 import { Memory, MemorySchema } from '../memories/memories.schema';
+import { Message, MessageSchema } from '../messages/messages.schema';
 import { Task, TaskSchema } from '../tasks/tasks.schema';
 import { UserPlansModule } from '../user-plans/user-plans.module';
 import { QuotaModule } from '../quota/quota.module';
@@ -15,6 +16,7 @@ import { StatsController } from './stats.controller';
       { name: Conversation.name, schema: ConversationSchema },
       { name: Channel.name, schema: ChannelSchema },
       { name: Memory.name, schema: MemorySchema },
+      { name: Message.name, schema: MessageSchema },
       { name: Task.name, schema: TaskSchema },
     ]),
     UserPlansModule,

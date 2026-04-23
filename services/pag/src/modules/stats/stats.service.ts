@@ -5,6 +5,7 @@ import axios from 'axios';
 import { Conversation } from '../conversations/conversations.schema';
 import { Channel } from '../channels/channels.schema';
 import { Memory } from '../memories/memories.schema';
+import { Message } from '../messages/messages.schema';
 import { Task } from '../tasks/tasks.schema';
 import { UserPlansService } from '../user-plans/user-plans.service';
 
@@ -16,6 +17,7 @@ export class StatsService {
     @InjectModel(Conversation.name) private conversationModel: Model<Conversation>,
     @InjectModel(Channel.name) private channelModel: Model<Channel>,
     @InjectModel(Memory.name) private memoryModel: Model<Memory>,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
     @InjectModel(Task.name) private taskModel: Model<Task>,
     private readonly userPlansService: UserPlansService,
   ) {}
