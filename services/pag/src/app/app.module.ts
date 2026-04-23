@@ -14,6 +14,8 @@ import { SoulsModule } from '../modules/souls/souls.module';
 import { ConversationsModule } from '../modules/conversations/conversations.module';
 import { MessagesModule } from '../modules/messages/messages.module';
 import { MemoriesModule } from '../modules/memories/memories.module';
+import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
+import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { MemoriesModule } from '../modules/memories/memories.module';
     ConversationsModule,
     MessagesModule,
     MemoriesModule,
+    NewsSourcesModule,
+    UserNewsPrefsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],

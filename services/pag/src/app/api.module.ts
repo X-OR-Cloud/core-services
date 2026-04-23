@@ -23,6 +23,8 @@ import { QueuesAdminModule } from '../modules/queues-admin/queues-admin.module';
 import { PlansModule } from '../modules/plans/plans.module';
 import { UserPlansModule } from '../modules/user-plans/user-plans.module';
 import { QuotaModule } from '../modules/quota/quota.module';
+import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
+import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { QuotaModule } from '../modules/quota/quota.module';
     PlansModule,
     UserPlansModule,
     QuotaModule,
+    NewsSourcesModule,
+    UserNewsPrefsModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
