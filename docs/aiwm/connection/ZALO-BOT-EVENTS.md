@@ -101,6 +101,8 @@ Người dùng gửi ảnh (có hoặc không có caption).
 | `caption` | `string` | Caption kèm ảnh (có thể rỗng `""`) |
 | `message_type` | `string` | `"CHAT_PHOTO"` |
 
+> **Gửi nhiều ảnh:** Zalo gửi mỗi ảnh thành một webhook event riêng biệt — không batch. Mỗi ảnh tạo ra 1 action độc lập và agent xử lý từng cái một.
+
 ---
 
 ### 3. `message.sticker.received`
