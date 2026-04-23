@@ -1096,6 +1096,9 @@ export class ChatGateway
       const { agentId, token } = client.data;
       client.data.lastHeartbeatAt = Date.now();
 
+      const presenceSockets = await this.chatService.getAgentSocketIds(agentId);
+      this.logger.debug(`[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)}`);
+
       await this.chatService.setAgentStatus(agentId, {
         status: data.status,
         lastHeartbeat: new Date().toISOString(),
