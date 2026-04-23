@@ -1085,7 +1085,7 @@ export class ChatGateway
 
   @SubscribeMessage('agent:heartbeat')
   async handleHeartbeat(
-    @MessageBody() data: { status: 'idle' | 'busy'; metrics?: Record<string, unknown> },
+    @MessageBody() data: { status: 'idle' | 'busy' | 'sleep'; mcpConnected?: boolean; availableFunctions?: string[]; metrics?: Record<string, unknown>; sleep?: { reason: string; since: string; until?: string } },
     @ConnectedSocket() client: Socket,
   ) {
     if (client.data.type !== 'agent') {
@@ -1097,10 +1097,10 @@ export class ChatGateway
       client.data.lastHeartbeatAt = Date.now();
 
       const presenceSockets = await this.chatService.getAgentSocketIds(agentId);
-      this.logger.debug(`[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)} mcpConnected=${(data as any).mcpConnected ?? 'n/a'} availableFunctions=${(data as any).availableFunctions?.length ?? 'n/a'}`);
+      this.logger.debug(`[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)} mcpConnected=${data.mcpConnected ?? 'n/a'} availableFunctions=${data.availableFunctions?.length ?? 'n/a'}`);
 
       await this.chatService.setAgentStatus(agentId, {
-        status: data.status,
+        status: data.status === 'sleep' ? 'idle' : data.status,
         lastHeartbeat: new Date().toISOString(),
         conversationId: client.data.conversationId || '',
         metrics: data.metrics ? JSON.stringify(data.metrics) : undefined,
