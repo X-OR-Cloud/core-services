@@ -16,6 +16,7 @@
 | `telegram` | Telegram Bot |
 | `teams` | Microsoft Teams Bot |
 | `zalo-bot` | Zalo Bot (bot.zapps.me) |
+| `zalo-oa` | Zalo Official Account (openapi.zalo.me) |
 
 #### `ConnectionStatus`
 | Giá trị | Ý nghĩa |
@@ -51,6 +52,13 @@
 | `appPassword` | `string` | Teams | Azure AD client secret |
 | `tenantId` | `string` | Teams | Azure AD tenant ID |
 | `zaloSecretToken` | `string` | Zalo Bot | Secret token để validate header `X-Bot-Api-Secret-Token` khi nhận webhook |
+| `oaId` | `string` | Zalo OA | OA ID từ trang quản lý Zalo OA |
+| `zaloAppId` | `string` | Zalo OA | App ID từ [developers.zalo.me](https://developers.zalo.me) |
+| `zaloAppSecret` | `string` | Zalo OA | App Secret từ [developers.zalo.me](https://developers.zalo.me) |
+| `zaloOaSecretKey` | `string` | Zalo OA | Webhook secret key để verify SHA256 signature (`X-ZEvent-Signature`) |
+| `zaloAccessToken` | `string` | Zalo OA | OAuth access token (TTL 1h) — **do server tự cấp, không cần điền** |
+| `zaloRefreshToken` | `string` | Zalo OA | OAuth refresh token (TTL 3 tháng) — **do server tự cấp, không cần điền** |
+| `zaloTokenExpiresAt` | `Date` | Zalo OA | Thời điểm hết hạn access token — **do server tự cấp, không cần điền** |
 
 > **Bảo mật:** Trường `config` chỉ trả về ở `GET /connections/:id`, không có trong danh sách `GET /connections`.
 
@@ -197,6 +205,25 @@ Authorization: Bearer <JWT>
 ```
 
 > Khi tạo mới với `pollingMode: false`, webhook **chưa** được đăng ký tự động. Cần gọi `PUT /connections/:id` với `config.pollingMode: false` sau khi connection đã tồn tại để trigger sync.
+
+**Request — Zalo OA:**
+```json
+{
+  "name": "Zalo OA CSKH",
+  "provider": "zalo-oa",
+  "config": {
+    "oaId": "1234567890123456789",
+    "zaloAppId": "123456789",
+    "zaloAppSecret": "abcdef1234567890abcdef1234567890",
+    "zaloOaSecretKey": "my-webhook-secret"
+  },
+  "routes": [
+    { "agentId": "665f1a2b3c4d5e6f7a8b9c0d", "allowAnonymous": true }
+  ]
+}
+```
+
+> Zalo OA tạo xong với `status: "inactive"`. Cần thực hiện OAuth (xem **mục 2.11**) để kích hoạt.
 
 **Response 201:**
 ```json
@@ -497,7 +524,7 @@ Lấy debug logs của connection runner — ghi lại lifecycle: kết nối, r
 
 ---
 
-### 2.10 Webhook Endpoint (Teams & Zalo Bot)
+### 2.10 Webhook Endpoint (Teams, Zalo Bot, Zalo OA)
 
 ```
 POST /connections/:id/webhook
@@ -511,12 +538,13 @@ Endpoint nhận event từ nền tảng. Dispatch theo `provider` của connecti
 |----------|----------|-----------|
 | `teams` | Verify JWT Bearer từ Microsoft Bot Service | Publish `inbound:teams:{id}` lên Redis |
 | `zalo-bot` | So sánh header `X-Bot-Api-Secret-Token` với `config.zaloSecretToken` | Publish `inbound:zalo-bot:{id}` lên Redis |
+| `zalo-oa` | SHA256 HMAC signature header `X-ZEvent-Signature` với `config.zaloOaSecretKey` | Publish `inbound:zalo-oa:{id}` lên Redis |
 
-**Zalo Bot — webhook URL được đăng ký tự động:**
+**Webhook URL (chung cho mọi provider):**
 ```
-{AIWM_SERVICE_URL}/connections/<connectionId>/webhook
+{AIWM_BASE_URL}/connections/<connectionId>/webhook
 ```
-Khi FE gọi `PUT /connections/:id` với `config.pollingMode: false`, server tự đăng ký URL này lên Zalo kèm `secret_token`. Không cần thao tác thủ công trên bot.zapps.me.
+> `AIWM_BASE_URL` được đọc từ `configurations` DB (key `aiwm.base_api_url`), fallback về env `AIWM_SERVICE_URL`.
 
 **Teams — URL validation challenge:**
 ```
@@ -524,10 +552,69 @@ GET /connections/:id/webhook?validationToken=<token>
 ```
 Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken` dạng plain text.
 
-**Response 400 — Secret không hợp lệ (Zalo Bot):**
+**Response 400 — Xác thực thất bại:**
 ```json
 { "statusCode": 400, "message": "Invalid X-Bot-Api-Secret-Token", "error": "Bad Request" }
+{ "statusCode": 400, "message": "Invalid X-ZEvent-Signature", "error": "Bad Request" }
 ```
+
+---
+
+### 2.11 Zalo OA OAuth — Kích hoạt kết nối
+
+#### Bước 1 — Redirect admin đến trang duyệt quyền Zalo
+
+```
+GET /connections/:id/oauth
+Authorization: Bearer <JWT>
+```
+
+Server redirect (HTTP 302) đến Zalo authorization URL:
+```
+https://oauth.zaloapp.com/v4/oa/permission?app_id=<zaloAppId>&redirect_uri=<callback_url>&state=<connectionId>
+```
+
+> FE mở URL này trong tab hiện tại hoặc popup. Admin đăng nhập Zalo và duyệt quyền cho OA.
+
+**Response 302:** Redirect đến Zalo authorization page.
+
+**Response 400 — Chưa cấu hình `zaloAppId`:**
+```json
+{ "statusCode": 400, "message": "zaloAppId is not configured", "error": "Bad Request" }
+```
+
+#### Bước 2 — Zalo callback về server
+
+```
+GET /connections/:id/oauth-callback?code=<auth_code>&state=<connectionId>
+```
+
+> Đây là callback từ Zalo — **không phải FE gọi**. FE không cần implement endpoint này.
+
+Server tự động:
+1. Exchange `code` → `access_token` + `refresh_token` từ Zalo
+2. Lưu tokens vào `config` của connection trong DB
+3. Đặt `status: "active"`
+4. Đăng ký webhook URL lên Zalo OA (`POST openapi.zalo.me/v3.0/oa/webhook`)
+5. Publish `connection:changed` lên Redis → con worker tự spawn runner
+
+**Response 200:**
+```json
+{ "message": "Zalo OA authorization successful. Connection is now active." }
+```
+
+**Response 400 — Thiếu code:**
+```json
+{ "statusCode": 400, "message": "Missing code", "error": "Bad Request" }
+```
+
+#### Token refresh tự động
+
+Con worker (`MODE=con`) tự động refresh access token mỗi **30 phút** — không cần FE hay admin thao tác. Token mới được cập nhật DB và inject vào adapter đang chạy.
+
+> **Lưu ý:** Refresh token của Zalo là **single-use** — mỗi lần refresh, Zalo cấp refresh token mới. Server tự lưu refresh token mới vào DB.
+
+> **Nếu refresh token hết hạn (3 tháng):** Admin cần lặp lại bước OAuth (`GET /connections/:id/oauth`) để cấp lại quyền.
 
 ---
 
@@ -545,7 +632,9 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 | `PUT` | `/connections/:id/routes/:routeIndex` | JWT | Cập nhật route theo index |
 | `DELETE` | `/connections/:id/routes/:routeIndex` | JWT | Xóa route theo index |
 | `GET` | `/connections/:id/webhook` | — | Teams URL validation challenge |
-| `POST` | `/connections/:id/webhook` | Provider-specific | Nhận webhook event (Teams / Zalo Bot) |
+| `POST` | `/connections/:id/webhook` | Provider-specific | Nhận webhook event (Teams / Zalo Bot / Zalo OA) |
+| `GET` | `/connections/:id/oauth` | JWT | Zalo OA: redirect admin đến trang duyệt quyền |
+| `GET` | `/connections/:id/oauth-callback` | — | Zalo OA: OAuth callback — exchange code → token (do Zalo gọi) |
 
 ---
 
@@ -570,6 +659,42 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 3. Đăng ký webhook URL `{AIWM_SERVICE_URL}/connections/:id/webhook` trong Azure Bot Service
 4. Thêm route (`serverId` = Teams team ID, `channelId` = channel ID)
 5. Đặt `status: "active"`
+
+### Zalo OA
+
+1. Đăng ký app tại [developers.zalo.me](https://developers.zalo.me), lấy **App ID** và **App Secret**
+2. Tạo OA tại [oa.zalo.me](https://oa.zalo.me), lấy **OA ID**
+3. Tạo Connection:
+```json
+{
+  "provider": "zalo-oa",
+  "config": {
+    "oaId": "1234567890123456789",
+    "zaloAppId": "123456789",
+    "zaloAppSecret": "abcdef...",
+    "zaloOaSecretKey": "my-webhook-secret"
+  }
+}
+```
+4. FE mở URL `GET /connections/:id/oauth` trong trình duyệt → admin đăng nhập Zalo và duyệt quyền
+5. Sau khi duyệt quyền, Zalo tự callback về server → tokens được lưu, `status` chuyển thành `active`, webhook được đăng ký tự động
+6. Thêm route để nhận tin nhắn từ user
+
+**Event types được xử lý:**
+
+| Event Zalo OA | Text hiển thị trong conversation |
+|---------------|----------------------------------|
+| `user_send_text` | Nội dung tin nhắn |
+| `user_send_image` | `[image]` + attachment |
+| `user_send_sticker` | `[sticker]` |
+| `user_send_audio` | `[audio]` |
+| `user_send_video` | `[video]` |
+| `user_send_file` | `[file: <tên file>]` |
+| `user_send_location` | `[location: <mô tả>]` |
+
+**`serverId`** trong route = Zalo user ID (`sender.id` từ event payload).
+
+---
 
 ### Zalo Bot
 
@@ -599,7 +724,7 @@ Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken`
 Platform Message
       │
       ├── Discord / Telegram:  Adapter (polling/webhook) ──► NormalizedInbound
-      └── Teams / Zalo Bot:    HTTP POST /connections/:id/webhook
+      └── Teams / Zalo Bot / Zalo OA:  HTTP POST /connections/:id/webhook
                                       │
                                  Redis publish
                               inbound:{provider}:{id}
@@ -631,3 +756,5 @@ Platform Message
 - Health check mỗi **30 giây**: stop runner bị deactivate, start runner mới được activate.
 - Khi config/route thay đổi, runner tự restart để áp dụng config mới.
 - **Zalo Bot webhook sync**: `PUT /connections/:id` với `config.pollingMode` thay đổi → server gọi Zalo API `setWebhook`/`deleteWebhook` tự động.
+- **Zalo OA token refresh**: con worker tự động refresh access token mỗi 30 phút, inject token mới vào adapter đang chạy.
+- **Zalo OA webhook sync**: webhook URL được đăng ký tự động sau khi OAuth callback thành công.
