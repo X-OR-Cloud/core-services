@@ -22,7 +22,7 @@ import { ActionType, ActorRole } from '../action/action.enum';
 import { HeartbeatService } from '../heartbeat/heartbeat.service';
 
 @WebSocketGateway({
-  namespace: '/ws/agent',
+  namespace: '/',
 })
 export class AgentGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
