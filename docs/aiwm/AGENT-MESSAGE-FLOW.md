@@ -398,40 +398,118 @@ Hệ quả:
 - `server.to('conversation:{id}').emit('message:new')` từ AgentGateway **không reach** user socket đang ở ChatGateway
 - `server.to('conversation:{id}').emit('message:new')` từ ChatGateway **không reach** engineer agent socket đang ở AgentGateway
 
-**Giải pháp:** Thay toàn bộ broadcast room bằng Redis pub/sub làm bridge giữa 2 gateway:
+**Giải pháp: bỏ socket room broadcast, chuyển hoàn toàn sang Redis pub/sub**
+
+Socket room chỉ có giá trị khi tất cả clients cùng nằm trên một gateway. Khi tách process, room không còn dùng được để broadcast xuyên gateway. Thay vào đó, mỗi gateway chỉ cần biết Redis — mọi thông điệp đều đi qua các channel đã có sẵn.
 
 ```
-Engineer agent gửi message:send → AgentGateway
-  → save DB
-  → Redis pub: chat:response:{convId}    ← ChatGateway subscribe, broadcast message:new đến user
-  → Redis pub: outbound:message          ← Connection Worker subscribe, forward đến platform
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        MÔ HÌNH HIỆN TẠI (gộp chung)                        │
+│                                                                             │
+│   User ──ws──→ ChatGateway ──socket room broadcast──→ Engineer Agent        │
+│                     ↑                                                       │
+│                     └── Engineer Agent gửi message:send                     │
+│                                                                             │
+│   Vấn đề: user và agent phải cùng nằm trong 1 Socket.IO server             │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-ChatGateway nhận message:send từ user
-  → save DB
-  → Redis pub: chat:message-new          ← AgentGateway subscribe, emit message:new đến engineer agent
-  → Redis lpush: chat:task:{agentId}     ← AgentRunner subscribe (đã có sẵn)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     MÔ HÌNH SAU KHI TÁCH (Redis as backbone)               │
+│                                                                             │
+│                         R E D I S                                           │
+│   ┌──────────────────────────────────────────────────┐                     │
+│   │  chat:message-new   chat:response:*   chat:cmd:* │                     │
+│   │  outbound:message   outbound:typing   chat:task:*│                     │
+│   │  outbound:command   agent:join-room              │                     │
+│   └──────┬───────────────────┬──────────────────┬───┘                     │
+│          │                   │                  │                          │
+│          ▼                   ▼                  ▼                          │
+│   ┌─────────────┐   ┌──────────────┐   ┌──────────────┐                  │
+│   │ ChatGateway │   │ AgentGateway │   │  AgentRunner │                  │
+│   │  /ws/chat   │   │  /ws/agent   │   │  (MODE=agt)  │                  │
+│   │             │   │              │   │              │                  │
+│   │ User socket │   │ Agent socket │   │  Assistant   │                  │
+│   │ Anon socket │   │ (engineer)   │   │  in-process  │                  │
+│   └──────┬──────┘   └──────┬───────┘   └──────┬───────┘                  │
+│          │                 │                  │                          │
+│        User             Engineer           Assistant                     │
+│      (browser)          Agent              Agent                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Luồng user → engineer agent (sau tách):
+  User ──ws──→ ChatGateway
+    save DB
+    Redis pub: chat:message-new ──→ AgentGateway subscribe
+                                      emit message:new → Engineer Agent
+
+Luồng engineer agent → user (sau tách):
+  Engineer Agent ──ws──→ AgentGateway
+    save DB
+    Redis pub: chat:response:{convId} ──→ ChatGateway subscribe
+                                            emit message:new → User
+    Redis pub: outbound:message ──→ Connection Worker
+                                      → platform (Discord/Telegram/...)
+
+Luồng user → assistant agent (sau tách, không đổi):
+  User ──ws──→ ChatGateway
+    save DB
+    Redis lpush: chat:task:{agentId} ──→ AgentRunner BLPOP
+                                           run LLM
+                                           Redis pub: chat:response:{convId}
+                                             ──→ ChatGateway subscribe
+                                                   emit message:new → User
+                                             ──→ AgentGateway subscribe (nếu cần)
 ```
 
-Tất cả cross-gateway communication đều qua Redis — pattern này đã tồn tại giữa `con` worker và `api`, chỉ cần áp dụng nhất quán.
+Tất cả cross-gateway communication đều qua Redis — pattern này đã tồn tại giữa `con` worker và `api`, chỉ cần áp dụng nhất quán cho engineer agent ↔ user direction.
 
-### Scope thay đổi nếu tách
+### Scope thay đổi nếu tách /ws/agent
 
-**AgentGateway mới (`/ws/agent`, chạy process riêng):**
-- Xử lý: handleConnection (agent only), handleDisconnect (agent)
-- Events: `agent:heartbeat`, `channel:send`, `message:send` (engineer response)
-- Subscribe Redis: `chat:message-new`, `outbound:command`, `agent:join-room`, `chat:response:*`
-- Publish Redis: `chat:response:*` (engineer response), `outbound:message`, `outbound:typing`, `outbound:direct`, `chat:task:{agentId}` (không còn — ChatGateway push)
+**AgentGateway mới (`/ws/agent`, process riêng `MODE=aws`):**
+- Connection: handleConnection / handleDisconnect cho agent only
+- Events nhận từ agent: `agent:heartbeat`, `channel:send`, `message:send` (engineer response)
+- Subscribe Redis: `chat:message-new` (→ emit message:new đến engineer agent), `outbound:command` (→ emit agent:command), `agent:join-room`
+- Publish Redis: `chat:response:{convId}` (engineer response → ChatGateway), `outbound:message`, `outbound:typing`, `outbound:direct`
 
-**ChatGateway giữ lại (`/ws/chat`, trong api):**
-- Xử lý: user, anonymous connection
-- Events: `message:send` (user), `conversation:join/leave`, `command:send`, `conversation:history`, `agent:connect`, `message:typing`, `message:read`
-- Subscribe Redis: `chat:response:*` (để broadcast message:new đến user), `chat:message-new` (để push task)
-- Publish Redis: `chat:message-new`, `chat:task:{agentId}`, `outbound:*`
-- Bỏ: tất cả agent-specific branches
+**ChatGateway (`/ws/chat`, vẫn trong `api`):**
+- Connection: user, anonymous only — bỏ toàn bộ agent branches
+- Events: `message:send` (user), `conversation:join/leave`, `command:send`, `conversation:history`, `message:typing`, `message:read`
+- Subscribe Redis: `chat:response:*` (→ broadcast message:new đến user), `chat:message-new` (→ lpush chat:task cho assistant)
+- Publish Redis: `chat:message-new`, `chat:task:{agentId}`, `outbound:command`
 
 **Nginx routing:**
 ```
-/ws/agent  →  AgentGateway process (mới)
-/ws/chat   →  ChatGateway trong api (giữ nguyên)
-/ws/node   →  NodeGateway trong api (giữ nguyên)
+/ws/agent  →  AgentGateway (process mới, scale độc lập)
+/ws/chat   →  ChatGateway  (trong api, giữ nguyên)
+/ws/node   →  NodeGateway  (trong api, giữ nguyên)
 ```
+
+### Tách tiếp /ws/chat và /ws/node khỏi api
+
+Cùng nguyên lý. Khi ChatGateway và NodeGateway không còn dùng socket room để cross-communicate, chúng cũng có thể tách ra process riêng:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       KIẾN TRÚC MỤC TIÊU (fully split)                     │
+│                                                                             │
+│   Nginx / LB                                                                │
+│   ├── /api          →  API process        (HTTP only, no WS)               │
+│   ├── /ws/chat      →  ChatGateway process (user, anonymous)               │
+│   ├── /ws/agent     →  AgentGateway process (engineer agent)               │
+│   └── /ws/node      →  NodeGateway process (node worker)                   │
+│                                                                             │
+│   Tất cả process giao tiếp qua Redis pub/sub — không phụ thuộc nhau       │
+│   Mỗi process scale độc lập theo load thực tế                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Điều kiện để tách /ws/chat:**
+- ChatGateway không còn gọi trực tiếp các service NestJS khác (AgentService, ConversationService, ActionService) — cần expose qua internal API hoặc Redis RPC, hoặc chấp nhận inject module vào gateway process riêng
+- Hiện tại các service này được inject trực tiếp qua DI → gateway process phải load cùng NestJS app context → không khác gì api về dependency, chỉ khác về scaling unit
+
+**Thực tế:** ChatGateway và NodeGateway có thể tách thành **NestJS app riêng** với chỉ các module cần thiết (Chat, Agent, Action, Conversation). API process giữ lại HTTP controllers. Cả hai vẫn kết nối cùng MongoDB và Redis.
+
+**Lộ trình đề xuất:**
+1. **Bước 1 (hiện tại):** Tách `/ws/agent` — ít dependency nhất, validate pattern Redis backbone
+2. **Bước 2:** Tách `/ws/node` — NodeGateway tương đối độc lập
+3. **Bước 3:** Tách `/ws/chat` — phức tạp nhất do nhiều service dependency, làm sau khi pattern đã ổn định
