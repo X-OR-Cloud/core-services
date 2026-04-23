@@ -21,9 +21,9 @@ import { ActionModule } from '../action/action.module';
     }),
 
     PresenceModule,
-    ConversationModule,
-    AgentModule,
-    ActionModule,
+    ConversationModule.forService(),
+    AgentModule.forService(),
+    ActionModule.forService(),
   ],
   providers: [AgentGateway],
 })

@@ -26,5 +26,7 @@ export async function bootstrapAgentWsServer() {
 
   Logger.log(`🚀 AIWM Agent WS Server is running on: http://localhost:${port}`);
   Logger.log(`🤖 Agent WebSocket Gateway: ws://localhost:${port}/ws/agent`);
-  Logger.log(`📊 Redis: ${process.env.REDIS_URL || 'redis://localhost:6379'}`);
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const redisDisplay = redisUrl.replace(/:\/\/[^@]+@/, '://***@');
+  Logger.log(`📊 Redis: ${redisDisplay}`);
 }
