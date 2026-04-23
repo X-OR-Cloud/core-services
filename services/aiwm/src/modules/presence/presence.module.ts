@@ -9,6 +9,8 @@ function buildRedisUrl(): string {
   const port = process.env.REDIS_PORT || '6379';
   const user = process.env.REDIS_USERNAME || '';
   const pass = process.env.REDIS_PASSWORD || '';
+
+  console.log(`Using Redis configuration: host=${host}, port=${port}, user=${user ? '***' : '(none)'}, pass=${pass ? '***' : '(none)'}`);
   return pass
     ? `redis://${user}:${encodeURIComponent(pass)}@${host}:${port}`
     : `redis://${host}:${port}`;
