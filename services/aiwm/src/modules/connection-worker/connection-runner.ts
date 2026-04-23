@@ -145,6 +145,13 @@ export class ConnectionRunner {
       const teamsServiceUrl = isTeams ? msg.teamsServiceUrl : undefined;
       const teamsConversationId = isTeams ? msg.teamsConversationId : undefined;
 
+      // Drop /ignore and /igr immediately — before dedup, routing, or any DB writes
+      const earlySlashMatch = msg.text.match(/^\/(\w+)/);
+      if (earlySlashMatch && (earlySlashMatch[1].toLowerCase() === 'ignore' || earlySlashMatch[1].toLowerCase() === 'igr')) {
+        this.logger.debug(`/${earlySlashMatch[1]} — message silently dropped`);
+        return;
+      }
+
       // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
         const dedupKey = `${msg.serverId ?? msg.channelId}:${msg.externalMessageId}`;
@@ -183,10 +190,6 @@ export class ConnectionRunner {
         if (['stop', 'start', 'restart', 'update', 'reload', 'inspect', 'sleep', 'wake'].includes(command)) {
           this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason: rest });
           this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
-          return;
-        }
-        if (command === 'ignore' || command === 'igr') {
-          this.writeLog('info', `/${command} — message silently dropped`, { conversationId: resolved.conversationId });
           return;
         }
       }
