@@ -70,9 +70,14 @@ export class ZaloBotAdapter extends BaseAdapter {
 
     if (!msg) return;
 
-    // Skip unsupported events — no content to forward
+    // Unsupported events — reply directly, bypass agent pipeline
     if (eventName === 'message.unsupported.received') {
-      this.logger.debug(`Skipping unsupported Zalo event from ${msg.from?.display_name}`);
+      this.logger.debug(`Unsupported Zalo event from ${msg.from?.display_name}, sending auto-reply`);
+      const chatId = String(msg.chat?.id ?? '');
+      if (chatId) {
+        this.callApi('sendMessage', { chat_id: chatId, text: 'Xin lỗi, Agent chưa hỗ trợ loại tin nhắn này.' })
+          .catch((err: Error) => this.logger.warn(`Failed to send unsupported reply: ${err.message}`));
+      }
       return;
     }
 
