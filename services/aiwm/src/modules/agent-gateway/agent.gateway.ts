@@ -10,14 +10,17 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { redisConfig } from '../../config/redis.config';
 import { PresenceService } from '../presence/presence.service';
-import { ConversationService } from '../conversation/conversation.service';
-import { AgentService } from '../agent/agent.service';
-import { ActionService } from '../action/action.service';
+import { Agent, AgentDocument } from '../agent/agent.schema';
+import { Conversation, ConversationDocument } from '../conversation/conversation.schema';
+import { Action, ActionDocument } from '../action/action.schema';
 import { ActionType, ActorRole } from '../action/action.enum';
+import { HeartbeatService } from '../heartbeat/heartbeat.service';
 
 @WebSocketGateway({
   namespace: '/ws/agent',
@@ -35,9 +38,10 @@ export class AgentGateway
   constructor(
     private readonly presenceService: PresenceService,
     private readonly jwtService: JwtService,
-    private readonly conversationService: ConversationService,
-    private readonly agentService: AgentService,
-    private readonly actionService: ActionService,
+    private readonly heartbeatService: HeartbeatService,
+    @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
+    @InjectModel(Conversation.name) private readonly conversationModel: Model<ConversationDocument>,
+    @InjectModel(Action.name) private readonly actionModel: Model<ActionDocument>,
   ) {}
 
   afterInit(_server: Server) {
@@ -100,12 +104,14 @@ export class AgentGateway
           // No distributed lock here — engineer agent WS emit is idempotent.
           // The lock in ChatGateway protects lpush chat:task (assistant path only).
 
-          const agentDoc = agentId ? await this.agentService.findByIdInternal(agentId) : null;
+          const agentDoc = agentId
+            ? await this.agentModel.findOne({ _id: new Types.ObjectId(agentId), isDeleted: false }).lean().exec()
+            : null;
 
           // Only handle engineer agents — assistant agents are routed by ChatGateway via chat:task
           if ((agentDoc as any)?.type !== 'engineer') return;
 
-          if (!skipAgent && agentDoc?.status === 'sleep') {
+          if (!skipAgent && (agentDoc as any)?.status === 'sleep') {
             skipAgent = true;
           }
 
@@ -148,10 +154,13 @@ export class AgentGateway
         try {
           if (!this.server) return;
           const { agentId, conversationId, command, reason } = JSON.parse(message);
-          const agent = await this.agentService.findByIdInternal(agentId);
+          const agent = await this.agentModel
+            .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+            .lean()
+            .exec();
 
           // AgentGateway only handles engineer agents
-          if (agent?.type !== 'engineer') return;
+          if ((agent as any)?.type !== 'engineer') return;
 
           const agentSocketIds = await this.presenceService.getAgentSocketIds(agentId);
           this.logger.log(
@@ -198,9 +207,12 @@ export class AgentGateway
       }
 
       const agentId = payload.agentId || payload.sub;
-      const agent = await this.agentService.findByIdInternal(agentId);
+      const agent = await this.agentModel
+        .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
+        .lean()
+        .exec();
 
-      if (!agent || agent.type !== 'engineer') {
+      if (!agent || (agent as any).type !== 'engineer') {
         this.logger.warn(`[WS-CONNECT] Only engineer agents may connect to /ws/agent agentId=${agentId}`);
         client.disconnect();
         return;
@@ -227,7 +239,11 @@ export class AgentGateway
 
       // Auto-rejoin active conversation rooms
       try {
-        const activeConvs = await this.conversationService.findActiveByAgent(agentId);
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const activeConvs = await this.conversationModel
+          .find({ agentId, status: 'active', isDeleted: false, updatedAt: { $gte: cutoff } })
+          .lean()
+          .exec();
         for (const conv of activeConvs) {
           const convId = (conv as any)._id.toString();
           client.join(`conversation:${convId}`);
@@ -316,7 +332,7 @@ export class AgentGateway
         metrics: data.metrics ? JSON.stringify(data.metrics) : undefined,
       });
 
-      return await this.agentService.heartbeat(agentId, data, token);
+      return await this.heartbeatService.heartbeat(agentId, data, token);
     } catch (error) {
       this.logger.error('Error handling agent:heartbeat:', (error as Error).message);
       return { success: false, error: (error as Error).message };
@@ -362,24 +378,36 @@ export class AgentGateway
       };
       const actionType = actionTypeMap[dto.type ?? ''] ?? ActionType.MESSAGE;
 
-      const savedAction = await this.actionService.createActionDirect(
-        {
-          conversationId,
-          type: actionType,
-          actor: { role: ActorRole.AGENT, agentId, displayName: agentId },
-          content: dto.content,
-          metadata:
-            dto.attachments?.length || dto.sources?.length
-              ? {
-                  ...(dto.attachments?.length ? { attachments: dto.attachments } : {}),
-                  ...(dto.sources?.length ? { sources: dto.sources } : {}),
-                }
-              : undefined,
-          ...(dto.workId ? { workId: dto.workId } : {}),
-        } as any,
-        { orgId, agentId, userId: '' },
-      );
+      const actorId = agentId;
+      const savedAction = await this.actionModel.create({
+        conversationId,
+        type: actionType,
+        actor: { role: ActorRole.AGENT, agentId, displayName: agentId },
+        content: dto.content,
+        ...(dto.attachments?.length || dto.sources?.length
+          ? {
+              metadata: {
+                ...(dto.attachments?.length ? { attachments: dto.attachments } : {}),
+                ...(dto.sources?.length ? { sources: dto.sources } : {}),
+              },
+            }
+          : {}),
+        ...(dto.workId ? { workId: dto.workId } : {}),
+        owner: { orgId, agentId, userId: '', groupId: '', appId: '' },
+        createdBy: actorId,
+        updatedBy: actorId,
+      });
       const actionId = (savedAction as any)._id?.toString() || 'unknown';
+
+      // Update conversation metadata
+      const now = new Date();
+      await this.conversationModel.updateOne(
+        { _id: new Types.ObjectId(conversationId) },
+        {
+          $set: { lastMessage: dto.content, lastMessageAt: now, lastMessageRole: ActorRole.AGENT },
+          $inc: { totalMessages: 1 },
+        },
+      );
 
       // Publish to ChatGateway via Redis so user on /ws/chat receives the response
       if (this.redisPub) {

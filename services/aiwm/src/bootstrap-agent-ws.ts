@@ -2,11 +2,11 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { GlobalExceptionFilter } from '@hydrabyte/base';
-import { AgentWsAppModule } from './agent-ws.app.module';
+import { AgentGatewayModule } from './modules/agent-gateway/agent-gateway.module';
 import { RedisIoAdapter } from './modules/chat/redis-io.adapter';
 
 export async function bootstrapAgentWsServer() {
-  const app = await NestFactory.create<NestExpressApplication>(AgentWsAppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AgentGatewayModule);
 
   const redisIoAdapter = new RedisIoAdapter(app);
   await redisIoAdapter.connectToRedis();

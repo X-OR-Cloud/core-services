@@ -1,15 +1,23 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
+import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
 import { AgentGateway } from './agent.gateway';
 import { PresenceModule } from '../presence/presence.module';
-import { ConversationModule } from '../conversation/conversation.module';
-import { AgentModule } from '../agent/agent.module';
-import { ActionModule } from '../action/action.module';
+import { HeartbeatModule } from '../heartbeat/heartbeat.module';
+import { Agent, AgentSchema } from '../agent/agent.schema';
+import { Conversation, ConversationSchema } from '../conversation/conversation.schema';
+import { Action, ActionSchema } from '../action/action.schema';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    MongooseModule.forRoot(
+      buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.aiwm.name}`),
+    ),
     JwtModule.registerAsync({
+      imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         const secret = configService.get<string>('JWT_SECRET');
         if (!secret) {
@@ -19,11 +27,13 @@ import { ActionModule } from '../action/action.module';
       },
       inject: [ConfigService],
     }),
-
+    MongooseModule.forFeature([
+      { name: Agent.name, schema: AgentSchema },
+      { name: Conversation.name, schema: ConversationSchema },
+      { name: Action.name, schema: ActionSchema },
+    ]),
     PresenceModule,
-    ConversationModule.forService(),
-    AgentModule.forService(),
-    ActionModule.forService(),
+    HeartbeatModule,
   ],
   providers: [AgentGateway],
 })

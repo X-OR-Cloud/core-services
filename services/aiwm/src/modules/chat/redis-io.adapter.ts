@@ -28,7 +28,8 @@ export class RedisIoAdapter extends IoAdapter {
   async connectToRedis(): Promise<void> {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
-    this.logger.log(`[REDIS-ADAPTER] Connecting to Redis: ${redisUrl}`);
+    const redisDisplay = redisUrl.replace(/:\/\/[^@]+@/, '://***@');
+    this.logger.log(`[REDIS-ADAPTER] Connecting to Redis: ${redisDisplay}`);
 
     try {
       // Create Redis clients for pub/sub

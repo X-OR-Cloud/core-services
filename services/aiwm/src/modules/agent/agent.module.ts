@@ -1,4 +1,4 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { HttpModule } from '@nestjs/axios';
@@ -17,6 +17,7 @@ import { ApiKeyModule } from '../api-key/api-key.module';
 import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { ConversationModule } from '../conversation/conversation.module';
 import { ActionModule } from '../action/action.module';
+import { HeartbeatModule } from '../heartbeat/heartbeat.module';
 
 @Module({
   imports: [
@@ -43,38 +44,10 @@ import { ActionModule } from '../action/action.module';
     ApiKeyModule,
     ConversationModule,
     ActionModule,
+    HeartbeatModule,
   ],
   controllers: [AgentController],
   providers: [AgentService, ApiKeyOrJwtGuard],
   exports: [AgentService, MongooseModule],
 })
-export class AgentModule {
-  /** Service-only: no controllers, no Node/Deployment/Queue/Reminder dependencies */
-  static forService(): DynamicModule {
-    return {
-      module: AgentModule,
-      imports: [
-        MongooseModule.forFeature([
-          { name: Agent.name, schema: AgentSchema },
-          { name: Instruction.name, schema: InstructionSchema },
-          { name: Tool.name, schema: ToolSchema },
-        ]),
-        JwtModule.registerAsync({
-          imports: [ConfigModule],
-          inject: [ConfigService],
-          useFactory: async (configService: ConfigService) => ({
-            secret: configService.get<string>('JWT_SECRET') || 'R4md0m_S3cr3t',
-            signOptions: { expiresIn: '24h' },
-          }),
-        }),
-        HttpModule.register({ timeout: 10000, maxRedirects: 3 }),
-        ConfigurationModule,
-        ApiKeyModule,
-        ConversationModule.forService(),
-        ActionModule.forService(),
-      ],
-      providers: [AgentService, ApiKeyOrJwtGuard],
-      exports: [AgentService, MongooseModule],
-    };
-  }
-}
+export class AgentModule {}
