@@ -315,12 +315,18 @@ export class ChatGateway
         try {
           if (!this.server) return;
           const { agentId, conversationId, command, reason } = JSON.parse(message);
-          const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
-          if (agentSocketIds.length > 0) {
-            this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
-            this.logger.debug(`[Redis] outbound:command /${command} → agentId=${agentId} sockets=${agentSocketIds.length}`);
+          const agent = await this.agentService.findByIdInternal(agentId);
+          if (agent?.type === 'assistant' && this.redisPub) {
+            await this.redisPub.publish(`chat:cmd:${agentId}`, JSON.stringify({ type: command, conversationId, reason }));
+            this.logger.debug(`[Redis] outbound:command /${command} → chat:cmd:${agentId}`);
           } else {
-            this.logger.warn(`[Redis] outbound:command /${command} — agent ${agentId} not connected`);
+            const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
+            if (agentSocketIds.length > 0) {
+              this.server.in(agentSocketIds).emit('agent:command', { type: command, conversationId, reason });
+              this.logger.debug(`[Redis] outbound:command /${command} → agentId=${agentId} sockets=${agentSocketIds.length}`);
+            } else {
+              this.logger.warn(`[Redis] outbound:command /${command} — agent ${agentId} not connected`);
+            }
           }
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:command: ${err.message}`);

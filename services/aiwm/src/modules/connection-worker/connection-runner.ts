@@ -185,52 +185,8 @@ export class ConnectionRunner {
           this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
           return;
         }
-        if (command === 'ignore') {
-          if (!rest) {
-            this.writeLog('warn', '/ignore requires a message after the command', { conversationId: resolved.conversationId });
-            return;
-          }
-          const savedIgnoreAction = await this.actionService.createActionDirect(
-            {
-              conversationId: resolved.conversationId,
-              connectionId,
-              type: ActionType.MESSAGE,
-              actor: resolved.actor,
-              content: rest,
-              metadata: {
-                attachments: msg.attachments,
-                raw: msg.raw,
-                skipAgent: true,
-              },
-            },
-            { orgId, agentId: resolved.agentId },
-          );
-          const ignoreActionId = String((savedIgnoreAction as any)._id);
-          this.onOutbound(resolved.conversationId, async (responseText: string) => {
-            await this.sendResponse(chatDest, responseText, threadId, teamsServiceUrl, teamsConversationId);
-          }, resolved.verboseActions, resolved.verboseLogsChannelId);
-          this.onAgentJoinRoom(resolved.agentId, resolved.conversationId);
-          this.onMessageNew({
-            actionId: ignoreActionId,
-            conversationId: resolved.conversationId,
-            agentId: resolved.agentId,
-            orgId,
-            role: 'user',
-            content: rest,
-            attachments: msg.attachments,
-            userId: resolved.iamUserId,
-            username: resolved.iamUsername,
-            fullname: resolved.iamFullname,
-            externalUsername: msg.externalUsername,
-            externalUserId: msg.externalUserId,
-            channelId: chatDest,
-            serverId: msg.serverId,
-            threadId,
-            connectionId,
-            platform: this.connection.provider,
-            skipAgent: true,
-          });
-          this.writeLog('info', '/ignore message saved (skipAgent=true)', { conversationId: resolved.conversationId });
+        if (command === 'ignore' || command === 'igr') {
+          this.writeLog('info', `/${command} — message silently dropped`, { conversationId: resolved.conversationId });
           return;
         }
       }
