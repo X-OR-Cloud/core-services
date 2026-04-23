@@ -50,6 +50,26 @@ export class ConnectionConfigDto {
   @IsOptional()
   @IsString()
   zaloSecretToken?: string;
+
+  @ApiProperty({ description: 'Zalo OA: OA ID from Zalo', required: false })
+  @IsOptional()
+  @IsString()
+  oaId?: string;
+
+  @ApiProperty({ description: 'Zalo OA: App ID from developers.zalo.me', required: false })
+  @IsOptional()
+  @IsString()
+  zaloAppId?: string;
+
+  @ApiProperty({ description: 'Zalo OA: App Secret from developers.zalo.me', required: false })
+  @IsOptional()
+  @IsString()
+  zaloAppSecret?: string;
+
+  @ApiProperty({ description: 'Zalo OA: webhook secret key for SHA256 signature verification', required: false })
+  @IsOptional()
+  @IsString()
+  zaloOaSecretKey?: string;
 }
 
 export class ConnectionRouteDto {

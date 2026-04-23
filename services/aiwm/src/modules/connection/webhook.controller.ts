@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Param, Query, Body, Headers, HttpCode, HttpStatus, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { createHmac } from 'crypto';
 import Redis from 'ioredis';
 import { ConnectionService } from './connection.service';
 import { redisConfig } from '../../config/redis.config';
@@ -7,6 +8,7 @@ import { verifyTeamsJwt } from './teams-jwt.verifier';
 
 const CHANNEL_INBOUND_TEAMS = (id: string) => `inbound:teams:${id}`;
 const CHANNEL_INBOUND_ZALO_BOT = (id: string) => `inbound:zalo-bot:${id}`;
+const CHANNEL_INBOUND_ZALO_OA = (id: string) => `inbound:zalo-oa:${id}`;
 
 /**
  * WebhookController — unified webhook endpoint for all connection providers.
@@ -59,6 +61,9 @@ export class WebhookController {
       case 'zalo-bot':
         await this._handleZaloBot(id, connection, body, headers['x-bot-api-secret-token']);
         break;
+      case 'zalo-oa':
+        await this._handleZaloOa(id, connection, body, headers['x-zevent-signature']);
+        break;
       default:
         throw new BadRequestException(`Provider "${provider}" does not support webhooks`);
     }
@@ -81,6 +86,30 @@ export class WebhookController {
     await verifyTeamsJwt(authorization, appId);
     this.logger.debug(`Teams activity received for connection ${id}: type=${body.type}`);
     await this.redis.publish(CHANNEL_INBOUND_TEAMS(id), JSON.stringify(body));
+  }
+
+  private async _handleZaloOa(
+    id: string,
+    connection: any,
+    body: Record<string, any>,
+    signature: string | undefined,
+  ): Promise<void> {
+    if (connection.status !== 'active') {
+      this.logger.debug(`Connection ${id} is not active, ignoring Zalo OA event`);
+      return;
+    }
+    const secretKey: string | undefined = connection.config?.zaloOaSecretKey;
+    if (secretKey) {
+      if (!signature) {
+        throw new BadRequestException('Missing X-ZEvent-Signature');
+      }
+      const expected = createHmac('sha256', secretKey).update(JSON.stringify(body)).digest('hex');
+      if (signature !== expected) {
+        throw new BadRequestException('Invalid X-ZEvent-Signature');
+      }
+    }
+    this.logger.log(`Zalo OA event received for connection ${id}: event=${body?.event_name ?? 'unknown'}`);
+    await this.redis.publish(CHANNEL_INBOUND_ZALO_OA(id), JSON.stringify(body));
   }
 
   private async _handleZaloBot(

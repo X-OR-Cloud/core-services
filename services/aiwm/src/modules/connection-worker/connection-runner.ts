@@ -9,6 +9,7 @@ import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
 import { TeamsAdapter } from './adapters/teams.adapter';
 import { ZaloBotAdapter } from './adapters/zalo-bot.adapter';
+import { ZaloOaAdapter } from './adapters/zalo-oa.adapter';
 
 export type AddLogFn = (level: ConnectionLogLevel, message: string, data?: Record<string, unknown>) => void;
 
@@ -136,9 +137,10 @@ export class ConnectionRunner {
       // Teams: channelId is the send target, serverId (teamId) is passed as threadId for Graph API routing
       const isTelegram = this.connection.provider === 'telegram';
       const isZaloBot = this.connection.provider === 'zalo-bot';
+      const isZaloOa = this.connection.provider === 'zalo-oa';
       const isTeams = this.connection.provider === 'teams';
-      // Zalo Bot: serverId = chat.id (send target); no threads
-      const chatDest = (isTelegram || isZaloBot) ? (msg.serverId ?? '') : (msg.channelId ?? msg.serverId ?? '');
+      // Zalo Bot / Zalo OA: serverId = chat/user ID (send target); no threads
+      const chatDest = (isTelegram || isZaloBot || isZaloOa) ? (msg.serverId ?? '') : (msg.channelId ?? msg.serverId ?? '');
       const threadId = isTelegram ? msg.channelId : isTeams ? msg.serverId : undefined;
       const teamsServiceUrl = isTeams ? msg.teamsServiceUrl : undefined;
       const teamsConversationId = isTeams ? msg.teamsConversationId : undefined;
@@ -320,6 +322,8 @@ export class ConnectionRunner {
         return new TeamsAdapter(this.connection.config);
       case 'zalo-bot':
         return new ZaloBotAdapter(this.connection.config);
+      case 'zalo-oa':
+        return new ZaloOaAdapter(this.connection.config);
       default:
         throw new Error(`Unsupported provider: ${this.connection.provider}`);
     }
@@ -342,6 +346,24 @@ export class ConnectionRunner {
   handleZaloBotEvent(body: Record<string, any>): void {
     if (this.adapter instanceof ZaloBotAdapter) {
       this.adapter.processWebhook(body);
+    }
+  }
+
+  /**
+   * Process a raw Zalo OA webhook payload forwarded from Redis by ConnectionWorkerService.
+   */
+  handleZaloOaEvent(body: Record<string, any>): void {
+    if (this.adapter instanceof ZaloOaAdapter) {
+      this.adapter.processWebhook(body);
+    }
+  }
+
+  /**
+   * Update the in-memory Zalo OA access token after a token refresh.
+   */
+  updateZaloOaToken(token: string): void {
+    if (this.adapter instanceof ZaloOaAdapter) {
+      this.adapter.updateAccessToken(token);
     }
   }
 }

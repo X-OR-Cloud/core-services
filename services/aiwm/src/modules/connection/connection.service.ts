@@ -4,12 +4,14 @@ import { Model, Types } from 'mongoose';
 import Redis from 'ioredis';
 import axios from 'axios';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, ConfigKey } from '@hydrabyte/shared';
 import { Connection, ConnectionLog, ConnectionLogLevel } from './connection.schema';
 import { redisConfig } from '../../config/redis.config';
+import { ConfigService } from '../configuration/config.service';
 
-const ZALO_API_BASE = 'https://bot-api.zaloplatforms.com/bot';
-const AIWM_BASE_URL = process.env.AIWM_SERVICE_URL ?? 'http://localhost:3003';
+const ZALO_BOT_API_BASE = 'https://bot-api.zaloplatforms.com/bot';
+const ZALO_OA_OAUTH_BASE = 'https://oauth.zaloapp.com/v4/oa';
+const ZALO_OA_GRAPH_BASE = 'https://openapi.zalo.me/v3.0/oa';
 
 export const CHANNEL_CONNECTION_CHANGED = 'connection:changed';
 
@@ -29,6 +31,7 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
   constructor(
     @InjectModel(Connection.name)
     connectionModel: Model<Connection>,
+    private readonly configService: ConfigService,
   ) {
     super(connectionModel);
     this.redisPub = new Redis(redisConfig);
@@ -93,15 +96,150 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
     return connection;
   }
 
+  /**
+   * Build the AIWM public base URL from DB config, falling back to env var.
+   */
+  private async _getAiwmBaseUrl(): Promise<string> {
+    return (
+      (await this.configService.get<string>(ConfigKey.AIWM_BASE_API_URL)) ??
+      process.env.AIWM_SERVICE_URL ??
+      'http://localhost:3003'
+    );
+  }
+
+  /**
+   * Build Zalo OA authorization URL for the OAuth redirect.
+   */
+  async buildZaloOaAuthUrl(connectionId: string, appId: string): Promise<string> {
+    const aiwmBaseUrl = await this._getAiwmBaseUrl();
+    const redirectUri = encodeURIComponent(`${aiwmBaseUrl}/connections/${connectionId}/oauth-callback`);
+    return `${ZALO_OA_OAUTH_BASE}/permission?app_id=${appId}&redirect_uri=${redirectUri}&state=${connectionId}`;
+  }
+
+  /**
+   * Exchange OAuth authorization code for access_token + refresh_token and persist to DB.
+   */
+  async exchangeZaloOaCode(connectionId: string, code: string): Promise<void> {
+    const connection = await this.model.findOne({ _id: new Types.ObjectId(connectionId), isDeleted: false }).exec();
+    if (!connection) throw new NotFoundException(`Connection ${connectionId} not found`);
+
+    const appId: string = (connection as any).config?.zaloAppId ?? '';
+    const appSecret: string = (connection as any).config?.zaloAppSecret ?? '';
+    if (!appId || !appSecret) throw new Error('zaloAppId and zaloAppSecret are required');
+
+    const res = await axios.post<{
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: number;
+      message?: string;
+    }>(
+      `${ZALO_OA_OAUTH_BASE}/access_token`,
+      new URLSearchParams({ app_id: appId, app_secret: appSecret, code, grant_type: 'authorization_code' }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+
+    if (res.data.error) {
+      throw new Error(`Zalo OA OAuth error [${res.data.error}]: ${res.data.message}`);
+    }
+
+    const expiresIn = res.data.expires_in ?? 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(connectionId) },
+      {
+        'config.zaloAccessToken': res.data.access_token,
+        'config.zaloRefreshToken': res.data.refresh_token,
+        'config.zaloTokenExpiresAt': expiresAt,
+        status: 'active',
+      },
+    );
+
+    this.publishChanged({ connectionId, action: 'updated', status: 'active' });
+    this.connLogger.log(`Zalo OA OAuth completed for connection ${connectionId}, token expires at ${expiresAt.toISOString()}`);
+  }
+
+  /**
+   * Refresh Zalo OA access token using refresh_token. Updates DB and returns new access token.
+   * Called by ConnectionWorkerService every 30 min.
+   */
+  async refreshZaloOaToken(connectionId: string): Promise<string> {
+    const connection = await this.model.findOne({ _id: new Types.ObjectId(connectionId), isDeleted: false }).exec();
+    if (!connection) throw new NotFoundException(`Connection ${connectionId} not found`);
+
+    const appId: string = (connection as any).config?.zaloAppId ?? '';
+    const appSecret: string = (connection as any).config?.zaloAppSecret ?? '';
+    const refreshToken: string = (connection as any).config?.zaloRefreshToken ?? '';
+    if (!appId || !appSecret || !refreshToken) throw new Error('Missing zaloAppId, zaloAppSecret, or zaloRefreshToken');
+
+    const res = await axios.post<{
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: number;
+      message?: string;
+    }>(
+      `${ZALO_OA_OAUTH_BASE}/access_token`,
+      new URLSearchParams({ app_id: appId, app_secret: appSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+
+    if (res.data.error) {
+      throw new Error(`Zalo OA token refresh error [${res.data.error}]: ${res.data.message}`);
+    }
+
+    const expiresIn = res.data.expires_in ?? 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    await this.model.updateOne(
+      { _id: new Types.ObjectId(connectionId) },
+      {
+        'config.zaloAccessToken': res.data.access_token,
+        // Zalo issues a new refresh_token each time (single-use) — persist it
+        ...(res.data.refresh_token ? { 'config.zaloRefreshToken': res.data.refresh_token } : {}),
+        'config.zaloTokenExpiresAt': expiresAt,
+      },
+    );
+
+    this.connLogger.log(`Zalo OA token refreshed for connection ${connectionId}, expires at ${expiresAt.toISOString()}`);
+    return res.data.access_token!;
+  }
+
+  /**
+   * Register Zalo OA webhook URL via Zalo Graph API.
+   * Called after OAuth completes or when webhook config changes.
+   */
+  async registerZaloOaWebhook(connectionId: string): Promise<void> {
+    const connection = await this.model.findOne({ _id: new Types.ObjectId(connectionId), isDeleted: false }).exec();
+    if (!connection) throw new NotFoundException(`Connection ${connectionId} not found`);
+
+    const accessToken: string = (connection as any).config?.zaloAccessToken ?? '';
+    if (!accessToken) throw new Error('No access token — complete OAuth first');
+
+    const aiwmBaseUrl = await this._getAiwmBaseUrl();
+    const webhookUrl = `${aiwmBaseUrl}/connections/${connectionId}/webhook`;
+
+    const res = await axios.post<{ error: number; message: string }>(
+      `${ZALO_OA_GRAPH_BASE}/webhook`,
+      { callback_url: webhookUrl },
+      { headers: { 'Content-Type': 'application/json', 'access_token': accessToken } },
+    );
+
+    if (res.data.error !== 0) {
+      throw new Error(`Zalo OA webhook register error [${res.data.error}]: ${res.data.message}`);
+    }
+    this.connLogger.log(`Zalo OA webhook registered: ${webhookUrl}`);
+  }
+
   private async _syncZaloWebhook(connection: any): Promise<void> {
     const botToken: string = connection.config?.botToken;
     const secretToken: string | undefined = connection.config?.zaloSecretToken;
     const usePolling = connection.config?.pollingMode !== false;
 
     if (usePolling) {
-      // Switch to polling → remove webhook from Zalo
       const res = await axios.post<{ ok: boolean; description?: string; error_code?: number }>(
-        `${ZALO_API_BASE}${botToken}/deleteWebhook`,
+        `${ZALO_BOT_API_BASE}${botToken}/deleteWebhook`,
         {},
         { headers: { 'Content-Type': 'application/json' } },
       );
@@ -110,10 +248,10 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
       }
       this.connLogger.log(`Zalo webhook removed for connection ${String(connection._id)}`);
     } else {
-      // Switch to webhook → register webhook URL on Zalo
-      const webhookUrl = `${AIWM_BASE_URL}/connections/${String(connection._id)}/webhook`;
+      const aiwmBaseUrl = await this._getAiwmBaseUrl();
+      const webhookUrl = `${aiwmBaseUrl}/connections/${String(connection._id)}/webhook`;
       const res = await axios.post<{ ok: boolean; result?: { url: string }; description?: string; error_code?: number }>(
-        `${ZALO_API_BASE}${botToken}/setWebhook`,
+        `${ZALO_BOT_API_BASE}${botToken}/setWebhook`,
         { url: webhookUrl, ...(secretToken ? { secret_token: secretToken } : {}) },
         { headers: { 'Content-Type': 'application/json' } },
       );

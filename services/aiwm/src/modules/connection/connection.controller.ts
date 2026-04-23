@@ -7,7 +7,10 @@ import {
   Body,
   Param,
   Query,
+  Redirect,
   UseGuards,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -133,6 +136,42 @@ export class ConnectionController {
     @CurrentUser() context: RequestContext,
   ) {
     return this.connectionService.removeRoute(id, Number(routeIndex), context);
+  }
+
+  // ─── Zalo OA OAuth ───────────────────────────────────────────────────────────
+
+  @Get(':id/oauth')
+  @Redirect()
+  @ApiOperation({ summary: 'Zalo OA: redirect admin to Zalo authorization page' })
+  async zaloOaOauth(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ): Promise<{ url: string }> {
+    const connection = await this.connectionService.findByIdInternal(id);
+    if (!connection) throw new NotFoundException(`Connection ${id} not found`);
+    if ((connection as any).provider !== 'zalo-oa') {
+      throw new BadRequestException('OAuth is only supported for zalo-oa connections');
+    }
+    const appId: string = (connection as any).config?.zaloAppId ?? '';
+    if (!appId) throw new BadRequestException('zaloAppId is not configured');
+    const url = await this.connectionService.buildZaloOaAuthUrl(id, appId);
+    return { url };
+  }
+
+  @Get(':id/oauth-callback')
+  @ApiOperation({ summary: 'Zalo OA: OAuth callback — exchange code for token' })
+  async zaloOaOauthCallback(
+    @Param('id') id: string,
+    @Query('code') code: string,
+    @Query('state') _state: string,
+  ): Promise<{ message: string }> {
+    if (!code) throw new BadRequestException('Missing code');
+    await this.connectionService.exchangeZaloOaCode(id, code);
+    await this.connectionService.registerZaloOaWebhook(id).catch((err: Error) => {
+      // Non-fatal: token is saved, webhook can be retried manually
+      console.warn(`Zalo OA webhook register failed after OAuth: ${err.message}`);
+    });
+    return { message: 'Zalo OA authorization successful. Connection is now active.' };
   }
 
 }

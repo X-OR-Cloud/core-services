@@ -4,7 +4,7 @@ import { BaseSchema } from '@hydrabyte/base';
 
 export type ConnectionDocument = Connection & Document;
 
-export type ConnectionProvider = 'discord' | 'telegram' | 'teams' | 'zalo-bot';
+export type ConnectionProvider = 'discord' | 'telegram' | 'teams' | 'zalo-bot' | 'zalo-oa';
 export type ConnectionStatus = 'active' | 'inactive' | 'error';
 export type ConnectionLogLevel = 'info' | 'warn' | 'error';
 export type ConversationMode = 'user' | 'connection' | 'shared';
@@ -26,6 +26,15 @@ export interface ConnectionConfig {
   webhookUrl?: string;          // Telegram: webhook mode public URL
   pollingMode?: boolean;        // Telegram / Zalo Bot: use long-polling (default: true); set false to use webhook mode
   zaloSecretToken?: string;     // Zalo Bot: secret token to validate X-Bot-Api-Secret-Token header
+
+  // Zalo OA
+  oaId?: string;                // Zalo OA ID
+  zaloAppId?: string;           // Zalo App ID (from developers.zalo.me)
+  zaloAppSecret?: string;       // Zalo App Secret
+  zaloOaSecretKey?: string;     // Webhook secret for SHA256 signature verification
+  zaloAccessToken?: string;     // OAuth access token (1h TTL, runtime)
+  zaloRefreshToken?: string;    // OAuth refresh token (3 months, single-use)
+  zaloTokenExpiresAt?: Date;    // Access token expiry timestamp
 }
 
 export interface ConnectionRoute {
@@ -52,7 +61,7 @@ export class Connection extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['discord', 'telegram', 'teams', 'zalo-bot'],
+    enum: ['discord', 'telegram', 'teams', 'zalo-bot', 'zalo-oa'],
     index: true,
   })
   provider: ConnectionProvider;

@@ -7,6 +7,7 @@ import { ConnectionRunner, OutboundHandler } from './connection-runner';
 import { redisConfig } from '../../config/redis.config';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
+const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const CHANNEL_OUTBOUND = 'outbound:message';
 const CHANNEL_OUTBOUND_TYPING = 'outbound:typing';
 const CHANNEL_OUTBOUND_COMMAND = 'outbound:command';
@@ -15,6 +16,7 @@ const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 const CHANNEL_INBOUND_TEAMS_PATTERN = 'inbound:teams:*';
 const CHANNEL_INBOUND_ZALO_BOT_PATTERN = 'inbound:zalo-bot:*';
+const CHANNEL_INBOUND_ZALO_OA_PATTERN = 'inbound:zalo-oa:*';
 
 /**
  * ConnectionWorkerService — orchestrates all active ConnectionRunners.
@@ -32,6 +34,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly typingChannels = new Map<string, { channelId: string; threadId?: string; teamsServiceUrl?: string; teamsConversationId?: string }>(); // conversationId → chat destination
   // Teams conversation refs are persisted in Redis (key: teams:ref:{connectionId}:{channelId})
   private healthCheckTimer: NodeJS.Timeout | null = null;
+  private tokenRefreshTimer: NodeJS.Timeout | null = null;
   private redisPub: Redis | null = null;
   private redisSub: Redis | null = null;
 
@@ -46,7 +49,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisSub = new Redis(redisConfig);
 
     await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_OUTBOUND_DIRECT, CHANNEL_CONNECTION_CHANGED);
-    await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN, CHANNEL_INBOUND_ZALO_BOT_PATTERN);
+    await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN, CHANNEL_INBOUND_ZALO_BOT_PATTERN, CHANNEL_INBOUND_ZALO_OA_PATTERN);
 
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
@@ -111,15 +114,30 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
         } catch (err: any) {
           this.logger.error(`Failed to process inbound:zalo-bot for ${connectionId}: ${err.message}`);
         }
+      } else if (channel.startsWith('inbound:zalo-oa:')) {
+        const connectionId = channel.replace('inbound:zalo-oa:', '');
+        try {
+          const body = JSON.parse(message);
+          const runner = this.runners.get(connectionId);
+          if (runner) {
+            runner.handleZaloOaEvent(body);
+          } else {
+            this.logger.warn(`No runner found for Zalo OA inbound on connection ${connectionId}`);
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to process inbound:zalo-oa for ${connectionId}: ${err.message}`);
+        }
       }
     });
 
     await this.spawnConnections();
     this.startHealthCheck();
+    this.startTokenRefresh();
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    if (this.tokenRefreshTimer) clearInterval(this.tokenRefreshTimer);
     await Promise.all([...this.runners.values()].map((r) => r.stop()));
     this.runners.clear();
     this.redisPub?.disconnect();
@@ -306,6 +324,22 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.healthCheckTimer = setInterval(async () => {
       await this.reconcile();
     }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private startTokenRefresh(): void {
+    this.tokenRefreshTimer = setInterval(async () => {
+      for (const [connectionId, runner] of this.runners) {
+        const connection = await this.connectionService.getConnectionById(connectionId);
+        if (!connection || (connection as any).provider !== 'zalo-oa') continue;
+        try {
+          const newToken = await this.connectionService.refreshZaloOaToken(connectionId);
+          runner.updateZaloOaToken(newToken);
+          this.logger.log(`Zalo OA token refreshed for connection ${connectionId}`);
+        } catch (err: any) {
+          this.logger.error(`Zalo OA token refresh failed for connection ${connectionId}: ${err.message}`);
+        }
+      }
+    }, TOKEN_REFRESH_INTERVAL_MS);
   }
 
   private async reconcile(): Promise<void> {
