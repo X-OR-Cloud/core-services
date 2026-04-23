@@ -3,23 +3,25 @@
 ## 1. Entity Schema: `Connection`
 
 ### Ý nghĩa
-`Connection` đại diện cho một kết nối bot với nền tảng nhắn tin bên ngoài (Discord, Telegram). Mỗi Connection chứa thông tin xác thực bot (`config`) và danh sách các tuyến định tuyến (`routes`) để ánh xạ kênh/server đến Agent cụ thể.
+`Connection` đại diện cho một kết nối bot với nền tảng nhắn tin bên ngoài. Mỗi Connection chứa thông tin xác thực bot (`config`) và danh sách routing rules (`routes`) để ánh xạ kênh/server đến Agent cụ thể.
 
 ---
 
 ### Enums
 
 #### `ConnectionProvider`
-| Giá trị | Ý nghĩa |
+| Giá trị | Nền tảng |
 |---------|---------|
-| `discord` | Kết nối qua Discord bot |
-| `telegram` | Kết nối qua Telegram bot |
+| `discord` | Discord Bot |
+| `telegram` | Telegram Bot |
+| `teams` | Microsoft Teams Bot |
+| `zalo-bot` | Zalo Bot (bot.zapps.me) |
 
 #### `ConnectionStatus`
 | Giá trị | Ý nghĩa |
 |---------|---------|
-| `active` | Bot đang chạy và nhận tin nhắn |
-| `inactive` | Bot đã bị tắt thủ công |
+| `active` | Bot đang chạy, nhận tin nhắn |
+| `inactive` | Bot đã tắt thủ công |
 | `error` | Bot gặp lỗi khi kết nối |
 
 ---
@@ -28,34 +30,48 @@
 
 #### Root fields
 
-| Trường | Kiểu | Bắt buộc | Ý nghĩa | Ví dụ |
-|--------|------|----------|---------|-------|
-| `name` | `string` | ✅ | Tên hiển thị của connection | `"My Discord Bot"` |
-| `description` | `string` | ❌ | Mô tả mục đích của connection | `"Bot hỗ trợ khách hàng kênh #support"` |
-| `provider` | `ConnectionProvider` | ✅ | Nền tảng nhắn tin | `"discord"` |
-| `status` | `ConnectionStatus` | ✅ (default: `inactive`) | Trạng thái vận hành | `"active"` |
-| `config` | `ConnectionConfig` | ✅ | Thông tin xác thực bot | *(xem bên dưới)* |
-| `routes` | `ConnectionRoute[]` | ❌ | Danh sách routing rules | *(xem bên dưới)* |
+| Trường | Kiểu | Bắt buộc | Ý nghĩa |
+|--------|------|----------|---------|
+| `name` | `string` | ✅ | Tên hiển thị của connection |
+| `description` | `string` | ❌ | Mô tả mục đích |
+| `provider` | `ConnectionProvider` | ✅ | Nền tảng nhắn tin |
+| `status` | `ConnectionStatus` | auto (`inactive`) | Trạng thái vận hành |
+| `config` | `ConnectionConfig` | ✅ | Thông tin xác thực bot |
+| `routes` | `ConnectionRoute[]` | ❌ | Danh sách routing rules |
 
-#### `ConnectionConfig` (Object)
+#### `ConnectionConfig`
 
-| Trường | Kiểu | Bắt buộc | Ý nghĩa | Ví dụ |
-|--------|------|----------|---------|-------|
-| `botToken` | `string` | ✅ | Token xác thực bot với nền tảng | `"Bot MTI3..."` (Discord) / `"7123456789:AAF..."` (Telegram) |
-| `applicationId` | `string` | ❌ | Discord Application ID | `"1234567890123456789"` |
-| `webhookUrl` | `string` | ❌ | URL webhook (Telegram webhook mode) | `"https://api.example.com/webhook/telegram"` |
-| `pollingMode` | `boolean` | ❌ | Dùng polling thay vì webhook (Telegram) | `true` |
+| Trường | Kiểu | Dùng cho | Ý nghĩa |
+|--------|------|----------|---------|
+| `botToken` | `string` | Discord, Telegram, Zalo Bot | Token xác thực bot với nền tảng |
+| `applicationId` | `string` | Discord | Application/Client ID |
+| `webhookUrl` | `string` | Telegram | URL webhook công khai (nếu dùng webhook mode) |
+| `pollingMode` | `boolean` | Telegram | Dùng long-polling thay vì webhook (default: `true`) |
+| `appId` | `string` | Teams | Microsoft App ID |
+| `appPassword` | `string` | Teams | Azure AD client secret |
+| `tenantId` | `string` | Teams | Azure AD tenant ID |
+| `zaloSecretToken` | `string` | Zalo Bot | Secret token để validate header `X-Bot-Api-Secret-Token` khi nhận webhook |
 
-#### `ConnectionRoute` (Object trong mảng `routes`)
+> **Bảo mật:** Trường `config` chỉ trả về ở `GET /connections/:id`, không có trong danh sách `GET /connections`.
 
-| Trường | Kiểu | Bắt buộc | Ý nghĩa | Ví dụ |
-|--------|------|----------|---------|-------|
-| `agentId` | `string` | ✅ | ID của Agent xử lý tin nhắn trên route này | `"665f1a2b3c4d5e6f7a8b9c0d"` |
-| `guildId` | `string` | ❌ | Discord Server ID (bỏ trống = áp dụng mọi server) | `"987654321098765432"` |
-| `channelId` | `string` | ❌ | ID kênh cụ thể (bỏ trống = mọi kênh) | `"123456789012345678"` |
-| `botId` | `string` | ❌ | Bot ID, dùng để detect mention | `"1234567890123456789"` |
-| `requireMention` | `boolean` | ❌ | Chỉ xử lý khi bot bị @mention | `true` |
-| `allowAnonymous` | `boolean` | ❌ | Cho phép user không có tài khoản chat | `false` |
+#### `ConnectionRoute`
+
+| Trường | Kiểu | Bắt buộc | Ý nghĩa |
+|--------|------|----------|---------|
+| `agentId` | `string` | ✅ | ID của Agent xử lý tin nhắn trên route này |
+| `serverId` | `string` | ❌ | Discord: Guild ID \| Telegram: chat.id (group) \| Teams: teamId \| Zalo Bot: chat.id |
+| `channelId` | `string` | ❌ | Discord: channel ID \| Telegram: message_thread_id (topic) \| Teams: channelId |
+| `botId` | `string` | ❌ | Filter theo bot ID cụ thể |
+| `tenantId` | `string` | ❌ | Teams: Azure tenant ID |
+| `requireMention` | `boolean` | ❌ | Chỉ xử lý khi bot bị @mention |
+| `allowAnonymous` | `boolean` | ❌ | Cho phép user không có tài khoản trong org (default: `true`) |
+| `verboseActions` | `string[]` | ❌ | Action types forward về platform: `[]` = message only, `['*']` = tất cả, `['thinking','tool_use']` = chọn lọc |
+| `verboseLogsChannelId` | `string` | ❌ | Channel ID nhận **tất cả** action logs, bất kể `verboseActions` |
+
+**Logic match route (theo thứ tự ưu tiên):**
+1. `serverId` + `channelId` cùng khớp
+2. `serverId` only
+3. Catch-all (không có filter nào)
 
 #### Inherited from `BaseSchema`
 
@@ -77,26 +93,23 @@
 
 ```
 POST /connections
+Authorization: Bearer <JWT>
 ```
 
 **Body:**
 
-| Trường | Kiểu | Bắt buộc | Ví dụ |
-|--------|------|----------|-------|
-| `name` | `string` | ✅ | `"Support Bot"` |
-| `description` | `string` | ❌ | `"Bot cho kênh support"` |
-| `provider` | `"discord" \| "telegram"` | ✅ | `"discord"` |
-| `config.botToken` | `string` | ✅ | `"Bot MTI3NjQ5..."` |
-| `config.applicationId` | `string` | ❌ | `"1234567890123456789"` |
-| `config.webhookUrl` | `string` | ❌ | `"https://..."` |
-| `config.pollingMode` | `boolean` | ❌ | `false` |
-| `routes` | `ConnectionRoute[]` | ❌ | *(xem schema)* |
+| Trường | Kiểu | Bắt buộc |
+|--------|------|----------|
+| `name` | `string` | ✅ |
+| `description` | `string` | ❌ |
+| `provider` | `ConnectionProvider` | ✅ |
+| `config` | `ConnectionConfig` | ✅ |
+| `routes` | `ConnectionRoute[]` | ❌ |
 
-**Request Sample:**
+**Request — Discord:**
 ```json
 {
   "name": "Support Bot",
-  "description": "Bot hỗ trợ kênh Discord",
   "provider": "discord",
   "config": {
     "botToken": "Bot MTI3NjQ5ODc4OTAxMjM0NTY3",
@@ -104,10 +117,65 @@ POST /connections
   },
   "routes": [
     {
-      "guildId": "987654321098765432",
+      "serverId": "987654321098765432",
       "channelId": "123456789012345678",
       "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
       "requireMention": false,
+      "allowAnonymous": true
+    }
+  ]
+}
+```
+
+**Request — Telegram (polling):**
+```json
+{
+  "name": "Telegram Support",
+  "provider": "telegram",
+  "config": {
+    "botToken": "7123456789:AAFxxxxxx",
+    "pollingMode": true
+  },
+  "routes": [
+    {
+      "agentId": "665f1a2b3c4d5e6f7a8b9c0d"
+    }
+  ]
+}
+```
+
+**Request — Teams:**
+```json
+{
+  "name": "Teams HR Bot",
+  "provider": "teams",
+  "config": {
+    "appId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "appPassword": "azure-client-secret",
+    "tenantId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+  },
+  "routes": [
+    {
+      "serverId": "teams-team-id",
+      "channelId": "teams-channel-id",
+      "agentId": "665f1a2b3c4d5e6f7a8b9c0d"
+    }
+  ]
+}
+```
+
+**Request — Zalo Bot:**
+```json
+{
+  "name": "Zalo CSKH Bot",
+  "provider": "zalo-bot",
+  "config": {
+    "botToken": "12345689:abc-xyz",
+    "zaloSecretToken": "my-webhook-secret"
+  },
+  "routes": [
+    {
+      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
       "allowAnonymous": true
     }
   ]
@@ -118,36 +186,24 @@ POST /connections
 ```json
 {
   "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "name": "Support Bot",
-  "description": "Bot hỗ trợ kênh Discord",
-  "provider": "discord",
+  "name": "Zalo CSKH Bot",
+  "description": null,
+  "provider": "zalo-bot",
   "status": "inactive",
   "config": {
-    "botToken": "Bot MTI3NjQ5ODc4OTAxMjM0NTY3",
-    "applicationId": "1234567890123456789"
+    "botToken": "12345689:abc-xyz",
+    "zaloSecretToken": "my-webhook-secret"
   },
   "routes": [
     {
-      "guildId": "987654321098765432",
-      "channelId": "123456789012345678",
       "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "requireMention": false,
       "allowAnonymous": true
     }
   ],
   "owner": { "orgId": "org123", "userId": "user456" },
   "createdBy": "user456",
-  "createdAt": "2026-03-12T08:00:00.000Z",
-  "updatedAt": "2026-03-12T08:00:00.000Z"
-}
-```
-
-**Response 400 — Validation Error:**
-```json
-{
-  "statusCode": 400,
-  "message": ["provider must be one of: discord, telegram"],
-  "error": "Bad Request"
+  "createdAt": "2026-04-23T08:00:00.000Z",
+  "updatedAt": "2026-04-23T08:00:00.000Z"
 }
 ```
 
@@ -157,20 +213,21 @@ POST /connections
 
 ```
 GET /connections
+Authorization: Bearer <JWT>
 ```
 
 **Query String:**
 
-| Param | Kiểu | Ý nghĩa | Ví dụ |
-|-------|------|---------|-------|
-| `page` | `number` | Trang (default: 1) | `?page=1` |
-| `limit` | `number` | Số item/trang (default: 20) | `?limit=10` |
-| `sort` | `string` | Sắp xếp | `?sort=createdAt:desc` |
-| `provider` | `string` | Lọc theo provider | `?provider=discord` |
-| `status` | `string` | Lọc theo trạng thái | `?status=active` |
-| `name:regex` | `string` | Tìm theo tên | `?name:regex=support` |
+| Param | Ý nghĩa | Ví dụ |
+|-------|---------|-------|
+| `page` | Trang (default: 1) | `?page=1` |
+| `limit` | Số item/trang (default: 20) | `?limit=10` |
+| `sort` | Sắp xếp | `?sort=createdAt:desc` |
+| `provider` | Lọc theo provider | `?provider=zalo-bot` |
+| `status` | Lọc theo trạng thái | `?status=active` |
+| `name:regex` | Tìm theo tên | `?name:regex=support` |
 
-> **Lưu ý:** Response **không bao gồm** trường `config` và `routes` để bảo mật `botToken` và giảm payload.
+> Response **không bao gồm** `config` và `routes` (bảo mật botToken, giảm payload).
 
 **Response 200:**
 ```json
@@ -178,13 +235,12 @@ GET /connections
   "data": [
     {
       "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-      "name": "Support Bot",
-      "description": "Bot hỗ trợ kênh Discord",
-      "provider": "discord",
+      "name": "Zalo CSKH Bot",
+      "provider": "zalo-bot",
       "status": "active",
       "owner": { "orgId": "org123", "userId": "user456" },
-      "createdAt": "2026-03-12T08:00:00.000Z",
-      "updatedAt": "2026-03-12T08:30:00.000Z"
+      "createdAt": "2026-04-23T08:00:00.000Z",
+      "updatedAt": "2026-04-23T08:30:00.000Z"
     }
   ],
   "total": 1,
@@ -199,38 +255,34 @@ GET /connections
 
 ```
 GET /connections/:id
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
-
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
+> Trả về đầy đủ `config` và `routes`.
 
 **Response 200:**
 ```json
 {
   "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "name": "Support Bot",
-  "description": "Bot hỗ trợ kênh Discord",
-  "provider": "discord",
+  "name": "Zalo CSKH Bot",
+  "provider": "zalo-bot",
   "status": "active",
   "config": {
-    "botToken": "Bot MTI3NjQ5ODc4OTAxMjM0NTY3",
-    "applicationId": "1234567890123456789"
+    "botToken": "12345689:abc-xyz",
+    "zaloSecretToken": "my-webhook-secret"
   },
   "routes": [
     {
-      "guildId": "987654321098765432",
-      "channelId": "123456789012345678",
+      "serverId": "1234567890",
       "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "requireMention": false,
-      "allowAnonymous": true
+      "allowAnonymous": true,
+      "verboseActions": [],
+      "verboseLogsChannelId": null
     }
   ],
   "owner": { "orgId": "org123", "userId": "user456" },
-  "createdAt": "2026-03-12T08:00:00.000Z",
-  "updatedAt": "2026-03-12T08:30:00.000Z"
+  "createdAt": "2026-04-23T08:00:00.000Z",
+  "updatedAt": "2026-04-23T08:30:00.000Z"
 }
 ```
 
@@ -249,15 +301,12 @@ GET /connections/:id
 
 ```
 PUT /connections/:id
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
+Tất cả fields đều optional. Dùng để đổi tên, cập nhật config, thay thế toàn bộ routes, hoặc kích hoạt/tắt connection.
 
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
-
-**Body (tất cả optional):**
+**Body:**
 
 | Trường | Kiểu | Ý nghĩa |
 |--------|------|---------|
@@ -265,25 +314,24 @@ PUT /connections/:id
 | `description` | `string` | Mô tả mới |
 | `status` | `"active" \| "inactive"` | Kích hoạt/tắt connection |
 | `config` | `ConnectionConfig` | Cập nhật thông tin xác thực |
-| `routes` | `ConnectionRoute[]` | Thay thế toàn bộ danh sách route |
+| `routes` | `ConnectionRoute[]` | **Thay thế toàn bộ** danh sách route |
 
-**Request Sample — Kích hoạt bot:**
+**Request — Kích hoạt bot:**
+```json
+{ "status": "active" }
+```
+
+**Request — Đổi botToken:**
 ```json
 {
-  "status": "active"
+  "config": {
+    "botToken": "12345689:new-token",
+    "zaloSecretToken": "new-secret"
+  }
 }
 ```
 
-**Response 200:**
-```json
-{
-  "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "name": "Support Bot",
-  "status": "active",
-  "updatedBy": "user456",
-  "updatedAt": "2026-03-12T09:00:00.000Z"
-}
-```
+**Response 200:** Trả về document đã cập nhật (tương tự `GET /connections/:id`).
 
 ---
 
@@ -291,22 +339,17 @@ PUT /connections/:id
 
 ```
 DELETE /connections/:id
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
-
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
-
-> Soft delete — đặt `isDeleted: true`, không xóa khỏi DB.
+Soft delete — đặt `isDeleted: true`, không xóa khỏi DB. Connection runner sẽ tự dừng.
 
 **Response 200:**
 ```json
 {
   "_id": "684a1b2c3d4e5f6a7b8c9d0e",
   "isDeleted": true,
-  "updatedAt": "2026-03-12T09:30:00.000Z"
+  "updatedAt": "2026-04-23T09:30:00.000Z"
 }
 ```
 
@@ -316,52 +359,42 @@ DELETE /connections/:id
 
 ```
 POST /connections/:id/routes
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
-
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
+Thêm một route vào cuối danh sách. Connection runner tự restart sau khi route thay đổi.
 
 **Body:**
 
-| Trường | Kiểu | Bắt buộc | Ví dụ |
-|--------|------|----------|-------|
-| `agentId` | `string` | ✅ | `"665f1a2b3c4d5e6f7a8b9c0d"` |
-| `guildId` | `string` | ❌ | `"987654321098765432"` |
-| `channelId` | `string` | ❌ | `"123456789012345678"` |
-| `botId` | `string` | ❌ | `"1234567890123456789"` |
-| `requireMention` | `boolean` | ❌ | `true` |
-| `allowAnonymous` | `boolean` | ❌ | `false` |
+| Trường | Kiểu | Bắt buộc | Ý nghĩa |
+|--------|------|----------|---------|
+| `agentId` | `string` | ✅ | Agent xử lý tin nhắn |
+| `serverId` | `string` | ❌ | Server/group chat ID để filter |
+| `channelId` | `string` | ❌ | Channel/thread ID để filter |
+| `requireMention` | `boolean` | ❌ | Chỉ reply khi bị @mention |
+| `allowAnonymous` | `boolean` | ❌ | Cho phép user ngoài org (default: `true`) |
+| `verboseActions` | `string[]` | ❌ | `[]` = message only, `['*']` = tất cả |
+| `verboseLogsChannelId` | `string` | ❌ | Channel nhận toàn bộ action logs |
 
-**Request Sample — Route catch-all:**
+**Request — Route cho một group chat cụ thể (Zalo Bot):**
 ```json
 {
+  "serverId": "1234567890",
   "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
   "allowAnonymous": true
 }
 ```
 
-**Response 200:**
+**Request — Catch-all route với verbose logs:**
 ```json
 {
-  "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "routes": [
-    {
-      "guildId": "987654321098765432",
-      "channelId": "123456789012345678",
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "requireMention": false,
-      "allowAnonymous": true
-    },
-    {
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "allowAnonymous": true
-    }
-  ]
+  "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
+  "verboseActions": ["thinking", "tool_use"],
+  "verboseLogsChannelId": "log-channel-id"
 }
 ```
+
+**Response 200:** Trả về Connection document với `routes` đã cập nhật.
 
 ---
 
@@ -369,39 +402,20 @@ POST /connections/:id/routes
 
 ```
 PUT /connections/:id/routes/:routeIndex
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
+Cập nhật một route theo index (0-based). Chỉ các field được gửi mới bị overwrite.
 
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
-| `routeIndex` | `number` | Index của route trong mảng (0-based) |
-
-**Body:** Các trường của `ConnectionRoute`, tất cả optional.
-
-**Request Sample:**
+**Request:**
 ```json
 {
-  "requireMention": true
+  "requireMention": true,
+  "verboseActions": ["*"]
 }
 ```
 
-**Response 200:**
-```json
-{
-  "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "routes": [
-    {
-      "guildId": "987654321098765432",
-      "channelId": "123456789012345678",
-      "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
-      "requireMention": true,
-      "allowAnonymous": true
-    }
-  ]
-}
-```
+**Response 200:** Trả về Connection document với `routes` đã cập nhật.
 
 **Response 404 — Index không tồn tại:**
 ```json
@@ -418,22 +432,12 @@ PUT /connections/:id/routes/:routeIndex
 
 ```
 DELETE /connections/:id/routes/:routeIndex
+Authorization: Bearer <JWT>
 ```
 
-**Params:**
+Xóa route theo index (0-based).
 
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
-| `routeIndex` | `number` | Index của route cần xóa (0-based) |
-
-**Response 200:**
-```json
-{
-  "_id": "684a1b2c3d4e5f6a7b8c9d0e",
-  "routes": []
-}
-```
+**Response 200:** Trả về Connection document với `routes` đã cập nhật.
 
 ---
 
@@ -441,41 +445,20 @@ DELETE /connections/:id/routes/:routeIndex
 
 ```
 GET /connections/:id/logs
+Authorization: Bearer <JWT>
 ```
 
-**Mô tả:** Lấy danh sách debug log của một Connection — ghi lại lifecycle của runner trong `con` worker mode (kết nối/ngắt kết nối, routing, lỗi, v.v.). Tối đa **200 entries** theo kiểu FIFO (cũ nhất bị xóa khi đầy).
+Lấy debug logs của connection runner — ghi lại lifecycle: kết nối, routing, lỗi, v.v. Tối đa **200 entries** (FIFO, cũ nhất bị xóa khi đầy).
 
-> Log **không được trả về** trong `GET /connections` hay `GET /connections/:id` (field `logs` có `select: false`). Phải dùng endpoint này để đọc.
-
-**Authentication:** Bearer JWT (required)
-
-**Params:**
-
-| Param | Kiểu | Ý nghĩa |
-|-------|------|---------|
-| `id` | `string` (ObjectId) | ID của Connection |
+> `logs` không có trong `GET /connections` hay `GET /connections/:id`.
 
 **Log Levels:**
 
 | Level | Ý nghĩa |
 |-------|---------|
-| `info` | Sự kiện bình thường (kết nối, routing thành công) |
-| `warn` | Cảnh báo (ngắt kết nối, không tìm thấy route) |
-| `error` | Lỗi (adapter error, inbound xử lý thất bại) |
-
-**Log Events (các message thường gặp):**
-
-| Event | Level | Message |
-|-------|-------|---------|
-| Runner khởi động | `info` | `Runner starting` |
-| Kết nối thành công | `info` | `Connected to discord` |
-| Ngắt kết nối | `warn` | `Disconnected from discord` |
-| Lỗi adapter | `error` | `Adapter error: <message>` |
-| Không khớp route | `info` | `No route matched for channel <channelId>` |
-| Tin nhắn được route | `info` | `Inbound message routed` |
-| Lỗi xử lý inbound | `error` | `Failed to handle inbound message: <message>` |
-| Runner dừng | `info` | `Runner stopped` |
-| Reconcile dừng runner | `info` | `Runner stopped by health check reconciliation` |
+| `info` | Sự kiện bình thường |
+| `warn` | Cảnh báo (ngắt kết nối, không khớp route) |
+| `error` | Lỗi adapter hoặc xử lý message |
 
 **Response 200:**
 ```json
@@ -484,107 +467,160 @@ GET /connections/:id/logs
     {
       "level": "info",
       "message": "Runner starting",
-      "time": "2026-03-17T07:00:00.000Z"
+      "time": "2026-04-23T07:00:00.000Z"
     },
     {
       "level": "info",
-      "message": "Connected to discord",
-      "time": "2026-03-17T07:00:01.234Z"
+      "message": "Connected to zalo-bot",
+      "time": "2026-04-23T07:00:01.234Z"
     },
     {
       "level": "info",
       "message": "Inbound message routed",
-      "time": "2026-03-17T07:15:42.881Z",
+      "time": "2026-04-23T07:15:42.881Z",
       "data": {
-        "provider": "discord",
-        "user": "john_doe#1234",
+        "provider": "zalo-bot",
+        "user": "Nguyễn Văn A",
         "agentId": "665f1a2b3c4d5e6f7a8b9c0d",
         "conversationId": "684a9f1b2c3d4e5f6a7b8c01"
       }
     },
     {
       "level": "warn",
-      "message": "No route matched for channel 123456789012345678",
-      "time": "2026-03-17T07:22:10.445Z",
-      "data": {
-        "provider": "discord",
-        "user": "alice#5678"
-      }
-    },
-    {
-      "level": "warn",
-      "message": "Disconnected from discord",
-      "time": "2026-03-17T08:01:05.002Z",
-      "data": {
-        "reason": "Session invalidated"
-      }
-    },
-    {
-      "level": "error",
-      "message": "Adapter error: Used disallowed intents",
-      "time": "2026-03-17T08:01:05.100Z"
+      "message": "No route matched for channel 1234567890",
+      "time": "2026-04-23T07:22:10.445Z",
+      "data": { "provider": "zalo-bot", "user": "Trần Thị B" }
     }
   ]
 }
 ```
 
-**Response 200 — Connection chưa có log:**
-```json
-{
-  "logs": []
-}
+---
+
+### 2.10 Webhook Endpoint (Teams & Zalo Bot)
+
+```
+POST /connections/:id/webhook
 ```
 
-**Response 404 — Connection không tồn tại:**
-```json
-{
-  "statusCode": 404,
-  "message": "Connection 684a1b2c3d4e5f6a7b8c9d0e not found",
-  "error": "Not Found"
-}
+> Không cần JWT. Xác thực theo từng provider.
+
+Endpoint nhận event từ nền tảng gửi vào. Dispatch theo `provider` của connection.
+
+| Provider | Xác thực | Hành động |
+|----------|----------|-----------|
+| `teams` | Verify JWT Bearer từ Microsoft Bot Service | Publish `inbound:teams:{id}` lên Redis |
+| `zalo-bot` | So sánh header `X-Bot-Api-Secret-Token` với `config.zaloSecretToken` | Publish `inbound:zalo-bot:{id}` lên Redis |
+
+**Cấu hình webhook URL cho Zalo Bot:**
+```
+https://api.your-domain.com/connections/<connectionId>/webhook
 ```
 
-**curl example:**
-```bash
-curl -X GET "http://localhost:3003/connections/684a1b2c3d4e5f6a7b8c9d0e/logs" \
-  -H "Authorization: Bearer <JWT>"
+Đăng ký URL này trên [bot.zapps.me](https://bot.zapps.me) với secret token tương ứng với `config.zaloSecretToken`.
+
+**Teams — URL validation challenge:**
+```
+GET /connections/:id/webhook?validationToken=<token>
+```
+Teams gửi GET khi đăng ký bot endpoint. Server trả về `validationToken` dạng plain text.
+
+**Response 400 — Secret không hợp lệ (Zalo Bot):**
+```json
+{
+  "statusCode": 400,
+  "message": "Invalid X-Bot-Api-Secret-Token",
+  "error": "Bad Request"
+}
 ```
 
 ---
 
 ## 3. Tóm tắt Endpoints
 
-| Method | URL | Mô tả |
-|--------|-----|-------|
-| `POST` | `/connections` | Tạo connection mới |
-| `GET` | `/connections` | Danh sách connections (không có config/routes) |
-| `GET` | `/connections/:id` | Chi tiết connection (có config/routes) |
-| `PUT` | `/connections/:id` | Cập nhật connection |
-| `DELETE` | `/connections/:id` | Xóa mềm connection |
-| `GET` | `/connections/:id/logs` | Xem debug logs của connection runner |
-| `POST` | `/connections/:id/routes` | Thêm route |
-| `PUT` | `/connections/:id/routes/:routeIndex` | Cập nhật route theo index |
-| `DELETE` | `/connections/:id/routes/:routeIndex` | Xóa route theo index |
+| Method | URL | Auth | Mô tả |
+|--------|-----|------|-------|
+| `POST` | `/connections` | JWT | Tạo connection mới |
+| `GET` | `/connections` | JWT | Danh sách (không có config/routes) |
+| `GET` | `/connections/:id` | JWT | Chi tiết (có config/routes) |
+| `PUT` | `/connections/:id` | JWT | Cập nhật connection |
+| `DELETE` | `/connections/:id` | JWT | Xóa mềm connection |
+| `GET` | `/connections/:id/logs` | JWT | Debug logs của runner |
+| `POST` | `/connections/:id/routes` | JWT | Thêm route |
+| `PUT` | `/connections/:id/routes/:routeIndex` | JWT | Cập nhật route theo index |
+| `DELETE` | `/connections/:id/routes/:routeIndex` | JWT | Xóa route theo index |
+| `GET` | `/connections/:id/webhook` | — | Teams URL validation challenge |
+| `POST` | `/connections/:id/webhook` | Provider-specific | Nhận webhook event (Teams / Zalo Bot) |
 
 ---
 
-## 4. Luồng hoạt động
+## 4. Hướng dẫn cấu hình theo provider
+
+### Discord
+1. Tạo bot tại [discord.com/developers](https://discord.com/developers/applications)
+2. Copy **Bot Token** và **Application ID**
+3. Tạo Connection với `provider: "discord"`, `config.botToken`, `config.applicationId`
+4. Thêm route với `serverId` (Guild ID) và/hoặc `channelId`
+5. Đặt `status: "active"` để khởi động runner
+
+### Telegram
+1. Tạo bot qua [@BotFather](https://t.me/BotFather), lấy token
+2. Tạo Connection với `provider: "telegram"`, `config.botToken`
+3. **Polling mode** (dev/đơn giản): `config.pollingMode: true` — không cần cấu hình thêm
+4. **Webhook mode** (production): set `config.webhookUrl` = URL công khai của server
+5. Route: `serverId` = chat.id của group (lấy từ Telegram API), bỏ trống = nhận từ mọi chat
+
+### Teams
+1. Đăng ký bot tại [Azure Bot Service](https://portal.azure.com)
+2. Lấy **App ID**, **App Password**, **Tenant ID**
+3. Tạo Connection với `provider: "teams"`, điền đủ `config`
+4. Đăng ký webhook URL `POST /connections/:id/webhook` trong Azure Bot Service
+5. Route: `serverId` = Teams team ID, `channelId` = channel ID
+
+### Zalo Bot
+1. Tạo bot tại [bot.zapps.me](https://bot.zapps.me) (tên phải bắt đầu bằng "Bot")
+2. Lấy **Bot Token** từ Zalo Bot Creator
+3. Tạo Connection với `provider: "zalo-bot"`, `config.botToken`, `config.zaloSecretToken`
+4. Đăng ký webhook URL `POST /connections/:id/webhook` trên bot.zapps.me với secret token tương ứng
+5. Route: `serverId` = chat.id của group/user (lấy từ event payload), bỏ trống = nhận từ mọi chat
+6. Đặt `status: "active"`
+
+---
+
+## 5. Luồng hoạt động
 
 ```
-Discord/Telegram ──► Adapter ──► NormalizedInbound
-                                        │
-                                   RoutingService
-                                   (match route → agentId)
-                                        │
-                                  ConnectionRunner
-                                  (tạo Action, tìm/tạo Conversation)
-                                        │
-                                    Agent xử lý
-                                        │
-                              ConnectionWorkerService
-                              (handleOutbound → send về platform)
+Platform Message
+      │
+      ├── Discord/Telegram: Adapter (polling/webhook) ──► NormalizedInbound
+      └── Teams/Zalo Bot:   HTTP POST /connections/:id/webhook
+                                    │
+                               Redis publish
+                            inbound:{provider}:{id}
+                                    │
+                           ConnectionWorkerService
+                           (pmessage handler)
+                                    │
+                           ConnectionRunner
+                           ._handleInbound()
+                                    │
+                            RoutingService
+                         (match route → agentId)
+                                    │
+                        Redis: chat:message-new
+                                    │
+                            ChatGateway (API)
+                                    │
+                              Agent xử lý
+                                    │
+                        Redis: outbound:message
+                                    │
+                       ConnectionWorkerService
+                         .handleOutbound()
+                                    │
+                       Adapter.send() → Platform
 ```
 
-- **`ConnectionWorkerService`** load tất cả `Connection` có `status=active` khi khởi động, tạo `ConnectionRunner` cho từng cái.
-- Health check mỗi **30 giây** để đồng bộ: stop runner của connection bị deactivate, start runner cho connection mới được activate.
-- **`RoutingService`** khớp message với route theo thứ tự ưu tiên: `guildId + channelId` → `guildId` only → catch-all (không có guildId/channelId).
+- **`ConnectionWorkerService`** load tất cả Connection `status=active` khi khởi động, tạo `ConnectionRunner` cho từng cái.
+- Health check mỗi **30 giây**: stop runner bị deactivate, start runner mới được activate.
+- Khi route thay đổi (`PUT /connections/:id` hoặc route endpoints), runner tự restart để áp dụng config mới.
