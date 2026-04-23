@@ -14,6 +14,7 @@ const CHANNEL_OUTBOUND_DIRECT = 'outbound:direct';
 const CHANNEL_AGENT_JOIN = 'agent:join-room';
 const CHANNEL_MESSAGE_NEW = 'chat:message-new';
 const CHANNEL_INBOUND_TEAMS_PATTERN = 'inbound:teams:*';
+const CHANNEL_INBOUND_ZALO_BOT_PATTERN = 'inbound:zalo-bot:*';
 
 /**
  * ConnectionWorkerService — orchestrates all active ConnectionRunners.
@@ -45,7 +46,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisSub = new Redis(redisConfig);
 
     await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_OUTBOUND_DIRECT, CHANNEL_CONNECTION_CHANGED);
-    await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN);
+    await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN, CHANNEL_INBOUND_ZALO_BOT_PATTERN);
 
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
@@ -84,18 +85,32 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.redisSub.on('pmessage', async (_pattern, channel, message) => {
-      // channel = inbound:teams:{connectionId}
-      const connectionId = channel.replace('inbound:teams:', '');
-      try {
-        const body = JSON.parse(message);
-        const runner = this.runners.get(connectionId);
-        if (runner) {
-          runner.handleTeamsActivity(body);
-        } else {
-          this.logger.warn(`No runner found for Teams inbound on connection ${connectionId}`);
+      if (channel.startsWith('inbound:teams:')) {
+        const connectionId = channel.replace('inbound:teams:', '');
+        try {
+          const body = JSON.parse(message);
+          const runner = this.runners.get(connectionId);
+          if (runner) {
+            runner.handleTeamsActivity(body);
+          } else {
+            this.logger.warn(`No runner found for Teams inbound on connection ${connectionId}`);
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to process inbound:teams for ${connectionId}: ${err.message}`);
         }
-      } catch (err: any) {
-        this.logger.error(`Failed to process inbound:teams for ${connectionId}: ${err.message}`);
+      } else if (channel.startsWith('inbound:zalo-bot:')) {
+        const connectionId = channel.replace('inbound:zalo-bot:', '');
+        try {
+          const body = JSON.parse(message);
+          const runner = this.runners.get(connectionId);
+          if (runner) {
+            runner.handleZaloBotEvent(body);
+          } else {
+            this.logger.warn(`No runner found for Zalo Bot inbound on connection ${connectionId}`);
+          }
+        } catch (err: any) {
+          this.logger.error(`Failed to process inbound:zalo-bot for ${connectionId}: ${err.message}`);
+        }
       }
     });
 

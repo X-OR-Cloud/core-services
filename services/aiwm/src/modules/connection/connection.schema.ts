@@ -4,7 +4,7 @@ import { BaseSchema } from '@hydrabyte/base';
 
 export type ConnectionDocument = Connection & Document;
 
-export type ConnectionProvider = 'discord' | 'telegram' | 'teams';
+export type ConnectionProvider = 'discord' | 'telegram' | 'teams' | 'zalo-bot';
 export type ConnectionStatus = 'active' | 'inactive' | 'error';
 export type ConnectionLogLevel = 'info' | 'warn' | 'error';
 export type ConversationMode = 'user' | 'connection' | 'shared';
@@ -25,6 +25,7 @@ export interface ConnectionConfig {
   tenantId?: string;            // Teams: Azure AD tenant ID
   webhookUrl?: string;          // Telegram: webhook mode public URL
   pollingMode?: boolean;        // Telegram: use long-polling (default: true)
+  zaloSecretToken?: string;     // Zalo Bot: secret token to validate X-Bot-Api-Secret-Token header
 }
 
 export interface ConnectionRoute {
@@ -51,7 +52,7 @@ export class Connection extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['discord', 'telegram', 'teams'],
+    enum: ['discord', 'telegram', 'teams', 'zalo-bot'],
     index: true,
   })
   provider: ConnectionProvider;

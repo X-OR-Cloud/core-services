@@ -45,6 +45,11 @@ export class ConnectionConfigDto {
   @IsOptional()
   @IsString()
   tenantId?: string;
+
+  @ApiProperty({ description: 'Zalo Bot: secret token to validate incoming webhook requests', required: false })
+  @IsOptional()
+  @IsString()
+  zaloSecretToken?: string;
 }
 
 export class ConnectionRouteDto {
@@ -104,8 +109,8 @@ export class CreateConnectionDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ enum: ['discord', 'telegram', 'teams'] })
-  @IsEnum(['discord', 'telegram', 'teams'])
+  @ApiProperty({ enum: ['discord', 'telegram', 'teams', 'zalo-bot'] })
+  @IsEnum(['discord', 'telegram', 'teams', 'zalo-bot'])
   provider: string;
 
   @ApiProperty({ type: ConnectionConfigDto })
