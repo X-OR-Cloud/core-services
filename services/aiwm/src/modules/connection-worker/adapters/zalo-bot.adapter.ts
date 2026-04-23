@@ -62,12 +62,21 @@ export class ZaloBotAdapter extends BaseAdapter {
 
   /**
    * Process a raw webhook payload forwarded from Redis by ConnectionWorkerService.
-   * Called instead of polling when the connection uses webhook mode.
+   * Zalo webhook payload is flat: { event_name, message } — no result wrapper.
    */
   processWebhook(body: Record<string, any>): void {
-    const msg = body?.result?.message;
+    const eventName: string = body?.event_name ?? '';
+    const msg: Record<string, any> = body?.message;
+
     if (!msg) return;
-    this._handleMessage(msg);
+
+    // Skip unsupported events — no content to forward
+    if (eventName === 'message.unsupported.received') {
+      this.logger.debug(`Skipping unsupported Zalo event from ${msg.from?.display_name}`);
+      return;
+    }
+
+    this._handleMessage(eventName, msg);
   }
 
   async send(target: AdapterTarget, text: string, _options?: SendOptions): Promise<void> {
@@ -126,10 +135,11 @@ export class ZaloBotAdapter extends BaseAdapter {
         });
         if (Array.isArray(updates)) {
           for (const update of updates) {
-            const msg = update?.result?.message ?? update?.message;
-            if (msg) {
-              this._handleMessage(msg);
-              // Advance offset past this update
+            // Polling response: { event_name, message, update_id }
+            const eventName: string = update?.event_name ?? '';
+            const msg: Record<string, any> = update?.message;
+            if (msg && eventName !== 'message.unsupported.received') {
+              this._handleMessage(eventName, msg);
               if (update.update_id != null) {
                 this.lastUpdateOffset = update.update_id + 1;
               }
@@ -154,24 +164,40 @@ export class ZaloBotAdapter extends BaseAdapter {
     poll();
   }
 
-  private _handleMessage(msg: Record<string, any>): void {
-    const text: string = msg.text ?? '';
-    if (!text) return;
-
+  private _handleMessage(eventName: string, msg: Record<string, any>): void {
     const chatId = String(msg.chat?.id ?? '');
-    const chatType: string = msg.chat?.type ?? 'PRIVATE';
+    const chatType: string = msg.chat?.chat_type ?? 'PRIVATE';
+
+    let text = '';
+    const attachments: NormalizedInbound['attachments'] = [];
+
+    if (eventName === 'message.text.received') {
+      text = msg.text ?? '';
+    } else if (eventName === 'message.image.received') {
+      text = msg.caption ?? '';
+      if (msg.photo_url) {
+        attachments.push({ type: 'image', url: msg.photo_url });
+      }
+    } else if (eventName === 'message.sticker.received') {
+      if (msg.url) {
+        attachments.push({ type: 'image', url: msg.url, fileId: msg.sticker });
+      }
+    }
+
+    // Skip if no content at all
+    if (!text && attachments.length === 0) return;
 
     const normalized: NormalizedInbound = {
       provider: 'zalo-bot',
       externalUserId: String(msg.from?.id ?? chatId),
       externalUsername: msg.from?.display_name ?? 'unknown',
       externalMessageId: String(msg.message_id ?? ''),
-      // For GROUP chats: serverId = group chat.id, channelId = undefined (no threads in Zalo Bot)
-      // For PRIVATE chats: serverId = chat.id (same as externalUserId)
+      // serverId = chat.id — used as send target for both PRIVATE and GROUP
       serverId: chatId,
-      channelId: chatType === 'PRIVATE' ? chatId : undefined,
+      channelId: chatType !== 'PRIVATE' ? chatId : undefined,
       text,
-      isMention: false, // Zalo Bot API does not expose mention info
+      attachments,
+      isMention: false,
       raw: msg,
     };
 
