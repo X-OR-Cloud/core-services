@@ -45,8 +45,16 @@ This document defines the standardized port allocation strategy for all services
 | **PAG** | Business | **3006** | 3360-3361 | N/A (BullMQ) | Personal Agent Gateway (Zalo OA, chat) |
 | **AIVP** | Business | **3007** | 3370-3373 | 3374-3379 | AI Video Processing |
 | **DGT** | Business | **3008** | 3380-3383 | 3384-3389 | Digital Gold Trader |
-
 | **VSM** | Business | **3009** | 3390-3393 | 3394-3399 | Voice Service Management (PBX, SIP, WebRTC) |
+
+### D. AIWM WebSocket Processes (dedicated range)
+
+| Process | Mode | Prod Ports | Description |
+|---------|------|------------|-------------|
+| **aiwm-aws** | `MODE=aws` | **3400–3402** | Engineer agent WS (`/ws/agent`) |
+| **aiwm-wsc** | `MODE=wsc` | **3403–3405** | Chat WS (`/ws/chat`) — reserved, future split |
+| **aiwm-wsn** | `MODE=wsn` | **3406–3408** | Node WS (`/ws/node`) — reserved, future split |
+| *(reserved)* | | 3409 | |
 
 ---
 
@@ -161,34 +169,44 @@ Local Development:  3003 (API mode default)
 Production:
   API Instances:    3330, 3331, 3332, 3333  # 4 HTTP/REST instances
   MCP Instances:    3334, 3335, 3336        # 3 MCP protocol instances
-  WebSocket:        3337, 3338              # 2 WebSocket instances
-  Reserved:         3339                     # Future modes
+  WS (legacy):      3337, 3338, 3339        # 3 combined API+WS instances (skt.x-or.cloud)
   Worker Mode:      No port (BullMQ queue consumer)
+  Agent Worker:     No port (connects outbound to /ws/chat)
+  Connection Worker: No port (connects outbound to Redis)
+
+WS Processes (dedicated range 3400-3409):
+  aws (agent ws):   3400, 3401              # /ws/agent — engineer agent gateway
+  wsc (chat ws):    3403, 3404, 3405        # /ws/chat — reserved, future split
+  wsn (node ws):    3406, 3407, 3408        # /ws/node — reserved, future split
+  Reserved:         3402, 3409
 ```
 
 **Multi-Mode Service**:
-- **API Mode**: HTTP REST API + WebSocket (default)
-- **MCP Mode**: Model Context Protocol server for AI agents
-- **Worker Mode**: Background job processor (no port)
+- **API Mode** (`MODE=api`): HTTP REST API + `/ws/chat` + `/ws/node` (default)
+- **MCP Mode** (`MODE=mcp`): Model Context Protocol server for AI agents
+- **Worker Mode** (`MODE=wrk`): Background job processor (no port)
+- **Agent Mode** (`MODE=agt`): Hosted assistant agent runner (no port)
+- **Connection Mode** (`MODE=con`): Discord/Telegram bridge worker (no port)
+- **Agent WS Mode** (`MODE=aws`): Standalone WebSocket gateway for engineer agents (`/ws/agent`)
 
 **Usage**:
 ```bash
-# Local - API Mode
-npx nx run aiwm:api
-
-# Local - MCP Mode
-npx nx run aiwm:mcp
-
-# Local - Worker Mode
-npx nx run aiwm:wrk
+# Local
+npx nx run aiwm:api   # API + WS
+npx nx run aiwm:mcp   # MCP server
+npx nx run aiwm:wrk   # Worker
+npx nx run aiwm:agt   # Agent runner
+npx nx run aiwm:con   # Connection worker
+npx nx run aiwm:aws   # Engineer agent WS gateway
 
 # Production (PM2)
-pm2 start ecosystem.config.js --only core.aiwm.api00,core.aiwm.mcp00,core.aiwm.worker00
+pm2 start ecosystem.config.js --only core.aiwm.api00,core.aiwm.mcp00,core.aiwm.worker00,core.aiwm.aws00
 ```
 
 **Default Port in Code**:
 - API: `process.env.PORT || 3003`
 - MCP: `process.env.PORT || 3335`
+- AWS: `process.env.PORT || 3400`
 
 ---
 
@@ -473,5 +491,5 @@ PORT=8080 npx nx serve iam
 
 ---
 
-**Last Updated**: 2026-01-28
-**Version**: 1.0.0
+**Last Updated**: 2026-04-23
+**Version**: 1.1.0

@@ -31,6 +31,10 @@ async function bootstrap() {
     // Connection mode - Bridge Discord/Telegram to AIWM pipeline
     const { bootstrapConnectionWorker } = await import('./bootstrap-connection');
     await bootstrapConnectionWorker();
+  } else if (MODE === 'aws') {
+    // Agent WS mode - Standalone WebSocket server for engineer agents (/ws/agent)
+    const { bootstrapAgentWsServer } = await import('./bootstrap-agent-ws');
+    await bootstrapAgentWsServer();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');
