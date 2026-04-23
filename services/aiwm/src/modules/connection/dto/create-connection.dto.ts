@@ -26,7 +26,7 @@ export class ConnectionConfigDto {
   @IsString()
   webhookUrl?: string;
 
-  @ApiProperty({ description: 'Telegram: use long-polling (default true)', required: false })
+  @ApiProperty({ description: 'Telegram / Zalo Bot: use long-polling (default true); set false to use webhook mode', required: false })
   @IsOptional()
   @IsBoolean()
   pollingMode?: boolean;

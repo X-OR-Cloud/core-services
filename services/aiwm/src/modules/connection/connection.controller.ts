@@ -8,14 +8,11 @@ import {
   Param,
   Query,
   UseGuards,
-  HttpCode,
-  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiBearerAuth,
-  ApiBody,
 } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
@@ -138,27 +135,4 @@ export class ConnectionController {
     return this.connectionService.removeRoute(id, Number(routeIndex), context);
   }
 
-  @Post(':id/set-webhook')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Register webhook URL on Zalo Bot platform (zalo-bot only)' })
-  @ApiBody({ schema: { properties: { url: { type: 'string' } }, required: ['url'] } })
-  @ApiUpdateErrors()
-  async setZaloWebhook(
-    @Param('id') id: string,
-    @Body('url') url: string,
-    @CurrentUser() context: RequestContext,
-  ): Promise<{ url: string; updated_at: number }> {
-    return this.connectionService.setZaloWebhook(id, url, context);
-  }
-
-  @Post(':id/delete-webhook')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Remove webhook from Zalo Bot platform (zalo-bot only)' })
-  @ApiUpdateErrors()
-  async deleteZaloWebhook(
-    @Param('id') id: string,
-    @CurrentUser() context: RequestContext,
-  ): Promise<{ url: string; updated_at: number }> {
-    return this.connectionService.deleteZaloWebhook(id, context);
-  }
 }

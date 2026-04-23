@@ -97,7 +97,7 @@ export class WebhookController {
     if (expectedSecret && secretToken !== expectedSecret) {
       throw new BadRequestException('Invalid X-Bot-Api-Secret-Token');
     }
-    this.logger.debug(`Zalo Bot event received for connection ${id}: event=${body?.result?.event_name}`);
+    this.logger.log(`Zalo Bot event received for connection ${id}: event=${body?.event_name ?? body?.result?.event_name ?? 'unknown'} body=${JSON.stringify(body)}`);
     await this.redis.publish(CHANNEL_INBOUND_ZALO_BOT(id), JSON.stringify(body));
   }
 }

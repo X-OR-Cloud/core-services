@@ -36,17 +36,15 @@ export class ZaloBotAdapter extends BaseAdapter {
   async start(): Promise<void> {
     this.stopped = false;
 
-    // Check if a webhook is already registered on Zalo's side.
-    // Polling and webhook are mutually exclusive — if a webhook is active, skip polling
-    // and rely on processWebhook() being called via Redis inbound channel.
-    const webhookInfo = await this.callApi<{ url?: string }>('getWebhookInfo').catch(() => null);
-    const hasActiveWebhook = !!webhookInfo?.url;
+    // pollingMode: true (default) = long-polling; false = webhook mode
+    // In webhook mode, messages arrive via processWebhook() called from Redis inbound channel.
+    const usePolling = this.config.pollingMode !== false;
 
-    if (hasActiveWebhook) {
-      this.logger.log(`Zalo Bot connected via webhook (${webhookInfo!.url})`);
-    } else {
+    if (usePolling) {
       this._startPolling();
       this.logger.log('Zalo Bot connected via long-polling');
+    } else {
+      this.logger.log('Zalo Bot connected via webhook');
     }
 
     this.emitConnected();

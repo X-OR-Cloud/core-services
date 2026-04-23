@@ -24,7 +24,7 @@ export interface ConnectionConfig {
   appTokenExpiresAt?: Date;     // Teams: token expiry
   tenantId?: string;            // Teams: Azure AD tenant ID
   webhookUrl?: string;          // Telegram: webhook mode public URL
-  pollingMode?: boolean;        // Telegram: use long-polling (default: true)
+  pollingMode?: boolean;        // Telegram / Zalo Bot: use long-polling (default: true); set false to use webhook mode
   zaloSecretToken?: string;     // Zalo Bot: secret token to validate X-Bot-Api-Secret-Token header
 }
 

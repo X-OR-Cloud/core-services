@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import Redis from 'ioredis';
@@ -9,6 +9,7 @@ import { Connection, ConnectionLog, ConnectionLogLevel } from './connection.sche
 import { redisConfig } from '../../config/redis.config';
 
 const ZALO_API_BASE = 'https://bot-api.zaloplatforms.com/bot';
+const AIWM_BASE_URL = process.env.AIWM_SERVICE_URL ?? 'http://localhost:3003';
 
 export const CHANNEL_CONNECTION_CHANGED = 'connection:changed';
 
@@ -70,13 +71,57 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
   }
 
   async update(id: string, dto: any, context: RequestContext): Promise<any> {
+    const before = await this.model.findOne({ _id: new Types.ObjectId(id), isDeleted: false }).exec();
     const connection = await super.update(id, dto, context);
+
+    // Auto sync Zalo Bot webhook when pollingMode changes
+    if ((connection as any).provider === 'zalo-bot' && dto.config?.pollingMode !== undefined) {
+      const wasPolling = before?.config?.pollingMode !== false;
+      const nowPolling = dto.config.pollingMode !== false;
+      if (wasPolling !== nowPolling) {
+        await this._syncZaloWebhook(connection).catch((err: Error) =>
+          this.connLogger.error(`Failed to sync Zalo webhook for ${id}: ${err.message}`),
+        );
+      }
+    }
+
     this.publishChanged({
       connectionId: id,
       action: 'updated',
       status: (connection as any).status,
     });
     return connection;
+  }
+
+  private async _syncZaloWebhook(connection: any): Promise<void> {
+    const botToken: string = connection.config?.botToken;
+    const secretToken: string | undefined = connection.config?.zaloSecretToken;
+    const usePolling = connection.config?.pollingMode !== false;
+
+    if (usePolling) {
+      // Switch to polling → remove webhook from Zalo
+      const res = await axios.post<{ ok: boolean; description?: string; error_code?: number }>(
+        `${ZALO_API_BASE}${botToken}/deleteWebhook`,
+        {},
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+      if (!res.data.ok) {
+        throw new Error(`Zalo API error [${res.data.error_code}]: ${res.data.description}`);
+      }
+      this.connLogger.log(`Zalo webhook removed for connection ${String(connection._id)}`);
+    } else {
+      // Switch to webhook → register webhook URL on Zalo
+      const webhookUrl = `${AIWM_BASE_URL}/connections/${String(connection._id)}/webhook`;
+      const res = await axios.post<{ ok: boolean; result?: { url: string }; description?: string; error_code?: number }>(
+        `${ZALO_API_BASE}${botToken}/setWebhook`,
+        { url: webhookUrl, ...(secretToken ? { secret_token: secretToken } : {}) },
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+      if (!res.data.ok) {
+        throw new Error(`Zalo API error [${res.data.error_code}]: ${res.data.description}`);
+      }
+      this.connLogger.log(`Zalo webhook registered: ${webhookUrl}`);
+    }
   }
 
   async softDelete(id: string, context: RequestContext): Promise<any> {
@@ -193,64 +238,6 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
     }
 
     return connection.logs ?? [];
-  }
-
-  async setZaloWebhook(
-    id: string,
-    webhookUrl: string,
-    context: RequestContext,
-  ): Promise<{ url: string; updated_at: number }> {
-    const connection = await this.model
-      .findOne({ _id: new Types.ObjectId(id), isDeleted: false, 'owner.orgId': context.orgId })
-      .exec();
-
-    if (!connection) throw new NotFoundException(`Connection ${id} not found`);
-    if ((connection as any).provider !== 'zalo-bot') {
-      throw new BadRequestException('setWebhook is only supported for zalo-bot connections');
-    }
-
-    const botToken: string = (connection as any).config?.botToken;
-    const secretToken: string | undefined = (connection as any).config?.zaloSecretToken;
-
-    const res = await axios.post<{ ok: boolean; result: { url: string; updated_at: number }; description?: string; error_code?: number }>(
-      `${ZALO_API_BASE}${botToken}/setWebhook`,
-      { url: webhookUrl, ...(secretToken ? { secret_token: secretToken } : {}) },
-      { headers: { 'Content-Type': 'application/json' } },
-    );
-
-    if (!res.data.ok) {
-      throw new BadRequestException(`Zalo API error [${res.data.error_code}]: ${res.data.description}`);
-    }
-
-    return res.data.result;
-  }
-
-  async deleteZaloWebhook(
-    id: string,
-    context: RequestContext,
-  ): Promise<{ url: string; updated_at: number }> {
-    const connection = await this.model
-      .findOne({ _id: new Types.ObjectId(id), isDeleted: false, 'owner.orgId': context.orgId })
-      .exec();
-
-    if (!connection) throw new NotFoundException(`Connection ${id} not found`);
-    if ((connection as any).provider !== 'zalo-bot') {
-      throw new BadRequestException('deleteWebhook is only supported for zalo-bot connections');
-    }
-
-    const botToken: string = (connection as any).config?.botToken;
-
-    const res = await axios.post<{ ok: boolean; result: { url: string; updated_at: number }; description?: string; error_code?: number }>(
-      `${ZALO_API_BASE}${botToken}/deleteWebhook`,
-      {},
-      { headers: { 'Content-Type': 'application/json' } },
-    );
-
-    if (!res.data.ok) {
-      throw new BadRequestException(`Zalo API error [${res.data.error_code}]: ${res.data.description}`);
-    }
-
-    return res.data.result;
   }
 
   async removeRoute(id: string, routeIndex: number, context: RequestContext): Promise<Connection> {
