@@ -9,7 +9,7 @@ import {
   InstructionUpdatedEvent,
   REDIS_CHANNEL_AGENT_WORKER_CMD,
   REDIS_CHANNEL_INSTRUCTION_UPDATED,
-  redisConfig,
+  buildRedisConfig,
 } from '../../config/redis.config';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
@@ -83,7 +83,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    this.redisPub = new Redis(redisConfig);
+    this.redisPub = new Redis(buildRedisConfig());
     await this.lockService.connect();
     await this.spawnAgents();
     this.startHealthCheck();
@@ -171,7 +171,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, 'http://localhost:3003');
 
       // Each runner needs its own blocking Redis connection for BLPOP
-      const redisBlocking = new Redis(redisConfig);
+      const redisBlocking = new Redis(buildRedisConfig());
       this.redisBlockingMap.set(agentId, redisBlocking);
 
       const runner = new AgentRunner({
@@ -354,7 +354,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
    * the targeted agent will act on the message.
    */
   private async startWorkerCmdSubscriber() {
-    this.redisCmdSub = new Redis(redisConfig);
+    this.redisCmdSub = new Redis(buildRedisConfig());
     try {
       await this.redisCmdSub.subscribe(REDIS_CHANNEL_AGENT_WORKER_CMD);
     } catch (err) {
@@ -472,7 +472,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
    * runner on this instance whose agent uses the updated instruction.
    */
   private async startInstructionSubscriber() {
-    this.redisSub = new Redis(redisConfig);
+    this.redisSub = new Redis(buildRedisConfig());
     try {
       await this.redisSub.subscribe(REDIS_CHANNEL_INSTRUCTION_UPDATED);
     } catch (err) {

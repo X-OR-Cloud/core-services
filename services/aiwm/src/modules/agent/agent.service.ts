@@ -18,7 +18,7 @@ import Redis from 'ioredis';
 import {
   AgentWorkerCmdEvent,
   REDIS_CHANNEL_AGENT_WORKER_CMD,
-  redisConfig,
+  buildRedisConfig,
 } from '../../config/redis.config';
 import {
   BaseService,
@@ -99,7 +99,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
 
   private getRedisPub(): Redis {
     if (!this.redisPub) {
-      this.redisPub = new Redis(redisConfig);
+      this.redisPub = new Redis(buildRedisConfig());
     }
     return this.redisPub;
   }

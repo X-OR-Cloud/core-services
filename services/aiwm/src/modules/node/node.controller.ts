@@ -5,7 +5,7 @@ import { RequestContext, MessageType } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 import { NodeService } from './node.service';
 import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideDto, SetupGuideResponseDto, NodeBootstrapDto, NodeBootstrapResponseDto, NodeUpdateSoftwareDto } from './node.dto';
 
@@ -24,7 +24,7 @@ export class NodeController implements OnModuleDestroy {
 
   private getRedisPub(): Redis {
     if (!this.redisPub) {
-      this.redisPub = new Redis(redisConfig);
+      this.redisPub = new Redis(buildRedisConfig());
     }
     return this.redisPub;
   }

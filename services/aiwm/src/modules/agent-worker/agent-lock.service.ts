@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 
 const LOCK_PREFIX = 'agt:lock:';
 const LOCK_TTL_MS = 45_000; // 45s — longer than health check interval (30s)
@@ -27,7 +27,7 @@ export class AgentLockService implements OnModuleDestroy {
 
   constructor() {
     this.redis = new Redis({
-      ...redisConfig,
+      ...buildRedisConfig(),
       lazyConnect: true,
     });
     // Unique identifier per process instance

@@ -2,7 +2,7 @@ import { Controller, Get, Post, Param, Query, Body, Headers, HttpCode, HttpStatu
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import Redis from 'ioredis';
 import { ConnectionService } from './connection.service';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 import { verifyTeamsJwt } from './teams-jwt.verifier';
 
 const CHANNEL_INBOUND_TEAMS = (connectionId: string) => `inbound:teams:${connectionId}`;
@@ -24,7 +24,7 @@ export class TeamsWebhookController {
   private readonly redis: Redis;
 
   constructor(private readonly connectionService: ConnectionService) {
-    this.redis = new Redis(redisConfig);
+    this.redis = new Redis(buildRedisConfig());
   }
 
   /**

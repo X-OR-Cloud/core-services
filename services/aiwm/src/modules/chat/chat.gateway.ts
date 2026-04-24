@@ -12,7 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 import { ChatService } from './chat.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { AgentService } from '../agent/agent.service';
@@ -75,8 +75,8 @@ export class ChatGateway
       return;
     }
 
-    this.redisSub = new Redis(redisConfig);
-    this.redisPub = new Redis(redisConfig);
+    this.redisSub = new Redis(buildRedisConfig());
+    this.redisPub = new Redis(buildRedisConfig());
 
     await this.redisSub.subscribe('agent:join-room', 'chat:message-new', 'outbound:command');
     await this.redisSub.psubscribe('chat:response:*');

@@ -368,8 +368,8 @@ export class AgentRunner {
 
   /** Subscribe to chat:cmd:{agentId} for /stop, /reload, /inspect */
   private startCmdSubscriber() {
-    const { redisConfig } = require('../../config/redis.config');
-    this.cmdSubRedis = new Redis(redisConfig);
+    const { buildRedisConfig } = require('../../config/redis.config');
+    this.cmdSubRedis = new Redis(buildRedisConfig());
     const channel = `chat:cmd:${this.config.agentId}`;
     this.cmdSubRedis.subscribe(channel);
     this.cmdSubRedis.on('message', (_ch: string, message: string) => {

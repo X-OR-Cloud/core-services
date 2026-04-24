@@ -4,7 +4,7 @@ import { ConnectionService, CHANNEL_CONNECTION_CHANGED, ConnectionChangedPayload
 import { ActionService } from '../action/action.service';
 import { RoutingService } from './routing.service';
 import { ConnectionRunner, OutboundHandler } from './connection-runner';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -45,8 +45,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.redisPub = new Redis(redisConfig);
-    this.redisSub = new Redis(redisConfig);
+    this.redisPub = new Redis(buildRedisConfig());
+    this.redisSub = new Redis(buildRedisConfig());
 
     await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_OUTBOUND_DIRECT, CHANNEL_CONNECTION_CHANGED);
     await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN, CHANNEL_INBOUND_ZALO_BOT_PATTERN, CHANNEL_INBOUND_ZALO_OA_PATTERN);

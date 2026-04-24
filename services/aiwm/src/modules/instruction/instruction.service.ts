@@ -7,7 +7,7 @@ import { RequestContext, InstructionInUseException } from '@hydrabyte/shared';
 import {
   InstructionUpdatedEvent,
   REDIS_CHANNEL_INSTRUCTION_UPDATED,
-  redisConfig,
+  buildRedisConfig,
 } from '../../config/redis.config';
 import { Instruction } from './instruction.schema';
 import { Agent } from '../agent/agent.schema';
@@ -37,7 +37,7 @@ export class InstructionService extends BaseService<Instruction> implements OnMo
 
   private getRedisPub(): Redis {
     if (!this.redisPub) {
-      this.redisPub = new Redis(redisConfig);
+      this.redisPub = new Redis(buildRedisConfig());
     }
     return this.redisPub;
   }
