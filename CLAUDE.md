@@ -104,6 +104,8 @@ nx run <service>:wrk          # BullMQ worker
 nx run aiwm:mcp               # MCP server (port 3355)
 nx run aiwm:agt               # Hosted agent worker
 nx run aiwm:con               # Connection worker (Discord/Telegram)
+nx run aiwm:aws               # Agent WS gateway (/, port 3400)
+nx run aiwm:nws               # Node WS gateway (/, port 3401)
 
 # DGT-specific modes
 nx run dgt:shd                # Scheduler

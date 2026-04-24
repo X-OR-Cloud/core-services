@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { Execution, ExecutionSchema } from './execution.schema';
@@ -9,7 +9,6 @@ import { ExecutionService } from './execution.service';
 import { ExecutionController } from './execution.controller';
 import { ExecutionOrchestrator } from './execution.orchestrator';
 import { ExecutionTimeoutMonitor } from './execution-timeout.monitor';
-import { NodeModule } from '../node/node.module';
 import { WorkflowModule } from '../workflow/workflow.module';
 import { WorkflowStepModule } from '../workflow-step/workflow-step.module';
 import { DeploymentModule } from '../deployment/deployment.module';
@@ -49,7 +48,6 @@ const isApiMode = MODE === 'api';
       { name: ModelEntity.name, schema: ModelSchema },
     ]),
     ScheduleModule.forRoot(), // For @Interval decorator
-    forwardRef(() => NodeModule), // For NodeGateway access
     WorkflowModule, // NEW: Workflow template access
     WorkflowStepModule, // NEW: Workflow step access
     DeploymentModule, // NEW: For LLM calls via deployments

@@ -35,6 +35,10 @@ async function bootstrap() {
     // Agent WS mode - Standalone WebSocket server for engineer agents (/ws/agent)
     const { bootstrapAgentWsServer } = await import('./bootstrap-agent-ws');
     await bootstrapAgentWsServer();
+  } else if (MODE === 'nws') {
+    // Node WS mode - Standalone WebSocket server for node connections (/ws/node)
+    const { bootstrapNodeWsServer } = await import('./bootstrap-node-ws');
+    await bootstrapNodeWsServer();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');

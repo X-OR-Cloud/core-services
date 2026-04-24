@@ -1,21 +1,52 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus, OnModuleDestroy } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, MessageType } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
+import Redis from 'ioredis';
+import { v4 as uuidv4 } from 'uuid';
+import { redisConfig } from '../../config/redis.config';
 import { NodeService } from './node.service';
 import { CreateNodeDto, NodeLoginDto, NodeLoginResponseDto, NodeRefreshTokenDto, NodeRefreshTokenResponseDto, SetupGuideDto, SetupGuideResponseDto, NodeBootstrapDto, NodeBootstrapResponseDto, NodeUpdateSoftwareDto } from './node.dto';
-import { NodeGateway } from './node.gateway';
-import { MessageType } from '@hydrabyte/shared';
 
 @ApiTags('nodes')
 @ApiBearerAuth('JWT-auth')
 @Controller('nodes')
-export class NodeController {
-  constructor(
-    private readonly nodeService: NodeService,
-    private readonly nodeGateway: NodeGateway,
-  ) {}
+export class NodeController implements OnModuleDestroy {
+  private redisPub: Redis | null = null;
+
+  constructor(private readonly nodeService: NodeService) {}
+
+  onModuleDestroy() {
+    this.redisPub?.disconnect();
+    this.redisPub = null;
+  }
+
+  private getRedisPub(): Redis {
+    if (!this.redisPub) {
+      this.redisPub = new Redis(redisConfig);
+    }
+    return this.redisPub;
+  }
+
+  private async publishNodeCommand(
+    nodeId: string,
+    commandType: string,
+    resource: { type: string; id: string },
+    data: Record<string, any>,
+  ): Promise<string> {
+    const messageId = uuidv4();
+    const payload = {
+      type: commandType,
+      messageId,
+      timestamp: new Date().toISOString(),
+      resource,
+      data,
+      metadata: { priority: 'normal' },
+    };
+    await this.getRedisPub().publish(`node:cmd:${nodeId}`, JSON.stringify(payload));
+    return messageId;
+  }
 
   @Post()
   @ApiOperation({
@@ -197,7 +228,7 @@ export class NodeController {
   ) {
     const node = await this.nodeService.validateUpdateRequest(id, context);
 
-    const messageId = await this.nodeGateway.sendCommandToNode(
+    const messageId = await this.publishNodeCommand(
       id,
       MessageType.SYSTEM_UPDATE,
       { type: 'system', id },

@@ -39,7 +39,7 @@ import { HeartbeatModule } from '../heartbeat/heartbeat.module';
     QueueModule,
     ConfigurationModule,
     DeploymentModule, // Import to access DeploymentService
-    NodeModule, // Import to access NodeGateway for sending agent.start commands
+    NodeModule, // Import to access NodeService (node lookup, validation)
     ReminderModule, // Import to access ReminderService for heartbeat reminder injection
     ApiKeyModule,
     ConversationModule,

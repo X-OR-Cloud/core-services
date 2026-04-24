@@ -24,9 +24,7 @@ export async function bootstrapApiServer() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('query parser', customQueryParser);
 
-  // Use Redis WebSocket adapter for horizontal scaling (chat)
-  // Note: WsJwtAdapter is used for /ws/node namespace (node management)
-  // RedisIoAdapter is used for /chat namespace (chat functionality)
+  // Use Redis WebSocket adapter for horizontal scaling
   const redisIoAdapter = new RedisIoAdapter(app);
   await redisIoAdapter.connectToRedis();
   app.useWebSocketAdapter(redisIoAdapter);
@@ -65,8 +63,9 @@ export async function bootstrapApiServer() {
 
   Logger.log(`🚀 AIWM Service is running on: http://localhost:${port}`);
   Logger.log(`📚 API Documentation available at: http://localhost:${port}/api-docs`);
-  Logger.log(`🔌 Node WebSocket Gateway: ws://localhost:${port}/ws/node`);
   Logger.log(`💬 Chat WebSocket Gateway: ws://localhost:${port}/ws/chat`);
-  Logger.log(`📊 Redis: ${process.env.REDIS_URL || 'redis://localhost:6379'}`);
-  Logger.log(`💾 MongoDB: ${process.env.MONGODB_URI}`);
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  Logger.log(`📊 Redis: ${redisUrl.replace(/:\/\/[^@]+@/, '://***@')}`);
+  const mongoUri = process.env.MONGODB_URI || '';
+  Logger.log(`💾 MongoDB: ${mongoUri.replace(/:\/\/[^@]+@/, '://***@')}`);
 }

@@ -15,15 +15,21 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 | **wrk** | `nx run aiwm:wrk` | BullMQ background job worker |
 | **agt** | `nx run aiwm:agt` | Hosted agent worker (connects to `/ws/chat`) |
 | **con** | `nx run aiwm:con` | Connection worker (Discord/Telegram bridge) |
+| **aws** | `nx run aiwm:aws` | Agent WebSocket gateway (`/`, port 3400) — engineer agents only |
+| **nws** | `nx run aiwm:nws` | Node WebSocket gateway (`/`, port 3401) — node daemon connections |
 
 ## Modules
 
 | Module | Path | Description |
 |--------|------|-------------|
 | Agent | `src/modules/agent/` | AI agent management (assistant/engineer types) |
+| Agent-Gateway | `src/modules/agent-gateway/` | Engineer agent WebSocket gateway (`/`, MODE=aws) — heartbeat, presence, pub/sub |
+| Node-Gateway | `src/modules/node-gateway/` | Node daemon WebSocket gateway (`/ws/node`, MODE=nws) — standalone, Redis pub/sub backbone |
 | Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) — handles `agent:command` events |
 | Node | `src/modules/node/` | Worker node management + WebSocket gateway (`/ws/node`) |
 | Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) — slash commands, heartbeat, presence |
+| Heartbeat | `src/modules/heartbeat/` | Heartbeat logic + work assignment — shared by AgentGateway và AgentModule |
+| Presence | `src/modules/presence/` | Redis-based presence tracking — socket sessions, agent/user online state |
 | Model | `src/modules/model/` | AI model metadata and lifecycle |
 | Deployment | `src/modules/deployment/` | Model deployment + inference proxy |
 | Instruction | `src/modules/instruction/` | System prompts and guidelines |
@@ -58,9 +64,10 @@ AIWM hỗ trợ hai loại agent với cơ chế vận hành khác nhau:
 - Chạy **bên ngoài** hệ thống, do người dùng tự deploy (hoặc deploy lên Node)
 - Có quyền truy cập môi trường đầy đủ (bash, file system, v.v.)
 - Tự gọi `POST /agents/:id/connect` để lấy JWT token + config
-- Tự connect vào `/ws/chat` bằng JWT đó, emit `conversation:join` để vào room
-- **Phải tự filter `message:new`** — skip `role=assistant`, `type=system/tool_use/tool_result/thinking`, `skipAgent=true`, và dedup theo `_id`
-- Heartbeat qua `agent:heartbeat` WS (preferred) hoặc `POST /agents/:id/heartbeat`
+- Connect vào **`/`** (MODE=aws, port 3400) — gateway riêng cho engineer agents
+- Heartbeat qua `agent:heartbeat` WS event — kèm `mcpConnected` và `availableFunctions` để server guard work assignment
+- Server trả về work task trong response heartbeat nếu agent `idle` và đủ capabilities
+- Nhận `message:new` từ server (broadcast qua Redis pub/sub từ ChatGateway)
 - Khi có `nodeId`: AIWM quản lý lifecycle qua WebSocket Node (`agent.start/update/delete`)
 - Khi không có `nodeId`: người dùng tự quản lý hoàn toàn
 
@@ -87,8 +94,9 @@ When working on a specific module, read the corresponding docs:
 ## Key Architecture Patterns
 
 ### WebSocket Gateways
-- **NodeGateway** (`/ws/node`): Node worker connections. JWT auth in `afterInit` middleware. In-memory connection tracking via `NodeConnectionService`.
+- **NodeGateway** (`/`, MODE=nws, port 3401): Node daemon connections. Chạy process riêng (`core.aiwm.nws00`). JWT auth in `afterInit` middleware. In-memory connection tracking via `NodeConnectionService`. Subscribes `node:cmd:*` Redis channel — forwards commands to local node sockets.
 - **ChatGateway** (`/ws/chat`): User/Agent/Anonymous chat. JWT auth in `handleConnection`. Redis-based presence tracking. Redis pub/sub for cross-instance communication.
+- **AgentGateway** (`/`, MODE=aws, port 3400): Engineer agent–only gateway. Chạy process riêng (`core.aiwm.aws00`), không import AgentModule/ConversationModule/ActionModule — inject Model trực tiếp. HeartbeatModule shared với AgentModule.
 
 ### Chat Slash Commands
 Slash commands are intercepted at the gateway — they are **not** processed as plain text messages in `AgentRunner`.
@@ -106,7 +114,24 @@ Slash commands are intercepted at the gateway — they are **not** processed as 
 - See `docs/aiwm/CHAT-WEBSOCKET-EVENTS.md` for full payload reference
 
 ### Agent Heartbeat (WebSocket)
-Agents connected to `/ws/chat` use `agent:heartbeat` event (not `POST /agents/heartbeat`) to send keep-alive + status updates. The gateway delegates to `AgentService.heartbeat()` — same logic, same response shape including work assignment and reminder injection when `status: 'idle'`.
+Agents send `agent:heartbeat` event (preferred over `POST /agents/:id/heartbeat`). Cả hai path đều delegate xuống `HeartbeatService.heartbeat()` — cùng logic, cùng response shape.
+
+**Payload từ agent:**
+```json
+{
+  "agentId": "<id>",
+  "status": "idle|busy",
+  "mcpConnected": true,
+  "availableFunctions": ["mcp__Builtin__GetWork", "mcp__Builtin__SubmitWork"]
+}
+```
+
+- `mcpConnected` + `availableFunctions`: server dùng để guard work assignment — nếu agent thiếu tools cần thiết, không giao work
+- Response có thể chứa `systemTask` + `systemMessage` nếu có Work cần thực hiện
+
+**Routing:**
+- `assistant` agent → `/ws/chat` (ChatGateway) → `AgentService.heartbeat()`
+- `engineer` agent → `/` (AgentGateway) → `HeartbeatService.heartbeat()` trực tiếp
 
 ### Agent Types
 - **assistant**: In-process agent run by `MODE=agt` worker. No environment access. Connects to `/ws/chat` for autonomous operation. Has `secret` for auth.
@@ -150,9 +175,10 @@ Agents connected to `/ws/chat` use `agent:heartbeat` event (not `POST /agents/he
 ### Distributed Architecture
 - Redis adapter for WebSocket horizontal scaling (`redis-io.adapter.ts`)
 - Redis pub/sub channels:
-  - `agent:join-room` — force agent sockets to join a conversation room (published by Connection Worker)
-  - `chat:message-new` — broadcast inbound Discord/Telegram messages to room (published by Connection Worker)
+  - `agent:join-room` — force agent sockets to join a conversation room (published by Connection Worker, consumed by ChatGateway + AgentGateway)
+  - `chat:message-new` — broadcast inbound Discord/Telegram messages to room (published by Connection Worker, consumed by ChatGateway + AgentGateway)
   - `outbound:message` — bridge agent responses back to Discord/Telegram (published by ChatGateway)
+  - `outbound:command` — send slash commands (`/stop`, `/reload`) to engineer agents (published by ChatGateway, consumed by AgentGateway)
 - Distributed locking:
   - `lock:chat-msg:{nonce}` — prevents duplicate inbound message processing across WS instances
   - `lock:outbound:{actionId}` — prevents duplicate outbound bridging across WS instances
@@ -165,6 +191,8 @@ nx run aiwm:mcp    # MCP mode (port 3355)
 nx run aiwm:wrk    # Worker mode (BullMQ)
 nx run aiwm:agt    # Agent worker mode (hosted agents)
 nx run aiwm:con    # Connection worker mode (Discord/Telegram)
+nx run aiwm:aws    # Agent WS gateway mode (/, port 3400)
+nx run aiwm:nws    # Node WS gateway mode (/, port 3401)
 nx run aiwm:build  # Build
 ```
 
@@ -177,13 +205,18 @@ MONGODB_URI=mongodb://host:27017
 REDIS_URL=redis://host:6379
 REDIS_HOST=host
 REDIS_PORT=6379
+REDIS_USERNAME=<user>          # If Redis auth enabled
+REDIS_PASSWORD=<pass>          # If Redis auth enabled
 
 # Optional
-PORT=3003                      # HTTP server port
+PORT=3003                      # HTTP server port (api mode)
+PORT_AWS=3400                  # WebSocket port (aws mode, fallback to PORT)
 MCP_PORT=3355                  # MCP server port
-MODE=api|mcp|wrk|agt|con       # Run mode (default: api)
+MODE=api|mcp|wrk|agt|con|aws   # Run mode (default: api)
 INTERNAL_API_KEY=<key>         # Service-to-service auth
 MCP_ALLOWED_HOSTS=<hosts>      # Comma-separated allowed hosts
 WS_CHAT_URL=http://host:3003   # Chat WebSocket URL (for agent mode)
 AGENT_IDS=id1,id2,id3          # Filter agents to run (agent mode)
 ```
+
+> **Note — NestJS config vs process.env timing**: `redis.config.ts` và bất kỳ constant nào export từ file config đều được evaluate tại **import time**, trước khi `ConfigModule.forRoot()` chạy dotenv. Luôn đọc env vars trong lifecycle hooks (`onModuleInit`) hoặc dùng `forRootAsync` với `useFactory` để tránh nhận giá trị undefined.

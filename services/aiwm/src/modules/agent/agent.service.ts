@@ -53,7 +53,6 @@ import { ConfigurationService } from '../configuration/configuration.service';
 import { ConfigKey } from '../configuration/enums/config-key.enum';
 import { HeartbeatService } from '../heartbeat/heartbeat.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { NodeGateway } from '../node/node.gateway';
 import { NodeService } from '../node/node.service';
 import { MessageType } from '@hydrabyte/shared';
 import { ConversationService } from '../conversation/conversation.service';
@@ -84,7 +83,6 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     private readonly agentProducer: AgentProducer,
     private readonly configurationService: ConfigurationService,
     private readonly deploymentService: DeploymentService,
-    private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
     private readonly httpService: HttpService,
     private readonly conversationService: ConversationService,
@@ -104,6 +102,25 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       this.redisPub = new Redis(redisConfig);
     }
     return this.redisPub;
+  }
+
+  private async publishNodeCommand(
+    nodeId: string,
+    commandType: string,
+    resource: { type: string; id: string },
+    data: Record<string, any>,
+  ): Promise<string> {
+    const messageId = uuidv4();
+    const payload = {
+      type: commandType,
+      messageId,
+      timestamp: new Date().toISOString(),
+      resource,
+      data,
+      metadata: { priority: 'normal' },
+    };
+    await this.getRedisPub().publish(`node:cmd:${nodeId}`, JSON.stringify(payload));
+    return messageId;
   }
 
   private isOrgOwner(context: RequestContext): boolean {
@@ -268,7 +285,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     // For engineer agents with nodeId, send agent.start command to the target node via WebSocket
     if (saved.type === 'engineer' && saved.nodeId) {
       try {
-        await this.nodeGateway.sendCommandToNode(
+        await this.publishNodeCommand(
           saved.nodeId,
           MessageType.AGENT_START,
           { type: 'agent', id: (saved as any)._id.toString() },
@@ -289,7 +306,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
               saved.framework,
               context.orgId
             ),
-          }
+          },
         );
         this.logger.log(
           `agent.start sent to node ${saved.nodeId} for agent ${
@@ -1286,11 +1303,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     }
 
     try {
-      await this.nodeGateway.sendCommandToNode(
+      await this.publishNodeCommand(
         agent.nodeId,
         commandType,
         { type: 'agent', id: agentId },
-        data
+        data,
       );
       this.logger.log(`${commandType} sent to node ${agent.nodeId} for agent ${agentId}`);
     } catch (error: any) {
@@ -1611,7 +1628,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     // For engineer agents with nodeId, notify node via WebSocket with new secret
     if (agent.type === 'engineer' && agent.nodeId) {
       try {
-        await this.nodeGateway.sendCommandToNode(
+        await this.publishNodeCommand(
           agent.nodeId,
           MessageType.AGENT_UPDATE,
           { type: 'agent', id: agentId },
@@ -1632,7 +1649,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
               agent.framework ?? '',
               context.orgId
             ),
-          }
+          },
         );
         this.logger.log(
           `agent.update sent to node ${agent.nodeId} after credential regeneration for agent ${agentId}`
@@ -2186,7 +2203,7 @@ echo "Installation script placeholder - implement actual logic"
       // For engineer agents with nodeId, send agent.delete command to the node via WebSocket
       if (agent && agent.type === 'engineer' && agent.nodeId) {
         try {
-          await this.nodeGateway.sendCommandToNode(
+          await this.publishNodeCommand(
             agent.nodeId,
             MessageType.AGENT_DELETE,
             { type: 'agent', id },
@@ -2194,7 +2211,7 @@ echo "Installation script placeholder - implement actual logic"
               agentId: id,
               code: agent.code,
               name: agent.name,
-            }
+            },
           );
           this.logger.log(
             `agent.delete sent to node ${agent.nodeId} for agent ${id}`
