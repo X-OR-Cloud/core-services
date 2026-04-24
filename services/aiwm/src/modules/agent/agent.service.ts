@@ -1514,7 +1514,8 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       );
     }
 
-    if (agent.status === 'inactive') {
+    const isNodeAgent = agent.type === 'engineer' && !!agent.nodeId;
+    if (agent.status === 'inactive' && !isNodeAgent) {
       return { success: true, status: 'inactive', previousStatus: 'inactive' };
     }
 
