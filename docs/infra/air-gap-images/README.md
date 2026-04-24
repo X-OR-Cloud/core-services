@@ -23,9 +23,9 @@
 
 ## 1. Container Images — NestJS Runtime
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `node` | `20-alpine3.21` | https://hub.docker.com/_/node |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `node` | `20-alpine3.21` | ~130 MB | https://hub.docker.com/_/node |
 
 **Mục đích:** Base image để build và chạy tất cả 8 NestJS microservices trong monorepo (template, iam, noti, aiwm, cbm, mona, aivp, dgt). Alpine variant để giảm kích thước image. Cần cài thêm `curl`, `bash`, `ca-certificates` khi build Dockerfile cho từng service.
 
@@ -35,9 +35,9 @@
 
 ### MongoDB
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `mongo` | `8.0` | https://hub.docker.com/_/mongo |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `mongo` | `8.0` | ~800 MB | https://hub.docker.com/_/mongo |
 
 **Mục đích:** Database chính của toàn hệ thống. Mỗi service sử dụng một database riêng biệt theo quy ước `{DatabaseNamePrefix}{serviceName}`. Phiên bản 8.0 đang được sử dụng trong môi trường production hiện tại (endpoint: `10.10.0.100:27017`).
 
@@ -45,9 +45,9 @@
 
 ### Redis
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `redis` | `7.4-alpine` | https://hub.docker.com/_/redis |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `redis` | `7.4-alpine` | ~40 MB | https://hub.docker.com/_/redis |
 
 **Mục đích:** Shared instance dùng cho 3 mục đích đồng thời: (1) BullMQ job queue cho async processing, (2) Socket.IO adapter cho WebSocket clustering, (3) caching layer. Alpine variant để tiết kiệm tài nguyên.
 
@@ -55,9 +55,9 @@
 
 ### Qdrant
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `qdrant/qdrant` | `v1.14.0` | https://hub.docker.com/r/qdrant/qdrant |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `qdrant/qdrant` | `v1.14.0` | ~200 MB | https://hub.docker.com/r/qdrant/qdrant |
 
 **Mục đích:** Vector database lưu trữ embeddings cho các tính năng AI của service `aiwm`. Được dùng trong RAG pipeline, semantic search, và memory của các AI agents. Endpoint hiện tại: `10.10.0.100:6333`.
 
@@ -65,9 +65,9 @@
 
 ## 3. Container Images — Object Storage
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `chrislusf/seaweedfs` | `4.20` | https://hub.docker.com/r/chrislusf/seaweedfs |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `chrislusf/seaweedfs` | `4.20` | ~100 MB | https://hub.docker.com/r/chrislusf/seaweedfs |
 
 **Mục đích:** S3-compatible object storage tự host — thay thế cho MinIO (vấn đề AGPL-3.0 license). Dùng để lưu trữ file upload, model artifacts, documents của service `cbm` và `aivp`. SeaweedFS có S3 gateway tương thích hoàn toàn, Apache 2.0 license, viết bằng Go nên nhẹ và dễ vận hành trên Kubernetes.
 
@@ -79,13 +79,13 @@
 
 ### NVIDIA CUDA Base Images
 
-| Image | Tag | Min Driver | Dùng với |
-|-------|-----|-----------|---------|
-| `nvidia/cuda` | `12.4.1-cudnn-runtime-ubuntu22.04` | 550.54.14 | **Recommended default** — vLLM 0.8.x, PyTorch 2.3-2.4 |
-| `nvidia/cuda` | `12.6.3-cudnn-runtime-ubuntu22.04` | 560.35.03 | vLLM 0.8.4+, PyTorch 2.5+ |
-| `nvidia/cuda` | `12.2.2-cudnn8-runtime-ubuntu22.04` | 535.54.03 | LMDeploy, TensorFlow 2.14-2.15 |
-| `nvidia/cuda` | `12.1.1-cudnn8-runtime-ubuntu22.04` | 530.30.02 | TGI 3.x, PyTorch 2.1-2.2 |
-| `nvidia/cuda` | `11.8.0-cudnn8-runtime-ubuntu22.04` | 520.61.05 | Legacy pipelines, Triton 22-23 |
+| Image | Tag | Size | Min Driver | Dùng với |
+|-------|-----|------|-----------|---------|
+| `nvidia/cuda` | `12.6.3-cudnn-runtime-ubuntu22.04` | ~5.5 GB | 560.35.03 | vLLM 0.8.4+, PyTorch 2.5+ |
+| `nvidia/cuda` | `12.4.1-cudnn-runtime-ubuntu22.04` | ~5.2 GB | 550.54.14 | **Recommended default** — vLLM 0.8.x, PyTorch 2.3-2.4 |
+| `nvidia/cuda` | `12.2.2-cudnn8-runtime-ubuntu22.04` | ~4.8 GB | 535.54.03 | LMDeploy, TensorFlow 2.14-2.15 |
+| `nvidia/cuda` | `12.1.1-cudnn8-runtime-ubuntu22.04` | ~4.7 GB | 530.30.02 | TGI 3.x, PyTorch 2.1-2.2 |
+| `nvidia/cuda` | `11.8.0-cudnn8-runtime-ubuntu22.04` | ~4.2 GB | 520.61.05 | Legacy pipelines, Triton 22-23 |
 
 Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
@@ -97,9 +97,9 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### NVIDIA K8s Device Plugin
 
-| Image | Tag | Registry |
-|-------|-----|---------|
-| `nvcr.io/nvidia/k8s-device-plugin` | `v0.17.0` | https://catalog.ngc.nvidia.com/orgs/nvidia/containers/k8s-device-plugin |
+| Image | Tag | Size | Registry |
+|-------|-----|------|---------|
+| `nvcr.io/nvidia/k8s-device-plugin` | `v0.17.0` | ~200 MB | https://catalog.ngc.nvidia.com/orgs/nvidia/containers/k8s-device-plugin |
 
 **Mục đích:** DaemonSet plugin bắt buộc để Kubernetes nhận diện và expose GPU A100 cho các Pod. Không có image này, K8s không thể schedule workload lên GPU node. Cần deploy trước khi chạy bất kỳ LLM inference workload nào.
 
@@ -109,21 +109,22 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### vLLM (Primary — Khuyến nghị)
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `vllm/vllm-openai` | `v0.8.4` | https://hub.docker.com/r/vllm/vllm-openai |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `vllm/vllm-openai` | `v0.8.4` | ~12.6 GB | https://hub.docker.com/r/vllm/vllm-openai |
+| `vllm/vllm-openai` | `gemma4` | ~12.6 GB | https://hub.docker.com/r/vllm/vllm-openai |
 
 **Mục đích:** Framework inference LLM hiệu năng cao, là lựa chọn chính cho production. Cung cấp OpenAI-compatible API (`/v1/chat/completions`, `/v1/completions`, `/v1/models`) — tương thích trực tiếp với Vercel AI SDK và LangChain đang dùng trong `aiwm`. Hỗ trợ PagedAttention, FlashAttention-2, quantization AWQ/GPTQ/FP8, tool use/function calling. A100 là GPU target chính của dự án vLLM.
 
-> **Lưu ý:** Có tag đặc biệt `vllm/vllm-openai:gemma4` tối ưu riêng cho Gemma 4. Image ~20GB.
+> **Lưu ý:** Tag `gemma4` được tối ưu riêng cho Gemma 4, nên pull cả hai tag.
 
 ---
 
 ### Text Generation Inference — TGI (Fallback)
 
-| Image | Tag | Registry |
-|-------|-----|---------|
-| `ghcr.io/huggingface/text-generation-inference` | `3.3.5` | https://github.com/huggingface/text-generation-inference/pkgs/container/text-generation-inference |
+| Image | Tag | Size | Registry |
+|-------|-----|------|---------|
+| `ghcr.io/huggingface/text-generation-inference` | `3.3.5` | ~9.3 GB | https://github.com/huggingface/text-generation-inference/pkgs/container/text-generation-inference |
 
 **Mục đích:** HuggingFace's inference server, fallback khi vLLM không tương thích với model cụ thể. Hỗ trợ continuous batching, Flash Attention, quantization. OpenAI-compatible API ở mức partial. Hiện đang ở maintenance mode (chỉ nhận bug fix, không có feature mới).
 
@@ -131,9 +132,9 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### LMDeploy (Fallback — Tối ưu A100)
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `openmmlab/lmdeploy` | `v0.7.2-cu12` | https://hub.docker.com/r/openmmlab/lmdeploy |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `openmmlab/lmdeploy` | `v0.7.2-cu12` | ~9 GB | https://hub.docker.com/r/openmmlab/lmdeploy |
 
 **Mục đích:** Framework của Shanghai AI Lab, tối ưu đặc biệt cho A100 (SM 8.0) với TurboMind engine. Throughput cao hơn vLLM trên một số model Qwen/InternLM. Dùng khi cần squeeze maximum performance từ A100. Hỗ trợ W4A16 (AWQ), W8A8, FP16, BF16 và tool calling từ v0.5+.
 
@@ -141,9 +142,9 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### LocalAI (Lightweight Alternative)
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `localai/localai` | `v2.22.1-cublas-cuda12-core` | https://hub.docker.com/r/localai/localai |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `localai/localai` | `v2.22.1-cublas-cuda12-core` | ~4 GB | https://hub.docker.com/r/localai/localai |
 
 **Mục đích:** Framework nhẹ nhất trong danh sách (~3-5GB), dùng llama.cpp với cuBLAS backend. Phù hợp khi cần chạy GGUF quantized models hoặc tài nguyên hạn chế. Full OpenAI API compatibility. Tag `-core` không bundle sẵn model.
 
@@ -151,9 +152,9 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### Triton Inference Server (Enterprise Scale)
 
-| Image | Tag | Registry |
-|-------|-----|---------|
-| `nvcr.io/nvidia/tritonserver` | `25.01-trtllm-python-py3` | https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tritonserver |
+| Image | Tag | Size | Registry |
+|-------|-----|------|---------|
+| `nvcr.io/nvidia/tritonserver` | `25.01-trtllm-python-py3` | ~20 GB | https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tritonserver |
 
 **Mục đích:** NVIDIA's enterprise-grade inference server, dùng khi cần multi-model serving, ensemble pipeline, hoặc dynamic batching ở scale lớn. TurboMind engine cho maximum A100 throughput. Không native OpenAI API — cần shim plugin.
 
@@ -165,9 +166,9 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### Nginx
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `nginx` | `1.27-alpine` | https://hub.docker.com/_/nginx |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `nginx` | `1.27-alpine` | ~40 MB | https://hub.docker.com/_/nginx |
 
 **Mục đích:** Reverse proxy và ingress cho các service. Dùng làm API gateway nội bộ, load balancer, hoặc static file server. Alpine variant để giảm attack surface.
 
@@ -175,19 +176,19 @@ Docker Hub: https://hub.docker.com/r/nvidia/cuda
 
 ### Alpine
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `alpine` | `3.21` | https://hub.docker.com/_/alpine |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `alpine` | `3.21` | ~5 MB | https://hub.docker.com/_/alpine |
 
-**Mục đích:** Base image cho init containers và sidecar containers trong K8s. Dùng để chạy các script khởi tạo (database migration, config seeding) trước khi main container start. Kích thước ~5MB.
+**Mục đích:** Base image cho init containers và sidecar containers trong K8s. Dùng để chạy các script khởi tạo (database migration, config seeding) trước khi main container start.
 
 ---
 
 ### BusyBox
 
-| Image | Tag | Docker Hub |
-|-------|-----|-----------|
-| `busybox` | `1.37` | https://hub.docker.com/_/busybox |
+| Image | Tag | Size | Docker Hub |
+|-------|-----|------|-----------|
+| `busybox` | `1.37` | ~4 MB | https://hub.docker.com/_/busybox |
 
 **Mục đích:** Minimal toolbox cho debug và troubleshooting trong K8s. Dùng trong init containers để kiểm tra connectivity (`wget`, `nc`) trước khi service start, hoặc ephemeral debug pod.
 
@@ -392,4 +393,4 @@ huggingface-cli download Qwen/Qwen3-Embedding-8B \
 - [ ] Đã accept Gemma license trên HuggingFace (`google/gemma-4-27b-it`)
 - [ ] Xác nhận driver version trên K8s nodes của KH để chọn đúng CUDA tag
 - [ ] Xác nhận private registry endpoint của KH (Harbor, Nexus, ECR private, v.v.)
-- [ ] Đủ dung lượng disk: vLLM image ~20GB, model weights ~60-80GB tổng
+- [ ] Đủ dung lượng disk: images ~90 GB (compressed), model weights ~64 GB → tổng ~200 GB sau khi unpack
