@@ -189,7 +189,7 @@ export class NodeService extends BaseService<Node> {
     ]);
 
     const bootstrapUrl = `${baseApiUrl}/nodes/auth/bootstrap`;
-    const wsUrl = `${baseWsUrl}/ws/node`;
+    const wsUrl = `${baseWsUrl}/node`;
 
     const setupToken = this.jwtService.sign(
       {
