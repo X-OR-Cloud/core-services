@@ -39,6 +39,10 @@ async function bootstrap() {
     // Node WS mode - Standalone WebSocket server for node connections (/ws/node)
     const { bootstrapNodeWsServer } = await import('./bootstrap-node-ws');
     await bootstrapNodeWsServer();
+  } else if (MODE === 'cws') {
+    // Chat WS mode - Standalone WebSocket server for chat clients (/, port 3402)
+    const { bootstrapChatWsServer } = await import('./bootstrap-chat-ws');
+    await bootstrapChatWsServer();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');

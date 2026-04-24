@@ -598,6 +598,35 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
+      name: 'core.aiwm.cws00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3402,
+        MODE: 'cws',
+        SERVICE_NAME: 'aiwm',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-cws-00-error.log',
+      out_file: './logs/aiwm-cws-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
       name: 'core.aiwm.aws01',
       script: './dist/services/aiwm/main.js',
       instances: 1,

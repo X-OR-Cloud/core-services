@@ -173,6 +173,25 @@
           "buildTarget": "aiwm:build:production"
         }
       }
+    },
+    "cws": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "aiwm:build",
+        "runBuildTargetDependencies": false,
+        "args": ["cws"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "aiwm:build:development"
+        },
+        "production": {
+          "buildTarget": "aiwm:build:production"
+        }
+      }
     }
   },
   "tags": []
