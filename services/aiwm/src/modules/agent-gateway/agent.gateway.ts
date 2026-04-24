@@ -267,7 +267,9 @@ export class AgentGateway
         );
       }
 
+      client.data.agentStatus = null;
       this.logger.log(`[WS-CONNECT] Engineer agent connected | socketId=${client.id} | agentId=${agentId}`);
+      this.appendLog(agentId, 'info', 'Agent connected to gateway', { socketId: client.id });
 
       this.server.emit('presence:update', {
         type: 'agent',
@@ -293,6 +295,7 @@ export class AgentGateway
       this.logger.debug(
         `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${agentId}`,
       );
+      this.appendLog(agentId, 'info', 'Agent disconnected from gateway', { socketId: client.id });
       this.server.emit('presence:update', {
         type: 'agent',
         agentId,
@@ -331,12 +334,19 @@ export class AgentGateway
         `[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)} mcpConnected=${data.mcpConnected ?? 'n/a'} availableFunctions=${data.availableFunctions?.length ?? 'n/a'}`,
       );
 
+      const resolvedStatus = data.status === 'sleep' ? 'idle' : data.status;
       await this.presenceService.setAgentStatus(agentId, {
-        status: data.status === 'sleep' ? 'idle' : data.status,
+        status: resolvedStatus,
         lastHeartbeat: new Date().toISOString(),
         conversationId: client.data.conversationId || '',
         metrics: data.metrics ? JSON.stringify(data.metrics) : undefined,
       });
+
+      if (client.data.agentStatus !== resolvedStatus) {
+        const prev = client.data.agentStatus ?? 'unknown';
+        client.data.agentStatus = resolvedStatus;
+        this.appendLog(agentId, 'info', `Status changed: ${prev} → ${resolvedStatus}`);
+      }
 
       return await this.heartbeatService.heartbeat(agentId, data, token);
     } catch (error) {
@@ -545,5 +555,22 @@ export class AgentGateway
       this.logger.error(`channel:send failed: ${err.message}`);
       return { success: false, error: `Failed to send: ${err.message}` };
     }
+  }
+
+  private appendLog(
+    agentId: string,
+    level: 'info' | 'warn' | 'error',
+    message: string,
+    data?: Record<string, unknown>,
+  ): void {
+    const entry: Record<string, unknown> = { level, message, time: new Date() };
+    if (data) entry.data = data;
+    this.agentModel
+      .updateOne(
+        { _id: new Types.ObjectId(agentId) },
+        { $push: { logs: { $each: [entry], $slice: -100 } } },
+      )
+      .exec()
+      .catch((err: Error) => this.logger.warn(`appendLog failed for ${agentId}: ${err.message}`));
   }
 }
