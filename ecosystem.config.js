@@ -537,8 +537,9 @@ module.exports = {
     },
     // ========== AIWM WS Instances (3400-3409 — dedicated WS process range) ==========
     // aws = engineer agent WebSocket (/ws/agent)
-    // wsc = chat WebSocket (/ws/chat) — future split
-    // wsn = node WebSocket (/ws/node) — future split
+    // aws = Agent WebSocket (/, port 3400-3402)
+    // nws = Node WebSocket  (/, port 3403-3406)
+    // cws = Chat WebSocket  (/, port 3407-3409)
     {
       name: 'core.aiwm.aws00',
       script: './dist/services/aiwm/main.js',
@@ -569,7 +570,7 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
-      name: 'core.aiwm.nws00',
+      name: 'core.aiwm.aws01',
       script: './dist/services/aiwm/main.js',
       instances: 1,
       exec_mode: 'cluster',
@@ -579,6 +580,35 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3401,
+        MODE: 'aws',
+        SERVICE_NAME: 'aiwm',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-aws-01-error.log',
+      out_file: './logs/aiwm-aws-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.aiwm.nws00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3403,
         MODE: 'nws',
         SERVICE_NAME: 'aiwm',
       },
@@ -607,7 +637,7 @@ module.exports = {
 
       env: {
         NODE_ENV: 'production',
-        PORT: 3402,
+        PORT: 3407,
         MODE: 'cws',
         SERVICE_NAME: 'aiwm',
       },
@@ -616,35 +646,6 @@ module.exports = {
 
       error_file: './logs/aiwm-cws-00-error.log',
       out_file: './logs/aiwm-cws-00-out.log',
-      merge_logs: true,
-
-      autorestart: true,
-      max_restarts: 10,
-      min_uptime: '10s',
-
-      kill_timeout: 5000,
-      wait_ready: true,
-      listen_timeout: 10000,
-    },
-    {
-      name: 'core.aiwm.aws01',
-      script: './dist/services/aiwm/main.js',
-      instances: 1,
-      exec_mode: 'cluster',
-      watch: false,
-      max_memory_restart: '500M',
-
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3401,
-        MODE: 'aws',
-        SERVICE_NAME: 'aiwm',
-      },
-
-      env_file: '.env',
-
-      error_file: './logs/aiwm-aws-01-error.log',
-      out_file: './logs/aiwm-aws-01-out.log',
       merge_logs: true,
 
       autorestart: true,
