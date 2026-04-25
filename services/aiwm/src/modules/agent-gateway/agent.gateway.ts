@@ -337,7 +337,7 @@ export class AgentGateway
         if (payloadB64) {
           const { exp } = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
           const remainingSec = typeof exp === 'number' ? exp - Math.floor(Date.now() / 1000) : Infinity;
-          if (remainingSec < 90) { // TEST ONLY — restore to 3600 after testing
+          if (remainingSec < 3600) {
             refreshedToken = this._refreshAgentToken(agentId, client.data.orgId, client.data.roles, client.data.agentStatus ?? 'idle');
             client.data.token = refreshedToken;
             token = refreshedToken;

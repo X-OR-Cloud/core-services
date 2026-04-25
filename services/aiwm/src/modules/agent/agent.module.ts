@@ -32,7 +32,7 @@ import { HeartbeatModule } from '../heartbeat/heartbeat.module';
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET') || 'R4md0m_S3cr3t',
-        signOptions: { expiresIn: '2m' },
+        signOptions: { expiresIn: '24h' },
       }),
     }),
     HttpModule.register({ timeout: 10000, maxRedirects: 3 }),

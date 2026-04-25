@@ -685,6 +685,8 @@ export class AgentRunner {
         instruction: resp.instruction ?? this.config.instruction,
         deployment: resp.deployment ?? this.config.deployment,
         settings: resp.settings ?? this.config.settings,
+        mcpServers: resp.mcpServers ?? this.config.mcpServers,
+        allowedFunctions: resp.allowedFunctions ?? this.config.allowedFunctions,
       };
       this.logger.log('Reloaded instruction and MCP config');
       return true;
