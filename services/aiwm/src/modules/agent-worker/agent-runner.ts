@@ -715,6 +715,10 @@ export class AgentRunner {
     return this.config.agentId;
   }
 
+  getAccessToken(): string {
+    return this.config.accessToken;
+  }
+
   /**
    * Decode the JWT access token and return the expiry timestamp (seconds since epoch).
    * Returns null if the token is missing or malformed.

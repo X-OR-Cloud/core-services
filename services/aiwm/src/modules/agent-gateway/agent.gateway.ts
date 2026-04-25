@@ -326,8 +326,27 @@ export class AgentGateway
     }
 
     try {
-      const { agentId, token } = client.data;
+      const { agentId } = client.data;
+      let { token } = client.data;
       client.data.lastHeartbeatAt = Date.now();
+
+      // Refresh token if expired or expiring within 1 hour
+      let refreshedToken: string | undefined;
+      try {
+        const payloadB64 = token?.split('.')[1];
+        if (payloadB64) {
+          const { exp } = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+          const remainingSec = typeof exp === 'number' ? exp - Math.floor(Date.now() / 1000) : Infinity;
+          if (remainingSec < 3600) {
+            refreshedToken = this._refreshAgentToken(agentId, client.data.orgId, client.data.roles, client.data.agentStatus ?? 'idle');
+            client.data.token = refreshedToken;
+            token = refreshedToken;
+            this.logger.log(`[heartbeat] token refreshed agentId=${agentId} (was expiring in ${Math.round(remainingSec / 60)}m)`);
+          }
+        }
+      } catch {
+        // non-critical — proceed with existing token
+      }
 
       const presenceSockets = await this.presenceService.getAgentSocketIds(agentId);
       this.logger.debug(
@@ -348,7 +367,8 @@ export class AgentGateway
         this.appendLog(agentId, 'info', `Status changed: ${prev} → ${resolvedStatus}`);
       }
 
-      return await this.heartbeatService.heartbeat(agentId, data, token);
+      const result = await this.heartbeatService.heartbeat(agentId, data, token);
+      return refreshedToken ? { ...result, token: refreshedToken } : result;
     } catch (error) {
       this.logger.error('Error handling agent:heartbeat:', (error as Error).message);
       return { success: false, error: (error as Error).message };
@@ -572,5 +592,12 @@ export class AgentGateway
       )
       .exec()
       .catch((err: Error) => this.logger.warn(`appendLog failed for ${agentId}: ${err.message}`));
+  }
+
+  private _refreshAgentToken(agentId: string, orgId: string, roles: string[], status: string): string {
+    return this.jwtService.sign(
+      { sub: agentId, username: `agent:${agentId}`, status, roles, orgId, groupId: '', agentId, userId: '', type: 'agent' },
+      { expiresIn: '24h' },
+    );
   }
 }

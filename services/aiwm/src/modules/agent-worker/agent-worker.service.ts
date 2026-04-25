@@ -211,7 +211,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
           this.fileService.uploadBase64(base64, filename, mimeType, agent.owner?.orgId).then((r) => r.fileUrl),
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
-          this.agentService.heartbeat(id, { status }, accessToken),
+          this.agentService.heartbeat(id, { status }, this.runners.get(id)?.getAccessToken() ?? accessToken),
         getHistoryInternal: async (conversationId: string) => {
           const systemContext = { userId: agentId, roles: [], orgId: '', groupId: '', agentId, appId: '' };
           const actions = await this.actionService.getLastActions(conversationId, 40, systemContext as any);
@@ -230,7 +230,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         ragEnabled: ragEnabled ?? false,
         ragCollections: ragCollections ?? [],
         searchKnowledgeInternal: (collectionId, query, topK, minScore) =>
-          this.cbmKnowledgeService.search(collectionId, query, topK, minScore, accessToken),
+          this.cbmKnowledgeService.search(collectionId, query, topK, minScore, this.runners.get(agentId)?.getAccessToken() ?? accessToken),
         agentCode: agentCode ?? undefined,
       });
 
