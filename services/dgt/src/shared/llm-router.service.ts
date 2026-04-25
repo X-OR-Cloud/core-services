@@ -131,7 +131,7 @@ export class LlmRouterService {
       };
     }
 
-    const response = await axios.post(endpoint, body, { headers, timeout: 120_000 });
+    const response = await axios.post(endpoint, body, { headers, timeout: 170_000 });
 
     // Parse response
     let rawContent: string;
