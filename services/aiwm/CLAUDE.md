@@ -4,19 +4,20 @@
 
 AIWM (AI Workload Manager) is the core service for AI operations. Port 3003 (dev), 3330-3339 (prod).
 
-Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) + Agent runner + Connection bridge.
+Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) + Agent runner + Connection bridge + 3 standalone WebSocket gateways.
 
 ## Run Modes
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| **api** | `nx run aiwm:api` | REST API + WebSocket server (default) |
-| **mcp** | `nx run aiwm:mcp` | Standalone MCP protocol server (port 3355) |
-| **wrk** | `nx run aiwm:wrk` | BullMQ background job worker |
-| **agt** | `nx run aiwm:agt` | Hosted agent worker (connects to `/ws/chat`) |
-| **con** | `nx run aiwm:con` | Connection worker (Discord/Telegram bridge) |
-| **aws** | `nx run aiwm:aws` | Agent WebSocket gateway (`/`, port 3400) — engineer agents only |
-| **nws** | `nx run aiwm:nws` | Node WebSocket gateway (`/`, port 3401) — node daemon connections |
+| Mode | Command | Port (prod) | Description |
+|------|---------|-------------|-------------|
+| **api** | `nx run aiwm:api` | 3330–3332 | REST API + legacy ChatGateway (`/ws/chat`) |
+| **mcp** | `nx run aiwm:mcp` | 3334–3336 | Standalone MCP protocol server |
+| **wrk** | `nx run aiwm:wrk` | — | BullMQ background job worker |
+| **agt** | `nx run aiwm:agt` | — | Hosted agent worker — Redis BLPOP consumer |
+| **con** | `nx run aiwm:con` | — | Connection worker (Discord/Telegram bridge) |
+| **aws** | `nx run aiwm:aws` | 3400–3402 | Agent WebSocket gateway (`/`) — engineer agents only |
+| **nws** | `nx run aiwm:nws` | 3403–3406 | Node WebSocket gateway (`/`) — node daemon connections |
+| **cws** | `nx run aiwm:cws` | 3407–3409 | Chat WebSocket gateway (`/`) — user/anonymous/assistant chat |
 
 ## Modules
 
@@ -24,11 +25,12 @@ Multi-mode: API (HTTP/WebSocket) + MCP (AI agent integration) + Worker (BullMQ) 
 |--------|------|-------------|
 | Agent | `src/modules/agent/` | AI agent management (assistant/engineer types) |
 | Agent-Gateway | `src/modules/agent-gateway/` | Engineer agent WebSocket gateway (`/`, MODE=aws) — heartbeat, presence, pub/sub |
-| Node-Gateway | `src/modules/node-gateway/` | Node daemon WebSocket gateway (`/ws/node`, MODE=nws) — standalone, Redis pub/sub backbone |
-| Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) — handles `agent:command` events |
-| Node | `src/modules/node/` | Worker node management + WebSocket gateway (`/ws/node`) |
-| Chat | `src/modules/chat/` | Real-time chat WebSocket gateway (`/ws/chat`) — slash commands, heartbeat, presence |
-| Heartbeat | `src/modules/heartbeat/` | Heartbeat logic + work assignment — shared by AgentGateway và AgentModule |
+| Chat-Gateway | `src/modules/chat-gateway/` | Standalone chat WS gateway (`/`, MODE=cws) — user/anonymous/assistant, no slash commands |
+| Node-Gateway | `src/modules/node-gateway/` | Node daemon WebSocket gateway (`/`, MODE=nws) — standalone, Redis pub/sub backbone |
+| Agent-Worker | `src/modules/agent-worker/` | Hosted agent runner (MODE=agt) — Redis BLPOP consumer, Vercel AI SDK |
+| Node | `src/modules/node/` | Worker node management (HTTP API only — WS extracted to Node-Gateway) |
+| Chat | `src/modules/chat/` | Legacy chat gateway (`/ws/chat`, MODE=api) + ChatService (presence monitor) |
+| Heartbeat | `src/modules/heartbeat/` | Heartbeat logic + work assignment — shared by AgentGateway, AgentModule, ChatGateway |
 | Presence | `src/modules/presence/` | Redis-based presence tracking — socket sessions, agent/user online state |
 | Model | `src/modules/model/` | AI model metadata and lifecycle |
 | Deployment | `src/modules/deployment/` | Model deployment + inference proxy |
@@ -55,20 +57,19 @@ AIWM hỗ trợ hai loại agent với cơ chế vận hành khác nhau:
 ### `assistant` — In-process agent
 - Chạy **bên trong** AIWM Agent Worker (`MODE=agt`) qua `AgentRunner`
 - Không có quyền truy cập môi trường (không bash, không file system)
-- Tự động connect vào `/ws/chat` khi worker khởi động
-- Nhận message qua `message:new`, phản hồi qua `message:send`
-- Heartbeat qua `agent:heartbeat` WS event
+- Nhận task qua Redis BLPOP (`chat:task:{agentId}`) — không kết nối WS trực tiếp
+- Publish response qua Redis (`chat:response:{conversationId}`) → CWS broadcast tới client
+- Heartbeat qua `heartbeatInternal` (in-process call, không qua WS)
 - Scale ngang bằng Redis lock (mỗi agentId chỉ có một runner active)
 
 ### `engineer` — External self-deployed agent
 - Chạy **bên ngoài** hệ thống, do người dùng tự deploy (hoặc deploy lên Node)
 - Có quyền truy cập môi trường đầy đủ (bash, file system, v.v.)
 - Tự gọi `POST /agents/:id/connect` để lấy JWT token + config
-- Connect vào **`/`** (MODE=aws, port 3400) — gateway riêng cho engineer agents
-- Heartbeat qua `agent:heartbeat` WS event — kèm `mcpConnected` và `availableFunctions` để server guard work assignment
+- Connect vào **AWS** (`/`, MODE=aws, port 3400–3402) — gateway riêng cho engineer agents
+- Heartbeat qua `agent:heartbeat` WS event — kèm `mcpConnected` và `availableFunctions`
 - Server trả về work task trong response heartbeat nếu agent `idle` và đủ capabilities
-- Nhận `message:new` từ server (broadcast qua Redis pub/sub từ ChatGateway)
-- Khi có `nodeId`: AIWM quản lý lifecycle qua WebSocket Node (`agent.start/update/delete`)
+- Khi có `nodeId`: AIWM quản lý lifecycle qua NWS (`agent.start/update/delete`)
 - Khi không có `nodeId`: người dùng tự quản lý hoàn toàn
 
 > Tài liệu chi tiết: `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` và `docs/aiwm/agents/CLIENT-INTEGRATION-GUIDE.md`
@@ -94,52 +95,86 @@ When working on a specific module, read the corresponding docs:
 ## Key Architecture Patterns
 
 ### WebSocket Gateways
-- **NodeGateway** (`/`, MODE=nws, port 3401): Node daemon connections. Chạy process riêng (`core.aiwm.nws00`). JWT auth in `afterInit` middleware. In-memory connection tracking via `NodeConnectionService`. Subscribes `node:cmd:*` Redis channel — forwards commands to local node sockets.
-- **ChatGateway** (`/ws/chat`): User/Agent/Anonymous chat. JWT auth in `handleConnection`. Redis-based presence tracking. Redis pub/sub for cross-instance communication.
-- **AgentGateway** (`/`, MODE=aws, port 3400): Engineer agent–only gateway. Chạy process riêng (`core.aiwm.aws00`), không import AgentModule/ConversationModule/ActionModule — inject Model trực tiếp. HeartbeatModule shared với AgentModule.
 
-### Chat Slash Commands
-Slash commands are intercepted at the gateway — they are **not** processed as plain text messages in `AgentRunner`.
+Mỗi gateway chạy process riêng, dùng namespace `/` và Redis adapter để scale ngang.
 
-| User types | Mechanism | Agent receives |
-|-----------|-----------|---------------|
-| `/stop [reason]` | `command:send` → `agent:command { type: 'stop' }` | Aborts current LLM generation |
-| `/reload` | `command:send` → `agent:command { type: 'reload' }` | Re-fetches config from AIWM via `connectInternal` |
-| `/inspect` | `command:send` → `agent:command { type: 'inspect' }` | Emits sanitized runtime config as system message |
-| `/ignore <text>` | Intercepted in `message:send`, `metadata.skipAgent: true` set | Skips message entirely |
+| Gateway | Module | Mode | Port (prod) | Clients |
+|---------|--------|------|-------------|---------|
+| **AgentGateway** | `agent-gateway/` | `aws` | 3400–3402 | Engineer agents |
+| **NodeGateway** | `node-gateway/` | `nws` | 3403–3406 | Node daemons |
+| **ChatWsGateway** | `chat-gateway/` | `cws` | 3407–3409 | Users, anonymous, assistant agents |
+| Legacy ChatGateway | `chat/` | `api` | 3330–3332 | Backward compat dev only |
 
-- `command:send` is **user-only** (anonymous clients are rejected)
-- `agent:command` is emitted directly to agent socket(s) — not broadcast to the conversation room
-- `/stop` and `/reload` are saved to DB as `ActionType.COMMAND` for audit trail
-- See `docs/aiwm/CHAT-WEBSOCKET-EVENTS.md` for full payload reference
+**Nginx routing (ws.hydrabyte.co):**
+- `/agent/socket.io` → AWS (port 3400–3402)
+- `/node/socket.io` → NWS (port 3403–3406)
+- `/chat/socket.io` → CWS (port 3407–3409)
+
+**ChatWsGateway (CWS) — thiết kế:**
+- Không import AgentModule — inject `@InjectModel(Agent)` + `HeartbeatService` trực tiếp
+- Không có `command:send` handler (slash commands bị loại bỏ để giảm dependency)
+- Token verification: inline `_verifyExternalSignedToken` + `_validateAndTouchAnonymousToken`
+- Redis subscriptions (MODE=cws): `agent:join-room`, `chat:message-new`, `chat:response:*`
+
+**AgentGateway (AWS) — thiết kế:**
+- Engineer agents only — reject non-agent tokens
+- Không import AgentModule/ConversationModule/ActionModule
+- `HeartbeatModule` shared với AgentModule
+- Log lifecycle events (connect/disconnect/status change) → `agent.logs` với rotation 100 entries
+
+### Luồng chat: user → CWS → agt worker
+
+```
+User client   →[WS message:send]→  CWS
+CWS           →[Redis lpush]→      chat:task:{agentId}
+Agt worker    →[Redis blpop]→      process → publish chat:response:{convId}
+CWS           →[Redis psubscribe]→  emit message:new → User client
+```
+
+Con worker (Discord/Telegram) publish `chat:message-new` → CWS subscribe và xử lý tương tự.
 
 ### Agent Heartbeat (WebSocket)
-Agents send `agent:heartbeat` event (preferred over `POST /agents/:id/heartbeat`). Cả hai path đều delegate xuống `HeartbeatService.heartbeat()` — cùng logic, cùng response shape.
+
+**Engineer agent** gửi `agent:heartbeat` tới AWS → `HeartbeatService.heartbeat()`.
 
 **Payload từ agent:**
 ```json
 {
-  "agentId": "<id>",
   "status": "idle|busy",
   "mcpConnected": true,
   "availableFunctions": ["mcp__Builtin__GetWork", "mcp__Builtin__SubmitWork"]
 }
 ```
 
-- `mcpConnected` + `availableFunctions`: server dùng để guard work assignment — nếu agent thiếu tools cần thiết, không giao work
+- `mcpConnected` + `availableFunctions`: server guard work assignment
 - Response có thể chứa `systemTask` + `systemMessage` nếu có Work cần thực hiện
+- `assistant` agent không gửi WS heartbeat — dùng `heartbeatInternal` in-process
 
-**Routing:**
-- `assistant` agent → `/ws/chat` (ChatGateway) → `AgentService.heartbeat()`
-- `engineer` agent → `/` (AgentGateway) → `HeartbeatService.heartbeat()` trực tiếp
+### Redis pub/sub channels
 
-### Agent Types
-- **assistant**: In-process agent run by `MODE=agt` worker. No environment access. Connects to `/ws/chat` for autonomous operation. Has `secret` for auth.
-- **engineer**: Agent with environment access (bash, file system, etc). Two deployment modes: with `nodeId` = system-deployed to node via WebSocket (agent.start/update/delete); without `nodeId` = user self-deploys. Has `secret` for auth.
-- See `docs/aiwm/agents/AGENT-TYPE-CLASSIFICATION.md` for full details.
+| Channel | Publisher | Subscriber | Mô tả |
+|---------|-----------|-----------|-------|
+| `agent:join-room` | Con worker | CWS, AWS | Force agent socket join conversation room |
+| `chat:message-new` | Con worker | CWS | Inbound Discord/Telegram message |
+| `chat:task:{agentId}` | CWS | Agt worker (BLPOP) | Route message → assistant agent |
+| `chat:response:{convId}` | Agt worker | CWS | Assistant response |
+| `outbound:message` | CWS | Con worker | Bridge response → Discord/Telegram |
+| `outbound:typing` | CWS | Con worker | Typing indicator |
+| `outbound:direct` | AWS/CWS | Con worker | Proactive channel send |
+| `node:cmd:{nodeId}` | NWS | NWS (local) | Forward command tới node socket |
+| `chat:cmd:{agentId}` | CWS | Agt worker | Command tới assistant agent |
+
+### Distributed locking
+
+| Lock key | TTL | Mục đích |
+|----------|-----|---------|
+| `lock:chat-msg:{nonce}` | 10s | Dedup inbound message across CWS instances |
+| `lock:chat-resp:{nonce}` | 10s | Dedup assistant response across CWS instances |
+| `lock:outbound:{actionId}` | 10s | Dedup outbound bridge across CWS instances |
+| `agent:lock:{agentId}` | — | Agt worker ownership (1 runner per agentId) |
 
 ### Authentication Token Types
-- **User JWT**: Standard `sub` (userId), `orgId`, `roles`, `groupId`
+- **User JWT**: `sub` (userId), `orgId`, `roles`, `groupId`
 - **Agent JWT**: `sub` (agentId), `orgId`, `type: 'agent'`, `roles: ['agent']`
 - **Anonymous Token**: `type: 'anonymous'`, `agentId`, `anonymousId`, `tokenId`, `expiresAt`
 - **Node JWT**: `sub` (nodeId), `type`, `username`, `status`, `orgId`
@@ -155,7 +190,7 @@ Agents send `agent:heartbeat` event (preferred over `POST /agents/:id/heartbeat`
 | `tool_result` | Agent tool result step |
 | `thinking` | Agent thinking/reasoning block |
 | `error` | Error event |
-| `command` | Slash command with side effects (`/stop`, `/reload`) |
+| `command` | Slash command with side effects (`/stop`, `/reload`) — legacy ChatGateway only |
 | `joined` | Participant joined event |
 | `left` | Participant left event |
 | `handoff` | Conversation handoff |
@@ -172,27 +207,17 @@ Agents send `agent:heartbeat` event (preferred over `POST /agents/:id/heartbeat`
 - Tools filtered by `agent.allowedToolIds`
 - Transport: Streamable HTTP (POST + SSE)
 
-### Distributed Architecture
-- Redis adapter for WebSocket horizontal scaling (`redis-io.adapter.ts`)
-- Redis pub/sub channels:
-  - `agent:join-room` — force agent sockets to join a conversation room (published by Connection Worker, consumed by ChatGateway + AgentGateway)
-  - `chat:message-new` — broadcast inbound Discord/Telegram messages to room (published by Connection Worker, consumed by ChatGateway + AgentGateway)
-  - `outbound:message` — bridge agent responses back to Discord/Telegram (published by ChatGateway)
-  - `outbound:command` — send slash commands (`/stop`, `/reload`) to engineer agents (published by ChatGateway, consumed by AgentGateway)
-- Distributed locking:
-  - `lock:chat-msg:{nonce}` — prevents duplicate inbound message processing across WS instances
-  - `lock:outbound:{actionId}` — prevents duplicate outbound bridging across WS instances
-
 ## Commands
 
 ```bash
-nx run aiwm:api    # API mode (REST + WebSocket)
+nx run aiwm:api    # API mode (REST + WebSocket, port 3003 dev)
 nx run aiwm:mcp    # MCP mode (port 3355)
 nx run aiwm:wrk    # Worker mode (BullMQ)
 nx run aiwm:agt    # Agent worker mode (hosted agents)
 nx run aiwm:con    # Connection worker mode (Discord/Telegram)
-nx run aiwm:aws    # Agent WS gateway mode (/, port 3400)
-nx run aiwm:nws    # Node WS gateway mode (/, port 3401)
+nx run aiwm:aws    # Agent WS gateway (/, port 3400 dev)
+nx run aiwm:nws    # Node WS gateway (/, port 3403 dev)
+nx run aiwm:cws    # Chat WS gateway (/, port 3407 dev)
 nx run aiwm:build  # Build
 ```
 
@@ -210,13 +235,15 @@ REDIS_PASSWORD=<pass>          # If Redis auth enabled
 
 # Optional
 PORT=3003                      # HTTP server port (api mode)
-PORT_AWS=3400                  # WebSocket port (aws mode, fallback to PORT)
+PORT_AWS=3400                  # Agent WS port (aws mode, fallback to PORT)
+PORT_NWS=3403                  # Node WS port (nws mode, fallback to PORT)
+PORT_CWS=3407                  # Chat WS port (cws mode, fallback to PORT)
 MCP_PORT=3355                  # MCP server port
-MODE=api|mcp|wrk|agt|con|aws   # Run mode (default: api)
+MODE=api|mcp|wrk|agt|con|aws|nws|cws  # Run mode (default: api)
 INTERNAL_API_KEY=<key>         # Service-to-service auth
 MCP_ALLOWED_HOSTS=<hosts>      # Comma-separated allowed hosts
-WS_CHAT_URL=http://host:3003   # Chat WebSocket URL (for agent mode)
-AGENT_IDS=id1,id2,id3          # Filter agents to run (agent mode)
+AGENT_IDS=id1,id2,id3          # Filter agents to run (agt mode)
+AGENT_IGNORE_IDS=id1,id2       # Exclude agents from agt mode
 ```
 
-> **Note — NestJS config vs process.env timing**: `redis.config.ts` và bất kỳ constant nào export từ file config đều được evaluate tại **import time**, trước khi `ConfigModule.forRoot()` chạy dotenv. Luôn đọc env vars trong lifecycle hooks (`onModuleInit`) hoặc dùng `forRootAsync` với `useFactory` để tránh nhận giá trị undefined.
+> **Note — NestJS config vs process.env timing**: Constant export từ config file được evaluate tại **import time**, trước khi `ConfigModule.forRoot()` chạy dotenv. Luôn dùng `buildRedisConfig()` function (không phải constant) khi tạo Redis client trong constructors hoặc lifecycle hooks.
