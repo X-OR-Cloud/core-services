@@ -80,6 +80,7 @@ export class ChatWsGateway
         };
 
         if (payload.type === 'typing') {
+          this.logger.debug(`[typing] conv=${conversationId} isTyping=${payload.isTyping} agentId=${payload.agentId}`);
           this.server.to(`conversation:${conversationId}`).emit('agent:typing', {
             agentId: payload.agentId,
             conversationId,
@@ -130,6 +131,7 @@ export class ChatWsGateway
           content: payload.content,
           agentId: payload.agentId,
           platform: 'portal',
+          isFinal: payload.isFinal ?? false,
           ...(payload.sources?.length ? { sources: payload.sources } : {}),
           ...(payload.workId ? { workId: payload.workId } : {}),
         });
