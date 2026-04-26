@@ -463,7 +463,10 @@ export class AgentGateway
         },
       );
 
-      // Publish to ChatGateway via Redis so user on /ws/chat receives the response
+      // Publish to CWS via Redis so web users receive the response.
+      // nonce=actionId activates CWS multi-instance dedup.
+      // actionCreated=true tells CWS the action already exists — skip duplicate create.
+      // CWS is the sole publisher of outbound:message for the Discord/Telegram bridge.
       if (this.redisPub) {
         await this.redisPub.publish(
           `chat:response:${conversationId}`,
@@ -478,30 +481,9 @@ export class AgentGateway
             ...(dto.sources?.length ? { sources: dto.sources } : {}),
             ...(dto.workId ? { workId: dto.workId } : {}),
             isFinal: dto.role === 'assistant',
+            nonce: actionId,
+            actionCreated: true,
           }),
-        );
-      }
-
-      // Bridge to Connection Worker (Discord/Telegram outbound) if final assistant message
-      if (dto.role === 'assistant' && this.redisPub) {
-        const outboundLockKey = `lock:outbound:${actionId}`;
-        this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
-          if (acquired && this.redisPub) {
-            this.redisPub
-              .publish(
-                'outbound:message',
-                JSON.stringify({
-                  conversationId,
-                  text: dto.content,
-                  actionType: dto.type === 'system' ? 'notice' : (dto.type ?? 'message'),
-                }),
-              )
-              .catch((err: Error) =>
-                this.logger.error(`Failed to publish outbound:message: ${err.message}`),
-              );
-          }
-        }).catch((err: Error) =>
-          this.logger.error(`Failed to acquire outbound lock: ${err.message}`),
         );
       }
 

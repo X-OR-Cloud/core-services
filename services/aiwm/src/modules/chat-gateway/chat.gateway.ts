@@ -109,18 +109,25 @@ export class ChatWsGateway
         };
         const actionType = actionTypeMap[payload.type] ?? ActionType.MESSAGE;
         const t0 = Date.now();
-        const savedAction = await this.actionService.createActionDirect(
-          {
-            conversationId,
-            type: actionType,
-            actor: { role: ActorRole.AGENT, agentId: payload.agentId, displayName: payload.agentId },
-            content: payload.content || '',
-            ...(payload.sources?.length ? { sources: payload.sources } : {}),
-            ...(payload.workId ? { workId: payload.workId } : {}),
-          } as any,
-          { orgId: payload.orgId || '', agentId: payload.agentId, userId: '' },
-        );
-        const actionId = (savedAction as any)._id?.toString() || 'unknown';
+        // If action was already created by AgentGateway (engineer agent path), reuse taskId directly.
+        // Otherwise create a new action (assistant agent / agt-worker path).
+        let actionId: string;
+        if ((payload as any).actionCreated && payload.taskId) {
+          actionId = payload.taskId;
+        } else {
+          const savedAction = await this.actionService.createActionDirect(
+            {
+              conversationId,
+              type: actionType,
+              actor: { role: ActorRole.AGENT, agentId: payload.agentId, displayName: payload.agentId },
+              content: payload.content || '',
+              ...(payload.sources?.length ? { sources: payload.sources } : {}),
+              ...(payload.workId ? { workId: payload.workId } : {}),
+            } as any,
+            { orgId: payload.orgId || '', agentId: payload.agentId, userId: '' },
+          );
+          actionId = (savedAction as any)._id?.toString() || 'unknown';
+        }
         const dbSaveMs = Date.now() - t0;
 
         this.server.to(`conversation:${conversationId}`).emit('message:new', {
