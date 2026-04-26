@@ -89,8 +89,9 @@ export class PresenceService {
 
   async setAgentOnline(agentId: string, socketId: string): Promise<void> {
     try {
-      await this.redis.sadd(`presence:agent:${agentId}`, socketId);
-      await this.redis.expire(`presence:agent:${agentId}`, 3600);
+      const key = `presence:agent:${agentId}`;
+      // Replace entire set — prevents stale socket IDs from accumulating across crashes
+      await this.redis.pipeline().del(key).sadd(key, socketId).expire(key, 3600).exec();
     } catch (error) {
       this.logger.error(`Error setting agent online:`, (error as Error).message);
     }
