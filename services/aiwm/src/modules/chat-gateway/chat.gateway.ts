@@ -107,6 +107,7 @@ export class ChatWsGateway
           error: ActionType.ERROR,
         };
         const actionType = actionTypeMap[payload.type] ?? ActionType.MESSAGE;
+        const t0 = Date.now();
         const savedAction = await this.actionService.createActionDirect(
           {
             conversationId,
@@ -119,6 +120,7 @@ export class ChatWsGateway
           { orgId: payload.orgId || '', agentId: payload.agentId, userId: '' },
         );
         const actionId = (savedAction as any)._id?.toString() || 'unknown';
+        const dbSaveMs = Date.now() - t0;
 
         this.server.to(`conversation:${conversationId}`).emit('message:new', {
           _id: actionId,
@@ -131,6 +133,7 @@ export class ChatWsGateway
           ...(payload.sources?.length ? { sources: payload.sources } : {}),
           ...(payload.workId ? { workId: payload.workId } : {}),
         });
+        this.logger.debug(`[timing] response taskId=${payload.taskId} conv=${conversationId} db_save=${dbSaveMs}ms broadcast_total=${Date.now() - t0}ms`);
 
         if (payload.isFinal && payload.role === 'assistant' && this.redisPub) {
           const outboundLockKey = `lock:outbound:${actionId}`;
@@ -825,6 +828,7 @@ export class ChatWsGateway
 
       const isAssistantAgent = client.data.agentType === 'assistant';
       if (!isAgent && isAssistantAgent && agentId && !skipAgent && this.redisPub) {
+        const queuedAt = Date.now();
         const task = {
           taskId: actionId, agentId, conversationId, actionId,
           content: dto.content, role: dto.role, orgId: client.data.orgId || '',
@@ -836,12 +840,12 @@ export class ChatWsGateway
           sources: dto.sources,
           workId: dto.workId,
           platform: 'portal',
-          timestamp: new Date().toISOString(),
+          timestamp: new Date(queuedAt).toISOString(),
         };
         this.redisPub.lpush(`chat:task:${agentId}`, JSON.stringify(task)).catch((err: Error) =>
           this.logger.error(`Failed to push task to chat:task:${agentId}: ${err.message}`),
         );
-        this.logger.debug(`[Redis] chat:task:${agentId} pushed taskId=${actionId}`);
+        this.logger.debug(`[timing] ws→queue taskId=${actionId} elapsed=${Date.now() - queuedAt}ms`);
         this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
       } else {
         this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);

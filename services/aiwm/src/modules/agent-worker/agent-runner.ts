@@ -438,8 +438,11 @@ export class AgentRunner {
     const { conversationId, content: rawContent, taskId } = task;
     if (!conversationId) return;
 
+    const taskReceivedAt = Date.now();
+    const queueWaitMs = task.timestamp ? taskReceivedAt - new Date(task.timestamp).getTime() : -1;
     const content = (rawContent ?? '').trim();
     this.logger.debug(`[task] conv=${conversationId} taskId=${taskId} content="${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`);
+    this.logger.debug(`[timing] queue_wait=${queueWaitMs}ms taskId=${taskId}`);
 
     // Build <user_info> block from task metadata
     const userInfoLines: string[] = [];
@@ -588,6 +591,7 @@ export class AgentRunner {
       this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
       try {
+        const inferenceStart = Date.now();
         const result = await generateText({
           model,
           system: systemPrompt,
@@ -628,7 +632,9 @@ export class AgentRunner {
           },
         });
 
+        const inferenceMs = Date.now() - inferenceStart;
         this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
+        this.logger.debug(`[timing] inference=${inferenceMs}ms total=${Date.now() - taskReceivedAt}ms taskId=${taskId} conv=${conversationId}`);
         this.publishResponse(conversationId, {
           type: 'message',
           role: 'assistant',

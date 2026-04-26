@@ -18,6 +18,8 @@ import Redis from 'ioredis';
 import {
   AgentWorkerCmdEvent,
   REDIS_CHANNEL_AGENT_WORKER_CMD,
+  REDIS_CHANNEL_INSTRUCTION_UPDATED,
+  InstructionUpdatedEvent,
   buildRedisConfig,
 } from '../../config/redis.config';
 import {
@@ -409,6 +411,16 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     if (!updated) {
       throw new NotFoundException('Instruction not found');
     }
+
+    const payload: InstructionUpdatedEvent = {
+      instructionId: (updated._id as Types.ObjectId).toString(),
+      updatedAt: ((updated as any).updatedAt instanceof Date ? (updated as any).updatedAt.toISOString() : (updated as any).updatedAt) ?? new Date().toISOString(),
+    };
+    this.getRedisPub()
+      .publish(REDIS_CHANNEL_INSTRUCTION_UPDATED, JSON.stringify(payload))
+      .catch((err) => {
+        this.logger.warn(`Failed to publish instruction-updated event: ${(err as Error).message}`);
+      });
 
     return {
       id: (updated._id as Types.ObjectId).toString(),
