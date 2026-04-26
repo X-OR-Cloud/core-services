@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -405,6 +406,23 @@ export class AgentGateway
 
       const agentId: string = client.data.agentId;
       const orgId: string = client.data.orgId || '';
+
+      // Dedup: suppress duplicate message:send from stale sockets within 5s window
+      if (this.redisPub) {
+        const contentHash = createHash('md5')
+          .update(`${conversationId}:${agentId}:${dto.role}:${dto.type ?? 'message'}:${dto.content}`)
+          .digest('hex')
+          .substring(0, 16);
+        const dedupKey = `dedup:msg-send:${agentId}:${contentHash}`;
+        const acquired = await this.redisPub.set(dedupKey, '1', 'EX', 5, 'NX');
+        if (acquired !== 'OK') {
+          this.logger.warn(
+            `[WS-MSG-SEND] Duplicate suppressed socketId=${client.id} agentId=${agentId} conversationId=${conversationId} type=${dto.type ?? 'message'}`,
+          );
+          client.emit('message:sent', { success: true, messageId: 'dedup', timestamp: new Date() });
+          return { success: true };
+        }
+      }
 
       const actionTypeMap: Record<string, ActionType> = {
         system: ActionType.NOTICE,
