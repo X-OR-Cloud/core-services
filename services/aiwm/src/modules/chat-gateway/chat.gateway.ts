@@ -370,6 +370,12 @@ export class ChatWsGateway
         client.join(`conversation:${convId}`);
         await this.chatService.updateSocketConversation(client.id, convId);
         await this.chatService.addSocketToConversation(convId, client.id);
+        this.server.to(`conversation:${convId}`).emit('presence:update', {
+          type: 'agent',
+          agentId,
+          status: 'online',
+          timestamp: new Date(),
+        });
       }
       if (activeConvs.length > 0) {
         this.logger.log(
@@ -381,13 +387,6 @@ export class ChatWsGateway
     }
 
     this.logger.log(`[WS-CONNECT] Agent connected | socketId=${client.id} | agentId=${agentId}`);
-
-    this.server.emit('presence:update', {
-      type: 'agent',
-      agentId,
-      status: 'online',
-      timestamp: new Date(),
-    });
   }
 
   private async _handleAnonymousConnect(client: Socket, payload: any, isExternalSigned = false) {
@@ -438,7 +437,7 @@ export class ChatWsGateway
       `[WS-CONNECT] Anonymous connected | socketId=${client.id} | anonymousId=${anonymousId} | conversationId=${conversationId}`,
     );
 
-    this.server.emit('presence:update', {
+    client.emit('presence:update', {
       type: 'anonymous',
       userId: anonymousId,
       agentId,
@@ -469,7 +468,7 @@ export class ChatWsGateway
 
     this.logger.log(`[WS-CONNECT] User connected | socketId=${client.id} | userId=${userId}`);
 
-    this.server.emit('presence:update', {
+    client.emit('presence:update', {
       type: 'user',
       userId,
       status: 'online',
@@ -530,24 +529,28 @@ export class ChatWsGateway
       this.logger.debug(
         `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${client.data.agentId}`,
       );
-      this.server.emit('presence:update', {
-        type: 'agent',
-        agentId: client.data.agentId,
-        status: 'offline',
-        timestamp: new Date(),
-      });
+      if (conversationId) {
+        this.server.to(`conversation:${conversationId}`).emit('presence:update', {
+          type: 'agent',
+          agentId: client.data.agentId,
+          status: 'offline',
+          timestamp: new Date(),
+        });
+      }
     } else if (client.data.userId) {
       await this.chatService.setUserOffline(client.data.userId, client.id);
       await this.chatService.removeSocketSession(client.id, conversationId);
       this.logger.debug(
         `[WS-DISCONNECT] ${client.data.type} disconnected | socketId=${client.id} | userId=${client.data.userId}`,
       );
-      this.server.emit('presence:update', {
-        type: client.data.type,
-        userId: client.data.userId,
-        status: 'offline',
-        timestamp: new Date(),
-      });
+      if (conversationId) {
+        this.server.to(`conversation:${conversationId}`).emit('presence:update', {
+          type: client.data.type,
+          userId: client.data.userId,
+          status: 'offline',
+          timestamp: new Date(),
+        });
+      }
     }
   }
 
