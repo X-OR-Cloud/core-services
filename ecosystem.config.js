@@ -686,6 +686,8 @@ module.exports = {
       listen_timeout: 10000,
     },
     // ========== AIWM Connection Worker Instances ==========
+    // All instances compete for per-connection locks (con:lock:{connectionId}) — owner-per-connection pattern.
+    // Failover: if con00 crashes, con01 health check claims unlocked connections within 45-75s.
     {
       name: 'core.aiwm.con00',
       script: './dist/services/aiwm/main.js',
@@ -698,7 +700,6 @@ module.exports = {
         NODE_ENV: 'production',
         MODE: 'con',
         SERVICE_NAME: 'aiwm',
-        // WS_CHAT_URL and MCP_SERVER_URL loaded from .env (LB URLs)
       },
 
       env_file: '.env',
@@ -712,6 +713,34 @@ module.exports = {
       min_uptime: '10s',
 
       kill_timeout: 15000,  // Allow graceful lock release + runner shutdown
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.aiwm.con01',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      max_memory_restart: '1G',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'con',
+        SERVICE_NAME: 'aiwm',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-con-01-error.log',
+      out_file: './logs/aiwm-con-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 15000,
       wait_ready: false,
       listen_timeout: 10000,
     },

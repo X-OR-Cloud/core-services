@@ -4,6 +4,7 @@ import { ConnectionService, CHANNEL_CONNECTION_CHANGED, ConnectionChangedPayload
 import { ActionService } from '../action/action.service';
 import { RoutingService } from './routing.service';
 import { ConnectionRunner, OutboundHandler } from './connection-runner';
+import { ConnectionLockService } from './connection-lock.service';
 import { buildRedisConfig } from '../../config/redis.config';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
@@ -42,12 +43,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly connectionService: ConnectionService,
     private readonly actionService: ActionService,
     private readonly routingService: RoutingService,
+    private readonly lockService: ConnectionLockService,
   ) {}
 
   async onModuleInit(): Promise<void> {
     this.redisPub = new Redis(buildRedisConfig());
     this.redisSub = new Redis(buildRedisConfig());
 
+    await this.lockService.connect();
     await this.redisSub.subscribe(CHANNEL_OUTBOUND, CHANNEL_OUTBOUND_TYPING, CHANNEL_OUTBOUND_DIRECT, CHANNEL_CONNECTION_CHANGED);
     await this.redisSub.psubscribe(CHANNEL_INBOUND_TEAMS_PATTERN, CHANNEL_INBOUND_ZALO_BOT_PATTERN, CHANNEL_INBOUND_ZALO_OA_PATTERN);
 
@@ -138,7 +141,10 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
     if (this.tokenRefreshTimer) clearInterval(this.tokenRefreshTimer);
-    await Promise.all([...this.runners.values()].map((r) => r.stop()));
+    for (const [id, runner] of this.runners) {
+      await runner.stop();
+      await this.lockService.release(id);
+    }
     this.runners.clear();
     this.redisPub?.disconnect();
     this.redisSub?.disconnect();
@@ -274,11 +280,19 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async spawnConnections(): Promise<void> {
     const connections = await this.connectionService.getActiveConnections();
-    this.logger.log(`Found ${connections.length} active connection(s) to spawn`);
+    this.logger.log(`Found ${connections.length} active connection(s). Competing for locks...`);
+    await Promise.allSettled(connections.map((conn) => this.trySpawnRunner(conn)));
+  }
 
-    for (const connection of connections) {
-      await this.spawnRunner(connection);
+  private async trySpawnRunner(connection: any): Promise<void> {
+    const id = String(connection._id);
+    if (this.runners.has(id) || this.spawning.has(id)) return;
+    const acquired = await this.lockService.tryAcquire(id);
+    if (!acquired) {
+      this.logger.log(`Skipping connection ${id} [${connection.provider}] "${connection.name}" — owned by another instance`);
+      return;
     }
+    await this.spawnRunner(connection);
   }
 
   private async spawnRunner(connection: any): Promise<void> {
@@ -308,6 +322,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
         (payload) => this.publishCommand(payload),
         (level, message, data) =>
           this.connectionService.addLog(id, level, message, data as Record<string, any>).catch(() => undefined),
+        this.redisPub!,
       );
 
       await runner.start();
@@ -315,6 +330,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Runner started for connection ${id} [${connection.provider}] "${connection.name}"`);
     } catch (err: any) {
       this.logger.error(`Failed to start runner for connection ${id}: ${err.message}`);
+      await this.lockService.release(id);
     } finally {
       this.spawning.delete(id);
     }
@@ -356,11 +372,11 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Start runners for new active connections
+    // Start runners for new or unlocked connections (new instance + failover)
     for (const connection of activeConnections) {
       const id = String((connection as any)._id);
       if (!this.runners.has(id)) {
-        await this.spawnRunner(connection);
+        await this.trySpawnRunner(connection);
       }
     }
   }
@@ -373,14 +389,14 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       case 'created':
         if (status === 'active') {
           const connection = await this.connectionService.getConnectionById(connectionId);
-          if (connection) await this.spawnRunner(connection);
+          if (connection) await this.trySpawnRunner(connection);
         }
         break;
 
       case 'status_changed':
         if (status === 'active') {
           const connection = await this.connectionService.getConnectionById(connectionId);
-          if (connection) await this.spawnRunner(connection);
+          if (connection) await this.trySpawnRunner(connection);
         } else {
           await this.stopRunner(connectionId, 'status changed to inactive/error');
         }
@@ -404,6 +420,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     if (!runner) return;
     await runner.stop();
     this.runners.delete(connectionId);
+    await this.lockService.release(connectionId);
     this.logger.log(`Runner stopped for connection ${connectionId}: ${reason}`);
     this.connectionService.addLog(connectionId, 'info', `Runner stopped: ${reason}`).catch(() => undefined);
   }
@@ -412,7 +429,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.stopRunner(connectionId, 'config/route changed — restarting');
     const connection = await this.connectionService.getConnectionById(connectionId);
     if (connection && connection.status === 'active') {
-      await this.spawnRunner(connection);
+      await this.trySpawnRunner(connection);
       this.logger.log(`Runner restarted for connection ${connectionId} after config change`);
     }
   }
