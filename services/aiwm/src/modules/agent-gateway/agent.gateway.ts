@@ -500,6 +500,42 @@ export class AgentGateway
   }
 
   // ---------------------------------------------------------------------------
+  // Event: message:typing — engineer agent typing indicator
+  // ---------------------------------------------------------------------------
+
+  @SubscribeMessage('message:typing')
+  async handleTyping(
+    @MessageBody() data: { conversationId: string; isTyping: boolean },
+    @ConnectedSocket() client: Socket,
+  ) {
+    if (client.data.type !== 'agent') {
+      return { success: false, error: 'message:typing on /ws/agent is only for agent clients' };
+    }
+
+    const { conversationId, isTyping } = data;
+
+    client.to(`conversation:${conversationId}`).emit('agent:typing', {
+      type: 'agent',
+      agentId: client.data.agentId,
+      conversationId,
+      isTyping,
+      timestamp: new Date(),
+    });
+
+    if (isTyping && this.redisPub) {
+      this.redisPub
+        .publish('outbound:typing', JSON.stringify({ conversationId }))
+        .catch((err: Error) => this.logger.error(`Failed to publish outbound:typing: ${err.message}`));
+    }
+
+    this.logger.debug(
+      `[WS-TYPING] agent:typing | conversationId=${conversationId} | isTyping=${isTyping}`,
+    );
+
+    return { success: true };
+  }
+
+  // ---------------------------------------------------------------------------
   // Event: channel:send — proactive message to a platform channel
   // ---------------------------------------------------------------------------
 
