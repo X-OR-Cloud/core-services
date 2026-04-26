@@ -372,6 +372,16 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    // Stop runners where this instance lost the lock (stolen by another instance after its restart)
+    for (const [id, runner] of this.runners) {
+      if (!this.lockService.ownsLock(id)) {
+        await runner.stop();
+        this.runners.delete(id);
+        this.logger.warn(`Runner stopped for connection ${id} — lock lost to another instance`);
+        this.connectionService.addLog(id, 'warn', 'Runner stopped: lock claimed by another instance').catch(() => undefined);
+      }
+    }
+
     // Start runners for new or unlocked connections (new instance + failover)
     for (const connection of activeConnections) {
       const id = String((connection as any)._id);

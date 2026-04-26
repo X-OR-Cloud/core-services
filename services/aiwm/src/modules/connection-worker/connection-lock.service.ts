@@ -46,6 +46,10 @@ export class ConnectionLockService implements OnModuleDestroy {
     this.redis.disconnect();
   }
 
+  ownsLock(connectionId: string): boolean {
+    return this.ownedLocks.has(connectionId);
+  }
+
   async tryAcquire(connectionId: string): Promise<boolean> {
     const key = LOCK_PREFIX + connectionId;
     const result = await this.redis.set(key, this._instanceId, 'PX', LOCK_TTL_MS, 'NX');
