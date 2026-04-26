@@ -790,7 +790,7 @@ export class AgentRunner {
 
           for (const [toolName, toolDef] of Object.entries(serverTools)) {
             const namespacedKey = `mcp__${serverName}__${toolName}`;
-            if (allowedSet.size > 0 && !allowedSet.has(namespacedKey)) continue;
+            if (!allowedSet.has(namespacedKey)) continue;
             toolMap[namespacedKey] = toolDef;
           }
         } catch (err) {
@@ -803,7 +803,7 @@ export class AgentRunner {
     if (this.browserCtx?.instanceId) {
       const browserTools = createBrowserTools(this.browserCtx);
       for (const [toolName, toolDef] of Object.entries(browserTools)) {
-        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        if (!allowedSet.has(toolName)) continue;
         toolMap[toolName] = toolDef;
       }
     }
@@ -814,7 +814,7 @@ export class AgentRunner {
         searchKnowledgeInternal: this.config.searchKnowledgeInternal,
       });
       for (const [toolName, toolDef] of Object.entries(knowledgeTools)) {
-        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        if (!allowedSet.has(toolName)) continue;
         toolMap[toolName] = toolDef;
       }
     }
@@ -828,6 +828,7 @@ export class AgentRunner {
       accessToken: this.config.accessToken,
     });
     for (const [toolName, toolDef] of Object.entries(channelSendTools)) {
+      if (!allowedSet.has(toolName)) continue;
       toolMap[toolName] = toolDef;
     }
 

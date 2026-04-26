@@ -214,7 +214,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
           this.agentService.heartbeat(id, { status }, this.runners.get(id)?.getAccessToken() ?? accessToken),
         getHistoryInternal: async (conversationId: string) => {
           const systemContext = { userId: agentId, roles: [], orgId: '', groupId: '', agentId, appId: '' };
-          const actions = await this.actionService.getLastActions(conversationId, 40, systemContext as any);
+          const actions = await this.actionService.getLastActions(conversationId, 20, systemContext as any);
           return actions
             .filter((a: any) => {
               const role = a.actor?.role;
