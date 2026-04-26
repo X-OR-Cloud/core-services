@@ -635,6 +635,7 @@ export class AgentRunner {
         const inferenceMs = Date.now() - inferenceStart;
         this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
         this.logger.debug(`[timing] inference=${inferenceMs}ms total=${Date.now() - taskReceivedAt}ms taskId=${taskId} conv=${conversationId}`);
+        this.publishResponse(conversationId, { type: 'typing', isTyping: false });
         this.publishResponse(conversationId, {
           type: 'message',
           role: 'assistant',
