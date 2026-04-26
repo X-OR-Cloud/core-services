@@ -3,7 +3,9 @@ import Redis from 'ioredis';
 import { buildRedisConfig } from '../../config/redis.config';
 
 const LOCK_PREFIX = 'agt:lock:';
+const CONV_LOCK_PREFIX = 'agt:conv:';
 const LOCK_TTL_MS = 45_000; // 45s — longer than health check interval (30s)
+const CONV_LOCK_TTL_MS = 120_000; // 120s — enough for long LLM calls
 const RENEW_INTERVAL_MS = 15_000; // Renew every 15s
 
 /**
@@ -21,7 +23,7 @@ const RENEW_INTERVAL_MS = 15_000; // Renew every 15s
 export class AgentLockService implements OnModuleDestroy {
   private readonly logger = new Logger(AgentLockService.name);
   private readonly redis: Redis;
-  private readonly instanceId: string;
+  private readonly _instanceId: string;
   private readonly ownedLocks = new Set<string>();
   private renewTimer: NodeJS.Timeout | null = null;
 
@@ -31,13 +33,17 @@ export class AgentLockService implements OnModuleDestroy {
       lazyConnect: true,
     });
     // Unique identifier per process instance
-    this.instanceId = `${process.pid}-${Date.now()}`;
+    this._instanceId = `${process.pid}-${Date.now()}`;
+  }
+
+  get instanceId(): string {
+    return this._instanceId;
   }
 
   async connect() {
     await this.redis.connect();
     this.startRenewLoop();
-    this.logger.log(`Lock service ready | instanceId=${this.instanceId}`);
+    this.logger.log(`Lock service ready | instanceId=${this._instanceId}`);
   }
 
   async onModuleDestroy() {
@@ -55,7 +61,7 @@ export class AgentLockService implements OnModuleDestroy {
     const key = LOCK_PREFIX + agentId;
     const result = await this.redis.set(
       key,
-      this.instanceId,
+      this._instanceId,
       'PX', LOCK_TTL_MS,
       'NX',
     );
@@ -80,7 +86,7 @@ export class AgentLockService implements OnModuleDestroy {
       `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`,
       1,
       key,
-      this.instanceId,
+      this._instanceId,
     );
     this.ownedLocks.delete(agentId);
     this.logger.debug(`Lock released: ${agentId}`);
@@ -95,7 +101,7 @@ export class AgentLockService implements OnModuleDestroy {
       const key = LOCK_PREFIX + agentId;
       // Only renew if we still own it
       const owner = await this.redis.get(key);
-      if (owner === this.instanceId) {
+      if (owner === this._instanceId) {
         await this.redis.pexpire(key, LOCK_TTL_MS);
       } else {
         // Lost the lock (e.g. Redis restart) — remove from owned set
@@ -103,6 +109,48 @@ export class AgentLockService implements OnModuleDestroy {
         this.ownedLocks.delete(agentId);
       }
     }
+  }
+
+  /**
+   * Conv lock — try to acquire ownership of a conversation for drain processing.
+   * Returns true if this instance is now the owner.
+   * Per-conv key: agt:conv:{conversationId}, value: instanceId, TTL: 120s.
+   */
+  async tryAcquireConv(conversationId: string): Promise<boolean> {
+    const result = await this.redis.set(
+      CONV_LOCK_PREFIX + conversationId,
+      this._instanceId,
+      'PX', CONV_LOCK_TTL_MS,
+      'NX',
+    );
+    return result === 'OK';
+  }
+
+  /**
+   * Renew conv lock TTL — call after each task in the drain loop to prevent expiry.
+   * Lua: only renews if this instance still owns the lock.
+   */
+  async renewConv(conversationId: string): Promise<void> {
+    await this.redis.eval(
+      `if redis.call("GET",KEYS[1])==ARGV[1] then return redis.call("PEXPIRE",KEYS[1],ARGV[2]) else return 0 end`,
+      1,
+      CONV_LOCK_PREFIX + conversationId,
+      this._instanceId,
+      String(CONV_LOCK_TTL_MS),
+    );
+  }
+
+  /**
+   * Release conv lock — call in drain session finally block.
+   * Lua: only deletes if this instance still owns the lock.
+   */
+  async releaseConv(conversationId: string): Promise<void> {
+    await this.redis.eval(
+      `if redis.call("GET",KEYS[1])==ARGV[1] then return redis.call("DEL",KEYS[1]) else return 0 end`,
+      1,
+      CONV_LOCK_PREFIX + conversationId,
+      this._instanceId,
+    );
   }
 
   private async releaseAll(): Promise<void> {

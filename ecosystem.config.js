@@ -475,8 +475,8 @@ module.exports = {
       listen_timeout: 10000,
     },
     // ========== AIWM Agent Worker Instances ==========
-    // Both instances connect to the same LB URLs — Redis distributed lock
-    // ensures each agent is owned by exactly one runner across all instances.
+    // All instances compete on notification queue (chat:notify:{agentId}) — natural load distribution.
+    // Conv-level lock (agt:conv:{convId}) ensures each conversation is handled by exactly one runner.
     {
       name: 'core.aiwm.agt00',
       script: './dist/services/aiwm/main.js',
@@ -656,9 +656,36 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 10000,
     },
+    {
+      name: 'core.aiwm.cws01',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3408,
+        MODE: 'cws',
+        SERVICE_NAME: 'aiwm',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-cws-01-error.log',
+      out_file: './logs/aiwm-cws-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
     // ========== AIWM Connection Worker Instances ==========
-    // Both instances connect to the same LB URLs — Redis distributed lock
-    // ensures each agent is owned by exactly one runner across all instances.
     {
       name: 'core.aiwm.con00',
       script: './dist/services/aiwm/main.js',

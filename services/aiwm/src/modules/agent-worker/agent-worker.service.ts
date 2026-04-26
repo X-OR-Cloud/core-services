@@ -38,12 +38,11 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000;
 /**
  * AgentWorkerService — orchestrates all hosted agent runners.
  *
- * Scaling strategy (Option B — Redis distributed lock):
- * - On startup, each `agt` instance tries to acquire a lock per agent.
- * - Only the instance that wins the lock spawns the runner for that agent.
- * - Locks are renewed every 15s (TTL 45s) to prevent expiry while alive.
- * - On instance crash/shutdown, locks expire → other instances pick them up
- *   on the next health check cycle.
+ * Scaling strategy (V2 — per-conversation distributed lock):
+ * - All `agt` instances spawn a runner for every agent.
+ * - Instances compete via Redis BLPOP on chat:notify:{agentId} (natural load balancing).
+ * - Conv-level locks (agt:conv:{convId}) ensure each conversation is handled by
+ *   exactly one runner at a time, with guaranteed FIFO ordering.
  */
 @Injectable()
 export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -97,7 +96,6 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     for (const [agentId, runner] of this.runners.entries()) {
       await runner.stopAsync();
-      await this.lockService.release(agentId);
       this.redisBlockingMap.get(agentId)?.disconnect();
       this.redisBlockingMap.delete(agentId);
     }
@@ -127,31 +125,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log(`Found ${agents.length} assistant agent(s). Competing for locks...`);
+    this.logger.log(`Found ${agents.length} assistant agent(s). Spawning runners...`);
 
     await Promise.allSettled(
-      agents.map((agent) => this.trySpawnRunner(agent as unknown as AgentDocument)),
+      agents.map((agent) => this.spawnRunner(agent as unknown as AgentDocument)),
     );
 
-    this.logger.log(
-      `Spawned ${this.runners.size}/${agents.length} runner(s) on this instance.`,
-    );
-  }
-
-  /**
-   * Try to acquire lock for an agent, then spawn runner if successful.
-   * Silently skips if another instance already owns the lock.
-   */
-  private async trySpawnRunner(agent: AgentDocument) {
-    const agentId = (agent as any)._id.toString();
-    const acquired = await this.lockService.tryAcquire(agentId);
-
-    if (!acquired) {
-      this.logger.log(`Skipping agent ${agent.name} (${agentId}) — owned by another instance`);
-      return;
-    }
-
-    await this.spawnRunner(agent);
+    this.logger.log(`Spawned ${this.runners.size}/${agents.length} runner(s).`);
   }
 
   private async spawnRunner(agent: AgentDocument) {
@@ -186,6 +166,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         redisBlocking,
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         redisPub: this.redisPub!,
+        lockService: this.lockService,
         agentType: (agent.type as 'assistant' | 'engineer') ?? 'assistant',
         apiBaseUrl: aiwmApiBaseUrl,
         browserApiUrl: browserApiUrl ?? undefined,
@@ -250,15 +231,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err: unknown) {
       this.logger.error(`Failed to spawn runner for ${agent.name} (${agentId}): ${(err as Error).message}`);
-      // Release lock so another instance can pick it up
-      await this.lockService.release(agentId);
     }
   }
 
   /**
    * Health check — runs every 30s:
    * 1. Reconnect stale runners whose agent config changed and are idle.
-   * 2. Try to claim any unlocked agents (e.g. after another instance crashes).
+   * 2. Spawn runners for new agents created after startup.
    * 3. Proactively refresh access tokens that expire within 1 hour.
    */
   private startHealthCheck() {
@@ -266,8 +245,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // 1. Restart runners whose agent config changed and are idle
       await this.restartUpdatedAgents();
 
-      // 2. Try to claim agents not yet owned by any instance
-      await this.claimUnlockedAgents();
+      // 2. Spawn runners for agents not yet running on this instance
+      await this.claimNewAgents();
 
       // 3. Refresh tokens that are about to expire (< 1 hour remaining)
       await this.refreshExpiredTokens();
@@ -418,14 +397,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         .catch(() => null);
       if (!agent) {
         this.logger.warn(`[restart] agent ${agentId} not found after teardown`);
-        await this.lockService.release(agentId);
         return;
       }
 
-      // Lock is intentionally NOT released during teardown — this instance
-      // remains the owner throughout, so we can spawn directly without
-      // re-acquiring (tryAcquire would fail with SET NX since the key still
-      // exists, and renewAll keeps the TTL fresh).
       await this.spawnRunner(agent as unknown as AgentDocument);
       await this.agentService.addLog(agentId, {
         level: 'info',
@@ -440,10 +414,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Query all assistant agents and try to claim any that are not locked.
-   * Handles: new agents created after startup, or instance crashed releasing locks.
+   * Spawn runners for agents not yet running on this instance.
+   * Handles new agents created after startup.
    */
-  private async claimUnlockedAgents() {
+  private async claimNewAgents() {
     const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
@@ -456,14 +430,11 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
     for (const agent of agents) {
       const agentId = (agent as any)._id.toString();
-      if (this.runners.has(agentId)) continue; // Already running on this instance
+      if (this.runners.has(agentId)) continue; // already running
 
-      const acquired = await this.lockService.tryAcquire(agentId);
-      if (acquired) {
-        this.logger.log(`Claimed unlocked agent: ${agent.name} (${agentId})`);
-        await this.agentService.addLog(agentId, { level: 'info', message: 'Runner claimed after unlock (failover or new agent)' });
-        await this.spawnRunner(agent as unknown as AgentDocument);
-      }
+      this.logger.log(`New agent detected: ${agent.name} (${agentId}), spawning runner...`);
+      await this.agentService.addLog(agentId, { level: 'info', message: 'Runner spawned (detected by health check)' });
+      await this.spawnRunner(agent as unknown as AgentDocument);
     }
   }
 

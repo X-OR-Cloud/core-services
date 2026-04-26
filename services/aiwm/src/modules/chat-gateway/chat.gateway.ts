@@ -258,10 +258,11 @@ export class ChatWsGateway
                 channelId, connectionId, attachments, platform,
                 timestamp: new Date().toISOString(),
               };
-              this.redisPub!.lpush(`chat:task:${agentId}`, JSON.stringify(task)).catch((err: Error) =>
-                this.logger.error(`Failed to push task from con worker: ${err.message}`),
-              );
-              this.logger.debug(`[Redis] chat:task:${agentId} pushed from con-worker taskId=${actionId}`);
+              this.redisPub!.rpush(`chat:task:${agentId}:${conversationId}`, JSON.stringify(task))
+                .catch((err: Error) => this.logger.error(`Failed to push task from con worker: ${err.message}`));
+              this.redisPub!.lpush(`chat:notify:${agentId}`, conversationId)
+                .catch((err: Error) => this.logger.error(`Failed to push notify from con worker: ${err.message}`));
+              this.logger.debug(`[Redis] chat:task:${agentId}:${conversationId} pushed from con-worker taskId=${actionId}`);
             } else {
               const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
               if (agentSocketIds.length > 0) {
@@ -844,9 +845,10 @@ export class ChatWsGateway
           platform: 'portal',
           timestamp: new Date(queuedAt).toISOString(),
         };
-        this.redisPub.lpush(`chat:task:${agentId}`, JSON.stringify(task)).catch((err: Error) =>
-          this.logger.error(`Failed to push task to chat:task:${agentId}: ${err.message}`),
-        );
+        this.redisPub.rpush(`chat:task:${agentId}:${conversationId}`, JSON.stringify(task))
+          .catch((err: Error) => this.logger.error(`Failed to push task to chat:task:${agentId}:${conversationId}: ${err.message}`));
+        this.redisPub.lpush(`chat:notify:${agentId}`, conversationId)
+          .catch((err: Error) => this.logger.error(`Failed to push notify to chat:notify:${agentId}: ${err.message}`));
         this.logger.debug(`[timing] ws→queue taskId=${actionId} elapsed=${Date.now() - queuedAt}ms`);
         this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
       } else {
