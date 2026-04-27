@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import axios from 'axios';
 import { BaseCollector } from './base.collector';
 import { SentimentSignalService } from '../modules/sentiment-signal/sentiment-signal.service';
 import { NewsArticleService } from '../modules/news-article/news-article.service';
+import { LlmRouterService } from '../shared/llm-router.service';
 
 @Injectable()
 export class NewsapiCollector extends BaseCollector {
@@ -11,6 +11,7 @@ export class NewsapiCollector extends BaseCollector {
   constructor(
     private readonly sentimentSignalService: SentimentSignalService,
     private readonly newsArticleService: NewsArticleService,
+    private readonly llmRouterService: LlmRouterService,
   ) {
     super();
   }
@@ -52,30 +53,14 @@ export class NewsapiCollector extends BaseCollector {
     }
     this.logger.info(`[${this.name}] Upserted ${articles.length} articles`);
 
-    // Step 3: LLM analysis
-    const llmBaseUrl = process.env['LLM_BASE_URL'] || '';
-    const llmApiKey = process.env['LLM_API_KEY'] || '';
-    const llmModel = process.env['LLM_MODEL'] || 'gpt-4o-mini';
-
-    if (!llmBaseUrl || !llmApiKey) {
-      this.logger.warn(`[${this.name}] No LLM config, skipping sentiment analysis`);
-      // Still save overall sentiment as neutral
-      await this.sentimentSignalService.insert({
-        timestamp: new Date(),
-        source: 'newsapi',
-        keyEvents: articles.slice(0, 5).map((a: any) => a.title),
-      });
-      return;
-    }
-
-    // Step 4: LLM batch analysis — headlines + per-article scores
+    // Step 3: LLM sentiment analysis via LlmRouterService (tự động fallback)
     const headlines = articles
       .map((a: any, i: number) => `${i + 1}. [${a.title}] (url: ${a.url})`)
       .join('\n');
 
-    const analysis = await this.analyzeSentiment(headlines, llmBaseUrl, llmApiKey, llmModel, articles.length);
+    const analysis = await this.analyzeSentiment(headlines, articles.length);
 
-    // Step 5: Update each article with LLM sentiment
+    // Step 4: Update each article with LLM sentiment
     const analyzedAt = new Date();
     const articleResults: { url: string; sentiment: number; label: string; reason: string }[] =
       analysis.articles || [];
@@ -90,7 +75,7 @@ export class NewsapiCollector extends BaseCollector {
       });
     }
 
-    // Step 6: Save overall SentimentSignal
+    // Step 5: Save overall SentimentSignal
     await this.sentimentSignalService.insert({
       timestamp: new Date(),
       source: 'llm_analysis',
@@ -106,15 +91,9 @@ export class NewsapiCollector extends BaseCollector {
     );
   }
 
-  private async analyzeSentiment(
-    headlines: string,
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    articleCount: number,
-  ): Promise<any> {
+  private async analyzeSentiment(headlines: string, articleCount: number): Promise<any> {
     const systemPrompt =
-      'You are a Gold market analyst specializing in macro and geopolitics. Always respond with valid JSON only.';
+      'You are a Gold market analyst specializing in macro and geopolitics. Always respond with valid JSON only. Do not include any markdown or text outside the JSON object.';
 
     const userPrompt = `Analyze these ${articleCount} news headlines for gold market impact:
 
@@ -138,28 +117,17 @@ Return JSON with this exact structure:
 }`;
 
     try {
-      const response = await axios.post(
-        `${baseUrl}/chat/completions`,
-        {
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.3,
-          response_format: { type: 'json_object' },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30_000,
-        },
-      );
+      const result = await this.llmRouterService.call({
+        systemPrompt,
+        userPrompt,
+        params: { temperature: 0.3, max_tokens: 2048 },
+      });
 
-      const content = response.data?.choices?.[0]?.message?.content;
-      return JSON.parse(content);
+      // Strip thinking tags nếu có (Gemma4 thinking model)
+      const raw = result.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      // Extract JSON nếu bị wrap trong markdown code block
+      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, raw];
+      return JSON.parse(jsonMatch[1].trim());
     } catch (error: any) {
       this.logger.error(`[${this.name}] LLM analysis failed: ${error.message}`);
       return {

@@ -6,6 +6,7 @@ import { AccountModule } from '../modules/account/account.module';
 import { PositionModule } from '../modules/position/position.module';
 import { PortfolioSnapshotModule } from '../modules/portfolio-snapshot/portfolio-snapshot.module';
 import { NewsArticleModule } from '../modules/news-article/news-article.module';
+import { LlmProviderModule } from '../modules/llm-provider/llm-provider.module';
 import { GoldapiCollector } from './goldapi.collector';
 import { BinanceSpotCollector } from './binance-spot.collector';
 import { BinanceFuturesCollector } from './binance-futures.collector';
@@ -41,6 +42,7 @@ const collectors = [
     PositionModule,
     PortfolioSnapshotModule,
     NewsArticleModule,
+    LlmProviderModule,
   ],
   providers: [...collectors],
   exports: [...collectors],
