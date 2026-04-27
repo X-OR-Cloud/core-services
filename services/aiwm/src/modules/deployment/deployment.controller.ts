@@ -16,7 +16,7 @@ import {
   All,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, SkipLicenseCheck } from '@hydrabyte/base';
 import { CombinedAuthGuard } from '../../guards/combined-auth.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Request, Response } from 'express';
@@ -123,6 +123,7 @@ export class DeploymentController {
   }
 
   @Post(':id/start')
+  @SkipLicenseCheck()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Start a deployment' })
   @ApiResponse({ status: 200, description: 'Deployment start initiated. Status changed to "deploying".' })
@@ -135,6 +136,7 @@ export class DeploymentController {
   }
 
   @Post(':id/stop')
+  @SkipLicenseCheck()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Stop a running deployment' })
   @ApiResponse({ status: 200, description: 'Deployment stop initiated. Status changed to "stopping".' })
@@ -199,6 +201,7 @@ export class DeploymentController {
   }
 
   @All(':id/inference/*')
+  @SkipLicenseCheck()
   @UseGuards(CombinedAuthGuard)
   @ApiOperation({
     summary: 'Unified inference endpoint for both API-based and self-hosted deployments',

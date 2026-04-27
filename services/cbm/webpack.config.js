@@ -1,4 +1,5 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
+const { DefinePlugin } = require('webpack');
 const { join } = require('path');
 
 module.exports = [
@@ -19,14 +20,14 @@ module.exports = [
         tsConfig: './tsconfig.app.json',
         assets: [
           './src/assets',
-          // Skill *.md files are in src/assets/skill/ — already covered above.
-          // When adding a new module's skill content, place the file at:
-          //   src/assets/skill/modules/<module-name>.skill.md
         ],
         optimization: false,
         outputHashing: 'none',
         generatePackageJson: true,
         sourceMaps: true,
+      }),
+      new DefinePlugin({
+        __LICENSE_SECRET__: JSON.stringify(process.env.LICENSE_SECRET || ''),
       }),
     ],
   },
@@ -49,6 +50,9 @@ module.exports = [
         outputHashing: 'none',
         generatePackageJson: false,
         sourceMaps: true,
+      }),
+      new DefinePlugin({
+        __LICENSE_SECRET__: JSON.stringify(process.env.LICENSE_SECRET || ''),
       }),
     ],
   },

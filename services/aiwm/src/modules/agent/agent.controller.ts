@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Put, Patch, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, QueryStringParams, parseQueryString } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, QueryStringParams, parseQueryString, SkipLicenseCheck } from '@hydrabyte/base';
 import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -214,6 +214,7 @@ export class AgentController {
   }
 
   @Post('connect')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: 'Agent connection/authentication (for engineer agents)',
     description: 'Public endpoint for engineer agent to connect and authenticate using secret. Returns JWT token + instruction + tools config.',
@@ -229,6 +230,7 @@ export class AgentController {
 
   // @deprecated Use POST /agents/connect instead. Will be removed in a future release.
   @Post(':id/connect')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: '[Deprecated] Agent connection/authentication',
     description: 'Deprecated. Use POST /agents/connect instead. Kept for backward compatibility.',
@@ -244,6 +246,7 @@ export class AgentController {
   }
 
   @Post('heartbeat')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: 'Agent heartbeat (token-based)',
     description: 'Update agent heartbeat using JWT token to identify agent. No agentId in URL needed.'
@@ -262,6 +265,7 @@ export class AgentController {
   }
 
   @Post(':id/heartbeat')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: 'Agent heartbeat (deprecated)',
     description: '[Deprecated] Use POST /agents/heartbeat instead. Kept for backward compatibility until all agents are upgraded.'
@@ -279,6 +283,7 @@ export class AgentController {
   }
 
   @Post('disconnect')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: 'Agent disconnect (token-based)',
     description: 'Gracefully disconnect agent using JWT token to identify agent. No agentId in URL needed.'
@@ -295,6 +300,7 @@ export class AgentController {
   }
 
   @Post(':id/disconnect')
+  @SkipLicenseCheck()
   @ApiOperation({
     summary: 'Agent disconnect (deprecated)',
     description: '[Deprecated] Use POST /agents/disconnect instead. Kept for backward compatibility until all agents are upgraded.'
@@ -311,6 +317,7 @@ export class AgentController {
   }
 
   @Post(':id/anonymous-token')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Generate anonymous chat token',
@@ -418,6 +425,7 @@ export class AgentController {
   }
 
   @Post(':id/stop')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Stop agent',
@@ -436,6 +444,7 @@ export class AgentController {
   }
 
   @Post(':id/start')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Start agent',
@@ -454,6 +463,7 @@ export class AgentController {
   }
 
   @Post(':id/wake')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Wake agent',
@@ -472,6 +482,7 @@ export class AgentController {
   }
 
   @Post(':id/sleep')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Sleep agent',
@@ -491,6 +502,7 @@ export class AgentController {
   }
 
   @Post(':id/restart')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Restart agent',
@@ -509,6 +521,7 @@ export class AgentController {
   }
 
   @Post(':id/update')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update agent on node',
@@ -549,6 +562,7 @@ export class AgentController {
   // ─── Debug Logs ──────────────────────────────────────────────────────────────
 
   @Post(':id/logs')
+  @SkipLicenseCheck()
   @ApiOperation({ summary: 'Add agent log', description: 'Append a debug log entry to an agent (max 100, auto-rotate)' })
   @ApiResponse({ status: 201, description: 'Log entry added' })
   @ApiResponse({ status: 404, description: 'Agent not found' })

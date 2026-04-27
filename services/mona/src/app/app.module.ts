@@ -1,10 +1,12 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import {
   HealthModule,
+  LicenseGuard,
   JwtStrategy,
   CorrelationIdMiddleware,
 } from '@hydrabyte/base';
@@ -37,7 +39,11 @@ import { ProcessorsModule } from '../queues/processors.module';
     ProcessorsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, JwtStrategy],
+  providers: [
+    AppService,
+    JwtStrategy,
+    { provide: APP_GUARD, useClass: LicenseGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

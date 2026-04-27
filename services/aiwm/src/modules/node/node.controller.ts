@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Delete, Param, Body, UseGuards, Query, NotFoundException, HttpCode, HttpStatus, OnModuleDestroy } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiReadErrors, SkipLicenseCheck } from '@hydrabyte/base';
 import { RequestContext, MessageType } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import Redis from 'ioredis';
@@ -172,6 +172,7 @@ export class NodeController implements OnModuleDestroy {
   // ============= Maintenance & Deletion =============
 
   @Post(':id/maintenance')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Set node to maintenance',
@@ -211,6 +212,7 @@ export class NodeController implements OnModuleDestroy {
   // ============= Remote Update =============
 
   @Post(':id/update')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Trigger remote xnode update',
@@ -247,6 +249,7 @@ export class NodeController implements OnModuleDestroy {
   // ============= Setup Guide =============
 
   @Post(':id/setup-guide')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Get node setup guide',
@@ -305,6 +308,7 @@ export class NodeController implements OnModuleDestroy {
   // ============= Node Authentication =============
 
   @Post('auth/bootstrap')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Node bootstrap',
@@ -321,6 +325,7 @@ export class NodeController implements OnModuleDestroy {
   }
 
   @Post('auth/login')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Node login',
@@ -339,6 +344,7 @@ export class NodeController implements OnModuleDestroy {
   }
 
   @Post('auth/refresh')
+  @SkipLicenseCheck()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Refresh node token',

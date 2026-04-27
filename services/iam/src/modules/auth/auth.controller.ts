@@ -27,7 +27,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { TokenData } from './auth.entity';
-import { JwtAuthGuard } from '@hydrabyte/base';
+import { JwtAuthGuard, SkipLicenseCheck } from '@hydrabyte/base';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -40,6 +40,7 @@ export class AuthController {
   ) {}
 
   @Post('login')
+  @SkipLicenseCheck()
   @ApiOperation({ summary: 'User login', description: 'Authenticate user and return JWT tokens' })
   @ApiResponse({ status: 200, description: 'Login successful', type: TokenData })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
@@ -112,6 +113,7 @@ export class AuthController {
   }
 
   @Post('refresh-token')
+  @SkipLicenseCheck()
   @ApiOperation({ summary: 'Refresh access token', description: 'Get new access token using refresh token' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully', type: TokenData })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })

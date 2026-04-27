@@ -1,4 +1,5 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
+const { DefinePlugin } = require('webpack');
 const { join } = require('path');
 
 module.exports = {
@@ -19,6 +20,11 @@ module.exports = {
       outputHashing: 'none',
       generatePackageJson: true,
       sourceMaps: true,
+    }),
+    new DefinePlugin({
+      // Baked in at build time via LICENSE_SECRET env var.
+      // In development leave empty — guard falls back to unsigned LICENSE_EXPIRY.
+      __LICENSE_SECRET__: JSON.stringify(process.env.LICENSE_SECRET || ''),
     }),
   ],
 };

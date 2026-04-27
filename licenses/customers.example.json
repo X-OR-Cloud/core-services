@@ -1,0 +1,14 @@
+{
+  "dev": {
+    "name": "Development",
+    "secret": "replace-with-random-32-bytes-hex"
+  },
+  "mb-bank": {
+    "name": "MB Bank",
+    "secret": "replace-with-random-32-bytes-hex"
+  },
+  "hdbank": {
+    "name": "HD Bank",
+    "secret": "replace-with-random-32-bytes-hex"
+  }
+}
