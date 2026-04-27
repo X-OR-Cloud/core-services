@@ -9,6 +9,7 @@ import { IndicatorsModule } from '../indicators/indicators.module';
 import { DataIngestionProcessor } from '../queues/data-ingestion.processor';
 import { TechnicalIndicatorModule } from '../modules/technical-indicator/technical-indicator.module';
 import { SystemActivityLogModule } from '../modules/system-activity-log/system-activity-log.module';
+import { LlmProviderModule } from '../modules/llm-provider/llm-provider.module';
 
 /**
  * AppIngestionModule — mode=ing
@@ -33,6 +34,7 @@ import { SystemActivityLogModule } from '../modules/system-activity-log/system-a
     ),
 
     TechnicalIndicatorModule,
+    LlmProviderModule,
     CollectorsModule,
     IndicatorsModule,
     SystemActivityLogModule,
