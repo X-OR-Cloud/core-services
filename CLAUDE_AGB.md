@@ -126,7 +126,6 @@ hydra-services/              ← repo root (cũng là Docker build context)
 │   ├── iam/                 ← Identity & Access Management
 │   ├── noti/                ← Notifications + WebSocket
 │   ├── aiwm/                ← AI Workload Manager (8 modes)
-│   ├── aiwm-worker/         ← Agent connection worker (có Dockerfile sẵn)
 │   ├── cbm/                 ← Core Business Management
 │   ├── mona/                ← Monitoring & Analytics
 │   ├── aivp/                ← AI Video Processing
@@ -163,7 +162,6 @@ nx run <service>:build
 | iam | api | - |
 | noti | serve | - |
 | aiwm | api, mcp, wrk, agt, con, aws, nws, cws | 8 modes — 1 image, dùng MODE env var |
-| aiwm-worker | (main.js) | Đã có Dockerfile tại `services/aiwm-worker/Dockerfile` |
 | cbm | api, emb, rtc | - |
 | mona | api | - |
 | aivp | api | - |
@@ -201,7 +199,7 @@ docker save hydra/$SERVICE:latest | gzip \
 
 ### Dockerfile template
 
-Dựa trên pattern từ `services/aiwm-worker/Dockerfile` — áp dụng cho các services chưa có Dockerfile:
+Áp dụng cho các services chưa có Dockerfile:
 
 ```dockerfile
 FROM node:20-alpine3.21
@@ -258,13 +256,12 @@ CMD ["/app/entrypoint.sh"]
 ### Chạy tất cả services
 
 ```bash
-SERVICES="template iam noti aiwm aiwm-worker cbm mona aivp dgt pag schd vbx"
+SERVICES="template iam noti aiwm cbm mona aivp dgt pag schd vbx"
 OUT="./air-gap-builder/artifacts/images/services"
 
 for SERVICE in $SERVICES; do
   echo "[$(date '+%F %T')] === $SERVICE ===" | tee -a ./air-gap-builder/build.log
 
-  # aiwm-worker đã có Dockerfile sẵn
   nx run $SERVICE:build 2>/dev/null || nx run $SERVICE:build --skip-nx-cache
 
   if [ ! -f "dist/services/$SERVICE/main.js" ]; then

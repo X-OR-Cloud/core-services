@@ -152,7 +152,6 @@ core-services/
 | **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals |
 | **schd** | 3009 | 3390–3399 | Scheduler |
 | **vbx** | 3010 | 3400–3409 | Video Box |
-| **aiwm-worker** | — | — | Agent connection worker (standalone, has own Dockerfile) |
 
 Next available ports: 3011, 3012, ...
 
