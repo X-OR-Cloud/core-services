@@ -5,11 +5,13 @@ import { SentimentSignalService } from './sentiment-signal.service';
 import { SentimentSignal, SentimentSignalSchema } from './sentiment-signal.schema';
 import { NewsapiCollector } from '../../collectors/newsapi.collector';
 import { NewsArticleModule } from '../news-article/news-article.module';
+import { LlmProviderModule } from '../llm-provider/llm-provider.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: SentimentSignal.name, schema: SentimentSignalSchema }]),
     NewsArticleModule,
+    LlmProviderModule,
   ],
   controllers: [SentimentSignalController],
   providers: [SentimentSignalService, NewsapiCollector],
