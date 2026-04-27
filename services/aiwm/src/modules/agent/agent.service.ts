@@ -648,11 +648,9 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       orgId: payload.orgId,
     });
 
-    // TEMP: short-lived token for refresh testing — REVERT before production
-    const token = this.jwtService.sign(payload, { expiresIn: '1h' });
-
-    // TEMP: 1 hour (was 24*60*60)
-    const expiresInSeconds = 60 * 60;
+    // Token lifetime configurable via AGENT_TOKEN_EXPIRES_IN_SECONDS (default 24h)
+    const expiresInSeconds = parseInt(process.env.AGENT_TOKEN_EXPIRES_IN_SECONDS || '86400', 10);
+    const token = this.jwtService.sign(payload, { expiresIn: expiresInSeconds });
 
     // Build instruction object (with context injection using agent token)
     const instruction = await this.buildInstructionObjectForAgent(agent, token);
