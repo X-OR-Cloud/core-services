@@ -37,7 +37,7 @@ export interface RecurrenceConfig {
  * Supports 3 types: epic, task, subtask
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'works' })
 export class Work extends BaseSchema {
   @Prop({ required: true, maxlength: 200 })
   title!: string; // Work title

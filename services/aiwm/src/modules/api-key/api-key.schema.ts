@@ -15,7 +15,7 @@ export type ApiKeyDocument = ApiKey & Document;
  * - "all"              → full AIWM API access
  * - "deployment:<id>"  → only /deployments/<id>/inference/* endpoints
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'api_keys' })
 export class ApiKey extends BaseSchema {
   @Prop({ required: true, maxlength: 100 })
   name!: string;

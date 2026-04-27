@@ -13,7 +13,7 @@ export type PaymentDocument = Payment & MongooseDocument;
  * Phase 3: on create → update Invoice status + create Transaction (income)
  * Phase 3: on delete → reverse Invoice status + soft-delete Transaction
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'payments' })
 export class Payment extends BaseSchema {
   @Prop({ required: true })
   invoiceId!: string; // ref: Invoice

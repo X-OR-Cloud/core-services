@@ -8,7 +8,7 @@ export type WorkflowDocument = Workflow & Document;
  * Workflow - Workflow Template Definition
  * Defines reusable workflow templates for orchestrating multi-step LLM pipelines
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'workflows' })
 export class Workflow extends BaseSchema {
   @Prop({ required: true, maxlength: 200 })
   name!: string;

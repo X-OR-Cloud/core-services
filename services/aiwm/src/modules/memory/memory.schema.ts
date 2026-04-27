@@ -10,7 +10,7 @@ export type AgentMemoryDocument = AgentMemory & Document;
  * AgentMemory - Persistent memory for AI agents, scoped by agentId
  * Stores factual, concise information across sessions
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_memories' })
 export class AgentMemory extends BaseSchema {
   @Prop({ required: true })
   agentId!: string;

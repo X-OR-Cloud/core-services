@@ -20,7 +20,7 @@ export type LicenseDocument = HydratedDocument<License>;
  *   { orgId: '507f...', serviceName: 'aiwm', type: 'limited', quotaLimit: 100 }
  * ]
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'licenses' })
 export class License extends BaseSchema {
   /**
    * Organization ID this license applies to

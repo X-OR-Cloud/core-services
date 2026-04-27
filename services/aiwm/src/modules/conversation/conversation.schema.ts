@@ -5,7 +5,7 @@ import { Agent } from '../agent/agent.schema';
 
 export type ConversationDocument = Conversation & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'conversations' })
 export class Conversation extends BaseSchema {
   // Conversation title (auto-generated from first message or user-set)
   @Prop({ required: true })

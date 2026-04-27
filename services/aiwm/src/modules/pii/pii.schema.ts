@@ -9,7 +9,7 @@ export type PiiDocument = Pii & Document;
  * Defines regex patterns for detecting and redacting sensitive data
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'piis' })
 export class Pii extends BaseSchema {
   @Prop({ required: true })
   name!: string; // e.g., "Email Address", "Phone Number (Vietnam)"

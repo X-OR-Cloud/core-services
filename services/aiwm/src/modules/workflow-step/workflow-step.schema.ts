@@ -8,7 +8,7 @@ export type WorkflowStepDocument = WorkflowStep & Document;
  * WorkflowStep - Individual step definition in a workflow
  * Defines the configuration for each step in a workflow template
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'workflow_steps' })
 export class WorkflowStep extends BaseSchema {
   @Prop({ type: Types.ObjectId, ref: 'Workflow', required: true, index: true })
   workflowId!: Types.ObjectId;

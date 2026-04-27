@@ -6,7 +6,7 @@ export type ReminderDocument = Reminder & Document;
 
 export type ReminderStatus = 'pending' | 'done';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'reminders' })
 export class Reminder extends BaseSchema {
   @Prop({ required: true, type: String, ref: 'Agent' })
   agentId: string;

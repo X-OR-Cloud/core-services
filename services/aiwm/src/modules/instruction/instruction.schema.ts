@@ -9,7 +9,7 @@ export type InstructionDocument = Instruction & Document;
  * Simple MVP version with only essential fields
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'instructions' })
 export class Instruction extends BaseSchema {
   @Prop({ required: true })
   name!: string; // e.g., "Customer Support Agent v1"

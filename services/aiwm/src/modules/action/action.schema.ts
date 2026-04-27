@@ -81,7 +81,7 @@ export interface ActionUsage {
   duration: number;
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'actions' })
 export class Action extends BaseSchema {
   @Prop({ required: true, type: String, ref: 'Conversation', index: true })
   conversationId: string;

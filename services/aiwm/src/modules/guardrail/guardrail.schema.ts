@@ -9,7 +9,7 @@ export type GuardrailDocument = Guardrail & Document;
  * Reusable guardrail configurations that can be shared across multiple agents
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'guardrails' })
 export class Guardrail extends BaseSchema {
   @Prop({ required: true })
   name!: string; // e.g., "VTV Safe Content Filter"

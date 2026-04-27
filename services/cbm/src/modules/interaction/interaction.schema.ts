@@ -9,7 +9,7 @@ export type InteractionDocument = Interaction & MongooseDocument;
  * Append-only timeline — records calls, emails, meetings, notes
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'interactions' })
 export class Interaction extends BaseSchema {
   @Prop({ required: true })
   contactId!: string; // ref: Contact (required)
