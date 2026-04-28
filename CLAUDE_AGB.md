@@ -170,21 +170,42 @@ nx run <service>:build
 | schd | api, wrk | - |
 | vbx | api | - |
 
+### License — bắt buộc set trước khi build
+
+Services có LicenseGuard (`aiwm`, `iam`, `cbm`, `mona`) cần `LICENSE_SECRET` baked vào binary lúc `nx build`. **Không set = license mặc định permanent (không có expiry check).**
+
+```bash
+# Bước 0a: Lấy secret của customer từ customers.json
+node licenses/gen-license.js <customer-slug> <YYYY-MM-DD>
+# Output gồm:
+#   LICENSE_SECRET=<hex>          ← dùng cho bước build
+#   Nội dung file .license        ← deploy vào cwd của service khi chạy
+
+# Bước 0b: Export trước khi build (bắt buộc dùng --skip-nx-cache)
+export LICENSE_SECRET=<hex-từ-bước-trên>
+```
+
+> **Lưu ý:** NX cache lưu kết quả build theo input hash. Nếu `LICENSE_SECRET` thay đổi mà không dùng `--skip-nx-cache`, NX sẽ dùng lại binary cũ — secret sẽ KHÔNG được cập nhật.
+
 ### Quy trình build mỗi service
 
 ```bash
 SERVICE="iam"   # thay bằng service cần build
 
-# Bước 1: NX build
+# Bước 1: NX build (với LICENSE_SECRET nếu service có LicenseGuard)
 echo "[$(date '+%F %T')] Building $SERVICE" | tee -a ./air-gap-builder/build.log
-nx run $SERVICE:build
+nx run $SERVICE:build --skip-nx-cache
 [ $? -ne 0 ] && echo "FAILED: nx build $SERVICE" && exit 1
 
 # Bước 2: Kiểm tra output
 ls dist/services/$SERVICE/
 # Phải có main.js. Nếu không có → báo lỗi
 
-# Bước 3: Tạo Dockerfile nếu chưa có (xem template bên dưới)
+# Bước 3: Cài native deps vào dist/ (chạy trên máy build — có internet)
+# Webpack bundled tất cả JS deps. Bước này chỉ cài native addons (bcrypt.node, v.v.)
+# node_modules sẽ được COPY vào Docker image → không cần npm ci trong Dockerfile.
+(cd dist/services/$SERVICE && npm install --ignore-scripts --production --no-audit --no-fund --quiet) \
+  || echo "WARN: npm install in dist/$SERVICE failed (có thể không có native deps)"
 
 # Bước 4: Docker build (context = repo root)
 docker build \
@@ -199,59 +220,50 @@ docker save hydra/$SERVICE:latest | gzip \
 
 ### Dockerfile template
 
-Áp dụng cho các services chưa có Dockerfile:
+Tất cả services đã có Dockerfile sẵn. Template tham khảo nếu cần tạo mới:
 
 ```dockerfile
 FROM node:20-alpine3.21
 
-RUN apk add --no-cache curl bash ca-certificates
+RUN apk add --no-cache curl ca-certificates
+
+RUN addgroup -g 1001 -S appuser && \
+    adduser -S -u 1001 -G appuser appuser
 
 WORKDIR /app
-
-# Copy webpack bundle output
-COPY dist/services/<SERVICE_NAME>/ .
-
-# Non-root user
-RUN addgroup -g 1001 -S appuser && \
-    adduser -S -u 1001 -G appuser appuser && \
-    chown -R appuser:appuser /app
+RUN chown appuser:appuser /app
 
 USER appuser
 
-# Health check (services có HTTP endpoint)
+# node_modules (native addons) đã được npm install vào dist/ bởi Phase 2 build script
+# Không cần npm ci trong Docker → image build hoàn toàn offline
+COPY --chown=appuser:appuser dist/services/<SERVICE_NAME>/ .
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:<PORT>/health || exit 1
+  CMD curl -f http://localhost:${PORT:-<PORT>}/health || exit 1
 
 CMD ["node", "main.js"]
 ```
 
-**Lưu ý khi tạo Dockerfile:**
-1. Trước khi tạo, kiểm tra `ls dist/services/<service>/` sau khi build để biết đúng tên file entry
-2. Với services có nhiều modes (aiwm, dgt, pag): dùng entrypoint script chọn file theo `MODE` env var
-3. Thay `<SERVICE_NAME>` và `<PORT>` đúng với từng service
-
-### Entrypoint script cho multi-mode services
-
-Tạo file `services/<service>/docker-entrypoint.sh`:
-
-```bash
-#!/bin/sh
-# Chọn entrypoint theo MODE env var
-case "${MODE:-api}" in
-  api)    exec node api.main.js ;;
-  wrk)    exec node worker.main.js ;;
-  *)      exec node main.js ;;
-esac
-```
-
-Dockerfile tương ứng thay `CMD` bằng:
+**Entrypoint pattern cho multi-mode (single main.js đọc MODE):**
 ```dockerfile
-COPY services/<service>/docker-entrypoint.sh /app/entrypoint.sh
+COPY --chown=appuser:appuser services/<service>/docker-entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 CMD ["/app/entrypoint.sh"]
 ```
+```sh
+#!/bin/sh
+exec node main.js "${MODE:-api}"
+```
 
-**Với aiwm** (8 modes): inspect `dist/services/aiwm/` sau khi build để xác định danh sách file `.js` thực tế, sau đó map sang MODE values trong entrypoint script.
+**Entrypoint pattern cho multi-entry (pag, vbx — có api.main.js + worker.main.js):**
+```sh
+#!/bin/sh
+case "${MODE:-api}" in
+  wrk) exec node worker.main.js ;;
+  *)   exec node api.main.js ;;
+esac
+```
 
 ### Chạy tất cả services
 
@@ -259,15 +271,27 @@ CMD ["/app/entrypoint.sh"]
 SERVICES="template iam noti aiwm cbm mona aivp dgt pag schd vbx"
 OUT="./air-gap-builder/artifacts/images/services"
 
+# Services có LicenseGuard — phải export LICENSE_SECRET trước
+LICENSE_SERVICES="aiwm iam cbm mona"
+
 for SERVICE in $SERVICES; do
   echo "[$(date '+%F %T')] === $SERVICE ===" | tee -a ./air-gap-builder/build.log
 
-  nx run $SERVICE:build 2>/dev/null || nx run $SERVICE:build --skip-nx-cache
+  # Kiểm tra LICENSE_SECRET nếu service cần
+  if echo "$LICENSE_SERVICES" | grep -qw "$SERVICE" && [ -z "$LICENSE_SECRET" ]; then
+    echo "BLOCKED: $SERVICE requires LICENSE_SECRET. Run: export LICENSE_SECRET=<hex>"
+    exit 1
+  fi
 
-  if [ ! -f "dist/services/$SERVICE/main.js" ]; then
-    echo "WARN: dist/services/$SERVICE/main.js not found — check dist output"
+  nx run $SERVICE:build --skip-nx-cache
+
+  if [ ! -f "dist/services/$SERVICE/main.js" ] && [ ! -f "dist/services/$SERVICE/api.main.js" ]; then
+    echo "WARN: dist/services/$SERVICE/ — no entry file found"
     ls dist/services/$SERVICE/ 2>/dev/null
   fi
+
+  # Cài native deps vào dist/ để Docker build không cần internet
+  (cd dist/services/$SERVICE && npm install --ignore-scripts --production --no-audit --no-fund --quiet 2>/dev/null) || true
 
   docker build -f services/$SERVICE/Dockerfile -t hydra/$SERVICE:latest . \
     || { echo "FAILED: docker build $SERVICE"; continue; }

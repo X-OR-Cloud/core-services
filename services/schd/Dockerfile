@@ -10,10 +10,9 @@ RUN chown appuser:appuser /app
 
 USER appuser
 
-# node_modules (native addons) pre-installed into dist/ by Phase 2 build script
-COPY --chown=appuser:appuser dist/services/mona/ .
+COPY --chown=appuser:appuser dist/services/schd/ .
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-3005}/health || exit 1
+  CMD curl -f http://localhost:${PORT:-3006}/health || exit 1
 
 CMD ["node", "main.js"]

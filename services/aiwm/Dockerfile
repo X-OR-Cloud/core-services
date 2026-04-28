@@ -10,9 +10,7 @@ RUN chown appuser:appuser /app
 
 USER appuser
 
-COPY --chown=appuser:appuser package.json package-lock.json .npmrc ./
-RUN npm ci --ignore-scripts
-
+# node_modules (native addons) pre-installed into dist/ by Phase 2 build script
 COPY --chown=appuser:appuser dist/services/aiwm/ .
 COPY --chown=appuser:appuser services/aiwm/docker-entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

@@ -10,12 +10,11 @@ RUN chown appuser:appuser /app
 
 USER appuser
 
-# node_modules (native addons) pre-installed into dist/ by Phase 2 build script
-COPY --chown=appuser:appuser dist/services/cbm/ .
-COPY --chown=appuser:appuser services/cbm/docker-entrypoint.sh /app/entrypoint.sh
+COPY --chown=appuser:appuser dist/services/vbx/ .
+COPY --chown=appuser:appuser services/vbx/docker-entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-3004}/health || exit 1
+  CMD curl -f http://localhost:${PORT:-3370}/health || exit 1
 
 CMD ["/app/entrypoint.sh"]
