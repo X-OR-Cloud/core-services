@@ -14,7 +14,7 @@ export class Document extends BaseSchema {
   @Prop({ required: true, maxlength: 500 })
   summary!: string; // Document summary/title
 
-  @Prop({ required: true })
+  @Prop({ default: '' })
   content!: string; // Main document content
 
   @Prop({ required: true, enum: ['html', 'text', 'markdown', 'json'] })
