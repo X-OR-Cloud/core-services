@@ -46,7 +46,10 @@ export class ChatWsGateway
 
   afterInit(server: Server) {
     this.logger.log('Chat WebSocket Gateway (CWS) initialized');
-    // Backward-compat alias: old nginx forwarded / to chat ws, old clients connect to namespace /ws/chat.
+
+    // TODO: REMOVE after all old WS clients are upgraded to connect namespace "/" instead of "/ws/chat".
+    // Context: old nginx was forwarding all traffic at / to the chat WS backend, so old clients
+    // explicitly connected to namespace /ws/chat. New clients use namespace / via nginx path /chat/socket.io.
     // @SubscribeMessage decorators only bind to the primary namespace (/), so we manually register
     // all message handlers on each socket connecting via the alias namespace.
     this._aliasNs = (server as any).server.of('/ws/chat') as Namespace;
@@ -55,8 +58,10 @@ export class ChatWsGateway
       this._registerAliasHandlers(socket);
     });
     this.logger.log('Chat WebSocket Gateway alias registered: /ws/chat');
+    // END TODO
   }
 
+  // TODO: REMOVE together with afterInit alias block above once old WS clients are fully migrated.
   private _registerAliasHandlers(socket: Socket): void {
     const wrap = (handler: (data: any, socket: Socket) => Promise<any>) =>
       (data: any, callback: ((res: any) => void) | undefined) => {
@@ -76,6 +81,7 @@ export class ChatWsGateway
     socket.on('agent:heartbeat',      wrap((d, s) => this.handleHeartbeat(d, s)));
     socket.on('channel:send',         wrap((d, s) => this.handleChannelSend(d, s)));
   }
+  // END TODO
 
   private emitToRoom(room: string, event: string, data: unknown): void {
     this.server.to(room).emit(event, data);
