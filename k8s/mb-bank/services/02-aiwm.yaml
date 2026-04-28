@@ -18,7 +18,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-api
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: api
@@ -48,11 +48,11 @@ spec:
           value: "3330"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -86,13 +86,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: aiwm
@@ -107,7 +107,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-mcp
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: mcp
@@ -137,11 +137,11 @@ spec:
           value: "3355"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -157,13 +157,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-mcp-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: aiwm
@@ -178,7 +178,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-aws
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: aws
@@ -208,11 +208,11 @@ spec:
           value: "3400"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -228,13 +228,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-aws-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: aiwm
@@ -249,7 +249,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-nws
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: nws
@@ -279,11 +279,11 @@ spec:
           value: "3403"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -299,13 +299,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-nws-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: aiwm
@@ -320,7 +320,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-cws
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: cws
@@ -350,11 +350,11 @@ spec:
           value: "3407"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -370,13 +370,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-cws-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: aiwm
@@ -391,7 +391,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-worker
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: worker
@@ -416,11 +416,11 @@ spec:
           value: "worker"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -436,7 +436,7 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 
 ---
 # ---- Agent Runner (agt) — no HTTP -------------------------------------------
@@ -444,7 +444,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-agt
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: agt
@@ -469,11 +469,11 @@ spec:
           value: "agt"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -489,7 +489,7 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 
 ---
 # ---- Connection Worker (con) — Discord/Telegram, no HTTP -------------------
@@ -497,7 +497,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-con
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: aiwm
     mode: con
@@ -522,11 +522,11 @@ spec:
           value: "con"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -542,4 +542,4 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license

@@ -6,7 +6,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mongodb
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   serviceName: mongodb-service
   replicas: 1
@@ -30,7 +30,7 @@ spec:
         - name: MONGO_INITDB_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: hydra-db-secrets
+              name: xai-db-secrets
               key: MONGODB_ROOT_PASSWORD
               optional: true
         volumeMounts:
@@ -68,7 +68,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mongodb-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: mongodb
@@ -83,7 +83,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mongodb-init
-  namespace: hydra-prod
+  namespace: xai-prod
 data:
   01-create-user.js: |
     db.getSiblingDB('admin').createUser({

@@ -7,7 +7,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mona
-  namespace: hydra-prod
+  namespace: xai-prod
   labels:
     app: mona
     version: "1.8.2"
@@ -33,11 +33,11 @@ spec:
           value: "3350"
         envFrom:
         - configMapRef:
-            name: hydra-config
+            name: xai-config
         - secretRef:
-            name: hydra-db-secrets
+            name: xai-db-secrets
         - secretRef:
-            name: hydra-app-secrets
+            name: xai-app-secrets
         volumeMounts:
         - name: license
           mountPath: /app/.license
@@ -71,13 +71,13 @@ spec:
       volumes:
       - name: license
         secret:
-          secretName: hydra-license
+          secretName: xai-license
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mona-service
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   selector:
     app: mona

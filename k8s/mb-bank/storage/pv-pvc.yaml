@@ -22,13 +22,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/mongodb
+    path: /home-dev/xai-prod/mongodb
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-mongodb
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteOnce
@@ -53,13 +53,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/redis
+    path: /home-dev/xai-prod/redis
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-redis
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteOnce
@@ -84,13 +84,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/qdrant
+    path: /home-dev/xai-prod/qdrant
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-qdrant
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteOnce
@@ -115,13 +115,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/seaweedfs/master
+    path: /home-dev/xai-prod/seaweedfs/master
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-seaweedfs-master
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteOnce
@@ -145,13 +145,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/seaweedfs/volume
+    path: /home-dev/xai-prod/seaweedfs/volume
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-seaweedfs-volume
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteOnce
@@ -176,13 +176,13 @@ spec:
   storageClassName: ""
   nfs:
     server: <NFS_SERVER_IP>
-    path: /home-dev/hydra-prod/cbm/knowledge
+    path: /home-dev/xai-prod/cbm/knowledge
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-cbm-knowledge
-  namespace: hydra-prod
+  namespace: xai-prod
 spec:
   accessModes:
     - ReadWriteMany

@@ -6,7 +6,7 @@ Bộ manifest Kubernetes để triển khai toàn bộ hệ thống Hydra Servic
 
 ```
 k8s/mb-bank/
-├── 00-namespace.yaml          # Namespace hydra-prod
+├── 00-namespace.yaml          # Namespace xai-prod
 ├── 01-secrets.yaml            # Secrets (DB, JWT, License) — điền trước khi apply
 ├── 02-configmap.yaml          # ConfigMap cấu hình chung
 ├── 03-storage/
@@ -27,13 +27,13 @@ k8s/mb-bank/
 ## Thứ tự apply
 
 ```bash
-NAMESPACE=hydra-prod
+NAMESPACE=xai-prod
 
 # 1. Tạo namespace
 kubectl apply -f 00-namespace.yaml
 
 # 2. Tạo license Secret từ file thực (quan trọng — làm trước secrets.yaml)
-kubectl create secret generic hydra-license \
+kubectl create secret generic xai-license \
   --from-file=.license=mb-bank.license \
   -n $NAMESPACE
 
@@ -43,7 +43,7 @@ kubectl apply -f 01-secrets.yaml
 kubectl apply -f 02-configmap.yaml
 
 # 4. Storage — thay <NFS_SERVER_IP> trong pv-pvc.yaml trước khi apply
-#    Tạo thư mục NFS trước: mkdir -p /home-dev/hydra-prod/{mongodb,redis,qdrant,seaweedfs,cbm}
+#    Tạo thư mục NFS trước: mkdir -p /home-dev/xai-prod/{mongodb,redis,qdrant,seaweedfs,cbm}
 kubectl apply -f storage/pv-pvc.yaml
 
 # 5. Infrastructure (thứ tự quan trọng)
@@ -71,24 +71,24 @@ kubectl apply -f 05-nginx-ingress.yaml
 
 ```bash
 # Tất cả pods phải Running
-kubectl get pods -n hydra-prod
+kubectl get pods -n xai-prod
 
 # Health check từng service
-kubectl port-forward svc/iam-service 3310:3310 -n hydra-prod &
+kubectl port-forward svc/iam-service 3310:3310 -n xai-prod &
 curl http://localhost:3310/health
 # Expected: {"status":"ok","license":{"expiresAt":"2026-07-31","expired":false}}
 
 # Xem logs nếu pod crash
-kubectl logs -f deployment/iam -n hydra-prod
+kubectl logs -f deployment/iam -n xai-prod
 ```
 
 ## Checklist trước khi apply
 
 - [ ] Load tất cả Docker images vào containerd trên các worker nodes
 - [ ] Thay `<NFS_SERVER_IP>` trong `storage/pv-pvc.yaml`
-- [ ] Tạo thư mục NFS: `/home-dev/hydra-prod/{mongodb,redis,qdrant,seaweedfs/master,seaweedfs/volume,cbm/knowledge}`
+- [ ] Tạo thư mục NFS: `/home-dev/xai-prod/{mongodb,redis,qdrant,seaweedfs/master,seaweedfs/volume,cbm/knowledge}`
 - [ ] Điền secrets thực vào `01-secrets.yaml`
-- [ ] Tạo hydra-license Secret từ file `mb-bank.license`
+- [ ] Tạo xai-license Secret từ file `mb-bank.license`
 - [ ] Cập nhật `FE_BASE_URL` và `GOOGLE_REDIRECT_URI` trong `02-configmap.yaml`
 - [ ] Cập nhật `KB_EMBEDDING_API_URL` trỏ về vLLM service nội bộ
 
