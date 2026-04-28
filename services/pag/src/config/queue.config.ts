@@ -10,6 +10,7 @@ export const QUEUE_NAMES = {
   TASKS: 'pag-tasks',
   PLAN_LIFECYCLE: 'pag-plan-lifecycle',
   NEWS_FETCH: 'pag-news-fetch',
+  NEWS_DELIVERY: 'pag-news-delivery',
 
   // Dynamic queue getter (future use)
   getInboundQueue: getInboundQueueName,
@@ -36,4 +37,8 @@ export const QUEUE_EVENTS = {
 
   // News fetch
   NEWS_FETCH: 'news.fetch',
+
+  // News delivery
+  NEWS_DELIVERY_MORNING: 'news.delivery.morning',
+  NEWS_DELIVERY_EVENING: 'news.delivery.evening',
 };

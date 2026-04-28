@@ -61,12 +61,12 @@ export class UserNewsPrefsService {
     ).exec();
   }
 
-  /** Used by Task 2.4 delivery scheduler */
-  async findActiveByFrequency(soulId: string, frequency: 'morning' | 'evening'): Promise<UserNewsPrefDocument[]> {
+  /** Used by Task 2.4 delivery scheduler. Pass soulId to filter by soul, or omit to sweep all. */
+  async findActiveByFrequency(slot: 'morning' | 'evening', soulId?: string): Promise<UserNewsPrefDocument[]> {
     return this.model.find({
-      soulId,
       active: true,
-      $or: [{ frequency }, { frequency: 'both' }],
+      frequency: { $in: [slot, 'both'] },
+      ...(soulId ? { soulId } : {}),
     }).exec();
   }
 

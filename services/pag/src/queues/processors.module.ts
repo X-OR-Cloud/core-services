@@ -9,6 +9,7 @@ import { TokenRefreshProcessor } from './processors/token-refresh.processor';
 import { TaskProcessor } from './processors/task.processor';
 import { PlanLifecycleProcessor } from './processors/plan-lifecycle.processor';
 import { NewsFetchProcessor } from './processors/news-fetch.processor';
+import { NewsDeliveryProcessor } from './processors/news-delivery.processor';
 import { MemoryProducer } from './producers/memory.producer';
 import { TaskProducer } from './producers/task.producer';
 
@@ -24,6 +25,8 @@ import { UserPlansModule } from '../modules/user-plans/user-plans.module';
 import { PlansModule } from '../modules/plans/plans.module';
 import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
 import { NewsItemsModule } from '../modules/news-items/news-items.module';
+import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.module';
+import { NewsDigestModule } from '../modules/news-digest/news-digest.module';
 import { Conversation, ConversationSchema } from '../modules/conversations/conversations.schema';
 import { Channel, ChannelSchema } from '../modules/channels/channels.schema';
 
@@ -41,6 +44,7 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
       { name: QUEUE_NAMES.TASKS },
       { name: QUEUE_NAMES.PLAN_LIFECYCLE },
       { name: QUEUE_NAMES.NEWS_FETCH },
+      { name: QUEUE_NAMES.NEWS_DELIVERY },
     ),
     // Models needed by PlanLifecycleProcessor
     MongooseModule.forFeature([
@@ -59,6 +63,8 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
     PlansModule,
     NewsSourcesModule,
     NewsItemsModule,
+    UserNewsPrefsModule,
+    NewsDigestModule,
   ],
   providers: [
     InboundProcessor,
@@ -68,6 +74,7 @@ import { QUEUE_NAMES, QUEUE_EVENTS } from '../config/queue.config';
     TaskProcessor,
     PlanLifecycleProcessor,
     NewsFetchProcessor,
+    NewsDeliveryProcessor,
     MemoryProducer,
     TaskProducer,
   ],
@@ -79,6 +86,7 @@ export class ProcessorsModule implements OnModuleInit {
     @InjectQueue(QUEUE_NAMES.TOKEN_REFRESH) private tokenRefreshQueue: Queue,
     @InjectQueue(QUEUE_NAMES.PLAN_LIFECYCLE) private planLifecycleQueue: Queue,
     @InjectQueue(QUEUE_NAMES.NEWS_FETCH) private newsFetchQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.NEWS_DELIVERY) private newsDeliveryQueue: Queue,
   ) {}
 
   async onModuleInit() {
@@ -120,5 +128,22 @@ export class ProcessorsModule implements OnModuleInit {
       removeOnFail: 5,
     });
     this.logger.log('News fetch scheduled: every 30 minutes');
+
+    // Schedule news delivery: morning at 07:00 GMT+7 (00:00 UTC), evening at 18:00 GMT+7 (11:00 UTC)
+    const existingDelivery = await this.newsDeliveryQueue.getRepeatableJobs();
+    for (const job of existingDelivery) {
+      await this.newsDeliveryQueue.removeRepeatableByKey(job.key);
+    }
+    await this.newsDeliveryQueue.add(QUEUE_EVENTS.NEWS_DELIVERY_MORNING, {}, {
+      repeat: { cron: '0 0 * * *' },
+      removeOnComplete: 3,
+      removeOnFail: 5,
+    });
+    await this.newsDeliveryQueue.add(QUEUE_EVENTS.NEWS_DELIVERY_EVENING, {}, {
+      repeat: { cron: '0 11 * * *' },
+      removeOnComplete: 3,
+      removeOnFail: 5,
+    });
+    this.logger.log('News delivery scheduled: morning 07:00 GMT+7, evening 18:00 GMT+7');
   }
 }
