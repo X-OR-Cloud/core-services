@@ -727,7 +727,7 @@ export class DeploymentService extends BaseService<Deployment> {
       );
 
       // Forward response headers from upstream
-      const contentType = response.headers['content-type'] || 'text/event-stream';
+      const contentType = String(response.headers['content-type'] || 'text/event-stream');
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
