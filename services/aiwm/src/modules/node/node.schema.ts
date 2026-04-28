@@ -24,7 +24,7 @@ export interface TokenMetadata {
   tokenLastUsed?: Date;
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'nodes' })
 export class Node extends BaseSchema {
   @Prop({ required: true })
   name: string;

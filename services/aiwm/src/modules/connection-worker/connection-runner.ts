@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { inspect } from 'util';
+import Redis from 'ioredis';
 import { Connection, ConnectionLogLevel } from '../connection/connection.schema';
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
@@ -23,7 +24,6 @@ export class ConnectionRunner {
   private readonly logger = new Logger(ConnectionRunner.name);
   private adapter: BaseAdapter | null = null;
   private running = false;
-  private readonly seenExternalMessageIds = new Set<string>();
 
   constructor(
     private readonly connection: Connection,
@@ -56,6 +56,7 @@ export class ConnectionRunner {
     }) => void,
     private readonly onCommand: (payload: { agentId: string; conversationId: string; command: string; reason?: string }) => void,
     private readonly addLogFn: AddLogFn,
+    private readonly redisPub: Redis,
   ) {}
 
   /** Fire-and-forget log to connection.logs (never throws) */
@@ -154,14 +155,11 @@ export class ConnectionRunner {
 
       // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
-        const dedupKey = `${msg.serverId ?? msg.channelId}:${msg.externalMessageId}`;
-        if (this.seenExternalMessageIds.has(dedupKey)) {
+        const dedupKey = `dedup:inbound:${this.connection.provider}:${msg.serverId ?? msg.channelId}:${msg.externalMessageId}`;
+        const acquired = await this.redisPub.set(dedupKey, '1', 'EX', 86400, 'NX');
+        if (acquired !== 'OK') {
           this.logger.warn(`Duplicate inbound message skipped: ${dedupKey}`);
           return;
-        }
-        this.seenExternalMessageIds.add(dedupKey);
-        if (this.seenExternalMessageIds.size > 500) {
-          this.seenExternalMessageIds.delete(this.seenExternalMessageIds.values().next().value!);
         }
       }
 

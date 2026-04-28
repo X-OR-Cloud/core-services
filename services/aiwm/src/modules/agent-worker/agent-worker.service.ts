@@ -9,7 +9,7 @@ import {
   InstructionUpdatedEvent,
   REDIS_CHANNEL_AGENT_WORKER_CMD,
   REDIS_CHANNEL_INSTRUCTION_UPDATED,
-  redisConfig,
+  buildRedisConfig,
 } from '../../config/redis.config';
 import { Agent, AgentDocument } from '../agent/agent.schema';
 import { AgentService } from '../agent/agent.service';
@@ -38,12 +38,11 @@ const HEALTH_CHECK_INTERVAL_MS = 30_000;
 /**
  * AgentWorkerService — orchestrates all hosted agent runners.
  *
- * Scaling strategy (Option B — Redis distributed lock):
- * - On startup, each `agt` instance tries to acquire a lock per agent.
- * - Only the instance that wins the lock spawns the runner for that agent.
- * - Locks are renewed every 15s (TTL 45s) to prevent expiry while alive.
- * - On instance crash/shutdown, locks expire → other instances pick them up
- *   on the next health check cycle.
+ * Scaling strategy (V2 — per-conversation distributed lock):
+ * - All `agt` instances spawn a runner for every agent.
+ * - Instances compete via Redis BLPOP on chat:notify:{agentId} (natural load balancing).
+ * - Conv-level locks (agt:conv:{convId}) ensure each conversation is handled by
+ *   exactly one runner at a time, with guaranteed FIFO ordering.
  */
 @Injectable()
 export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -83,7 +82,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    this.redisPub = new Redis(redisConfig);
+    this.redisPub = new Redis(buildRedisConfig());
     await this.lockService.connect();
     await this.spawnAgents();
     this.startHealthCheck();
@@ -97,7 +96,6 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     for (const [agentId, runner] of this.runners.entries()) {
       await runner.stopAsync();
-      await this.lockService.release(agentId);
       this.redisBlockingMap.get(agentId)?.disconnect();
       this.redisBlockingMap.delete(agentId);
     }
@@ -127,31 +125,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log(`Found ${agents.length} assistant agent(s). Competing for locks...`);
+    this.logger.log(`Found ${agents.length} assistant agent(s). Spawning runners...`);
 
     await Promise.allSettled(
-      agents.map((agent) => this.trySpawnRunner(agent as unknown as AgentDocument)),
+      agents.map((agent) => this.spawnRunner(agent as unknown as AgentDocument)),
     );
 
-    this.logger.log(
-      `Spawned ${this.runners.size}/${agents.length} runner(s) on this instance.`,
-    );
-  }
-
-  /**
-   * Try to acquire lock for an agent, then spawn runner if successful.
-   * Silently skips if another instance already owns the lock.
-   */
-  private async trySpawnRunner(agent: AgentDocument) {
-    const agentId = (agent as any)._id.toString();
-    const acquired = await this.lockService.tryAcquire(agentId);
-
-    if (!acquired) {
-      this.logger.log(`Skipping agent ${agent.name} (${agentId}) — owned by another instance`);
-      return;
-    }
-
-    await this.spawnRunner(agent);
+    this.logger.log(`Spawned ${this.runners.size}/${agents.length} runner(s).`);
   }
 
   private async spawnRunner(agent: AgentDocument) {
@@ -171,7 +151,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       const aiwmApiBaseUrl = await this.configService.getOrDefault(ConfigKey.AIWM_BASE_API_URL, undefined, 'http://localhost:3003');
 
       // Each runner needs its own blocking Redis connection for BLPOP
-      const redisBlocking = new Redis(redisConfig);
+      const redisBlocking = new Redis(buildRedisConfig());
       this.redisBlockingMap.set(agentId, redisBlocking);
 
       const runner = new AgentRunner({
@@ -186,6 +166,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         redisBlocking,
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         redisPub: this.redisPub!,
+        lockService: this.lockService,
         agentType: (agent.type as 'assistant' | 'engineer') ?? 'assistant',
         apiBaseUrl: aiwmApiBaseUrl,
         browserApiUrl: browserApiUrl ?? undefined,
@@ -211,10 +192,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
           this.fileService.uploadBase64(base64, filename, mimeType, agent.owner?.orgId).then((r) => r.fileUrl),
         connectInternal: (id) => this.agentService.connectInternal(id),
         heartbeatInternal: (id, status) =>
-          this.agentService.heartbeat(id, { status }, accessToken),
+          this.agentService.heartbeat(id, { status }, this.runners.get(id)?.getAccessToken() ?? accessToken),
         getHistoryInternal: async (conversationId: string) => {
           const systemContext = { userId: agentId, roles: [], orgId: '', groupId: '', agentId, appId: '' };
-          const actions = await this.actionService.getLastActions(conversationId, 40, systemContext as any);
+          const actions = await this.actionService.getLastActions(conversationId, 20, systemContext as any);
           return actions
             .filter((a: any) => {
               const role = a.actor?.role;
@@ -230,7 +211,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         ragEnabled: ragEnabled ?? false,
         ragCollections: ragCollections ?? [],
         searchKnowledgeInternal: (collectionId, query, topK, minScore) =>
-          this.cbmKnowledgeService.search(collectionId, query, topK, minScore, accessToken),
+          this.cbmKnowledgeService.search(collectionId, query, topK, minScore, this.runners.get(agentId)?.getAccessToken() ?? accessToken),
         agentCode: agentCode ?? undefined,
       });
 
@@ -250,15 +231,13 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err: unknown) {
       this.logger.error(`Failed to spawn runner for ${agent.name} (${agentId}): ${(err as Error).message}`);
-      // Release lock so another instance can pick it up
-      await this.lockService.release(agentId);
     }
   }
 
   /**
    * Health check — runs every 30s:
    * 1. Reconnect stale runners whose agent config changed and are idle.
-   * 2. Try to claim any unlocked agents (e.g. after another instance crashes).
+   * 2. Spawn runners for new agents created after startup.
    * 3. Proactively refresh access tokens that expire within 1 hour.
    */
   private startHealthCheck() {
@@ -266,8 +245,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // 1. Restart runners whose agent config changed and are idle
       await this.restartUpdatedAgents();
 
-      // 2. Try to claim agents not yet owned by any instance
-      await this.claimUnlockedAgents();
+      // 2. Spawn runners for agents not yet running on this instance
+      await this.claimNewAgents();
 
       // 3. Refresh tokens that are about to expire (< 1 hour remaining)
       await this.refreshExpiredTokens();
@@ -354,7 +333,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
    * the targeted agent will act on the message.
    */
   private async startWorkerCmdSubscriber() {
-    this.redisCmdSub = new Redis(redisConfig);
+    this.redisCmdSub = new Redis(buildRedisConfig());
     try {
       await this.redisCmdSub.subscribe(REDIS_CHANNEL_AGENT_WORKER_CMD);
     } catch (err) {
@@ -418,14 +397,9 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         .catch(() => null);
       if (!agent) {
         this.logger.warn(`[restart] agent ${agentId} not found after teardown`);
-        await this.lockService.release(agentId);
         return;
       }
 
-      // Lock is intentionally NOT released during teardown — this instance
-      // remains the owner throughout, so we can spawn directly without
-      // re-acquiring (tryAcquire would fail with SET NX since the key still
-      // exists, and renewAll keeps the TTL fresh).
       await this.spawnRunner(agent as unknown as AgentDocument);
       await this.agentService.addLog(agentId, {
         level: 'info',
@@ -440,10 +414,10 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Query all assistant agents and try to claim any that are not locked.
-   * Handles: new agents created after startup, or instance crashed releasing locks.
+   * Spawn runners for agents not yet running on this instance.
+   * Handles new agents created after startup.
    */
-  private async claimUnlockedAgents() {
+  private async claimNewAgents() {
     const query: any = { type: 'assistant', isDeleted: { $ne: true } };
     if (this.agentIdFilter.length) {
       query._id = { $in: this.agentIdFilter };
@@ -456,14 +430,11 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
 
     for (const agent of agents) {
       const agentId = (agent as any)._id.toString();
-      if (this.runners.has(agentId)) continue; // Already running on this instance
+      if (this.runners.has(agentId)) continue; // already running
 
-      const acquired = await this.lockService.tryAcquire(agentId);
-      if (acquired) {
-        this.logger.log(`Claimed unlocked agent: ${agent.name} (${agentId})`);
-        await this.agentService.addLog(agentId, { level: 'info', message: 'Runner claimed after unlock (failover or new agent)' });
-        await this.spawnRunner(agent as unknown as AgentDocument);
-      }
+      this.logger.log(`New agent detected: ${agent.name} (${agentId}), spawning runner...`);
+      await this.agentService.addLog(agentId, { level: 'info', message: 'Runner spawned (detected by health check)' });
+      await this.spawnRunner(agent as unknown as AgentDocument);
     }
   }
 
@@ -472,7 +443,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
    * runner on this instance whose agent uses the updated instruction.
    */
   private async startInstructionSubscriber() {
-    this.redisSub = new Redis(redisConfig);
+    this.redisSub = new Redis(buildRedisConfig());
     try {
       await this.redisSub.subscribe(REDIS_CHANNEL_INSTRUCTION_UPDATED);
     } catch (err) {
@@ -491,8 +462,6 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleInstructionUpdated(raw: string) {
-    if (!this.runners.size) return;
-
     let event: InstructionUpdatedEvent;
     try {
       event = JSON.parse(raw);
@@ -502,28 +471,48 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     if (!event?.instructionId) return;
 
-    const ownedAgentIds = [...this.runners.keys()];
-    const agents = await this.agentModel
-      .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
+    // Reload in-process assistant runners owned by this worker
+    if (this.runners.size) {
+      const ownedAgentIds = [...this.runners.keys()];
+      const agents = await this.agentModel
+        .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
+        .select('_id')
+        .lean()
+        .catch(() => []);
+
+      for (const agent of agents) {
+        const agentId = (agent._id as { toString(): string }).toString();
+        const runner = this.runners.get(agentId);
+        if (!runner) continue;
+        this.logger.log(`[instruction-updated] reloading assistant agent ${agentId} (instructionId=${event.instructionId})`);
+        await this.agentService.addLog(agentId, {
+          level: 'info',
+          message: 'Runner reload triggered — instruction updated',
+          data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
+        });
+        runner.triggerReload('event').catch((err: Error) =>
+          this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
+        );
+      }
+    }
+
+    // Notify external engineer agents via outbound:command → AgentGateway → WebSocket agent:command
+    const engineerAgents = await this.agentModel
+      .find({ instructionId: event.instructionId, type: 'engineer', status: { $ne: 'inactive' }, isDeleted: { $ne: true } })
       .select('_id')
       .lean()
       .catch(() => []);
 
-    if (!agents.length) return;
-
-    for (const agent of agents) {
+    for (const agent of engineerAgents) {
       const agentId = (agent._id as { toString(): string }).toString();
-      const runner = this.runners.get(agentId);
-      if (!runner) continue;
-      this.logger.log(`[instruction-updated] reloading agent ${agentId} (instructionId=${event.instructionId})`);
+      this.logger.log(`[instruction-updated] sending reload to engineer agent ${agentId} (instructionId=${event.instructionId})`);
       await this.agentService.addLog(agentId, {
         level: 'info',
-        message: 'Runner reload triggered — instruction updated',
+        message: 'Reload command sent — instruction updated',
         data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
       });
-      runner.triggerReload('event').catch((err: Error) =>
-        this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
-      );
+      this.redisPub?.publish('outbound:command', JSON.stringify({ agentId, command: 'reload', reason: 'instruction-updated' }))
+        .catch((err: Error) => this.logger.error(`Failed to publish outbound:command for ${agentId}: ${err.message}`));
     }
   }
 }

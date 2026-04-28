@@ -82,6 +82,21 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Mark todos as completed immediately after finishing each micro-task
 - Keep responses concise, focused on one task at a time
 
+### Versioning Policy
+
+This repo uses a **single monorepo-wide version** in the root `package.json`.
+
+**Bump version automatically before every commit/push**, based on the scope of changes:
+
+| Change type | Bump |
+|---|---|
+| Bug fix, small tweak, config, docs | `patch` (0.0.x) |
+| New feature, new endpoint, new module | `minor` (0.x.0) |
+| Breaking change, major architecture shift | `major` (x.0.0) |
+
+**Trigger:** Any time the user says "commit" or "push".
+**Skip trigger:** If the user says "commit nhanh", "commit tạm", or explicitly says no version bump.
+
 ### Response Guidelines
 
 - Keep responses short and focused on the specific question or task
@@ -93,30 +108,33 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## Common Development Commands
 
 ```bash
-# Build service
-nx run <service>:build
+# Build service (dùng local nx, không cần global install)
+./node_modules/.bin/nx run <service>:build
 
 # Run modes
-nx run <service>:api          # REST API server
-nx run <service>:wrk          # BullMQ worker
+./node_modules/.bin/nx run <service>:api   # REST API server
+./node_modules/.bin/nx run <service>:wrk   # BullMQ worker
 
 # AIWM-specific modes
-nx run aiwm:mcp               # MCP server (port 3355)
-nx run aiwm:agt               # Hosted agent worker
-nx run aiwm:con               # Connection worker (Discord/Telegram)
+./node_modules/.bin/nx run aiwm:mcp        # MCP server (port 3355)
+./node_modules/.bin/nx run aiwm:agt        # Hosted agent worker
+./node_modules/.bin/nx run aiwm:con        # Connection worker (Discord/Telegram)
+./node_modules/.bin/nx run aiwm:aws        # Agent WS gateway (port 3400) — new
+./node_modules/.bin/nx run aiwm:nws        # Node WS gateway (port 3403) — new
+./node_modules/.bin/nx run aiwm:cws        # Chat WS gateway (port 3407) — new
 
 # DGT-specific modes
-nx run dgt:shd                # Scheduler
-nx run dgt:ing                # Data ingestion
-nx run dgt:sig                # Signal generation
-nx run dgt:mon                # SL/TP monitoring
+./node_modules/.bin/nx run dgt:shd         # Scheduler
+./node_modules/.bin/nx run dgt:ing         # Data ingestion
+./node_modules/.bin/nx run dgt:sig         # Signal generation
+./node_modules/.bin/nx run dgt:mon         # SL/TP monitoring
 
 # TypeScript check
 npx tsc --noEmit -p services/<service>/tsconfig.app.json
 
 # Lint / Test
-nx lint <service>
-nx test <service>
+./node_modules/.bin/nx lint <service>
+./node_modules/.bin/nx test <service>
 ```
 
 ---
@@ -141,19 +159,22 @@ core-services/
 | **template** | 3000 | 3300–3309 | Reference implementation — CRUD, BullMQ, RBAC |
 | **iam** | 3001 | 3310–3319 | Identity & Access Management — JWT, Google SSO |
 | **noti** | 3002 | 3320–3329 | Notification — WebSocket, BullMQ events |
-| **aiwm** | 3003 | 3330–3339 | AI Workload Manager — 22 modules, MCP, hosted agents |
+| **aiwm** | 3003 | 3330–3339 | AI Workload Manager — MCP, hosted agents, WS gateways (aws/nws/cws) |
 | **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
 | **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
+| **pag** | 3006 | 3360–3369 | Personal Agent Gateway |
 | **aivp** | 3007 | 3370–3379 | AI Video Processing |
 | **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals |
+| **schd** | 3009 | 3390–3399 | Scheduler |
+| **vbx** | 3010 | 3400–3409 | Video Box |
 
-Next available ports: 3009, 3010, ...
+Next available ports: 3011, 3012, ...
 
 See [`services/<name>/CLAUDE.md`] and [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLOCATION.md) for details.
 
 ### Libraries
 
-**`@core/base`** (`libs/base/`)
+**`@hydrabyte/base`** (`libs/base/`)
 - `BaseSchema` — base Mongoose schema (createdBy, updatedBy, orgId, isDeleted, timestamps)
 - `BaseService` — CRUD + automatic RBAC enforcement
 - `JwtAuthGuard`, `CombinedAuthGuard` — auth guards
@@ -163,7 +184,7 @@ See [`services/<name>/CLAUDE.md`] and [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLO
 - `CorrelationIdMiddleware` — request tracking
 - Swagger decorators: `ApiCreateErrors`, `ApiReadErrors`, etc.
 
-**`@core/shared`** (`libs/shared/`)
+**`@hydrabyte/shared`** (`libs/shared/`)
 - Service config (ports, hosts, DB URIs)
 - Common constants, enums (roles, service names)
 - Auth utilities, logging helpers (`createLogger`, `logInfo`, `logDebug`, `logWarn`, `logError`)
@@ -190,7 +211,7 @@ Known databases:
 Example queries via `mongosh`:
 ```bash
 # Connect
-mongosh "$(grep MONGODB_URI .env | cut -d= -f2)"
+mongosh "$(grep MONGODB_URI .env | cut -d= -f2-)"
 
 # List collections in a db
 use core_aiwm
@@ -223,9 +244,11 @@ Reference: [`services/template/`](services/template/) — production-ready examp
 
 **Schema:**
 ```typescript
-import { BaseSchema } from '@core/base';
+import { BaseSchema } from '@hydrabyte/base';
 
-@Schema({ timestamps: true })
+// ⚠️ Luôn khai báo collection tường minh
+// Nếu không có, Mongoose dùng class name → bị obfuscate thành _0x* khi build production
+@Schema({ timestamps: true, collection: 'my_entities' })
 export class MyEntity extends BaseSchema {
   @Prop({ required: true })
   name: string;
@@ -234,7 +257,7 @@ export class MyEntity extends BaseSchema {
 
 **Service:**
 ```typescript
-import { BaseService } from '@core/base';
+import { BaseService } from '@hydrabyte/base';
 
 @Injectable()
 export class MyEntityService extends BaseService<MyEntity> {
@@ -246,7 +269,7 @@ export class MyEntityService extends BaseService<MyEntity> {
 
 **Controller:**
 ```typescript
-import { JwtAuthGuard, CurrentUser, parseQueryString, ApiReadErrors } from '@core/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, ApiReadErrors } from '@hydrabyte/base';
 
 @Controller('my-entities')
 export class MyEntityController {
@@ -279,9 +302,9 @@ export class MyEntityController {
 ### Verification Checklist
 
 ```bash
-npx nx build [SERVICE_NAME]
+./node_modules/.bin/nx build [SERVICE_NAME]
 npx tsc --noEmit -p services/[SERVICE_NAME]/tsconfig.app.json
-nx run [SERVICE_NAME]:api
+./node_modules/.bin/nx run [SERVICE_NAME]:api
 curl http://localhost:[PORT]/health
 open http://localhost:[PORT]/api-docs
 ```

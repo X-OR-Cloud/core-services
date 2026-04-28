@@ -5,7 +5,7 @@ import { HydratedDocument } from 'mongoose';
 
 export type OrganizationDocument = HydratedDocument<Organization>;
 
-@Schema()
+@Schema({ collection: 'organizations' })
 export class Organization extends BaseSchema {
   @Prop()
   name: string;

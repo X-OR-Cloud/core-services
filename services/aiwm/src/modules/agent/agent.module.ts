@@ -8,6 +8,7 @@ import { AgentService } from './agent.service';
 import { Agent, AgentSchema } from './agent.schema';
 import { Instruction, InstructionSchema } from '../instruction/instruction.schema';
 import { Tool, ToolSchema } from '../tool/tool.schema';
+import { AgentMemory, AgentMemorySchema } from '../memory/memory.schema';
 import { QueueModule } from '../../queues/queue.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DeploymentModule } from '../deployment/deployment.module';
@@ -17,6 +18,7 @@ import { ApiKeyModule } from '../api-key/api-key.module';
 import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { ConversationModule } from '../conversation/conversation.module';
 import { ActionModule } from '../action/action.module';
+import { HeartbeatModule } from '../heartbeat/heartbeat.module';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { ActionModule } from '../action/action.module';
       { name: Agent.name, schema: AgentSchema },
       { name: Instruction.name, schema: InstructionSchema },
       { name: Tool.name, schema: ToolSchema },
+      { name: AgentMemory.name, schema: AgentMemorySchema },
     ]),
     // Use registerAsync to ensure ConfigService is loaded before accessing JWT_SECRET
     JwtModule.registerAsync({
@@ -38,11 +41,12 @@ import { ActionModule } from '../action/action.module';
     QueueModule,
     ConfigurationModule,
     DeploymentModule, // Import to access DeploymentService
-    NodeModule, // Import to access NodeGateway for sending agent.start commands
+    NodeModule, // Import to access NodeService (node lookup, validation)
     ReminderModule, // Import to access ReminderService for heartbeat reminder injection
     ApiKeyModule,
     ConversationModule,
     ActionModule,
+    HeartbeatModule,
   ],
   controllers: [AgentController],
   providers: [AgentService, ApiKeyOrJwtGuard],

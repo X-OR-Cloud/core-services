@@ -6,7 +6,7 @@ import axios from 'axios';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext, ConfigKey } from '@hydrabyte/shared';
 import { Connection, ConnectionLog, ConnectionLogLevel } from './connection.schema';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 import { ConfigService } from '../configuration/config.service';
 
 const ZALO_BOT_API_BASE = 'https://bot-api.zaloplatforms.com/bot';
@@ -34,7 +34,7 @@ export class ConnectionService extends BaseService<Connection> implements OnModu
     private readonly configService: ConfigService,
   ) {
     super(connectionModel);
-    this.redisPub = new Redis(redisConfig);
+    this.redisPub = new Redis(buildRedisConfig());
   }
 
   onModuleDestroy(): void {

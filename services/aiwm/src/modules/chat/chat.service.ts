@@ -1,38 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRedis } from '@nestjs-modules/ioredis';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import Redis from 'ioredis';
 import { Conversation, ConversationDocument } from '../conversation/conversation.schema';
 import { Action, ActionDocument } from '../action/action.schema';
 import { Connection, ConnectionDocument } from '../connection/connection.schema';
-
-export interface SocketSessionData {
-  type: 'user' | 'agent' | 'anonymous';
-  actorId: string;
-  conversationId: string;
-  connectedAt: string;
-}
-
-export interface AgentStatusData {
-  status: 'idle' | 'busy';
-  lastHeartbeat: string;
-  conversationId: string;
-  metrics?: string;
-}
-
-export interface SocketInfo {
-  socketId: string;
-  connectedAt: string;
-  status: 'connected';
-}
+import { PresenceService } from '../presence/presence.service';
 
 export interface ParticipantMonitorItem {
   type: 'user' | 'agent';
   id: string;
   joinedConversation: string;
   isOnline: boolean;
-  sockets: SocketInfo[];
+  sockets: { socketId: string; connectedAt: string; status: 'connected' }[];
   agentStatus?: 'idle' | 'busy' | 'unknown';
   lastHeartbeat?: string;
   lastSent?: { content: string; createdAt: string };
@@ -65,407 +44,60 @@ export interface MonitorResponse {
 }
 
 /**
- * ChatService - Business logic for chat functionality
- *
- * Redis keys:
- * - presence:user:{userId}              - Set of socket IDs for online user
- * - presence:agent:{agentId}            - Set of socket IDs for online agent
- * - conversation:{conversationId}:users - Set of online participant IDs in conversation
- * - socket:session:{socketId}           - Hash: type, actorId, conversationId, connectedAt
- * - conversation:sockets:{convId}       - Set of socket IDs currently in this room
- * - agent:status:{agentId}              - Hash: status, lastHeartbeat, conversationId, metrics
+ * ChatService — Monitor API only (Redis presence delegated to PresenceService).
  */
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   constructor(
-    @InjectRedis() private readonly redis: Redis,
+    private readonly presenceService: PresenceService,
     @InjectModel(Conversation.name) private readonly conversationModel: Model<ConversationDocument>,
     @InjectModel(Action.name) private readonly actionModel: Model<ActionDocument>,
     @InjectModel(Connection.name) private readonly connectionModel: Model<ConnectionDocument>,
   ) {}
 
-  /**
-   * Set user as online
-   */
-  async setUserOnline(userId: string, socketId: string): Promise<void> {
-    try {
-      // Add socket ID to user's presence set
-      await this.redis.sadd(`presence:user:${userId}`, socketId);
-
-      // Set expiry for 1 hour (in case disconnect event is missed)
-      await this.redis.expire(`presence:user:${userId}`, 3600);
-
-      this.logger.debug(`User ${userId} is now online (socket: ${socketId})`);
-    } catch (error) {
-      this.logger.error(`Error setting user online:`, error.message);
-    }
-  }
-
-  /**
-   * Set user as offline
-   */
-  async setUserOffline(userId: string, socketId: string): Promise<void> {
-    try {
-      // Remove socket ID from user's presence set
-      await this.redis.srem(`presence:user:${userId}`, socketId);
-
-      // Check if user has any other active connections
-      const remaining = await this.redis.scard(`presence:user:${userId}`);
-
-      if (remaining === 0) {
-        // No more connections, delete the key
-        await this.redis.del(`presence:user:${userId}`);
-        this.logger.debug(`User ${userId} is now offline`);
-      } else {
-        this.logger.debug(
-          `User ${userId} still has ${remaining} active connection(s)`,
-        );
-      }
-    } catch (error) {
-      this.logger.error(`Error setting user offline:`, error.message);
-    }
-  }
-
-  /**
-   * Check if user is online
-   */
-  async isUserOnline(userId: string): Promise<boolean> {
-    try {
-      const count = await this.redis.scard(`presence:user:${userId}`);
-      return count > 0;
-    } catch (error) {
-      this.logger.error(`Error checking user online status:`, error.message);
-      return false;
-    }
-  }
-
-  /**
-   * Join a conversation (track user or agent presence)
-   */
-  async joinConversation(
-    conversationId: string,
-    participantId: string,
-  ): Promise<void> {
-    try {
-      // Add participant to conversation's online users set
-      await this.redis.sadd(`conversation:${conversationId}:users`, participantId);
-
-      // Set expiry for 24 hours
-      await this.redis.expire(`conversation:${conversationId}:users`, 86400);
-
-      this.logger.debug(
-        `Participant ${participantId} joined conversation ${conversationId}`,
-      );
-    } catch (error) {
-      this.logger.error(`Error joining conversation:`, error.message);
-    }
-  }
-
-  /**
-   * Leave a conversation (user or agent)
-   */
-  async leaveConversation(
-    conversationId: string,
-    participantId: string,
-  ): Promise<void> {
-    try {
-      // Remove participant from conversation's online users set
-      await this.redis.srem(`conversation:${conversationId}:users`, participantId);
-
-      this.logger.debug(`Participant ${participantId} left conversation ${conversationId}`);
-    } catch (error) {
-      this.logger.error(`Error leaving conversation:`, error.message);
-    }
-  }
-
-  /**
-   * Get online users in a conversation
-   */
-  async getOnlineUsersInConversation(
-    conversationId: string,
-  ): Promise<string[]> {
-    try {
-      const userIds = await this.redis.smembers(
-        `conversation:${conversationId}:users`,
-      );
-
-      // Filter to only include actually online users
-      const onlineUsers: string[] = [];
-      for (const userId of userIds) {
-        const isOnline = await this.isUserOnline(userId);
-        if (isOnline) {
-          onlineUsers.push(userId);
-        }
-      }
-
-      return onlineUsers;
-    } catch (error) {
-      this.logger.error(`Error getting online users:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Get all online users
-   */
-  async getAllOnlineUsers(): Promise<string[]> {
-    try {
-      const pattern = 'presence:user:*';
-      const keys = await this.redis.keys(pattern);
-
-      // Extract user IDs from keys
-      const userIds = keys.map((key) => key.replace('presence:user:', ''));
-
-      return userIds;
-    } catch (error) {
-      this.logger.error(`Error getting all online users:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Set agent as online
-   */
-  async setAgentOnline(agentId: string, socketId: string): Promise<void> {
-    try {
-      await this.redis.sadd(`presence:agent:${agentId}`, socketId);
-      await this.redis.expire(`presence:agent:${agentId}`, 3600);
-
-      this.logger.debug(`Agent ${agentId} is now online (socket: ${socketId})`);
-    } catch (error) {
-      this.logger.error(`Error setting agent online:`, error.message);
-    }
-  }
-
-  /**
-   * Set agent as offline
-   */
-  async setAgentOffline(agentId: string, socketId: string): Promise<void> {
-    try {
-      await this.redis.srem(`presence:agent:${agentId}`, socketId);
-
-      const remaining = await this.redis.scard(`presence:agent:${agentId}`);
-
-      if (remaining === 0) {
-        await this.redis.del(`presence:agent:${agentId}`);
-        this.logger.debug(`Agent ${agentId} is now offline`);
-      }
-    } catch (error) {
-      this.logger.error(`Error setting agent offline:`, error.message);
-    }
-  }
-
-  /**
-   * Check if agent is online
-   */
-  async isAgentOnline(agentId: string): Promise<boolean> {
-    try {
-      const count = await this.redis.scard(`presence:agent:${agentId}`);
-      return count > 0;
-    } catch (error) {
-      this.logger.error(`Error checking agent online status:`, error.message);
-      return false;
-    }
-  }
-
-  /**
-   * Get all socket IDs for an agent (used for cross-instance socketsJoin)
-   */
-  async getAgentSocketIds(agentId: string): Promise<string[]> {
-    try {
-      return await this.redis.smembers(`presence:agent:${agentId}`);
-    } catch (error) {
-      this.logger.error(`Error getting agent socket IDs:`, (error as Error).message);
-      return [];
-    }
-  }
-
-  /**
-   * Get all online agents
-   */
-  async getAllOnlineAgents(): Promise<string[]> {
-    try {
-      const pattern = 'presence:agent:*';
-      const keys = await this.redis.keys(pattern);
-
-      const agentIds = keys.map((key) => key.replace('presence:agent:', ''));
-
-      return agentIds;
-    } catch (error) {
-      this.logger.error(`Error getting all online agents:`, error.message);
-      return [];
-    }
-  }
-
   // ---------------------------------------------------------------------------
-  // Layer 1: Socket Session Registry
+  // Presence delegation — kept for backward compatibility with ChatGateway
   // ---------------------------------------------------------------------------
 
-  /**
-   * Register a new socket session when a client connects
-   */
-  async setSocketSession(socketId: string, data: SocketSessionData): Promise<void> {
-    try {
-      await this.redis.hset(`socket:session:${socketId}`,
-        'type', data.type,
-        'actorId', data.actorId,
-        'conversationId', data.conversationId,
-        'connectedAt', data.connectedAt,
-      );
-      await this.redis.expire(`socket:session:${socketId}`, 3600);
-    } catch (error) {
-      this.logger.error(`Error setting socket session:`, error.message);
-    }
-  }
+  setUserOnline(userId: string, socketId: string) { return this.presenceService.setUserOnline(userId, socketId); }
+  setUserOffline(userId: string, socketId: string) { return this.presenceService.setUserOffline(userId, socketId); }
+  isUserOnline(userId: string) { return this.presenceService.isUserOnline(userId); }
+  getAllOnlineUsers() { return this.presenceService.getAllOnlineUsers(); }
 
-  /**
-   * Update the conversationId for an existing socket session (when joining a room)
-   */
-  async updateSocketConversation(socketId: string, conversationId: string): Promise<void> {
-    try {
-      await this.redis.hset(`socket:session:${socketId}`, 'conversationId', conversationId);
-      await this.redis.expire(`socket:session:${socketId}`, 3600);
-    } catch (error) {
-      this.logger.error(`Error updating socket conversation:`, error.message);
-    }
-  }
+  setAgentOnline(agentId: string, socketId: string) { return this.presenceService.setAgentOnline(agentId, socketId); }
+  setAgentOffline(agentId: string, socketId: string) { return this.presenceService.setAgentOffline(agentId, socketId); }
+  isAgentOnline(agentId: string) { return this.presenceService.isAgentOnline(agentId); }
+  getAgentSocketIds(agentId: string) { return this.presenceService.getAgentSocketIds(agentId); }
+  getAllOnlineAgents() { return this.presenceService.getAllOnlineAgents(); }
 
-  /**
-   * Remove socket session and optionally remove from conversation sockets set
-   */
-  async removeSocketSession(socketId: string, conversationId?: string): Promise<void> {
-    try {
-      await this.redis.del(`socket:session:${socketId}`);
-      if (conversationId) {
-        await this.redis.srem(`conversation:sockets:${conversationId}`, socketId);
-      }
-    } catch (error) {
-      this.logger.error(`Error removing socket session:`, error.message);
-    }
-  }
+  joinConversation(conversationId: string, participantId: string) { return this.presenceService.joinConversation(conversationId, participantId); }
+  leaveConversation(conversationId: string, participantId: string) { return this.presenceService.leaveConversation(conversationId, participantId); }
+  getOnlineUsersInConversation(conversationId: string) { return this.presenceService.getOnlineUsersInConversation(conversationId); }
 
-  /**
-   * Get session data for a socket
-   */
-  async getSocketSession(socketId: string): Promise<SocketSessionData | null> {
-    try {
-      const data = await this.redis.hgetall(`socket:session:${socketId}`);
-      if (!data || !data.type) return null;
-      return data as unknown as SocketSessionData;
-    } catch (error) {
-      this.logger.error(`Error getting socket session:`, error.message);
-      return null;
-    }
-  }
+  setSocketSession(socketId: string, data: Parameters<PresenceService['setSocketSession']>[1]) { return this.presenceService.setSocketSession(socketId, data); }
+  updateSocketConversation(socketId: string, conversationId: string) { return this.presenceService.updateSocketConversation(socketId, conversationId); }
+  removeSocketSession(socketId: string, conversationId?: string) { return this.presenceService.removeSocketSession(socketId, conversationId); }
+  getSocketSession(socketId: string) { return this.presenceService.getSocketSession(socketId); }
 
-  /**
-   * Add a socket to the conversation's socket set
-   */
-  async addSocketToConversation(conversationId: string, socketId: string): Promise<void> {
-    try {
-      await this.redis.sadd(`conversation:sockets:${conversationId}`, socketId);
-      await this.redis.expire(`conversation:sockets:${conversationId}`, 86400);
-    } catch (error) {
-      this.logger.error(`Error adding socket to conversation:`, error.message);
-    }
-  }
+  addSocketToConversation(conversationId: string, socketId: string) { return this.presenceService.addSocketToConversation(conversationId, socketId); }
+  removeSocketFromConversation(conversationId: string, socketId: string) { return this.presenceService.removeSocketFromConversation(conversationId, socketId); }
+  getConversationSockets(conversationId: string) { return this.presenceService.getConversationSockets(conversationId); }
+  getAllActiveConversationIds() { return this.presenceService.getAllActiveConversationIds(); }
 
-  /**
-   * Remove a socket from the conversation's socket set
-   */
-  async removeSocketFromConversation(conversationId: string, socketId: string): Promise<void> {
-    try {
-      await this.redis.srem(`conversation:sockets:${conversationId}`, socketId);
-    } catch (error) {
-      this.logger.error(`Error removing socket from conversation:`, error.message);
-    }
-  }
+  setAgentStatus(agentId: string, data: Parameters<PresenceService['setAgentStatus']>[1]) { return this.presenceService.setAgentStatus(agentId, data); }
+  getAgentStatus(agentId: string) { return this.presenceService.getAgentStatus(agentId); }
+  clearAgentStatus(agentId: string) { return this.presenceService.clearAgentStatus(agentId); }
 
-  /**
-   * Get all socket IDs currently in a conversation room
-   */
-  async getConversationSockets(conversationId: string): Promise<string[]> {
-    try {
-      return await this.redis.smembers(`conversation:sockets:${conversationId}`);
-    } catch (error) {
-      this.logger.error(`Error getting conversation sockets:`, error.message);
-      return [];
-    }
-  }
+  cleanupStalePresence() { return this.presenceService.cleanupStalePresence(); }
 
-  /**
-   * Get all conversation IDs that have at least one socket connected
-   */
-  async getAllActiveConversationIds(): Promise<string[]> {
-    try {
-      const keys = await this.redis.keys('conversation:sockets:*');
-      return keys.map((key) => key.replace('conversation:sockets:', ''));
-    } catch (error) {
-      this.logger.error(`Error getting active conversation IDs:`, error.message);
-      return [];
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Layer 2: Agent Heartbeat / Status Tracking
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Store agent status from heartbeat event
-   */
-  async setAgentStatus(agentId: string, data: AgentStatusData): Promise<void> {
-    try {
-      await this.redis.hset(`agent:status:${agentId}`,
-        'status', data.status,
-        'lastHeartbeat', data.lastHeartbeat,
-        'conversationId', data.conversationId,
-        'metrics', data.metrics ?? '',
-      );
-      await this.redis.expire(`agent:status:${agentId}`, 300); // 5 min TTL
-    } catch (error) {
-      this.logger.error(`Error setting agent status:`, error.message);
-    }
-  }
-
-  /**
-   * Get agent status (heartbeat data)
-   */
-  async getAgentStatus(agentId: string): Promise<AgentStatusData | null> {
-    try {
-      const data = await this.redis.hgetall(`agent:status:${agentId}`);
-      if (!data || !data.status) return null;
-      return data as unknown as AgentStatusData;
-    } catch (error) {
-      this.logger.error(`Error getting agent status:`, error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Clear agent status on disconnect
-   */
-  async clearAgentStatus(agentId: string): Promise<void> {
-    try {
-      await this.redis.del(`agent:status:${agentId}`);
-    } catch (error) {
-      this.logger.error(`Error clearing agent status:`, error.message);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // Monitor API
   // ---------------------------------------------------------------------------
 
-  /**
-   * Get full monitor snapshot: active conversations + participants + socket/agent status.
-   * Combines Redis (socket sessions, presence, agent status) with MongoDB (conversations, actions, connections).
-   */
   async getMonitorData(filter?: { agentId?: string; connectionId?: string }): Promise<MonitorResponse> {
-    // 1. Collect active conversationIds from two sources and merge
-    const redisConvIds = await this.getAllActiveConversationIds();
+    const redisConvIds = await this.presenceService.getAllActiveConversationIds();
 
     const dbQuery: any = { status: 'active', isDeleted: false };
     if (filter?.agentId) dbQuery.agentId = filter.agentId;
@@ -480,9 +112,7 @@ export class ChatService {
       .exec();
 
     const dbConvIds = dbConvs.map((c: any) => c._id.toString());
-    const allConvIds = Array.from(new Set([...redisConvIds, ...dbConvIds]));
 
-    // 2. Load any conversations from Redis that weren't in DB query
     const missingIds = redisConvIds.filter((id) => !dbConvIds.includes(id));
     let allConvDocs: any[] = [...dbConvs];
     if (missingIds.length > 0) {
@@ -493,7 +123,6 @@ export class ChatService {
       allConvDocs = [...allConvDocs, ...extra];
     }
 
-    // Apply remaining filters
     if (filter?.agentId) {
       allConvDocs = allConvDocs.filter((c: any) => c.agentId === filter.agentId);
     }
@@ -503,7 +132,6 @@ export class ChatService {
 
     const finalConvIds = allConvDocs.map((c: any) => c._id.toString());
 
-    // 3. Batch load connection names
     const connectionIds = [...new Set(allConvDocs.map((c: any) => c.connectionId).filter(Boolean))];
     const connectionMap = new Map<string, { name: string; provider: string }>();
     if (connectionIds.length > 0) {
@@ -517,7 +145,6 @@ export class ChatService {
       }
     }
 
-    // 4. Batch load last sent/received per participant per conversation from Action collection
     const lastActionsRaw = await this.actionModel.aggregate([
       { $match: { conversationId: { $in: finalConvIds }, type: 'message' } },
       { $sort: { createdAt: -1 } },
@@ -534,7 +161,6 @@ export class ChatService {
       },
     ]);
 
-    // Map: conversationId -> actorId -> { content, createdAt }
     type LastMsg = { content: string; createdAt: Date };
     const lastSentMap = new Map<string, Map<string, LastMsg>>();
     for (const row of lastActionsRaw) {
@@ -544,24 +170,18 @@ export class ChatService {
       lastSentMap.get(convId)!.set(actorId, { content: row.content, createdAt: row.createdAt });
     }
 
-    // 5. Build per-conversation socket lookup: socketId -> session
-    const allConvSocketIds = new Map<string, string[]>(); // conversationId -> socketIds
+    const allConvSocketIds = new Map<string, string[]>();
     for (const convId of finalConvIds) {
-      const sockets = await this.getConversationSockets(convId);
-      allConvSocketIds.set(convId, sockets);
+      allConvSocketIds.set(convId, await this.presenceService.getConversationSockets(convId));
     }
 
-    // Batch load socket sessions
-    const allSocketIds = Array.from(new Set(
-      Array.from(allConvSocketIds.values()).flat()
-    ));
-    const socketSessionMap = new Map<string, SocketSessionData>();
+    const allSocketIds = Array.from(new Set(Array.from(allConvSocketIds.values()).flat()));
+    const socketSessionMap = new Map<string, Awaited<ReturnType<PresenceService['getSocketSession']>>>();
     for (const sid of allSocketIds) {
-      const session = await this.getSocketSession(sid);
+      const session = await this.presenceService.getSocketSession(sid);
       if (session) socketSessionMap.set(sid, session);
     }
 
-    // 6. Build response
     const conversations: ConversationMonitorItem[] = [];
 
     for (const conv of allConvDocs) {
@@ -571,36 +191,21 @@ export class ChatService {
       const convSockets = allConvSocketIds.get(convId) || [];
       const lastActorMap = lastSentMap.get(convId) || new Map();
 
-      // Build a unified participant map from 3 sources:
-      // 1. conv.participants (DB array)
-      // 2. Socket sessions in Redis (live connections not yet in DB)
-      // 3. Action history (e.g. Discord users with no WS socket)
       const participantMap = new Map<string, { type: 'user' | 'agent'; joinedConversation: string }>();
 
       for (const p of (conv.participants || [])) {
-        participantMap.set(p.id, {
-          type: p.type,
-          joinedConversation: p.joined?.toISOString?.() ?? '',
-        });
+        participantMap.set(p.id, { type: p.type, joinedConversation: p.joined?.toISOString?.() ?? '' });
       }
-
       for (const sid of convSockets) {
         const s = socketSessionMap.get(sid);
         if (!s) continue;
         if (!participantMap.has(s.actorId)) {
-          participantMap.set(s.actorId, {
-            type: s.type === 'agent' ? 'agent' : 'user',
-            joinedConversation: s.connectedAt,
-          });
+          participantMap.set(s.actorId, { type: s.type === 'agent' ? 'agent' : 'user', joinedConversation: s.connectedAt });
         }
       }
-
       for (const actorId of lastActorMap.keys()) {
         if (!participantMap.has(actorId)) {
-          participantMap.set(actorId, {
-            type: actorId === conv.agentId ? 'agent' : 'user',
-            joinedConversation: '',
-          });
+          participantMap.set(actorId, { type: actorId === conv.agentId ? 'agent' : 'user', joinedConversation: '' });
         }
       }
 
@@ -609,12 +214,8 @@ export class ChatService {
       for (const [actorId, meta] of participantMap.entries()) {
         const isAgent = meta.type === 'agent';
 
-        // Find sockets belonging to this participant
-        const participantSockets: SocketInfo[] = convSockets
-          .filter((sid) => {
-            const s = socketSessionMap.get(sid);
-            return s && s.actorId === actorId;
-          })
+        const participantSockets = convSockets
+          .filter((sid) => socketSessionMap.get(sid)?.actorId === actorId)
           .map((sid) => ({
             socketId: sid,
             connectedAt: socketSessionMap.get(sid)!.connectedAt,
@@ -622,20 +223,18 @@ export class ChatService {
           }));
 
         const isOnline = isAgent
-          ? await this.isAgentOnline(actorId)
-          : await this.isUserOnline(actorId);
+          ? await this.presenceService.isAgentOnline(actorId)
+          : await this.presenceService.isUserOnline(actorId);
 
         let agentStatus: ParticipantMonitorItem['agentStatus'];
         let lastHeartbeat: string | undefined;
         if (isAgent) {
-          const status = await this.getAgentStatus(actorId);
+          const status = await this.presenceService.getAgentStatus(actorId);
           agentStatus = status ? status.status : 'unknown';
           lastHeartbeat = status?.lastHeartbeat;
         }
 
         const lastSent = lastActorMap.get(actorId);
-
-        // lastReceived = most recent message from OTHER participants in this conversation
         let lastReceived: { content: string; createdAt: string } | undefined;
         for (const [otherId, msg] of lastActorMap.entries()) {
           if (otherId !== actorId) {
@@ -645,7 +244,7 @@ export class ChatService {
           }
         }
 
-        const item: ParticipantMonitorItem = {
+        participants.push({
           type: meta.type,
           id: actorId,
           joinedConversation: meta.joinedConversation,
@@ -654,9 +253,7 @@ export class ChatService {
           ...(isAgent && { agentStatus, lastHeartbeat }),
           ...(lastSent && { lastSent: { content: lastSent.content, createdAt: lastSent.createdAt.toISOString() } }),
           ...(lastReceived && { lastReceived }),
-        };
-
-        participants.push(item);
+        });
       }
 
       conversations.push({
@@ -674,59 +271,14 @@ export class ChatService {
       });
     }
 
-    const totalOnlineUsers = (await this.getAllOnlineUsers()).length;
-    const totalOnlineAgents = (await this.getAllOnlineAgents()).length;
-
     return {
       generatedAt: new Date().toISOString(),
       summary: {
         totalActiveConversations: conversations.length,
-        totalOnlineUsers,
-        totalOnlineAgents,
+        totalOnlineUsers: (await this.presenceService.getAllOnlineUsers()).length,
+        totalOnlineAgents: (await this.presenceService.getAllOnlineAgents()).length,
       },
       conversations,
     };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Stale cleanup
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Clean up stale presence data
-   * Should be called periodically by a cron job
-   */
-  async cleanupStalePresence(): Promise<void> {
-    try {
-      // Find all presence keys
-      const userKeys = await this.redis.keys('presence:user:*');
-      const agentKeys = await this.redis.keys('presence:agent:*');
-
-      let cleaned = 0;
-
-      // Clean up user presence
-      for (const key of userKeys) {
-        const count = await this.redis.scard(key);
-        if (count === 0) {
-          await this.redis.del(key);
-          cleaned++;
-        }
-      }
-
-      // Clean up agent presence
-      for (const key of agentKeys) {
-        const count = await this.redis.scard(key);
-        if (count === 0) {
-          await this.redis.del(key);
-          cleaned++;
-        }
-      }
-
-      if (cleaned > 0) {
-        this.logger.log(`Cleaned up ${cleaned} stale presence keys`);
-      }
-    } catch (error) {
-      this.logger.error(`Error cleaning up stale presence:`, error.message);
-    }
   }
 }

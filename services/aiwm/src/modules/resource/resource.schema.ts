@@ -11,7 +11,7 @@ export type ResourceDocument = Resource & Document;
  * V1: Metadata-only (CRUD API với mock responses cho actions)
  * V2: Actual deployment via worker
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'resources' })
 export class Resource extends BaseSchema {
   @Prop({ required: true, maxlength: 100 })
   name!: string;

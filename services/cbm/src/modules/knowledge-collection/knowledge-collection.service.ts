@@ -5,7 +5,6 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { KnowledgeCollection, CollectionStats } from './knowledge-collection.schema';
 import { CreateKnowledgeCollectionDto } from './knowledge-collection.dto';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class KnowledgeCollectionService extends BaseService<KnowledgeCollection> {
@@ -20,7 +19,7 @@ export class KnowledgeCollectionService extends BaseService<KnowledgeCollection>
    * Override create: auto-generate qdrantCollection name + set embeddingModel default
    */
   async create(
-    data: CreateKnowledgeCollectionDto,
+    data: CreateKnowledgeCollectionDto & { qdrantCollection: string },
     context: RequestContext,
   ): Promise<Partial<KnowledgeCollection>> {
     const embeddingModel =
@@ -28,13 +27,10 @@ export class KnowledgeCollectionService extends BaseService<KnowledgeCollection>
       process.env.KB_EMBEDDING_MODEL ||
       'Qwen/Qwen3-Embedding-8B';
 
-    const qdrantCollection = `kc_${uuidv4().replace(/-/g, '')}`;
-
     return super.create(
       {
         ...data,
         embeddingModel,
-        qdrantCollection,
         status: 'idle',
         stats: new CollectionStats(),
       },

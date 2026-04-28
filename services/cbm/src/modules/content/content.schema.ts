@@ -42,7 +42,7 @@ export interface MediaAttachment {
  * Supports multiple content types: html, text, markdown, json, multipart
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'contents' })
 export class Content extends BaseSchema {
   @Prop({ required: true, maxlength: 500 })
   summary!: string; // Content summary/title

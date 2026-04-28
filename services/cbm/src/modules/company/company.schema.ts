@@ -17,7 +17,7 @@ export interface CompanyAddress {
  * Used as the master template for CRM & Finance modules
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'companies' })
 export class Company extends BaseSchema {
   @Prop({ required: true, maxlength: 200 })
   name!: string;

@@ -10,6 +10,7 @@ import { BrowserInstanceManager } from './browser/browser-instance.manager';
 import { createBrowserTools, BROWSER_TOOL_FUNCTIONS } from './browser/browser-mcp.server';
 import { createChannelSendTools } from './channel-send.tool';
 import { createKnowledgeSearchTools, KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-search.tool';
+import { AgentLockService } from './agent-lock.service';
 
 
 export interface McpServerConfig {
@@ -93,6 +94,8 @@ export interface AgentRunnerConfig {
   agentType?: 'assistant' | 'engineer';
   /** Base URL of AIWM REST API — used by engineer agents for file upload */
   apiBaseUrl?: string;
+  /** Conv lock service — for per-conversation distributed locking in drain sessions */
+  lockService: AgentLockService;
 }
 
 export interface AgentTask {
@@ -120,20 +123,21 @@ export interface AgentTask {
 
 /**
  * AgentRunner — manages a single hosted agent's lifecycle:
- * - Redis BLPOP consumer for chat:task:{agentId} queue
+ * - BLPOP notification queue (chat:notify:{agentId}), drain per-conv queues (chat:task:{agentId}:{convId})
  * - Message processing via Vercel AI SDK + MCP
  * - Publishes responses to chat:response:{conversationId}
  */
 export class AgentRunner {
   private readonly logger: Logger;
-  private readonly processingMap = new Map<string, boolean>();
   private readonly abortMap = new Map<string, AbortController>();
-  /** Per-conversation pending task queue — avoids Redis requeue infinite loop */
-  private readonly pendingTasks = new Map<string, AgentTask>();
   /** Per-conversation orgId — carried from task to response for RBAC */
   private readonly conversationOrgId = new Map<string, string>();
   private isShuttingDown = false;
   private isReloading = false;
+  /** Number of active drain sessions on this runner */
+  private activeDrains = 0;
+  /** Tracks all in-flight drain session promises for clean shutdown */
+  private readonly activeDrainPromises = new Set<Promise<void>>();
 
   private readonly maxConcurrency: number;
   private readonly maxSteps: number;
@@ -251,9 +255,12 @@ export class AgentRunner {
         new Promise<void>((r) => setTimeout(r, 6000)),
       ]);
     }
-    if (this.pendingTasks.size) {
-      this.logger.warn(`Discarded ${this.pendingTasks.size} pending in-memory task(s) on stop`);
-      this.pendingTasks.clear();
+    // Wait for all active drain sessions to complete (each BRPOP has 2s timeout)
+    if (this.activeDrainPromises.size) {
+      await Promise.race([
+        Promise.allSettled([...this.activeDrainPromises]),
+        new Promise<void>((r) => setTimeout(r, 8000)),
+      ]);
     }
     this.writeLog('info', 'Runner stopped');
     this.logger.log('Stopped');
@@ -311,7 +318,7 @@ export class AgentRunner {
   }
 
   get isBusy() {
-    return [...this.processingMap.values()].some(Boolean);
+    return this.activeDrains > 0;
   }
 
   /** Publish a response/event back to ChatGateway via Redis */
@@ -333,9 +340,9 @@ export class AgentRunner {
     this.publishResponse(conversationId, { role: 'assistant', isFinal: true, ...payload });
   }
 
-  /** BLPOP loop — blocks waiting for tasks on chat:task:{agentId} */
+  /** BLPOP loop — blocks on chat:notify:{agentId}, dispatches drain sessions per convId */
   private startConsuming() {
-    const queueKey = `chat:task:${this.config.agentId}`;
+    const notifyKey = `chat:notify:${this.config.agentId}`;
     this.consumerStoppedPromise = new Promise<void>((resolve) => {
       this.resolveConsumerStopped = resolve;
     });
@@ -343,13 +350,18 @@ export class AgentRunner {
       try {
         while (!this.isShuttingDown) {
           try {
-            const result = await this.config.redisBlocking.blpop(queueKey, 5);
+            const result = await this.config.redisBlocking.blpop(notifyKey, 5);
             if (!result) continue; // timeout, loop again
-            const [, raw] = result;
-            const task: AgentTask = JSON.parse(raw);
-            this.handleTask(task).catch((err: Error) =>
-              this.logger.error(`handleTask error: ${err.message}`, err.stack),
-            );
+            const [, conversationId] = result;
+            if (!conversationId) continue;
+            // Fire-and-forget drain session — semaphore and lock checked inside
+            const drainPromise = this.startDrainSession(conversationId);
+            this.activeDrainPromises.add(drainPromise);
+            drainPromise
+              .catch((err: Error) =>
+                this.logger.error(`drainSession error conv=${conversationId}: ${err.message}`, err.stack),
+              )
+              .finally(() => this.activeDrainPromises.delete(drainPromise));
           } catch (err: unknown) {
             if (!this.isShuttingDown) {
               this.logger.error(`BLPOP error: ${(err as Error).message}`);
@@ -362,14 +374,62 @@ export class AgentRunner {
       }
     };
     consume();
-    this.writeLog('info', 'Redis consumer started', { queue: queueKey });
-    this.logger.log(`Consuming queue: ${queueKey}`);
+    this.writeLog('info', 'Redis consumer started', { queue: notifyKey });
+    this.logger.log(`Consuming notify queue: ${notifyKey}`);
+  }
+
+  /**
+   * Drain all tasks for a single conversation.
+   * Acquires conv lock, BRPOP per-conv queue until empty, releases lock.
+   * Concurrent drain sessions are limited to maxConcurrency per runner.
+   */
+  private async startDrainSession(conversationId: string): Promise<void> {
+    // Semaphore — limit concurrent drain sessions on this runner
+    if (this.activeDrains >= this.maxConcurrency) {
+      this.logger.debug(`[drain] maxConcurrency (${this.maxConcurrency}) reached, discarding notification conv=${conversationId}`);
+      return;
+    }
+
+    const acquired = await this.config.lockService.tryAcquireConv(conversationId);
+    if (!acquired) {
+      this.logger.debug(`[drain] conv lock busy, discarding notification conv=${conversationId}`);
+      return;
+    }
+
+    this.activeDrains++;
+    this.lastConversationId = conversationId;
+    const taskKey = `chat:task:${this.config.agentId}:${conversationId}`;
+
+    // Dedicated blocking Redis connection per drain session
+    const { buildRedisConfig } = require('../../config/redis.config');
+    const drainRedis = new Redis(buildRedisConfig());
+
+    try {
+      while (!this.isShuttingDown) {
+        // Wait for any in-progress reload before picking up the next task
+        while (this.isReloading && !this.isShuttingDown) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (this.isShuttingDown) break;
+
+        const item = await drainRedis.brpop(taskKey, 2);
+        if (!item) break; // queue empty — release lock and exit
+
+        const task: AgentTask = JSON.parse(item[1]);
+        await this.handleTask(task);
+        await this.config.lockService.renewConv(conversationId);
+      }
+    } finally {
+      this.activeDrains--;
+      await this.config.lockService.releaseConv(conversationId);
+      drainRedis.disconnect();
+    }
   }
 
   /** Subscribe to chat:cmd:{agentId} for /stop, /reload, /inspect */
   private startCmdSubscriber() {
-    const { redisConfig } = require('../../config/redis.config');
-    this.cmdSubRedis = new Redis(redisConfig);
+    const { buildRedisConfig } = require('../../config/redis.config');
+    this.cmdSubRedis = new Redis(buildRedisConfig());
     const channel = `chat:cmd:${this.config.agentId}`;
     this.cmdSubRedis.subscribe(channel);
     this.cmdSubRedis.on('message', (_ch: string, message: string) => {
@@ -438,8 +498,17 @@ export class AgentRunner {
     const { conversationId, content: rawContent, taskId } = task;
     if (!conversationId) return;
 
+    // Wait for reload to complete (drain loop also waits, but heartbeat tasks bypass it)
+    while (this.isReloading && !this.isShuttingDown) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (this.isShuttingDown) return;
+
+    const taskReceivedAt = Date.now();
+    const queueWaitMs = task.timestamp ? taskReceivedAt - new Date(task.timestamp).getTime() : -1;
     const content = (rawContent ?? '').trim();
     this.logger.debug(`[task] conv=${conversationId} taskId=${taskId} content="${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`);
+    this.logger.debug(`[timing] queue_wait=${queueWaitMs}ms taskId=${taskId}`);
 
     // Build <user_info> block from task metadata
     const userInfoLines: string[] = [];
@@ -477,27 +546,10 @@ export class AgentRunner {
       referencesBlock = `<references>\n${refLines.join('\n\n')}\n</references>\n\n`;
     }
 
-    // Defer while reloading — task will be drained after reload completes
-    if (this.isReloading) {
-      this.pendingTasks.set(conversationId, task);
-      this.logger.debug(`Deferred — runner is reloading (conv=${conversationId})`);
-      return;
-    }
-
-    // Concurrency guard — store latest pending task in memory instead of requeuing to Redis
-    const activeCount = [...this.processingMap.values()].filter(Boolean).length;
-    if (this.processingMap.get(conversationId) || activeCount >= this.maxConcurrency) {
-      // Keep only the latest pending task per conversation (newer message replaces older)
-      this.pendingTasks.set(conversationId, task);
-      this.logger.debug(`Queued in memory — conversation ${conversationId} busy (active=${activeCount}/${this.maxConcurrency})`);
-      return;
-    }
-
-    this.processingMap.set(conversationId, true);
-    this.lastConversationId = conversationId;
     if (task.orgId) this.conversationOrgId.set(conversationId, task.orgId);
     const abortController = new AbortController();
     this.abortMap.set(conversationId, abortController);
+    let messageSent = false;
 
     try {
       this.publishResponse(conversationId, { type: 'typing', isTyping: true });
@@ -588,6 +640,7 @@ export class AgentRunner {
       this.logger.debug(`[tools] resolved=${toolNames.length} names=${toolNames.join(',')}`);
 
       try {
+        const inferenceStart = Date.now();
         const result = await generateText({
           model,
           system: systemPrompt,
@@ -628,7 +681,10 @@ export class AgentRunner {
           },
         });
 
+        const inferenceMs = Date.now() - inferenceStart;
         this.logger.debug(`[llm] done steps=${result.steps?.length} finishReason=${result.finishReason} outputLen=${result.text?.length}`);
+        this.logger.debug(`[timing] inference=${inferenceMs}ms total=${Date.now() - taskReceivedAt}ms taskId=${taskId} conv=${conversationId}`);
+        this.publishResponse(conversationId, { type: 'typing', isTyping: false });
         this.publishResponse(conversationId, {
           type: 'message',
           role: 'assistant',
@@ -637,6 +693,7 @@ export class AgentRunner {
           ...(ragSources.length ? { sources: ragSources } : {}),
           ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
         });
+        messageSent = true;
       } finally {
         await Promise.allSettled(mcpClients.map((c) => c.close()));
       }
@@ -656,18 +713,11 @@ export class AgentRunner {
         );
       }
     } finally {
-      this.processingMap.set(conversationId, false);
       this.abortMap.delete(conversationId);
       this.currentWorkId = null;
-      this.publishResponse(conversationId, { type: 'typing', isTyping: false });
-
-      // Drain pending task for this conversation (if any)
-      const pending = this.pendingTasks.get(conversationId);
-      if (pending) {
-        this.pendingTasks.delete(conversationId);
-        this.handleTask(pending).catch((err: Error) =>
-          this.logger.error(`handleTask (pending) error: ${err.message}`, err.stack),
-        );
+      // Only clear typing here on error/abort paths — success path already cleared it before message
+      if (!messageSent) {
+        this.publishResponse(conversationId, { type: 'typing', isTyping: false });
       }
     }
   }
@@ -685,6 +735,8 @@ export class AgentRunner {
         instruction: resp.instruction ?? this.config.instruction,
         deployment: resp.deployment ?? this.config.deployment,
         settings: resp.settings ?? this.config.settings,
+        mcpServers: resp.mcpServers ?? this.config.mcpServers,
+        allowedFunctions: resp.allowedFunctions ?? this.config.allowedFunctions,
       };
       this.logger.log('Reloaded instruction and MCP config');
       return true;
@@ -693,7 +745,6 @@ export class AgentRunner {
       return false;
     } finally {
       this.isReloading = false;
-      this.drainPendingTasks();
     }
   }
 
@@ -715,6 +766,10 @@ export class AgentRunner {
     return this.config.agentId;
   }
 
+  getAccessToken(): string {
+    return this.config.accessToken;
+  }
+
   /**
    * Decode the JWT access token and return the expiry timestamp (seconds since epoch).
    * Returns null if the token is missing or malformed.
@@ -729,18 +784,6 @@ export class AgentRunner {
       return typeof payload.exp === 'number' ? payload.exp : null;
     } catch {
       return null;
-    }
-  }
-
-  /** Drain deferred tasks queued while reloading. */
-  private drainPendingTasks(): void {
-    if (!this.pendingTasks.size) return;
-    const tasks = [...this.pendingTasks.entries()];
-    this.pendingTasks.clear();
-    for (const [, task] of tasks) {
-      this.handleTask(task).catch((err: Error) =>
-        this.logger.error(`handleTask (drain) error: ${err.message}`, err.stack),
-      );
     }
   }
 
@@ -778,7 +821,7 @@ export class AgentRunner {
 
           for (const [toolName, toolDef] of Object.entries(serverTools)) {
             const namespacedKey = `mcp__${serverName}__${toolName}`;
-            if (allowedSet.size > 0 && !allowedSet.has(namespacedKey)) continue;
+            if (!allowedSet.has(namespacedKey)) continue;
             toolMap[namespacedKey] = toolDef;
           }
         } catch (err) {
@@ -791,7 +834,7 @@ export class AgentRunner {
     if (this.browserCtx?.instanceId) {
       const browserTools = createBrowserTools(this.browserCtx);
       for (const [toolName, toolDef] of Object.entries(browserTools)) {
-        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        if (!allowedSet.has(toolName)) continue;
         toolMap[toolName] = toolDef;
       }
     }
@@ -802,7 +845,7 @@ export class AgentRunner {
         searchKnowledgeInternal: this.config.searchKnowledgeInternal,
       });
       for (const [toolName, toolDef] of Object.entries(knowledgeTools)) {
-        if (allowedSet.size > 0 && !allowedSet.has(toolName)) continue;
+        if (!allowedSet.has(toolName)) continue;
         toolMap[toolName] = toolDef;
       }
     }
@@ -816,6 +859,7 @@ export class AgentRunner {
       accessToken: this.config.accessToken,
     });
     for (const [toolName, toolDef] of Object.entries(channelSendTools)) {
+      if (!allowedSet.has(toolName)) continue;
       toolMap[toolName] = toolDef;
     }
 

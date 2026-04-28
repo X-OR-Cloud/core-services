@@ -53,7 +53,7 @@ export type AgentDocument = Agent & Document;
  * AI agents that execute tasks using instructions, tools, and models
  * Simplified to essential fields only
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agents' })
 export class Agent extends BaseSchema {
   @Prop({ type: String, index: true })
   code?: string;

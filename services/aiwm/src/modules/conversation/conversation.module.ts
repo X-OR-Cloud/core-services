@@ -12,7 +12,7 @@ import { Action, ActionSchema } from '../action/action.schema';
       { name: Conversation.name, schema: ConversationSchema },
       { name: Action.name, schema: ActionSchema },
     ]),
-    UtilModule, // For AI summary generation
+    UtilModule,
   ],
   controllers: [ConversationController],
   providers: [ConversationService],

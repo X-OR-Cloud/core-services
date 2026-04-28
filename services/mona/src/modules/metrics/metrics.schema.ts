@@ -28,7 +28,7 @@ export enum AggregationInterval {
  * MetricData - Time-series metrics storage
  * Single collection design với type discriminator
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'metric_data' })
 export class MetricData extends BaseSchema {
   // ============= Discriminator & Classification =============
 

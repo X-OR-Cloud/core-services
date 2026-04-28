@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectionWorkerService } from './connection-worker.service';
+import { ConnectionLockService } from './connection-lock.service';
 import { RoutingService } from './routing.service';
 import { IamLookupService } from './iam-lookup.service';
 import { ConnectionModule } from '../connection/connection.module';
@@ -14,7 +15,7 @@ import { AgentModule } from '../agent/agent.module';
     ConversationModule,
     AgentModule,
   ],
-  providers: [ConnectionWorkerService, RoutingService, IamLookupService],
+  providers: [ConnectionWorkerService, ConnectionLockService, RoutingService, IamLookupService],
   exports: [ConnectionWorkerService],
 })
 export class ConnectionWorkerModule {}

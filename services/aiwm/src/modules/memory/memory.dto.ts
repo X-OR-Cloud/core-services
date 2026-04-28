@@ -38,6 +38,12 @@ export class UpsertMemoryDto {
   @MaxLength(2000)
   content: string;
 
+  @ApiPropertyOptional({ description: 'One-line description shown in agent startup context (max 200 chars)', maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  summary?: string;
+
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()

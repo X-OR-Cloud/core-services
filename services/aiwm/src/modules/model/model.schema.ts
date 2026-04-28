@@ -9,7 +9,7 @@ export type ModelDocument = Model & Document;
  * Simple MVP version supporting both self-hosted and API-based models
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'models' })
 export class Model extends BaseSchema {
   // Core fields (both deployment types)
   @Prop({ required: true, maxlength: 100 })

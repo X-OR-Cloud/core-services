@@ -21,7 +21,7 @@ export interface TransactionSnapshot {
  * Never created or modified directly by API clients.
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'transactions' })
 export class Transaction extends BaseSchema {
   @Prop({ required: true, enum: ['income', 'expense'] })
   type!: string;

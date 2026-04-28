@@ -29,7 +29,7 @@ export interface EInvoiceLink {
  * Uses MongoDB _id as the primary identifier
  * State machine added in Phase 3: draft → sent → partial/paid/overdue/cancelled
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'invoices' })
 export class Invoice extends BaseSchema {
   @Prop({ required: true, maxlength: 50 })
   code!: string; // auto-gen in Phase 3: INV-{YYYY}-{seq:04d}

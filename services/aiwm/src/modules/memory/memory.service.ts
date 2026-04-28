@@ -63,11 +63,27 @@ export class MemoryService extends BaseService<AgentMemory> {
   /**
    * Upsert a memory entry by (agentId, category, key)
    */
+  async listSummariesForAgent(agentId: string): Promise<{ category: MemoryCategory; key: string; summary: string }[]> {
+    const entries = await this.memoryModel
+      .find({ agentId, isDeleted: false })
+      .sort({ category: 1, updatedAt: -1 })
+      .select('category key summary content')
+      .lean()
+      .exec();
+
+    return entries.map((e) => ({
+      category: e.category as MemoryCategory,
+      key: e.key,
+      summary: (e as any).summary || (e.content as string).substring(0, 100),
+    }));
+  }
+
   async upsert(agentId: string, dto: UpsertMemoryDto) {
     const filter = { agentId, category: dto.category, key: dto.key };
     const update = {
       $set: {
         content: dto.content,
+        summary: dto.summary ?? '',
         tags: dto.tags ?? [],
         isDeleted: false,
         deletedAt: null,

@@ -8,7 +8,9 @@ import {
   Param,
   Query,
   UseGuards,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
@@ -56,7 +58,13 @@ export class KnowledgeCollectionController {
     @Body() createDto: CreateKnowledgeCollectionDto,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.collectionService.create(createDto, context);
+    const qdrantCollection = `kc_${uuidv4().replace(/-/g, '')}`;
+    try {
+      await this.qdrantService.ensureCollection(qdrantCollection);
+    } catch (err: any) {
+      throw new ServiceUnavailableException(`Qdrant unavailable: ${err.message}`);
+    }
+    return this.collectionService.create({ ...createDto, qdrantCollection }, context);
   }
 
   @Get()
@@ -172,7 +180,8 @@ export class KnowledgeCollectionController {
     // 1. Embed the query
     const queryVector = await this.embeddingService.embedText(searchDto.query);
 
-    // 2. Search in Qdrant
+    // 2. Search in Qdrant (ensure collection exists first — it may not if no files have been indexed yet)
+    await this.qdrantService.ensureCollection(collection.qdrantCollection!);
     const results = await this.qdrantService.search(
       collection.qdrantCollection!,
       queryVector,

@@ -31,6 +31,11 @@ export const UpsertMemorySchema = z.object({
     .string()
     .max(2000)
     .describe('Short, factual content. Max ~300 chars per entry recommended. Max 2000 chars.'),
+  summary: z
+    .string()
+    .max(200)
+    .optional()
+    .describe('One-line description of this memory shown in agent startup context. If omitted, first 100 chars of content are used.'),
   tags: z.array(z.string()).optional().describe('Optional. Tags for additional filtering, e.g. ["infra", "jumpserver"]'),
 });
 

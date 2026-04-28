@@ -10,7 +10,7 @@ export type ExpenseDocument = Expense & MongooseDocument;
  * Uses MongoDB _id as the primary identifier
  * State machine added in Phase 3: pending → approved/rejected → resubmit
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'expenses' })
 export class Expense extends BaseSchema {
   @Prop({
     required: true,

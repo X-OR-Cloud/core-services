@@ -18,7 +18,9 @@ import Redis from 'ioredis';
 import {
   AgentWorkerCmdEvent,
   REDIS_CHANNEL_AGENT_WORKER_CMD,
-  redisConfig,
+  REDIS_CHANNEL_INSTRUCTION_UPDATED,
+  InstructionUpdatedEvent,
+  buildRedisConfig,
 } from '../../config/redis.config';
 import {
   BaseService,
@@ -31,6 +33,7 @@ import { Agent, AgentDocument } from './agent.schema';
 import { AGENT_CODE_ADJS, AGENT_CODE_NAMES } from './agent.const';
 import { Instruction } from '../instruction/instruction.schema';
 import { Tool } from '../tool/tool.schema';
+import { AgentMemory, MemoryCategory } from '../memory/memory.schema';
 import {
   CreateAgentDto,
   UpdateAgentDto,
@@ -51,11 +54,10 @@ import {
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { ConfigKey } from '../configuration/enums/config-key.enum';
+import { HeartbeatService } from '../heartbeat/heartbeat.service';
 import { DeploymentService } from '../deployment/deployment.service';
-import { NodeGateway } from '../node/node.gateway';
 import { NodeService } from '../node/node.service';
 import { MessageType } from '@hydrabyte/shared';
-import { ReminderService } from '../reminder/reminder.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { ActionService } from '../action/action.service';
 import {
@@ -80,16 +82,16 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(Instruction.name) private instructionModel: Model<Instruction>,
     @InjectModel(Tool.name) private toolModel: Model<Tool>,
+    @InjectModel(AgentMemory.name) private memoryModel: Model<AgentMemory>,
     private readonly jwtService: JwtService,
     private readonly agentProducer: AgentProducer,
     private readonly configurationService: ConfigurationService,
     private readonly deploymentService: DeploymentService,
-    private readonly nodeGateway: NodeGateway,
     private readonly nodeService: NodeService,
     private readonly httpService: HttpService,
-    private readonly reminderService: ReminderService,
     private readonly conversationService: ConversationService,
     private readonly actionService: ActionService,
+    private readonly heartbeatService: HeartbeatService,
   ) {
     super(agentModel as any);
   }
@@ -101,9 +103,28 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
 
   private getRedisPub(): Redis {
     if (!this.redisPub) {
-      this.redisPub = new Redis(redisConfig);
+      this.redisPub = new Redis(buildRedisConfig());
     }
     return this.redisPub;
+  }
+
+  private async publishNodeCommand(
+    nodeId: string,
+    commandType: string,
+    resource: { type: string; id: string },
+    data: Record<string, any>,
+  ): Promise<string> {
+    const messageId = uuidv4();
+    const payload = {
+      type: commandType,
+      messageId,
+      timestamp: new Date().toISOString(),
+      resource,
+      data,
+      metadata: { priority: 'normal' },
+    };
+    await this.getRedisPub().publish(`node:cmd:${nodeId}`, JSON.stringify(payload));
+    return messageId;
   }
 
   private isOrgOwner(context: RequestContext): boolean {
@@ -268,7 +289,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     // For engineer agents with nodeId, send agent.start command to the target node via WebSocket
     if (saved.type === 'engineer' && saved.nodeId) {
       try {
-        await this.nodeGateway.sendCommandToNode(
+        await this.publishNodeCommand(
           saved.nodeId,
           MessageType.AGENT_START,
           { type: 'agent', id: (saved as any)._id.toString() },
@@ -289,7 +310,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
               saved.framework,
               context.orgId
             ),
-          }
+          },
         );
         this.logger.log(
           `agent.start sent to node ${saved.nodeId} for agent ${
@@ -392,6 +413,16 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     if (!updated) {
       throw new NotFoundException('Instruction not found');
     }
+
+    const payload: InstructionUpdatedEvent = {
+      instructionId: (updated._id as Types.ObjectId).toString(),
+      updatedAt: ((updated as any).updatedAt instanceof Date ? (updated as any).updatedAt.toISOString() : (updated as any).updatedAt) ?? new Date().toISOString(),
+    };
+    this.getRedisPub()
+      .publish(REDIS_CHANNEL_INSTRUCTION_UPDATED, JSON.stringify(payload))
+      .catch((err) => {
+        this.logger.warn(`Failed to publish instruction-updated event: ${(err as Error).message}`);
+      });
 
     return {
       id: (updated._id as Types.ObjectId).toString(),
@@ -619,30 +650,15 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       orgId: payload.orgId,
     });
 
-    const token = this.jwtService.sign(payload); // expiresIn: '24h' set in JwtModule config
-
-    // Calculate expiresIn seconds (24 hours)
-    const expiresInSeconds = 24 * 60 * 60;
+    // Token lifetime configurable via AGENT_TOKEN_EXPIRES_IN_SECONDS (default 24h)
+    const expiresInSeconds = parseInt(process.env.AGENT_TOKEN_EXPIRES_IN_SECONDS || '86400', 10);
+    const token = this.jwtService.sign(payload, { expiresIn: expiresInSeconds });
 
     // Build instruction object (with context injection using agent token)
     const instruction = await this.buildInstructionObjectForAgent(agent, token);
 
-    // Get allowed tools — MemoryManagement always injected
-    const tools = await this.getAllowedToolsWithMemory(agent);
-
-    // Build effective allowedFunctions: agent's list + memory functions (always included)
-    const memoryFunctions = [
-      'mcp__Builtin__SearchMemory',
-      'mcp__Builtin__UpsertMemory',
-      'mcp__Builtin__ListMemoryKeys',
-      'mcp__Builtin__DeleteMemory',
-    ];
-    const agentFunctions = agent.allowedFunctions || [];
-    // Empty agentFunctions means "all allowed" — memory functions are implicitly covered
-    const allowedFunctions =
-      agentFunctions.length === 0
-        ? []
-        : [...new Set([...agentFunctions, ...memoryFunctions])];
+    const tools = await this.getAllowedTools(agent);
+    const allowedFunctions = agent.allowedFunctions || [];
 
     // Update connection tracking + set status to idle
     const connectionUpdate: Record<string, any> = { lastConnectedAt: new Date(), status: 'idle' };
@@ -878,9 +894,13 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       );
     }
 
-    // Get allowed tools to inject conditional rule blocks (always includes MemoryManagement)
-    const tools = await this.getAllowedToolsWithMemory(agent);
+    const tools = await this.getAllowedTools(agent);
     const agentId = (agent as any)._id.toString();
+
+    const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
+    const memorySummaries = hasMemory
+      ? await this.fetchMemorySummaries(agentId)
+      : [];
 
     const result: { id: string; systemPrompt: string; isPreview?: boolean } = {
       id: agentId,
@@ -889,6 +909,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         contextBlocks,
         tools,
         agentId,
+        memorySummaries,
         agent.code || undefined,
         agent.instructionId?.toString(),
         agent.owner?.orgId
@@ -1092,6 +1113,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     contextBlocks: string[],
     tools: Tool[],
     agentId: string,
+    memorySummaries: { category: MemoryCategory; key: string; summary: string }[],
     agentCode?: string,
     instructionId?: string,
     orgId?: string
@@ -1101,8 +1123,26 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     const ruleBlocks: string[] = [];
 
     if (toolNames.has('MemoryManagement')) {
+      const snapshotLines: string[] = [];
+      if (memorySummaries.length > 0) {
+        const byCategory = new Map<string, typeof memorySummaries>();
+        for (const m of memorySummaries) {
+          if (!byCategory.has(m.category)) byCategory.set(m.category, []);
+          byCategory.get(m.category)!.push(m);
+        }
+        for (const [cat, entries] of byCategory) {
+          snapshotLines.push(`[${cat}]`);
+          for (const e of entries) snapshotLines.push(`- ${e.key}: ${e.summary}`);
+        }
+      }
+
+      const snapshotBlock =
+        snapshotLines.length > 0
+          ? `MEMORY SNAPSHOT (at session start):\n${snapshotLines.join('\n')}\n\n`
+          : '';
+
       ruleBlocks.push(
-        `MEMORY RULES:
+        `${snapshotBlock}MEMORY RULES:
 - Trước khi trả lời về quyết định đã đưa ra, preferences của ai đó, notes đặc biệt:
   gọi mcp__Builtin__SearchMemory với category và keyword phù hợp trước
 - Sau cuộc trò chuyện có thông tin mới thuộc 1 trong 4 categories:
@@ -1167,6 +1207,23 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     return parts.join('\n\n---\n\n');
   }
 
+  private async fetchMemorySummaries(
+    agentId: string
+  ): Promise<{ category: MemoryCategory; key: string; summary: string }[]> {
+    const entries = await this.memoryModel
+      .find({ agentId, isDeleted: false })
+      .sort({ category: 1, updatedAt: -1 })
+      .select('category key summary content')
+      .lean()
+      .exec();
+
+    return entries.map((e) => ({
+      category: e.category as MemoryCategory,
+      key: e.key,
+      summary: (e as any).summary || (e.content as string).substring(0, 100),
+    }));
+  }
+
   /**
    * Get allowed tools for agent (whitelist)
    */
@@ -1187,517 +1244,12 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     return tools;
   }
 
-  /**
-   * Get allowed tools and always inject MemoryManagement tool if not already present.
-   * MemoryManagement is a default builtin tool available to all agents.
-   */
-  private async getAllowedToolsWithMemory(agent: Agent): Promise<Tool[]> {
-    const tools = await this.getAllowedTools(agent);
-
-    const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
-    if (hasMemory) return tools;
-
-    // Fetch MemoryManagement tool from DB (must exist as a seeded builtin tool)
-    const memoryTool = await this.toolModel
-      .findOne({ name: 'MemoryManagement', type: 'builtin', isDeleted: false })
-      .exec();
-
-    if (memoryTool) {
-      return [...tools, memoryTool];
-    }
-
-    return tools;
-  }
-
-  /**
-   * Agent heartbeat endpoint
-   * Updates lastHeartbeatAt timestamp
-   * When idle, queries CBM for next work assignment
-   */
   async heartbeat(
     agentId: string,
     heartbeatDto: AgentHeartbeatDto,
-    accessToken?: string
-  ): Promise<{
-    success: boolean;
-    work?: {
-      id: string;
-      title: string;
-      type: string;
-      status: string;
-      priorityLevel: number;
-    };
-    systemMessage?: string;
-    systemTask?: {
-      type: 'work' | 'reminders' | 'inbox' | 'alert';
-      id?: string;
-      title?: string;
-      reminders?: { id: string; content: string }[];
-    };
-  }> {
-    const agent = await this.agentModel
-      .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
-      .exec();
-
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${agentId} not found`);
-    }
-
-    // Reject heartbeat if agent is suspended
-    if (agent.status === 'suspended') {
-      throw new BadRequestException('Agent is suspended. Heartbeat rejected.');
-    }
-
-    // Auto-sleep gate: if agent is currently sleeping and sleepUntil hasn't
-    // elapsed, acknowledge heartbeat but do not hand out any task. When the
-    // deadline passes, clear sleep fields and fall through to normal flow.
-    if (
-      agent.status === 'sleep' &&
-      heartbeatDto.status !== 'sleep' &&
-      agent.sleepUntil &&
-      agent.sleepUntil.getTime() > Date.now()
-    ) {
-      await this.agentModel.updateOne(
-        { _id: agent._id },
-        { $set: { lastHeartbeatAt: new Date() } }
-      );
-      return { success: true };
-    }
-
-    // Handle sleep status
-    if (heartbeatDto.status === 'sleep') {
-      if (!heartbeatDto.sleep) {
-        throw new BadRequestException('sleep field is required when status=sleep');
-      }
-      await this.agentModel.updateOne(
-        { _id: agent._id },
-        {
-          $set: {
-            lastHeartbeatAt: new Date(),
-            status: 'sleep',
-            sleepReason: heartbeatDto.sleep.reason,
-            sleepSince: new Date(heartbeatDto.sleep.since),
-            sleepUntil: heartbeatDto.sleep.until ? new Date(heartbeatDto.sleep.until) : null,
-          },
-        }
-      );
-      this.logger.debug('Agent entered sleep', {
-        agentId,
-        reason: heartbeatDto.sleep.reason,
-        until: heartbeatDto.sleep.until ?? 'indefinite',
-      });
-      return { success: true };
-    }
-
-    // Build update — clear sleep fields when waking up from sleep
-    const statusUpdate: Record<string, any> = { lastHeartbeatAt: new Date(), status: heartbeatDto.status };
-    if (agent.status === 'sleep') {
-      statusUpdate.sleepReason = null;
-      statusUpdate.sleepSince = null;
-      statusUpdate.sleepUntil = null;
-    }
-
-    // Update lastHeartbeatAt + status from heartbeat DTO
-    await this.agentModel.updateOne(
-      { _id: agent._id },
-      { $set: statusUpdate }
-    );
-
-    this.logger.debug('Agent heartbeat received', {
-      agentId,
-      status: heartbeatDto.status,
-      previousStatus: agent.status,
-      metrics: heartbeatDto.metrics,
-    });
-
-    // Query next work when agent is idle
-    if (heartbeatDto.status === 'idle' && accessToken) {
-      let resolved: {
-        work?: {
-          id: string;
-          title: string;
-          type: string;
-          status: string;
-          priorityLevel: number;
-        };
-        systemMessage: string;
-        systemTask: {
-          type: 'work' | 'reminders' | 'inbox' | 'alert';
-          id?: string;
-          title?: string;
-          reminders?: { id: string; content: string }[];
-        };
-      } | null = null;
-
-      try {
-        const workResult = await this.getNextWorkForAgent(
-          agentId,
-          accessToken,
-          agent.owner?.orgId,
-          {
-            mcpConnected: heartbeatDto.mcpConnected,
-            availableFunctions: heartbeatDto.availableFunctions,
-          }
-        );
-        if (workResult) {
-          resolved = {
-            work: workResult.work,
-            systemMessage: workResult.systemMessage,
-            systemTask: workResult.systemTask,
-          };
-        }
-      } catch (error: any) {
-        this.logger.warn(
-          `Failed to query next work for agent ${agentId}: ${error.message}`
-        );
-      }
-
-      if (!resolved) {
-        try {
-          const reminders = await this.reminderService.getPendingForHeartbeat(
-            agentId
-          );
-          if (reminders.length > 0) {
-            const reminderList = reminders
-              .map((r: any) => `- [${r._id || r.id}] ${r.content}`)
-              .join('\n');
-            resolved = {
-              systemMessage: `Bạn có ${reminders.length} reminder đang chờ xử lý:\n${reminderList}\n\nHãy xử lý từng reminder và gọi DoneReminder sau khi hoàn thành.`,
-              systemTask: {
-                type: 'reminders',
-                reminders: reminders.map((r: any) => ({
-                  id: String(r._id || r.id),
-                  content: r.content,
-                })),
-              },
-            };
-          }
-        } catch (error: any) {
-          this.logger.warn(
-            `Failed to query reminders for agent ${agentId}: ${error.message}`
-          );
-        }
-      }
-
-      if (resolved) {
-        const circuitBreak = await this.applyTaskCircuitBreaker(agent, resolved.systemTask);
-        if (circuitBreak.sleep) {
-          return { success: true };
-        }
-        return {
-          success: true,
-          ...(resolved.work ? { work: resolved.work } : {}),
-          systemMessage: resolved.systemMessage,
-          systemTask: resolved.systemTask,
-        };
-      }
-
-      // Nothing to do — clear any stale currentTask so counters don't leak
-      // into a future, unrelated task.
-      if (agent.currentTask) {
-        await this.agentModel.updateOne(
-          { _id: agent._id },
-          { $set: { currentTask: null } }
-        );
-      }
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Task retry circuit breaker.
-   *
-   * Tracks consecutive heartbeats that resolve to the same systemTask. When
-   * the same task is dispatched more than `agent_taskRetryLimit` times in a
-   * row without the agent moving on (e.g. MCP tool broken, logic stuck), the
-   * agent is auto-slept for `agent_taskSleepMinutes` so that it stops
-   * burning tokens. A manager then needs to review and wake the agent.
-   */
-  private async applyTaskCircuitBreaker(
-    agent: AgentDocument,
-    systemTask: {
-      type: 'work' | 'reminders' | 'inbox' | 'alert';
-      id?: string;
-      title?: string;
-      reminders?: { id: string; content: string }[];
-    }
-  ): Promise<{ sleep: boolean }> {
-    const settings = (agent.settings ?? {}) as Record<string, unknown>;
-    const retryLimit = Math.max(
-      1,
-      Number(settings.agent_taskRetryLimit ?? 3)
-    );
-    const sleepMinutes = Math.max(
-      1,
-      Number(settings.agent_taskSleepMinutes ?? 240)
-    );
-
-    const taskKey = this.buildTaskKey(systemTask);
-    const now = new Date();
-
-    if (agent.currentTask?.taskKey === taskKey) {
-      const attemptCount = agent.currentTask.attemptCount + 1;
-
-      if (attemptCount > retryLimit) {
-        const sleepUntil = new Date(now.getTime() + sleepMinutes * 60_000);
-        const sleepReason = `[AUTO] Task ${taskKey} failed ${attemptCount - 1} attempts`;
-
-        await this.agentModel.updateOne(
-          { _id: agent._id },
-          {
-            $set: {
-              status: 'sleep',
-              sleepReason,
-              sleepSince: now,
-              sleepUntil,
-              currentTask: null,
-              lastHeartbeatAt: now,
-            },
-            $push: {
-              logs: {
-                $each: [
-                  {
-                    level: 'error',
-                    message: `Auto-sleep: ${sleepReason}`,
-                    time: now,
-                    data: {
-                      taskKey,
-                      attemptCount: attemptCount - 1,
-                      retryLimit,
-                      sleepMinutes,
-                      sleepUntil: sleepUntil.toISOString(),
-                    },
-                  },
-                ],
-                $slice: -100,
-              },
-            },
-          }
-        );
-
-        this.logger.warn('Agent auto-slept by task circuit breaker', {
-          agentId: String(agent._id),
-          taskKey,
-          attempts: attemptCount - 1,
-          retryLimit,
-          sleepUntil: sleepUntil.toISOString(),
-        });
-
-        return { sleep: true };
-      }
-
-      await this.agentModel.updateOne(
-        { _id: agent._id },
-        {
-          $set: {
-            'currentTask.attemptCount': attemptCount,
-            'currentTask.lastAttemptAt': now,
-          },
-        }
-      );
-      return { sleep: false };
-    }
-
-    // New / different task — (re)initialise counter
-    await this.agentModel.updateOne(
-      { _id: agent._id },
-      {
-        $set: {
-          currentTask: {
-            taskKey,
-            firstSeenAt: now,
-            lastAttemptAt: now,
-            attemptCount: 1,
-          },
-        },
-      }
-    );
-    return { sleep: false };
-  }
-
-  private buildTaskKey(systemTask: {
-    type: string;
-    id?: string;
-    reminders?: { id: string; content: string }[];
-  }): string {
-    if (systemTask.type === 'reminders' && systemTask.reminders?.length) {
-      const ids = systemTask.reminders.map((r) => r.id).sort().join(',');
-      const hash = crypto.createHash('sha1').update(ids).digest('hex').slice(0, 12);
-      return `reminders:${hash}`;
-    }
-    return `${systemTask.type}:${systemTask.id ?? 'unknown'}`;
-  }
-
-  /**
-   * Query CBM next-work API and build system message for agent
-   */
-  private async getNextWorkForAgent(
-    agentId: string,
-    accessToken: string,
-    orgId?: string,
-    capabilities?: { mcpConnected?: boolean; availableFunctions?: string[] }
-  ): Promise<{
-    work: {
-      id: string;
-      title: string;
-      type: string;
-      status: string;
-      priorityLevel: number;
-    };
-    systemMessage: string;
-    systemTask: {
-      type: 'work' | 'inbox' | 'alert';
-      id?: string;
-      title?: string;
-    };
-  } | null> {
-    let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
-    try {
-      const cbmConfig = await this.configurationService.findByKey(
-        ConfigKey.CBM_BASE_API_URL as any,
-        { orgId } as RequestContext
-      );
-      if (cbmConfig?.value) {
-        cbmBaseUrl = cbmConfig.value;
-      }
-    } catch {
-      // Fallback to default
-    }
-
-    const response = await firstValueFrom(
-      this.httpService.get(`${cbmBaseUrl}/works/next-work`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: { assigneeType: 'agent', assigneeId: agentId },
-      })
-    );
-
-    const data = (response as any).data;
-    if (!data?.work || data.metadata?.priorityLevel === 0) {
-      return null;
-    }
-
-    const work = data.work;
-    const priorityLevel = data.metadata.priorityLevel;
-    const workId = work._id || work.id;
-    const title = work.title || 'Untitled';
-
-    const workObj = {
-      id: workId,
-      title,
-      type: work.type,
-      status: work.status,
-      priorityLevel,
-    };
-
-    // Guard: skip work assignment if agent reports MCP is not connected
-    if (capabilities?.mcpConnected === false) {
-      this.logger.debug('Skipping work assignment — agent MCP not connected', { agentId });
-      return null;
-    }
-
-    // Guard: if agent reports availableFunctions, verify required tools are present
-    if (capabilities?.availableFunctions) {
-      const fns = capabilities.availableFunctions;
-      const REQUIRED_BY_PRIORITY: Record<string, string[]> = {
-        low: ['mcp__Builtin__StartWork', 'mcp__Builtin__BlockWork'],
-        blocked: ['mcp__Builtin__UnblockWork', 'mcp__Builtin__BlockWork'],
-        review: ['mcp__Builtin__CompleteWork', 'mcp__Builtin__RejectReviewForWork'],
-      };
-      const bucket =
-        priorityLevel <= 3 ? 'low' : priorityLevel === 4 ? 'blocked' : 'review';
-      const required = REQUIRED_BY_PRIORITY[bucket];
-      const missing = required.filter((fn) => !fns.includes(fn));
-      if (missing.length > 0) {
-        this.logger.debug('Skipping work assignment — agent missing required functions', {
-          agentId,
-          missing,
-        });
-        return null;
-      }
-    }
-
-    let systemMessage: string;
-
-    // Check if reporter and assignee are the same agent (self-assigned)
-    const isSelfAssigned =
-      work.reporter?.type === 'agent' &&
-      work.assignee?.type === 'agent' &&
-      work.reporter?.id === work.assignee?.id;
-
-    if (priorityLevel <= 3) {
-      // Assignee = agent, work in todo → execute immediately
-      let completionStep: string;
-      if (work.isRecurring) {
-        // Recurring/scheduled tasks: skip review, complete directly
-        completionStep = `- Gọi mcp__Builtin__CompleteWork để hoàn tất công việc (recurring task - không cần review)`;
-      } else if (isSelfAssigned) {
-        completionStep = `- Gọi mcp__Builtin__RequestReviewForWork rồi ngay sau đó gọi mcp__Builtin__CompleteWork để hoàn tất (bạn vừa là người thực hiện vừa là người review)`;
-      } else {
-        completionStep = `- Gọi mcp__Builtin__RequestReviewForWork khi hoàn tất để chờ người review duyệt`;
-      }
-
-      const hasDependencies =
-        Array.isArray(work.dependencies) && work.dependencies.length > 0;
-      const dependencyStep = hasDependencies
-        ? `- Công việc này có dependencies: ${work.dependencies
-            .map((d: string) => `@work:${d}`)
-            .join(', ')}. Trước khi bắt đầu, hãy:\n` +
-          `  1. Gọi mcp__Builtin__GetWork cho từng dependency để đọc thông tin và trường "result"\n` +
-          `  2. Nếu dependency có "documentIds", gọi mcp__Builtin__GetDocumentContent cho từng document để đọc nội dung chi tiết\n` +
-          `  3. Tổng hợp kết quả từ các dependencies làm đầu vào cho công việc này\n`
-        : '';
-
-      systemMessage =
-        `Bạn đang có công việc (Work) @work:${workId} "${title}" cần thực hiện ngay không cần hỏi lại.\n` +
-        `${dependencyStep}` +
-        `- Gọi mcp__Builtin__StartWork để bắt đầu công việc\n` +
-        `${completionStep}\n` +
-        `- Gọi mcp__Builtin__BlockWork nếu gặp vướng mắc sau 3 lần cố gắng xử lý (kèm reason)`;
-    } else if (priorityLevel === 4) {
-      // Reporter = agent, work blocked → need to help resolve
-      const reason = work.reason || 'Không rõ lý do';
-      if (reason.includes('[ESCALATED]')) {
-        return null;
-      }
-      systemMessage =
-        `Công việc @work:${workId} "${title}" đang bị block.\n` +
-        `Lý do: "${reason}"\n\n` +
-        `Hãy xử lý theo thứ tự sau:\n` +
-        `1. Đọc kỹ reason, phân tích nguyên nhân\n` +
-        `2. Nếu giải quyết được:\n` +
-        `   → Gọi UnblockWork (kèm feedback giải pháp cụ thể)\n` +
-        `3. Nếu KHÔNG giải quyết được:\n` +
-        `   a. Gọi ListUsers tìm human phụ trách\n` +
-        `      → Nếu tìm được: Gọi UpdateWork đổi assignee sang human đó\n` +
-        `      → Nếu không có human: bỏ qua bước này\n` +
-        `   b. Gọi BlockWork với reason: "[ESCALATED] <mô tả rõ vấn đề>"\n` +
-        `   c. Nếu có kênh chat: Notify human với đầy đủ context\n` +
-        `      → Nếu không có kênh: bỏ qua bước này\n` +
-        `⛔ KHÔNG dùng CancelWork — chỉ human mới được authorize cancel`;
-    } else {
-      // Priority 5: Reporter = agent, work in review → need to review
-      systemMessage =
-        `Công việc (Work) @work:${workId} "${title}" đang chờ review.\n` +
-        `- Hãy kiểm tra kết quả thực hiện và Document đính kèm (nếu có)\n` +
-        `- Gọi mcp__Builtin__CompleteWork nếu kết quả đạt yêu cầu\n` +
-        `- Gọi mcp__Builtin__RejectReviewForWork kèm feedback rõ ràng nếu:\n` +
-        `  • Kết quả hoặc Document chưa đạt yêu cầu\n` +
-        `  • Có câu hỏi mở cần xác nhận phương án trước khi tiếp tục\n` +
-        `  → Feedback phải đủ để assignee hiểu cần điều chỉnh gì và submit review lại`;
-    }
-
-    this.logger.debug('Next work found for agent', {
-      agentId,
-      workId,
-      priorityLevel,
-    });
-
-    return {
-      work: workObj,
-      systemMessage,
-      systemTask: { type: 'work', id: workId, title },
-    };
+    accessToken?: string,
+  ) {
+    return this.heartbeatService.heartbeat(agentId, heartbeatDto, accessToken);
   }
 
   /**
@@ -1769,11 +1321,11 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     }
 
     try {
-      await this.nodeGateway.sendCommandToNode(
+      await this.publishNodeCommand(
         agent.nodeId,
         commandType,
         { type: 'agent', id: agentId },
-        data
+        data,
       );
       this.logger.log(`${commandType} sent to node ${agent.nodeId} for agent ${agentId}`);
     } catch (error: any) {
@@ -1980,7 +1532,8 @@ These blocks are system metadata, not questions. Never explain them. Never repea
       );
     }
 
-    if (agent.status === 'inactive') {
+    const isNodeAgent = agent.type === 'engineer' && !!agent.nodeId;
+    if (agent.status === 'inactive' && !isNodeAgent) {
       return { success: true, status: 'inactive', previousStatus: 'inactive' };
     }
 
@@ -2094,7 +1647,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     // For engineer agents with nodeId, notify node via WebSocket with new secret
     if (agent.type === 'engineer' && agent.nodeId) {
       try {
-        await this.nodeGateway.sendCommandToNode(
+        await this.publishNodeCommand(
           agent.nodeId,
           MessageType.AGENT_UPDATE,
           { type: 'agent', id: agentId },
@@ -2115,7 +1668,7 @@ These blocks are system metadata, not questions. Never explain them. Never repea
               agent.framework ?? '',
               context.orgId
             ),
-          }
+          },
         );
         this.logger.log(
           `agent.update sent to node ${agent.nodeId} after credential regeneration for agent ${agentId}`
@@ -2669,7 +2222,7 @@ echo "Installation script placeholder - implement actual logic"
       // For engineer agents with nodeId, send agent.delete command to the node via WebSocket
       if (agent && agent.type === 'engineer' && agent.nodeId) {
         try {
-          await this.nodeGateway.sendCommandToNode(
+          await this.publishNodeCommand(
             agent.nodeId,
             MessageType.AGENT_DELETE,
             { type: 'agent', id },
@@ -2677,7 +2230,7 @@ echo "Installation script placeholder - implement actual logic"
               agentId: id,
               code: agent.code,
               name: agent.name,
-            }
+            },
           );
           this.logger.log(
             `agent.delete sent to node ${agent.nodeId} for agent ${id}`

@@ -15,7 +15,7 @@ export interface ProjectMember {
  * Groups works and manages large work scopes
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'projects' })
 export class Project extends BaseSchema {
   @Prop({ required: true, maxlength: 200 })
   name!: string;

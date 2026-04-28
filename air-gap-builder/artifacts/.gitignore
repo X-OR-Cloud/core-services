@@ -1,0 +1,5 @@
+# Generated artifacts — do not commit
+*
+!.gitignore
+!*/
+!*/.gitkeep

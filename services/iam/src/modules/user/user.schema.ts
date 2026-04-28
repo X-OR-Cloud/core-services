@@ -17,7 +17,7 @@ export interface UserMetadata {
 
 export type UserDocument = HydratedDocument<User>;
 
-@Schema()
+@Schema({ collection: 'users' })
 export class User extends BaseSchema {
   @Prop({ required: true, unique: true })
   username: string;

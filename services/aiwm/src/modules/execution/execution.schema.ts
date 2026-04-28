@@ -150,7 +150,7 @@ export const ExecutionStepSchema = SchemaFactory.createForClass(ExecutionStep);
  * Execution - Main entity for workflow orchestration
  * Tracks multi-step execution workflows using pure event-based approach
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'executions' })
 export class Execution extends BaseSchema {
   @Prop({ required: true })
   name!: string; // Human-readable execution name

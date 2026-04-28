@@ -10,7 +10,7 @@ export type AgentMemoryDocument = AgentMemory & Document;
  * AgentMemory - Persistent memory for AI agents, scoped by agentId
  * Stores factual, concise information across sessions
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_memories' })
 export class AgentMemory extends BaseSchema {
   @Prop({ required: true })
   agentId!: string;
@@ -22,7 +22,10 @@ export class AgentMemory extends BaseSchema {
   key!: string; // slug-style, e.g. "dung-report-style", unique within (agentId, category)
 
   @Prop({ required: true, maxlength: 2000 })
-  content!: string; // Short, factual text
+  content!: string;
+
+  @Prop({ maxlength: 200, default: '' })
+  summary!: string; // One-line description shown in agent startup context
 
   @Prop({ type: [String], default: [] })
   tags!: string[];

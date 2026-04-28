@@ -44,8 +44,9 @@ Thumbs.db
 .github/instructions/nx.instructions.md
 
 .env
-package-lock.json
 .env.*
+.license
+package-lock.json
 
 #logs
 logs
@@ -57,3 +58,4 @@ logs/*
 .files/*
 .sessions
 .sessions/*
+air-gap-builder/build.log

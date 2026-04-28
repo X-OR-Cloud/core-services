@@ -14,7 +14,7 @@ export interface PlatformLink {
  * Contact - Individual person entity (customer, partner contact, vendor rep)
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'contacts' })
 export class Contact extends BaseSchema {
   @Prop({ required: true, maxlength: 200 })
   name!: string;

@@ -9,7 +9,7 @@ export type DeploymentDocument = Deployment & Document;
  * Supports both API-based and self-hosted model deployments
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'deployments' })
 export class Deployment extends BaseSchema {
   // Core fields
   @Prop({ required: true, maxlength: 100 })

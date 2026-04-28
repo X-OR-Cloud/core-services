@@ -1,4 +1,5 @@
 const { NxAppWebpackPlugin } = require('@nx/webpack/app-plugin');
+const { DefinePlugin } = require('webpack');
 const { join } = require('path');
 
 module.exports = {
@@ -19,6 +20,9 @@ module.exports = {
       outputHashing: 'none',
       generatePackageJson: true,
       sourceMaps: true,
+    }),
+    new DefinePlugin({
+      __LICENSE_SECRET__: JSON.stringify(process.env.LICENSE_SECRET || ''),
     }),
   ],
 };

@@ -9,7 +9,7 @@ export type ToolDocument = Tool & Document;
  * Simple MVP version following AIWM.md specification
  * Uses MongoDB _id as the primary identifier
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'tools' })
 export class Tool extends BaseSchema {
   @Prop({ required: true, maxlength: 100 })
   name!: string; // e.g., "webSearch", "listAgents"

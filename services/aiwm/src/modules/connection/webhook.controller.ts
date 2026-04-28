@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { createHmac } from 'crypto';
 import Redis from 'ioredis';
 import { ConnectionService } from './connection.service';
-import { redisConfig } from '../../config/redis.config';
+import { buildRedisConfig } from '../../config/redis.config';
 import { verifyTeamsJwt } from './teams-jwt.verifier';
 
 const CHANNEL_INBOUND_TEAMS = (id: string) => `inbound:teams:${id}`;
@@ -23,7 +23,7 @@ export class WebhookController {
   private readonly redis: Redis;
 
   constructor(private readonly connectionService: ConnectionService) {
-    this.redis = new Redis(redisConfig);
+    this.redis = new Redis(buildRedisConfig());
   }
 
   @Get(':id/webhook')

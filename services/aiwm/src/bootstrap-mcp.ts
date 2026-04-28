@@ -64,7 +64,7 @@ export async function bootstrapMcpServer() {
   const redisHost = process.env.REDIS_HOST || '172.16.2.100';
   const redisPort = process.env.REDIS_PORT || '6379';
 
-  logger.log(`💾 MongoDB: ${mongoUri}`);
+  logger.log(`💾 MongoDB: ${mongoUri.replace(/:\/\/[^@]+@/, '://***@')}`);
   logger.log(`📊 Redis: ${redisHost}:${redisPort}`);
   logger.log(`✅ Step 1 completed - NestJS context running`);
 

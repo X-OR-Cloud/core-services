@@ -1,33 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { Execution, ExecutionStep } from './execution.schema';
 import { ExecutionService } from './execution.service';
-import { NodeGateway } from '../node/node.gateway';
 
-/**
- * ExecutionOrchestrator - Core workflow engine
- *
- * Responsibilities:
- * - Start and manage execution lifecycle
- * - Process steps based on dependencies
- * - Send commands to worker nodes via WebSocket
- * - Handle command acknowledgments and results
- * - Determine next steps and execution completion
- * - Pure event-based orchestration (no BullMQ)
- */
 @Injectable()
-export class ExecutionOrchestrator implements OnModuleInit {
+export class ExecutionOrchestrator {
   private readonly logger = new Logger(ExecutionOrchestrator.name);
 
-  constructor(
-    private readonly executionService: ExecutionService,
-    private readonly nodeGateway: NodeGateway
-  ) {}
-
-  onModuleInit() {
-    // Register this orchestrator with NodeGateway to handle command results
-    this.nodeGateway.setExecutionOrchestrator(this);
-    this.logger.log('ExecutionOrchestrator registered with NodeGateway');
-  }
+  constructor(private readonly executionService: ExecutionService) {}
 
   /**
    * Start an execution
@@ -144,31 +123,17 @@ export class ExecutionOrchestrator implements OnModuleInit {
         throw new Error(`No nodeId specified for step ${step.index}`);
       }
 
-      // Send command to worker node
+      // Node command dispatch not active in this phase — steps with commands are skipped
       if (step.command) {
-        const messageId = await this.nodeGateway.sendCommandToNode(
-          nodeId,
-          step.command.type,
-          step.command.resource,
-          step.command.data,
-          {
-            executionId: executionId,
-            stepIndex: step.index,
-            timeout: step.timeoutSeconds,
-          }
+        this.logger.warn(
+          `Step ${step.index} (${step.command.type}) skipped — node command dispatch not active`
         );
-
-        // Track sent message
-        await this.executionService.updateExecutionStep(
-          executionId,
-          step.index,
-          { sentMessageId: messageId }
-        );
-
-        this.logger.log(
-          `Command sent to node ${nodeId} for step ${step.index}: ` +
-          `messageId=${messageId}, type=${step.command.type}`
-        );
+        await this.executionService.updateExecutionStep(executionId, step.index, {
+          status: 'completed',
+          progress: 100,
+          result: { message: 'Skipped — node command dispatch not active' },
+        });
+        setImmediate(() => this.processReadySteps(executionId));
       } else {
         // No command to execute, mark as completed immediately
         await this.executionService.updateExecutionStep(
@@ -206,74 +171,6 @@ export class ExecutionOrchestrator implements OnModuleInit {
 
       // Check if execution should fail
       await this.checkAndFinalizeExecution(executionId);
-    }
-  }
-
-  /**
-   * Handle command acknowledgment from worker
-   * - Updates step with received message ID
-   */
-  async handleCommandAck(
-    id: string,
-    stepIndex: number,
-    messageId: string
-  ): Promise<void> {
-    this.logger.debug(
-      `Command acknowledged for execution ${id}, step ${stepIndex}: ${messageId}`
-    );
-
-    await this.executionService.updateExecutionStep(id, stepIndex, {
-      receivedMessageId: messageId,
-    });
-  }
-
-  /**
-   * Handle command result from worker
-   * - Updates step status and result
-   * - Processes next ready steps
-   */
-  async handleCommandResult(
-    id: string,
-    stepIndex: number,
-    result: {
-      success: boolean;
-      data?: any;
-      error?: { code: string; message: string; details?: any };
-      progress?: number;
-    }
-  ): Promise<void> {
-    this.logger.log(
-      `Command result received for execution ${id}, step ${stepIndex}: ` +
-      `success=${result.success}`
-    );
-
-    // Update step based on result
-    if (result.success) {
-      await this.executionService.updateExecutionStep(id, stepIndex, {
-        status: 'completed',
-        progress: 100,
-        result: result.data,
-      });
-
-      this.logger.log(`Step ${stepIndex} completed for execution ${id}`);
-
-      // Process next ready steps
-      setImmediate(() => this.processReadySteps(id));
-    } else {
-      await this.executionService.updateExecutionStep(id, stepIndex, {
-        status: 'failed',
-        error: result.error || {
-          code: 'UNKNOWN_ERROR',
-          message: 'Command failed with unknown error',
-        },
-      });
-
-      this.logger.error(
-        `Step ${stepIndex} failed for execution ${id}: ${result.error?.message}`
-      );
-
-      // Check if execution should fail
-      await this.checkAndFinalizeExecution(id);
     }
   }
 

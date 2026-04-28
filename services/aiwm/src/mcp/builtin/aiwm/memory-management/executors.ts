@@ -35,7 +35,7 @@ export async function executeSearchMemory(
  * Upsert a memory entry by (agentId, category, key)
  */
 export async function executeUpsertMemory(
-  args: { category: string; key: string; content: string; tags?: string[] },
+  args: { category: string; key: string; content: string; summary?: string; tags?: string[] },
   context: ExecutionContext
 ): Promise<ToolResponse> {
   const aiwmBaseUrl = context.aiwmBaseUrl || 'http://localhost:3003';
@@ -48,6 +48,7 @@ export async function executeUpsertMemory(
       category: args.category,
       key: args.key,
       content: args.content,
+      summary: args.summary,
       tags: args.tags,
     }),
   });

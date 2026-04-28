@@ -189,7 +189,6 @@ export class NodeService extends BaseService<Node> {
     ]);
 
     const bootstrapUrl = `${baseApiUrl}/nodes/auth/bootstrap`;
-    const wsUrl = `${baseWsUrl}/ws/node`;
 
     const setupToken = this.jwtService.sign(
       {
@@ -198,8 +197,8 @@ export class NodeService extends BaseService<Node> {
         nodeId,
         bootstrapUrl,
         apiBaseUrl: baseApiUrl,
-        wsBaseUrl: wsUrl,
-        wsPath: '/socket.io',
+        wsBaseUrl: baseWsUrl,
+        wsPath: '/node/socket.io',
         monaBaseUrl,
       },
       { expiresIn: SETUP_TOKEN_EXPIRES_IN }

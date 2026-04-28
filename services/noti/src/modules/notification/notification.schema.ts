@@ -80,7 +80,7 @@ export class NotificationRecipients {
  * - service.alert: title, message, severity
  * - agent.event: name, title, message, severity, data
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'notifications' })
 export class Notification extends BaseSchema {
   // Event type (required) - one of the 4 unified types
   @Prop({

@@ -9,7 +9,7 @@ export enum AppStatus {
   Inactive = 'inactive',
 }
 
-@Schema()
+@Schema({ collection: 'apps' })
 export class App extends BaseSchema {
   @Prop({ required: true })
   name: string;

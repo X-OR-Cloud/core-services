@@ -51,7 +51,7 @@ export interface ConnectionRoute {
   conversationMode?: ConversationMode;
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'connections' })
 export class Connection extends BaseSchema {
   @Prop({ required: true })
   name: string;

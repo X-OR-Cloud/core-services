@@ -12,7 +12,7 @@ export type ConfigScope = 'global' | 'org';
  *
  * Lookup priority: org-specific → global → hardcoded default
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'configurations' })
 export class Configuration extends BaseSchema {
   @Prop({
     required: true,
