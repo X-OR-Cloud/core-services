@@ -30,18 +30,18 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
   process.exit(1);
 }
 
-const customersPath = path.join(__dirname, 'customers.json');
-if (!fs.existsSync(customersPath)) {
-  console.error('customers.json not found. Copy from customers.example.json and fill in secrets.');
+const orgsPath = path.join(__dirname, 'orgs.json');
+if (!fs.existsSync(orgsPath)) {
+  console.error('orgs.json not found. Run: node licenses/add-org.js <slug> [name]');
   process.exit(1);
 }
 
-const customers = JSON.parse(fs.readFileSync(customersPath, 'utf-8'));
-const customer = customers[slug];
+const orgs = JSON.parse(fs.readFileSync(orgsPath, 'utf-8'));
+const customer = orgs[slug];
 
 if (!customer) {
-  console.error(`Customer "${slug}" not found.`);
-  console.error('Available:', Object.keys(customers).join(', '));
+  console.error(`Org "${slug}" not found.`);
+  console.error('Available:', Object.keys(orgs).join(', '));
   process.exit(1);
 }
 
@@ -56,7 +56,7 @@ fs.writeFileSync(outputFile, licenseContent);
 
 const line = '─'.repeat(52);
 console.log(`\n┌${line}┐`);
-console.log(`│  Customer : ${customer.name.padEnd(38)}│`);
+console.log(`│  Org      : ${customer.name.padEnd(38)}│`);
 console.log(`│  Slug     : ${slug.padEnd(38)}│`);
 console.log(`│  Expiry   : ${expiry.padEnd(38)}│`);
 console.log(`└${line}┘\n`);

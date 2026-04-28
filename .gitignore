@@ -59,3 +59,7 @@ logs/*
 .sessions
 .sessions/*
 air-gap-builder/build.log
+
+# License secrets — never commit
+licenses/orgs.json
+licenses/output/

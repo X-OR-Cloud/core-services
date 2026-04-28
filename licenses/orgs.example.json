@@ -4,11 +4,11 @@
     "secret": "replace-with-random-32-bytes-hex"
   },
   "mb-bank": {
-    "name": "A Bank",
+    "name": "MB Bank",
     "secret": "replace-with-random-32-bytes-hex"
   },
   "hdbank": {
-    "name": "B Corp",
+    "name": "HD Bank",
     "secret": "replace-with-random-32-bytes-hex"
   }
 }
