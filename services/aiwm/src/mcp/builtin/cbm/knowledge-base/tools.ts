@@ -28,7 +28,7 @@ export const KnowledgeBaseTools: ToolDefinition[] = [
     inputSchema: KbSearchSchema,
   },
   {
-    name: 'kb_list_collections',
+    name: 'ListKnowledgeCollections',
     description:
       'List available knowledge collections in the organization. Use this to discover which knowledge bases are available before searching.',
     type: 'builtin',
