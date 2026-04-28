@@ -46,10 +46,35 @@ export class ChatWsGateway
 
   afterInit(server: Server) {
     this.logger.log('Chat WebSocket Gateway (CWS) initialized');
-    // Backward-compat alias: old nginx was forwarding / to chat ws, so old clients connect namespace /ws/chat
+    // Backward-compat alias: old nginx forwarded / to chat ws, old clients connect to namespace /ws/chat.
+    // @SubscribeMessage decorators only bind to the primary namespace (/), so we manually register
+    // all message handlers on each socket connecting via the alias namespace.
     this._aliasNs = (server as any).server.of('/ws/chat') as Namespace;
-    this._aliasNs.on('connection', (socket: Socket) => this.handleConnection(socket));
+    this._aliasNs.on('connection', async (socket: Socket) => {
+      await this.handleConnection(socket);
+      this._registerAliasHandlers(socket);
+    });
     this.logger.log('Chat WebSocket Gateway alias registered: /ws/chat');
+  }
+
+  private _registerAliasHandlers(socket: Socket): void {
+    const wrap = (handler: (data: any, socket: Socket) => Promise<any>) =>
+      (data: any, callback: ((res: any) => void) | undefined) => {
+        handler(data, socket)
+          .then((res) => { if (typeof callback === 'function') callback(res); })
+          .catch((err: Error) => { if (typeof callback === 'function') callback({ success: false, error: err.message }); });
+      };
+
+    socket.on('agent:connect',        wrap((d, s) => this.handleAgentConnect(d, s)));
+    socket.on('conversation:join',    wrap((d, s) => this.handleJoinConversation(d, s)));
+    socket.on('conversation:leave',   wrap((d, s) => this.handleLeaveConversation(d, s)));
+    socket.on('message:send',         wrap((d, s) => this.handleSendMessage(d, s)));
+    socket.on('message:typing',       wrap((d, s) => this.handleTyping(d, s)));
+    socket.on('message:read',         wrap((d, s) => this.handleMessageRead(d, s)));
+    socket.on('conversation:history', wrap((d, s) => this.handleConversationHistory(d, s)));
+    socket.on('conversation:online',  wrap((d, s) => this.handleGetOnlineUsers(d, s)));
+    socket.on('agent:heartbeat',      wrap((d, s) => this.handleHeartbeat(d, s)));
+    socket.on('channel:send',         wrap((d, s) => this.handleChannelSend(d, s)));
   }
 
   private emitToRoom(room: string, event: string, data: unknown): void {
