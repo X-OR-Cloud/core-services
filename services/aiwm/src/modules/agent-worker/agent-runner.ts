@@ -660,6 +660,9 @@ export class AgentRunner {
                 type: 'tool_use',
                 role: 'assistant',
                 content: toolUseContent,
+                toolName: call.toolName,
+                toolInput: call.input,
+                toolUseId: call.toolCallId,
                 ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }
@@ -675,6 +678,9 @@ export class AgentRunner {
                 type: 'tool_result',
                 role: 'assistant',
                 content: toolResultContent,
+                toolName: res.toolName,
+                toolResult: res.output,
+                toolResultId: res.toolCallId,
                 ...(this.currentWorkId ? { workId: this.currentWorkId } : {}),
               });
             }

@@ -123,6 +123,11 @@ export class ChatWsGateway
           isTyping?: boolean;
           isFinal?: boolean;
           nonce?: string;
+          toolName?: string;
+          toolInput?: unknown;
+          toolUseId?: string;
+          toolResult?: unknown;
+          toolResultId?: string;
         };
 
         if (payload.type === 'typing') {
@@ -161,6 +166,13 @@ export class ChatWsGateway
         if ((payload as any).actionCreated && payload.taskId) {
           actionId = payload.taskId;
         } else {
+          const toolMetadata =
+            actionType === ActionType.TOOL_USE
+              ? { toolName: payload.toolName, toolInput: payload.toolInput, toolUseId: payload.toolUseId }
+              : actionType === ActionType.TOOL_RESULT
+                ? { toolName: payload.toolName, toolResult: payload.toolResult, toolResultId: payload.toolResultId }
+                : undefined;
+
           const savedAction = await this.actionService.createActionDirect(
             {
               conversationId,
@@ -169,6 +181,7 @@ export class ChatWsGateway
               content: payload.content || '',
               ...(payload.sources?.length ? { sources: payload.sources } : {}),
               ...(payload.workId ? { workId: payload.workId } : {}),
+              ...(toolMetadata ? { metadata: toolMetadata } : {}),
             } as any,
             { orgId: payload.orgId || '', agentId: payload.agentId, userId: '' },
           );
