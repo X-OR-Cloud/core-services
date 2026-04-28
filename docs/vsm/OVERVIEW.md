@@ -32,7 +32,7 @@ VSM là control plane cho hệ thống telephony dựa trên Asterisk PBX. Servi
 - **Phone Numbers** — đầu số DID gọi vào, caller ID gọi ra
 - **Routes** — luật định tuyến cuộc gọi vào/ra
 - **Dialplans** — cấu hình xử lý cuộc gọi trên Asterisk
-- **Call Logs** — CDR, ghi log đầy đủ mọi cuộc gọi
+- **Calls** — CDR, ghi log đầy đủ mọi cuộc gọi
 
 VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn bộ RTP/SRTP. VSM chỉ là control plane: lưu trữ cấu hình, cung cấp API, nhận event từ AMI bridge, và ghi log.
 
@@ -54,7 +54,7 @@ VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn b�
 │                        │  │  │  REST API  :3009            │  │
 │  AMI  :5038 ───────────┼──┼─▶│  nodes, accounts, trunks,   │  │
 │  WSS  :8089 ◀──────────┼──┼──│  phone-numbers, routes,     │  │
-│  RTP  :10000-20000/udp │  │  │  dialplans, call-logs       │  │
+│  RTP  :10000-20000/udp │  │  │  dialplans, calls           │  │
 │                        │  │  └─────────────────────────────┘  │
 │  /var/spool/asterisk/  │  │  ┌─────────────────────────────┐  │
 │  monitor/ ─── s3fs ───▶┼──┼─▶│  S3/MinIO Storage           │  │
@@ -64,7 +64,7 @@ VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn b�
              │              │  │  AMI Bridge Worker  (ami)   │  │
              │              │  │  nx run vsm:ami             │  │
              └──────────────┼──│  · AMI TCP client           │  │
-                            │  │  · event handler → call-logs│  │
+                            │  │  · event handler → calls    │  │
                             │  │  · command service          │  │
                             │  │    (originate, pjsip sync,  │  │
                             │  │     dialplan sync)          │  │
@@ -83,7 +83,7 @@ VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn b�
 | **Separation of concerns** | API service (control plane) tách biệt với AMI bridge (data plane) |
 | **Asterisk là media engine** | VSM không xử lý SIP/RTP — chỉ quản lý cấu hình và log |
 | **AMI làm giao tiếp chính** | Port duy nhất expose từ Asterisk là `:5038` (AMI) |
-| **Event-driven logging** | CDR và call events từ AMI → BullMQ → call-logs |
+| **Event-driven logging** | CDR và call events từ AMI → BullMQ → calls |
 | **RBAC đầy đủ** | `BaseService` + `owner.orgId` multi-tenancy cho tất cả module |
 | **Recording qua s3fs** | Asterisk ghi thẳng vào S3/MinIO mount — không cần transfer file |
 
@@ -99,7 +99,7 @@ VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn b�
 | **phone-numbers** | `/phone-numbers` | DID numbers gọi vào, caller ID gọi ra |
 | **routes** | `/routes` | Luật định tuyến inbound/outbound theo ưu tiên |
 | **dialplans** | `/dialplans` | Cấu hình dialplan Asterisk (context, extensions) |
-| **call-logs** | `/call-logs` | CDR log, thống kê cuộc gọi, signed recording URL |
+| **calls** | `/calls` | CDR log, thống kê cuộc gọi, signed recording URL |
 
 ### 3.1 Module Dependencies
 
@@ -114,7 +114,7 @@ routes
     ├── trunks      (to trunk)
     └── dialplans   (to dialplan)
 
-call-logs
+calls
     ├── nodes
     ├── accounts    (from/to)
     ├── trunks
@@ -149,11 +149,11 @@ Responsibilities:
 
 ```
 FE/API
-  │ POST /call-logs/originate
+  │ POST /calls/originate
   ▼
 VSM API
   │ validate route + trunk
-  │ tạo call-log (result=queued)
+  │ tạo call (result=queued)
   │ publish job → BullMQ vsm:ami:commands
   ▼
 AMI Bridge (worker)
@@ -166,7 +166,7 @@ CDR event → AMI Bridge
   │ POST /webhooks/ami { event: Cdr, payload: { recordingFile, ... } }
   ▼
 VSM API
-  └── cập nhật call-log: result, duration, answeredDuration, recordingFile (S3 key)
+  └── cập nhật call: result, duration, answeredDuration, recordingFile (S3 key)
 ```
 
 ### 5.2 Inbound Call
@@ -183,7 +183,7 @@ AMI Bridge
   ▼
 VSM API
   │ lookup phone-number + account
-  └── tạo/cập nhật call-log với recordingFile (S3 key)
+  └── tạo/cập nhật call với recordingFile (S3 key)
 ```
 
 ### 5.3 Config Sync
@@ -205,10 +205,10 @@ VSM API: syncStatus=synced, syncedAt=now()
 
 ```
 FE
-  │ GET /call-logs/:id/recording-url
+  │ GET /calls/:id/recording-url
   ▼
 VSM API
-  │ lấy recordingFile (S3 key) từ call-log
+  │ lấy recordingFile (S3 key) từ call
   │ generate signed URL (TTL 15 phút) từ S3/MinIO SDK
   └── { url: "https://storage.../file.wav?X-Amz-Expires=900&...", expiresAt }
 
@@ -232,10 +232,10 @@ AMI_SECRET=<secret>
 
 | AMI Event | Trigger | Xử lý |
 |-----------|---------|-------|
-| `Cdr` | Cuộc gọi kết thúc | Tạo call-log: result, duration, answeredDuration, recordingFile |
-| `DialBegin` | Bắt đầu dial | Cập nhật call-log state → `calling` |
-| `DialEnd` | Dial kết thúc | Cập nhật call-log state theo disposition |
-| `Hangup` | Máy cúp | Finalize call-log nếu CDR chưa về |
+| `Cdr` | Cuộc gọi kết thúc | Tạo call: result, duration, answeredDuration, recordingFile |
+| `DialBegin` | Bắt đầu dial | Cập nhật call state → `calling` |
+| `DialEnd` | Dial kết thúc | Cập nhật call state theo disposition |
+| `Hangup` | Máy cúp | Finalize call; đọc `Cause` code để phân biệt `busy` vs `terminated` |
 | `PeerStatus` | SIP peer register/unregister | Cập nhật `account.status` (online/offline) |
 | `DeviceStateChange` | Trạng thái thiết bị thay đổi | Cập nhật `account.state` (idle/ringing/in_call) |
 
@@ -278,18 +278,60 @@ Asterisk res_pjsip_transport_websocket
 DTLS-SRTP + ICE ↔ Browser (media)
 ```
 
+### Account Protocol
+
+| Value | Transport | PJSIP config |
+|-------|-----------|--------------|
+| `sip` | UDP/TCP | `direct_media=no`, no DTLS |
+| `webrtc` | WSS | `webrtc=yes`, `dtls_auto_generate_cert=yes`, ICE |
+
+### WSS Endpoint (field `node.wss`)
+
+| Field | Mô tả |
+|-------|-------|
+| `hostname` | Public hostname/IP để WebRTC client kết nối |
+| `port` | WSS port, mặc định `8089` |
+| `path` | WebSocket path, mặc định `/ws` |
+
+WebRTC client connect: `wss://<wss.hostname>:<wss.port><wss.path>`
+
 ### PJSIP endpoint config được generate bởi AMI Bridge
 
-`accountId` dùng luôn MongoDB ObjectId. Comment header giúp admin đọc config mà không cần tra DB.
+`accountId` dùng luôn MongoDB ObjectId. Comment header giúp admin đọc config.
 
+**SIP account (`protocol=sip`):**
+```ini
+; orgId=64org001... | ext=8898 | displayName=Nguyễn Văn A
+[64b110001bdbfc44ef96aa01]
+type=endpoint
+context=from-internal
+aors=64b110001bdbfc44ef96aa01
+auth=64b110001bdbfc44ef96aa01
+allow=ulaw,alaw
+direct_media=no
+
+[64b110001bdbfc44ef96aa01]
+type=aor
+max_contacts=5
+remove_existing=yes
+
+[64b110001bdbfc44ef96aa01]
+type=auth
+auth_type=userpass
+username=64b110001bdbfc44ef96aa01
+password=<password>
+```
+
+**WebRTC account (`protocol=webrtc`):**
 ```ini
 ; orgId=64org001... | ext=8898 | displayName=Nguyễn Văn A
 [64b110001bdbfc44ef96aa01]
 type=endpoint
 webrtc=yes
+context=from-internal
 aors=64b110001bdbfc44ef96aa01
 auth=64b110001bdbfc44ef96aa01
-allow=opus,ulaw,alaw
+allow=opus,ulaw
 dtls_auto_generate_cert=yes
 
 [64b110001bdbfc44ef96aa01]
@@ -301,16 +343,8 @@ remove_existing=yes
 type=auth
 auth_type=userpass
 username=64b110001bdbfc44ef96aa01
-password={password}
+password=<password>
 ```
-
-### Account — protocol field
-
-| Value | Mô tả |
-|-------|-------|
-| `sip` | SIP over UDP/TCP — softphone truyền thống |
-| `webrtc` | SIP over WSS + DTLS-SRTP — browser/mobile WebRTC |
-| `both` | Hỗ trợ cả hai transport |
 
 ---
 
@@ -327,7 +361,7 @@ Asterisk server
         │ FUSE (s3fs)
         ▼
   S3/MinIO bucket: vsm-recordings/
-        recordings/2026/04/19/<callLogId>.wav
+        recordings/2026/04/19/<callId>.wav
 ```
 
 ### Setup s3fs trên Asterisk server
@@ -355,7 +389,7 @@ s3fs#vsm-recordings /var/spool/asterisk/monitor fuse \
 
 ### Asterisk MixMonitor dialplan
 
-Asterisk ghi âm bằng application `MixMonitor`. Tên file dùng `callLogId` (được pass qua channel variable từ VSM khi originate):
+Asterisk ghi âm bằng application `MixMonitor`. Tên file dùng `callId` (được pass qua channel variable từ VSM khi originate):
 
 ```ini
 ; extensions.conf
@@ -370,15 +404,15 @@ exten => s,n,MixMonitor(recordings/%Y/%m/%d/${VSM_CALL_ID}.wav,b)
 Khi cuộc gọi kết thúc, Asterisk CDR event có field:
 
 ```
-RecordingFile: /var/spool/asterisk/monitor/recordings/2026/04/19/<callLogId>.wav
+RecordingFile: /var/spool/asterisk/monitor/recordings/2026/04/19/<callId>.wav
 ```
 
-AMI Bridge strip prefix `/var/spool/asterisk/monitor/` → lấy S3 key `recordings/2026/04/19/<callLogId>.wav` → gửi về VSM API lưu vào `call-log.recordingFile`.
+AMI Bridge strip prefix `/var/spool/asterisk/monitor/` → lấy S3 key `recordings/2026/04/19/<callId>.wav` → gửi về VSM API lưu vào `call.recordingFile`.
 
 ### Recording URL cho FE
 
 ```
-GET /call-logs/:id/recording-url
+GET /calls/:id/recording-url
 → {
     url: "https://minio.example.com/vsm-recordings/recordings/2026/04/19/<id>.wav?X-Amz-Expires=900&...",
     expiresAt: "2026-04-19T08:15:00.000Z"
@@ -394,8 +428,8 @@ VSM API generate **presigned URL** (TTL 15 phút) từ S3/MinIO SDK. FE stream a
 | Environment | Port | Mục đích |
 |-------------|------|---------|
 | Dev | `3009` | REST API |
-| Prod API | `3390–3393` | 4 API instances (load balanced) |
-| Prod special | `3394–3399` | Reserved (WebSocket events, future) |
+| Prod API | `3390–3391` | 2 API instances (load balanced) |
+| Prod special | `3392–3399` | Reserved (future) |
 
 ---
 

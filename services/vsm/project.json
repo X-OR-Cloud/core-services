@@ -1,0 +1,59 @@
+{
+  "name": "vsm",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "services/vsm/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx webpack-cli build",
+        "args": ["--node-env=production"],
+        "cwd": "services/vsm"
+      },
+      "configurations": {
+        "development": {
+          "args": ["--node-env=development"]
+        }
+      }
+    },
+    "api": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "vsm:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "vsm:build:development"
+        },
+        "production": {
+          "buildTarget": "vsm:build:production"
+        }
+      }
+    },
+    "ami": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "vsm:build",
+        "runBuildTargetDependencies": false,
+        "args": ["ami"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "vsm:build:development"
+        },
+        "production": {
+          "buildTarget": "vsm:build:production"
+        }
+      }
+    }
+  },
+  "tags": []
+}

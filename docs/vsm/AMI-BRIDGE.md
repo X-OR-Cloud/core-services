@@ -27,7 +27,7 @@ AMI Bridge là worker mode của VSM service, chạy như một tiến trình đ
 
 | Chiều | Hành động |
 |-------|-----------|
-| Asterisk → VSM | Nhận AMI events, forward về VSM API để ghi call-log, cập nhật trạng thái account |
+| Asterisk → VSM | Nhận AMI events, forward về VSM API để ghi call record, cập nhật trạng thái account |
 | VSM → Asterisk | Thực thi AMI actions: originate, sync PJSIP config, reload dialplan |
 
 **Nguyên tắc:** AMI bridge là **thin layer** — không có business logic, không ghi DB trực tiếp. Toàn bộ logic xử lý nằm trong VSM API.
@@ -161,22 +161,29 @@ payload.s3Key = extractS3Key(payload.RecordingFile);
 
 | AMI Event | VSM xử lý |
 |-----------|----------|
-| `Cdr` | Parse Disposition → result; tính duration, answeredDuration; lưu `recordingFile = s3Key`; tạo call-log |
+| `Cdr` | Parse Disposition + Cause → result; tính duration, answeredDuration; lưu `recordingFile = s3Key`; tạo call |
 | `PeerStatus` | Extract accountId từ `PJSIP/<accountId>-<hex>`; update `account.status` |
 | `DeviceStateChange` | Map state → `idle`/`ringing`/`in_call`; update `account.state` |
-| `DialBegin` | Update call-log state nếu có matching UniqueID |
-| `DialEnd` | Update call-log state theo DialStatus |
-| `Hangup` | Finalize call-log nếu CDR chưa về |
+| `DialBegin` | Update call state nếu có matching UniqueID |
+| `DialEnd` | Update call state theo DialStatus |
+| `Hangup` | Finalize call nếu CDR chưa về; đọc `Cause` để phân biệt `busy` vs `terminated` |
 
-### 4.5 CDR Disposition Mapping (tại VSM API)
+### 4.5 CDR Disposition + Hangup Cause Mapping (tại VSM API)
 
-| Asterisk Disposition | VSM Result |
-|---------------------|-----------|
-| `ANSWERED` | `answered` |
-| `NO ANSWER` | `no_answer` |
-| `BUSY` | `busy` |
-| `FAILED` | `failed` |
-| `CONGESTION` | `failed` |
+Asterisk CDR Disposition là nguồn chính. `Hangup` event `Cause` code dùng để phân biệt `busy` vs `terminated` trong trường hợp `BUSY` disposition.
+
+> **Lưu ý thực tế:** Hangup Cause code không luôn chính xác tùy cấu hình carrier/Asterisk. Enum đầy đủ để sẵn sàng nhưng fallback về `busy` nếu không có cause code rõ ràng.
+
+| Asterisk Disposition | Hangup Cause | VSM Result |
+|---------------------|--------------|-----------|
+| `ANSWERED` | — | `answered` |
+| `NO ANSWER` | — | `not-answered` |
+| `BUSY` | 17 (User Busy) | `busy` |
+| `BUSY` | 21 (Call Rejected) / 603 (Decline) | `terminated` |
+| `BUSY` | khác / không có | `busy` (fallback) |
+| `FAILED` | — | `failed` |
+| `CONGESTION` | — | `failed` |
+| — | 16 (caller cancel trước khi nhấc) | `canceled` |
 
 ### 4.6 AccountId Extraction từ Channel Name (tại VSM API)
 
@@ -235,7 +242,7 @@ ami.action({
   displayName: string,
   orgId: string,
   password: string,
-  protocol: 'sip' | 'webrtc' | 'both',
+  protocol: 'sip' | 'webrtc',
   codecs: string[],
   maxContacts: number,
   action: 'create' | 'update' | 'delete',
@@ -326,7 +333,7 @@ VSM API: syncStatus=synced, syncedAt=now()
 
 ### 6.2 PJSIP Config Generated
 
-**SIP account (`protocol=sip`):**
+**SIP account (`protocol: 'sip'`):**
 ```ini
 ; orgId=64org001... | ext=8898 | displayName=Nguyễn Văn A
 [64b110001bdbfc44ef96aa01]
@@ -349,7 +356,7 @@ username=64b110001bdbfc44ef96aa01
 password=<password>
 ```
 
-**WebRTC account (`protocol=webrtc`):**
+**WebRTC account (`protocol: 'webrtc'`):**
 ```ini
 ; orgId=64org001... | ext=8898 | displayName=Nguyễn Văn A
 [64b110001bdbfc44ef96aa01]
@@ -394,40 +401,38 @@ Asterisk server
 ### 7.2 PM2 Config
 
 ```javascript
-// ecosystem.config.js
+// ecosystem.config.js — staging (1 node, cùng VM)
 {
-  name: 'vsm-ami-hn01',
-  script: 'dist/services/vsm/main.js',
-  args: '--mode=ami',
+  name: 'biz.vsm.ami00',
+  script: './dist/services/vsm/main.js',
+  exec_mode: 'fork',
   env: {
-    NODE_ID: '64a920341bdbfc44ef96cc3c',
-    AMI_HOST: '127.0.0.1',    // localhost vì cùng server
+    NODE_ENV: 'production',
+    MODE: 'ami',
+    SERVICE_NAME: 'vsm',
+    AMI_HOST: '127.0.0.1',   // localhost vì Asterisk cùng server
     AMI_PORT: '5038',
-    AMI_USERNAME: 'vsm-bridge',
-    AMI_SECRET: '<secret>',
-    AMI_RECORDING_PREFIX: '/var/spool/asterisk/monitor/',
-    VSM_API_URL: 'http://vsm-api-host:3009',
-    AMI_BRIDGE_TOKEN: '<service-token>',
-    REDIS_URL: 'redis://redis-host:6379',
-  }
+    // NODE_ID, AMI_USERNAME, AMI_SECRET, VSM_API_URL, AMI_BRIDGE_TOKEN
+    // loaded từ .env sau khi node được provision qua POST /nodes
+  },
+  env_file: '.env',
+  wait_ready: false,          // worker không listen HTTP port
+  kill_timeout: 10000,
 }
 ```
 
-### 7.3 Multiple Nodes
+### 7.3 Multiple Nodes (future)
 
-```javascript
-[
-  {
-    name: 'vsm-ami-hn01',
-    env: { NODE_ID: 'xxx', AMI_HOST: '127.0.0.1' }
-    // chạy trên server HN
-  },
-  {
-    name: 'vsm-ami-hcm01',
-    env: { NODE_ID: 'yyy', AMI_HOST: '127.0.0.1' }
-    // chạy trên server HCM
-  },
-]
+Khi mở rộng sang nhiều Asterisk server, mỗi node cần một AMI bridge process riêng với `NODE_ID` tương ứng trong `.env` của server đó:
+
+```
+Server HN (10.0.1.10)
+  ├── asterisk process
+  └── biz.vsm.ami00  (NODE_ID=<hn-node-id>)
+
+Server HCM (10.0.2.10)
+  ├── asterisk process
+  └── biz.vsm.ami00  (NODE_ID=<hcm-node-id>)
 ```
 
 ---
