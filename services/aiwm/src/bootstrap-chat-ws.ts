@@ -21,7 +21,7 @@ export async function bootstrapChatWsServer() {
     }),
   );
 
-  const port = process.env.PORT_CWS || process.env.PORT || 3402;
+  const port = process.env.PORT_CWS || process.env.PORT || 3407;
   await app.listen(port);
 
   Logger.log(`🚀 AIWM Chat WS Server is running on: http://localhost:${port}`);

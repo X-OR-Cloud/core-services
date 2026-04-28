@@ -21,7 +21,7 @@ export async function bootstrapNodeWsServer() {
     }),
   );
 
-  const port = process.env.PORT_NWS || process.env.PORT || 3401;
+  const port = process.env.PORT_NWS || process.env.PORT || 3403;
   await app.listen(port);
 
   Logger.log(`🚀 AIWM Node WS Server is running on: http://localhost:${port}`);

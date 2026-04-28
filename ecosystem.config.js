@@ -536,7 +536,6 @@ module.exports = {
       listen_timeout: 10000,
     },
     // ========== AIWM WS Instances (3400-3409 — dedicated WS process range) ==========
-    // aws = engineer agent WebSocket (/ws/agent)
     // aws = Agent WebSocket (/, port 3400-3402)
     // nws = Node WebSocket  (/, port 3403-3406)
     // cws = Chat WebSocket  (/, port 3407-3409)
