@@ -9,7 +9,7 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Server, Socket } from 'socket.io';
 import { Logger, OnModuleInit, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -33,6 +33,7 @@ export class ChatWsGateway
   private readonly logger = new Logger(ChatWsGateway.name);
   private redisSub: Redis | null = null;
   private redisPub: Redis | null = null;
+  private _aliasNs: Namespace | null = null;
 
   constructor(
     private readonly chatService: ChatService,
@@ -43,8 +44,22 @@ export class ChatWsGateway
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
   ) {}
 
-  afterInit(_server: Server) {
+  afterInit(server: Server) {
     this.logger.log('Chat WebSocket Gateway (CWS) initialized');
+    // Backward-compat alias: old nginx was forwarding / to chat ws, so old clients connect namespace /ws/chat
+    this._aliasNs = (server as any).server.of('/ws/chat') as Namespace;
+    this._aliasNs.on('connection', (socket: Socket) => this.handleConnection(socket));
+    this.logger.log('Chat WebSocket Gateway alias registered: /ws/chat');
+  }
+
+  private emitToRoom(room: string, event: string, data: unknown): void {
+    this.server.to(room).emit(event, data);
+    this._aliasNs?.to(room).emit(event, data);
+  }
+
+  private socketsJoinRoom(socketIds: string[], room: string): void {
+    this.server.in(socketIds).socketsJoin(room);
+    this._aliasNs?.in(socketIds).socketsJoin(room);
   }
 
   async onModuleInit() {
@@ -81,7 +96,7 @@ export class ChatWsGateway
 
         if (payload.type === 'typing') {
           this.logger.debug(`[typing] conv=${conversationId} isTyping=${payload.isTyping} agentId=${payload.agentId}`);
-          this.server.to(`conversation:${conversationId}`).emit('agent:typing', {
+          this.emitToRoom(`conversation:${conversationId}`, 'agent:typing', {
             agentId: payload.agentId,
             conversationId,
             isTyping: payload.isTyping ?? false,
@@ -130,7 +145,7 @@ export class ChatWsGateway
         }
         const dbSaveMs = Date.now() - t0;
 
-        this.server.to(`conversation:${conversationId}`).emit('message:new', {
+        this.emitToRoom(`conversation:${conversationId}`, 'message:new', {
           _id: actionId,
           conversationId,
           role: 'assistant',
@@ -173,7 +188,7 @@ export class ChatWsGateway
           if (!this.server) return;
           const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
           if (agentSocketIds.length > 0) {
-            this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+            this.socketsJoinRoom(agentSocketIds, `conversation:${conversationId}`);
             this.logger.debug(
               `[Redis] agent:join-room agentId=${agentId} conversationId=${conversationId} sockets=${agentSocketIds.length}`,
             );
@@ -220,7 +235,7 @@ export class ChatWsGateway
             } catch (noticeErr: any) {
               this.logger.warn(`Failed to persist sleep notice (redis path): ${noticeErr.message}`);
             }
-            this.server.to(`conversation:${conversationId}`).emit('message:new', {
+            this.emitToRoom(`conversation:${conversationId}`, 'message:new', {
               _id: `sleep-notice-${actionId}`,
               conversationId,
               role: 'assistant',
@@ -255,7 +270,7 @@ export class ChatWsGateway
             channelId, connectionId, platform,
             ...(skipAgent ? { skipAgent: true } : {}),
           };
-          this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+          this.emitToRoom(`conversation:${conversationId}`, 'message:new', broadcastPayload);
 
           if (!skipAgent && agentId) {
             if ((agentDoc as any)?.type === 'assistant') {
@@ -273,7 +288,7 @@ export class ChatWsGateway
             } else {
               const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
               if (agentSocketIds.length > 0) {
-                this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+                this.socketsJoinRoom(agentSocketIds, `conversation:${conversationId}`);
               }
             }
           }
@@ -383,7 +398,7 @@ export class ChatWsGateway
         client.join(`conversation:${convId}`);
         await this.chatService.updateSocketConversation(client.id, convId);
         await this.chatService.addSocketToConversation(convId, client.id);
-        this.server.to(`conversation:${convId}`).emit('presence:update', {
+        this.emitToRoom(`conversation:${convId}`, 'presence:update', {
           type: 'agent',
           agentId,
           status: 'online',
@@ -510,7 +525,7 @@ export class ChatWsGateway
 
     const agentSocketIds = await this.chatService.getAgentSocketIds(agentId);
     if (agentSocketIds.length > 0) {
-      this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
+      this.socketsJoinRoom(agentSocketIds, `conversation:${conversationId}`);
       this.logger.debug(
         `[WS-JOIN] Agent socketsJoin | agentId=${agentId} | conversationId=${conversationId} | sockets=${agentSocketIds.length}`,
       );
@@ -543,7 +558,7 @@ export class ChatWsGateway
         `[WS-DISCONNECT] Agent disconnected | socketId=${client.id} | agentId=${client.data.agentId}`,
       );
       if (conversationId) {
-        this.server.to(`conversation:${conversationId}`).emit('presence:update', {
+        this.emitToRoom(`conversation:${conversationId}`, 'presence:update', {
           type: 'agent',
           agentId: client.data.agentId,
           status: 'offline',
@@ -557,7 +572,7 @@ export class ChatWsGateway
         `[WS-DISCONNECT] ${client.data.type} disconnected | socketId=${client.id} | userId=${client.data.userId}`,
       );
       if (conversationId) {
-        this.server.to(`conversation:${conversationId}`).emit('presence:update', {
+        this.emitToRoom(`conversation:${conversationId}`, 'presence:update', {
           type: client.data.type,
           userId: client.data.userId,
           status: 'offline',
@@ -825,7 +840,7 @@ export class ChatWsGateway
         } catch (noticeErr: any) {
           this.logger.warn(`Failed to persist sleep notice: ${noticeErr.message}`);
         }
-        this.server.to(`conversation:${conversationId}`).emit('message:new', {
+        this.emitToRoom(`conversation:${conversationId}`, 'message:new', {
           _id: `sleep-notice-${actionId}`,
           conversationId,
           role: 'assistant',
@@ -857,9 +872,9 @@ export class ChatWsGateway
         this.redisPub.lpush(`chat:notify:${agentId}`, conversationId)
           .catch((err: Error) => this.logger.error(`Failed to push notify to chat:notify:${agentId}: ${err.message}`));
         this.logger.debug(`[timing] ws→queue taskId=${actionId} elapsed=${Date.now() - queuedAt}ms`);
-        this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+        this.emitToRoom(`conversation:${conversationId}`, 'message:new', broadcastPayload);
       } else {
-        this.server.to(`conversation:${conversationId}`).emit('message:new', broadcastPayload);
+        this.emitToRoom(`conversation:${conversationId}`, 'message:new', broadcastPayload);
 
         if (dto.role === 'assistant' && this.redisPub) {
           const outboundLockKey = `lock:outbound:${actionId}`;
