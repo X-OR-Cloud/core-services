@@ -135,6 +135,9 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
   ],
   KnowledgeManagement: [
     'mcp__Builtin__KnowledgeSearch',
+    'mcp__Builtin__kb_list_collections',
+    'mcp__Builtin__ListKnowledgeFiles',
+    'mcp__Builtin__UploadKnowledgeFile',
   ],
   BrowserAutomation: [
     'mcp__Browser__OpenTab',
