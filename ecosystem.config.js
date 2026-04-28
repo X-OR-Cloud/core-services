@@ -948,27 +948,27 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
-      name: 'core.mona.worker00',
+      name: 'core.mona.agg00',
       script: './dist/services/mona/main.js',
       instances: 1,
-      exec_mode: 'fork',  // fork mode for workers
+      exec_mode: 'fork',
       watch: false,
       max_memory_restart: '500M',
 
       // Environment variables from .env file
       env: {
         NODE_ENV: 'production',
-        MODE: 'worker',
+        MODE: 'agg',
         SERVICE_NAME: 'mona',
-        WORKER_CONCURRENCY: '3',  // Process 3 aggregation jobs concurrently
+        WORKER_CONCURRENCY: '3',
       },
 
       // Load .env file
       env_file: '.env',
 
       // Logging
-      error_file: './logs/mona-worker-00-error.log',
-      out_file: './logs/mona-worker-00-out.log',
+      error_file: './logs/mona-agg-00-error.log',
+      out_file: './logs/mona-agg-00-out.log',
       //log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
 
@@ -978,8 +978,8 @@ module.exports = {
       min_uptime: '10s',
 
       // Advanced settings
-      kill_timeout: 10000,  // Longer timeout for graceful job completion
-      wait_ready: false,  // Workers don't listen on ports
+      kill_timeout: 10000,
+      wait_ready: false,
       listen_timeout: 10000,
     },
     // ========== SCHD (Scheduler Service) ==========

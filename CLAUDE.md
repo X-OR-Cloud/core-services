@@ -123,6 +123,9 @@ This repo uses a **single monorepo-wide version** in the root `package.json`.
 ./node_modules/.bin/nx run aiwm:nws        # Node WS gateway (port 3403) — new
 ./node_modules/.bin/nx run aiwm:cws        # Chat WS gateway (port 3407) — new
 
+# MONA-specific modes
+./node_modules/.bin/nx run mona:agg        # Aggregation worker (BullMQ, no HTTP)
+
 # DGT-specific modes
 ./node_modules/.bin/nx run dgt:shd         # Scheduler
 ./node_modules/.bin/nx run dgt:ing         # Data ingestion

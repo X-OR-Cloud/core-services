@@ -59,6 +59,25 @@
           "buildTarget": "mona:build:production"
         }
       }
+    },
+    "agg": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "mona:build",
+        "runBuildTargetDependencies": false,
+        "args": ["agg"]
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "mona:build:development"
+        },
+        "production": {
+          "buildTarget": "mona:build:production"
+        }
+      }
     }
   },
   "tags": []

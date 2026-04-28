@@ -1,37 +1,34 @@
-/**
- * Template Service - Microservices Pattern Example
- * Demonstrates CRUD, Event-Driven Architecture with BullMQ, and Report Generation
- */
-
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter, customQueryParser } from '@hydrabyte/base';
 import { AppModule } from './app/app.module';
 
+const MODE = process.env['MODE'] || process.argv[2] || 'api';
+
 async function bootstrap() {
+  if (MODE === 'agg') {
+    const { bootstrapAggWorker } = await import('./bootstrap-agg');
+    await bootstrapAggWorker();
+  } else {
+    await bootstrapApi();
+  }
+}
+
+async function bootstrapApi() {
   const app = await NestFactory.create(AppModule);
 
-  // Configure Express to use custom query parser
-  // Supports: filter[search]=123, filter.search=123, filter[metadata.discordUserId]=123
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('query parser', customQueryParser);
 
-  // Global prefix
-  //const globalPrefix = 'api';
-  //app.setGlobalPrefix(globalPrefix);
-
-  // Global exception filter for standardized error responses
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  // Validation pipe
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
   }));
 
-  // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('Mona Service API')
     .setDescription('Microservices Mona - Category, Product CRUD with Event-Driven Report Generation')
@@ -57,4 +54,7 @@ async function bootstrap() {
   Logger.log(`💾 MongoDB: ${process.env['MONGODB_URI']}`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  Logger.error('Failed to start MONA service', error);
+  process.exit(1);
+});
