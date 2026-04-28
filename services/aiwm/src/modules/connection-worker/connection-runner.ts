@@ -153,9 +153,10 @@ export class ConnectionRunner {
         return;
       }
 
-      // Dedup: skip if this platform message ID was already processed (e.g. Discord emits messageCreate twice on reconnect)
+      // Dedup: skip if this platform message ID was already processed by this connection (e.g. Discord emits messageCreate twice on reconnect)
       if (msg.externalMessageId) {
-        const dedupKey = `dedup:inbound:${this.connection.provider}:${msg.serverId ?? msg.channelId}:${msg.externalMessageId}`;
+        const connectionId = String((this.connection as any)._id);
+        const dedupKey = `dedup:inbound:${connectionId}:${msg.externalMessageId}`;
         const acquired = await this.redisPub.set(dedupKey, '1', 'EX', 86400, 'NX');
         if (acquired !== 'OK') {
           this.logger.warn(`Duplicate inbound message skipped: ${dedupKey}`);
