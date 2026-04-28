@@ -146,12 +146,23 @@ npx javascript-obfuscator dist/services/<service>/main.js \
   --string-array true --string-array-encoding rc4 \
   --rename-globals false --self-defending false
 
-# 4. Docker build & export
-docker build -f services/<service>/Dockerfile -t xai/<service>:latest .
-docker save xai/<service>:latest | gzip > air-gap-builder/artifacts/images/services/<service>.tar.gz
+# 4. Pre-install node_modules vào dist/ (Dockerfile không có npm ci bên trong)
+# ⚠️ NODE_ENV=development bắt buộc — tránh skip devDependencies (class-validator, bcrypt...)
+# ⚠️ Dùng npm install (không npm ci) — lockfile có thể thiếu packages mới
+REPO=$(pwd)
+cp $REPO/package.json $REPO/package-lock.json $REPO/dist/services/<service>/
+[ -f "$REPO/.npmrc" ] && cp $REPO/.npmrc $REPO/dist/services/<service>/
+(cd $REPO/dist/services/<service> && NODE_ENV=development npm install --ignore-scripts)
+
+# 5. Docker build & export — dùng absolute path (CWD có thể lệch sau bước pre-install)
+docker build -f $REPO/services/<service>/Dockerfile -t xai/<service>:latest $REPO
+docker save xai/<service>:latest | gzip > $REPO/air-gap-builder/artifacts/images/services/<service>.tar.gz
 ```
 
-**Lưu ý:** `licenses/customers.json` và `licenses/output/` đều gitignored — không bao giờ commit secrets. File `.license` ship riêng lên server khách (K8s Secret/ConfigMap mount).
+**Lưu ý:**
+- `licenses/customers.json` và `licenses/output/` đều gitignored — không bao giờ commit secrets
+- File `.license` ship riêng lên server khách — mount tại `/app/.license` (K8s Secret hoặc `-v /path/.license:/app/.license:ro`)
+- `NODE_ENV=production` trong môi trường build sẽ khiến npm skip devDeps → container fail khi start
 
 ### Response Guidelines
 
