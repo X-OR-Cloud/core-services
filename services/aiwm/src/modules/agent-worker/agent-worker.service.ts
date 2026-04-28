@@ -462,8 +462,6 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleInstructionUpdated(raw: string) {
-    if (!this.runners.size) return;
-
     let event: InstructionUpdatedEvent;
     try {
       event = JSON.parse(raw);
@@ -473,28 +471,48 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     if (!event?.instructionId) return;
 
-    const ownedAgentIds = [...this.runners.keys()];
-    const agents = await this.agentModel
-      .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
+    // Reload in-process assistant runners owned by this worker
+    if (this.runners.size) {
+      const ownedAgentIds = [...this.runners.keys()];
+      const agents = await this.agentModel
+        .find({ _id: { $in: ownedAgentIds }, instructionId: event.instructionId, isDeleted: { $ne: true } })
+        .select('_id')
+        .lean()
+        .catch(() => []);
+
+      for (const agent of agents) {
+        const agentId = (agent._id as { toString(): string }).toString();
+        const runner = this.runners.get(agentId);
+        if (!runner) continue;
+        this.logger.log(`[instruction-updated] reloading assistant agent ${agentId} (instructionId=${event.instructionId})`);
+        await this.agentService.addLog(agentId, {
+          level: 'info',
+          message: 'Runner reload triggered — instruction updated',
+          data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
+        });
+        runner.triggerReload('event').catch((err: Error) =>
+          this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
+        );
+      }
+    }
+
+    // Notify external engineer agents via outbound:command → AgentGateway → WebSocket agent:command
+    const engineerAgents = await this.agentModel
+      .find({ instructionId: event.instructionId, type: 'engineer', status: { $ne: 'inactive' }, isDeleted: { $ne: true } })
       .select('_id')
       .lean()
       .catch(() => []);
 
-    if (!agents.length) return;
-
-    for (const agent of agents) {
+    for (const agent of engineerAgents) {
       const agentId = (agent._id as { toString(): string }).toString();
-      const runner = this.runners.get(agentId);
-      if (!runner) continue;
-      this.logger.log(`[instruction-updated] reloading agent ${agentId} (instructionId=${event.instructionId})`);
+      this.logger.log(`[instruction-updated] sending reload to engineer agent ${agentId} (instructionId=${event.instructionId})`);
       await this.agentService.addLog(agentId, {
         level: 'info',
-        message: 'Runner reload triggered — instruction updated',
+        message: 'Reload command sent — instruction updated',
         data: { instructionId: event.instructionId, updatedAt: event.updatedAt },
       });
-      runner.triggerReload('event').catch((err: Error) =>
-        this.logger.error(`triggerReload error for ${agentId}: ${err.message}`, err.stack),
-      );
+      this.redisPub?.publish('outbound:command', JSON.stringify({ agentId, command: 'reload', reason: 'instruction-updated' }))
+        .catch((err: Error) => this.logger.error(`Failed to publish outbound:command for ${agentId}: ${err.message}`));
     }
   }
 }

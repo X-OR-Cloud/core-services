@@ -82,6 +82,21 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Mark todos as completed immediately after finishing each micro-task
 - Keep responses concise, focused on one task at a time
 
+### Versioning Policy
+
+This repo uses a **single monorepo-wide version** in the root `package.json`.
+
+**Bump version automatically before every commit/push**, based on the scope of changes:
+
+| Change type | Bump |
+|---|---|
+| Bug fix, small tweak, config, docs | `patch` (0.0.x) |
+| New feature, new endpoint, new module | `minor` (0.x.0) |
+| Breaking change, major architecture shift | `major` (x.0.0) |
+
+**Trigger:** Any time the user says "commit" or "push".
+**Skip trigger:** If the user says "commit nhanh", "commit tạm", or explicitly says no version bump.
+
 ### Response Guidelines
 
 - Keep responses short and focused on the specific question or task
