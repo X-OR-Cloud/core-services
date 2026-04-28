@@ -97,6 +97,36 @@ This repo uses a **single monorepo-wide version** in the root `package.json`.
 **Trigger:** Any time the user says "commit" or "push".
 **Skip trigger:** If the user says "commit nhanh", "commit tạm", or explicitly says no version bump.
 
+### Changelog Policy
+
+Mỗi version bump phải kèm theo một file changelog tại `docs/change-logs/v{version}.md`.
+
+**Workflow khi commit/push:**
+1. Xác định change type → chạy `npm version patch|minor|major --no-git-tag-version`
+2. Tạo `docs/change-logs/v{version}.md` tóm tắt nội dung thay đổi
+3. Stage cả `package.json` + changelog file vào cùng 1 commit
+
+**Format file changelog:**
+
+```markdown
+# v{version} — {date YYYY-MM-DD}
+
+## Features
+- **scope**: mô tả ngắn gọn
+
+## Fixes
+- **scope**: mô tả ngắn gọn
+
+## Notes (nếu cần)
+- breaking changes, migration notes, deprecation...
+```
+
+**Quy tắc:**
+- Chỉ ghi những thay đổi có ý nghĩa — bỏ qua test temp, debug log, minor refactor
+- Dùng tiếng Việt hoặc tiếng Anh, nhất quán trong cùng 1 file
+- Section `Fixes` / `Features` / `Notes` — bỏ section nào không có nội dung
+- Changelog directory: [`docs/change-logs/`](docs/change-logs/)
+
 ### Response Guidelines
 
 - Keep responses short and focused on the specific question or task
