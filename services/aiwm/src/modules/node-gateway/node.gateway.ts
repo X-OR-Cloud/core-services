@@ -9,7 +9,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Namespace, Server, Socket } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { verify } from 'jsonwebtoken';
 import Redis from 'ioredis';
 import { NodePersistenceService } from './node-persistence.service';
@@ -45,7 +45,6 @@ export class NodeGateway
 
   private readonly logger = new Logger(NodeGateway.name);
   private redisSub: Redis | null = null;
-  private _aliasNs: Namespace | null = null;
 
   constructor(
     private readonly nodeService: NodePersistenceService,
@@ -88,20 +87,6 @@ export class NodeGateway
   afterInit(server: Server) {
     server.use(this._authMiddleware());
     this.logger.log('Node WebSocket Gateway initialized on /');
-
-    // TODO: REMOVE after all old xnode clients are upgraded to connect namespace "/" instead of "/ws/node".
-    // Context: old nginx forwarded / to node ws backend, so old xnode clients explicitly connect to
-    // namespace /ws/node. New clients use namespace / via nginx path /ws/node/socket.io.
-    // @SubscribeMessage decorators only bind to the primary namespace (/), so auth middleware and
-    // message handlers must be registered manually on each alias namespace socket.
-    this._aliasNs = (server as any).server.of('/ws/node') as Namespace;
-    this._aliasNs.use(this._authMiddleware());
-    this._aliasNs.on('connection', async (socket: Socket) => {
-      await this.handleConnection(socket);
-      this._registerAliasHandlers(socket);
-    });
-    this.logger.log('Node WebSocket Gateway alias registered: /ws/node');
-    // END TODO
   }
 
   private _authMiddleware() {
@@ -140,24 +125,6 @@ export class NodeGateway
       }
     };
   }
-
-  // TODO: REMOVE together with afterInit alias block above once old xnode clients are fully migrated.
-  private _registerAliasHandlers(socket: Socket): void {
-    const wrap = (handler: (data: any, socket: Socket) => any) =>
-      (data: any, callback: ((res: any) => void) | undefined) => {
-        Promise.resolve(handler(data, socket))
-          .then((res) => { if (typeof callback === 'function') callback(res); })
-          .catch((err: Error) => { if (typeof callback === 'function') callback({ error: err.message }); });
-      };
-
-    socket.on(MessageType.NODE_REGISTER,      wrap((d, s) => this.handleNodeRegister(d, s)));
-    socket.on(MessageType.TELEMETRY_HEARTBEAT, wrap((d, s) => this.handleHeartbeat(d, s)));
-    socket.on(MessageType.TELEMETRY_METRICS,   wrap((d, s) => this.handleMetrics(d, s)));
-    socket.on(MessageType.COMMAND_ACK,         wrap((d, s) => this.handleCommandAck(d, s)));
-    socket.on(MessageType.COMMAND_RESULT,      wrap((d, s) => this.handleCommandResult(d, s)));
-    socket.on(MessageType.DEPLOYMENT_STATUS,   wrap((d, s) => this.handleDeploymentStatus(d, s)));
-  }
-  // END TODO
 
   async handleConnection(client: Socket) {
     const nodeId = client.data.user?.nodeId;
