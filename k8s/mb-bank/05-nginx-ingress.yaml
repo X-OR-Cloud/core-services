@@ -3,7 +3,7 @@
 # Image: nginx:1.27-alpine (load từ air-gap bundle)
 #
 # Cấu hình này expose tất cả services qua 1 entry point.
-# Thay <DOMAIN> bằng domain nội bộ của MB Bank (VD: hydra.mbbank.internal)
+# Thay <DOMAIN> bằng domain nội bộ của MB Bank (VD: xai.mbbank.internal)
 # =============================================================================
 apiVersion: v1
 kind: ConfigMap

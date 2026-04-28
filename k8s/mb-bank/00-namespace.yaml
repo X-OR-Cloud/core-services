@@ -3,5 +3,5 @@ kind: Namespace
 metadata:
   name: xai-prod
   labels:
-    app.kubernetes.io/managed-by: hydrabyte
+    app.kubernetes.io/managed-by: xai
     customer: mb-bank
