@@ -87,6 +87,21 @@ export class UpdateKnowledgeCollectionDto {
   chunkingConfig?: ChunkingConfigDto;
 }
 
+export class AddFileFromUrlDto {
+  @ApiProperty({ description: 'Presigned URL to download the file from', example: 'https://s3.amazonaws.com/bucket/file.pdf?...' })
+  @IsString()
+  fileUrl!: string;
+
+  @ApiProperty({ description: 'File name with extension. Supported: .pdf, .docx, .xlsx, .txt, .md, .html', example: 'report.pdf' })
+  @IsString()
+  filename!: string;
+
+  @ApiPropertyOptional({ description: 'Display name shown in UI (defaults to filename)' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
 export class SearchKnowledgeCollectionDto {
   @ApiProperty({ description: 'Search query text', example: 'chính sách nghỉ phép' })
   @IsString()

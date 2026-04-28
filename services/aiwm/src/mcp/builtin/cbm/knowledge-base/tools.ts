@@ -7,14 +7,14 @@ import {
   executeKbListCollections,
   executeKbGetFileInfo,
   executeListKnowledgeFiles,
-  executeUploadKnowledgeFile,
+  executeAddKnowledgeFile,
 } from './executors';
 import {
   KbSearchSchema,
   KbListCollectionsSchema,
   KbGetFileInfoSchema,
   ListKnowledgeFilesSchema,
-  UploadKnowledgeFileSchema,
+  AddKnowledgeFileSchema,
 } from './schemas';
 
 export const KnowledgeBaseTools: ToolDefinition[] = [
@@ -55,12 +55,12 @@ export const KnowledgeBaseTools: ToolDefinition[] = [
     inputSchema: ListKnowledgeFilesSchema,
   },
   {
-    name: 'UploadKnowledgeFile',
+    name: 'AddKnowledgeFile',
     description:
-      'Upload a text file (.txt, .md, .html) into a knowledge collection. The file is queued for embedding automatically. For binary files (PDF, DOCX, XLSX), use Bash with curl to call POST /files directly.',
+      'Add a file to a knowledge collection from a presigned S3 URL. Supported: .pdf, .docx, .xlsx, .txt, .md, .html. The file is downloaded by CBM and queued for embedding automatically.',
     type: 'builtin',
     category: 'KnowledgeBase',
-    executor: executeUploadKnowledgeFile,
-    inputSchema: UploadKnowledgeFileSchema,
+    executor: executeAddKnowledgeFile,
+    inputSchema: AddKnowledgeFileSchema,
   },
 ];

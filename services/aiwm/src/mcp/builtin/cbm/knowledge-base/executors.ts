@@ -138,45 +138,22 @@ export async function executeListKnowledgeFiles(
 }
 
 /**
- * UploadKnowledgeFile — Upload text content as a knowledge file into a collection.
- * Supports plain text, markdown, and HTML. For binary files (PDF, DOCX, XLSX),
- * use Bash with curl to call POST /files directly.
+ * AddKnowledgeFile — Add a file to a KB collection from a presigned S3 URL.
+ * CBM handles the download and queues the file for embedding.
  */
-export async function executeUploadKnowledgeFile(
-  args: { collectionId: string; filename: string; content: string; name?: string },
+export async function executeAddKnowledgeFile(
+  args: { collectionId: string; fileUrl: string; filename: string; name?: string },
   context: ExecutionContext,
 ): Promise<ToolResponse> {
   try {
     const cbmBaseUrl = context.cbmBaseUrl || 'http://localhost:3001';
+    const body: Record<string, string> = { fileUrl: args.fileUrl, filename: args.filename };
+    if (args.name) body.name = args.name;
 
-    const extToMime: Record<string, string> = {
-      '.txt': 'text/plain',
-      '.md': 'text/markdown',
-      '.html': 'text/html',
-      '.htm': 'text/html',
-    };
-    const ext = args.filename.slice(args.filename.lastIndexOf('.')).toLowerCase();
-    const mimeType = extToMime[ext];
-    if (!mimeType) {
-      return {
-        content: [{ type: 'text', text: `Unsupported file extension: ${ext}. Supported: .txt, .md, .html. For PDF/DOCX/XLSX use Bash with curl to call POST /files directly.` }],
-        isError: true,
-      };
-    }
-
-    const fileBuffer = Buffer.from(args.content, 'utf-8');
-    const formData = new FormData();
-    formData.append('file', new Blob([fileBuffer], { type: mimeType }), args.filename);
-    formData.append('purpose', 'knowledge');
-    formData.append('ownerKind', 'knowledge-collection');
-    formData.append('ownerId', args.collectionId);
-    if (args.name) formData.append('name', args.name);
-
-    const response = await fetch(`${cbmBaseUrl}/files`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${context.token}` },
-      body: formData,
-    });
+    const response = await makeServiceRequest(
+      `${cbmBaseUrl}/knowledge-collections/${args.collectionId}/add-file`,
+      { method: 'POST', context, body: JSON.stringify(body) },
+    );
 
     const contentType = response.headers.get('content-type') || '';
     if (response.ok && contentType.includes('application/json')) {
@@ -186,9 +163,9 @@ export async function executeUploadKnowledgeFile(
     }
     return formatToolResponse(response);
   } catch (error: any) {
-    logger.error('Error in UploadKnowledgeFile:', error);
+    logger.error('Error in AddKnowledgeFile:', error);
     return {
-      content: [{ type: 'text', text: `Error uploading knowledge file: ${error.message}` }],
+      content: [{ type: 'text', text: `Error adding knowledge file: ${error.message}` }],
       isError: true,
     };
   }

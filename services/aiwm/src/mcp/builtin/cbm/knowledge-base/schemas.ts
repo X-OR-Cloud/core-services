@@ -49,11 +49,11 @@ export const ListKnowledgeFilesSchema = z.object({
 });
 
 /**
- * Schema for UploadKnowledgeFile tool
+ * Schema for AddKnowledgeFile tool
  */
-export const UploadKnowledgeFileSchema = z.object({
+export const AddKnowledgeFileSchema = z.object({
   collectionId: z.string().describe('Target knowledge collection ID'),
-  filename: z.string().describe('File name with extension. Supported: .txt, .md, .html'),
-  content: z.string().describe('Text content of the file (plain text, markdown, or HTML)'),
+  fileUrl: z.string().url().describe('Presigned S3 URL to download the file from'),
+  filename: z.string().describe('File name with extension. Supported: .pdf, .docx, .xlsx, .txt, .md, .html'),
   name: z.string().optional().describe('Display name shown in UI (defaults to filename)'),
 });

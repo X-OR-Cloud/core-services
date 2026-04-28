@@ -137,7 +137,7 @@ const BUILTIN_TOOL_FUNCTIONS: Record<string, string[]> = {
     'mcp__Builtin__KnowledgeSearch',
     'mcp__Builtin__ListKnowledgeCollections',
     'mcp__Builtin__ListKnowledgeFiles',
-    'mcp__Builtin__UploadKnowledgeFile',
+    'mcp__Builtin__AddKnowledgeFile',
   ],
   BrowserAutomation: [
     'mcp__Browser__OpenTab',

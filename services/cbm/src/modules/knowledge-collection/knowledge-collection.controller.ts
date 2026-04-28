@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ServiceUnavailableException,
+  BadRequestException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -28,6 +29,7 @@ import {
   CreateKnowledgeCollectionDto,
   UpdateKnowledgeCollectionDto,
   SearchKnowledgeCollectionDto,
+  AddFileFromUrlDto,
 } from './knowledge-collection.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -152,6 +154,55 @@ export class KnowledgeCollectionController {
         qdrantPoints: true,
       },
     };
+  }
+
+  @Post(':id/add-file')
+  @ApiOperation({ summary: 'Add a file to a knowledge collection from a presigned URL. CBM downloads the file and queues it for embedding.' })
+  @UseGuards(JwtAuthGuard)
+  async addFileFromUrl(
+    @Param('id') id: string,
+    @Body() dto: AddFileFromUrlDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const EXT_TO_MIME: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.html': 'text/html',
+      '.htm': 'text/html',
+    };
+    const ext = dto.filename.slice(dto.filename.lastIndexOf('.')).toLowerCase();
+    const mimeType = EXT_TO_MIME[ext];
+    if (!mimeType) {
+      throw new BadRequestException(`Unsupported file extension: ${ext}. Supported: .pdf, .docx, .xlsx, .txt, .md, .html`);
+    }
+
+    const download = await fetch(dto.fileUrl);
+    if (!download.ok) {
+      throw new BadRequestException(`Failed to download file: ${download.status} ${download.statusText}`);
+    }
+    const buffer = Buffer.from(await download.arrayBuffer());
+
+    const file: Express.Multer.File = {
+      buffer,
+      mimetype: mimeType,
+      originalname: dto.filename,
+      size: buffer.length,
+      fieldname: 'file',
+      encoding: '7bit',
+      destination: '',
+      filename: dto.filename,
+      path: '',
+      stream: null as any,
+    };
+
+    return this.fileService.uploadFile(
+      file,
+      { purpose: 'knowledge', ownerKind: 'knowledge-collection', ownerId: id, name: dto.name },
+      context,
+    );
   }
 
   @Post(':id/reindex-all')
