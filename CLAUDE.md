@@ -127,6 +127,32 @@ Mỗi version bump phải kèm theo một file changelog tại `docs/change-logs
 - Section `Fixes` / `Features` / `Notes` — bỏ section nào không có nội dung
 - Changelog directory: [`docs/change-logs/`](docs/change-logs/)
 
+### Protected Build (Ship cho khách hàng)
+
+**Protected build** = build đầy đủ để ship cho khách hàng: compile + obfuscate + bake license secret.
+
+```bash
+# 1. Generate license cho khách hàng (chỉ làm 1 lần per customer)
+node licenses/gen-license.js <slug> <expiry YYYY-MM-DD>
+# → In ra LICENSE_SECRET, tạo licenses/output/<slug>.license
+
+# 2. Build với LICENSE_SECRET
+LICENSE_SECRET=<secret> ./node_modules/.bin/nx run <service>:build
+
+# 3. Obfuscate
+npx javascript-obfuscator dist/services/<service>/main.js \
+  --output dist/services/<service>/main.js \
+  --compact true --identifier-names-generator hexadecimal \
+  --string-array true --string-array-encoding rc4 \
+  --rename-globals false --self-defending false
+
+# 4. Docker build & export
+docker build -f services/<service>/Dockerfile -t xai/<service>:latest .
+docker save xai/<service>:latest | gzip > air-gap-builder/artifacts/images/services/<service>.tar.gz
+```
+
+**Lưu ý:** `licenses/customers.json` và `licenses/output/` đều gitignored — không bao giờ commit secrets. File `.license` ship riêng lên server khách (K8s Secret/ConfigMap mount).
+
 ### Response Guidelines
 
 - Keep responses short and focused on the specific question or task
