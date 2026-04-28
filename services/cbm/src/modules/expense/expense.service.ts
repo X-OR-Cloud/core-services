@@ -123,8 +123,11 @@ export class ExpenseService extends BaseService<Expense> {
     }
     const updated = await super.update(id, { status: 'approved' }, context);
     // Create Transaction record
+    // Use toObject() to get plain JS object — spreading Mongoose Document directly
+    // loses schema field values (amount, date) because they are non-enumerable getters
+    const expensePlain = (expense as any).toObject ? (expense as any).toObject() : expense;
     await this.transactionService.createFromExpense(
-      { ...(expense as any), status: 'approved' },
+      { ...expensePlain, status: 'approved' },
       context
     );
     return updated;
