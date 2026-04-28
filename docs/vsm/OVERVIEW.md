@@ -49,30 +49,30 @@ VSM **không** xử lý media trực tiếp — Asterisk đảm nhiệm toàn b�
              │                        │
              ▼                        ▼
 ┌────────────────────────┐  ┌───────────────────────────────────┐
-│   Asterisk PBX         │  │        VSM Service (NestJS)        │
+│   Asterisk PBX         │  │        VSM Service (NestJS)       │
 │   (PJSIP + AMI)        │  │  ┌─────────────────────────────┐  │
-│                        │  │  │  REST API  :3009             │  │
+│                        │  │  │  REST API  :3009            │  │
 │  AMI  :5038 ───────────┼──┼─▶│  nodes, accounts, trunks,   │  │
-│  WSS  :8089 ◀──────────┼──┼──│  phone-numbers, routes,      │  │
-│  RTP  :10000-20000/udp │  │  │  dialplans, call-logs        │  │
+│  WSS  :8089 ◀──────────┼──┼──│  phone-numbers, routes,     │  │
+│  RTP  :10000-20000/udp │  │  │  dialplans, call-logs       │  │
 │                        │  │  └─────────────────────────────┘  │
 │  /var/spool/asterisk/  │  │  ┌─────────────────────────────┐  │
 │  monitor/ ─── s3fs ───▶┼──┼─▶│  S3/MinIO Storage           │  │
-│  (recordings mount)    │  │  │  recordings/<date>/<id>.wav  │  │
+│  (recordings mount)    │  │  │  recordings/<date>/<id>.wav │  │
 └────────────────────────┘  │  └─────────────────────────────┘  │
              ▲              │  ┌─────────────────────────────┐  │
-             │              │  │  AMI Bridge Worker  (ami)    │  │
-             │              │  │  nx run vsm:ami              │  │
-             └─────────────┼──│  · AMI TCP client            │  │
-                            │  │  · event handler → call-logs │  │
-                            │  │  · command service           │  │
-                            │  │    (originate, pjsip sync,   │  │
-                            │  │     dialplan sync)           │  │
+             │              │  │  AMI Bridge Worker  (ami)   │  │
+             │              │  │  nx run vsm:ami             │  │
+             └──────────────┼──│  · AMI TCP client           │  │
+                            │  │  · event handler → call-logs│  │
+                            │  │  · command service          │  │
+                            │  │    (originate, pjsip sync,  │  │
+                            │  │     dialplan sync)          │  │
                             │  └─────────────────────────────┘  │
                             └───────────────────────────────────┘
                                            │
                             ┌──────────────▼──────────────┐
-                            │  MongoDB · Redis · BullMQ    │
+                            │  MongoDB · Redis · BullMQ   │
                             └─────────────────────────────┘
 ```
 
