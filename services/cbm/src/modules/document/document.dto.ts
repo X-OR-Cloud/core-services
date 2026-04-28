@@ -28,13 +28,13 @@ export class CreateDocumentDto {
   @MaxLength(500)
   summary!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Document main content',
     example: 'This guide explains how to integrate with our REST API...',
   })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  content!: string;
+  content?: string;
 
   @ApiProperty({
     description: 'Content type',
