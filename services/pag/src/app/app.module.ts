@@ -17,6 +17,7 @@ import { MemoriesModule } from '../modules/memories/memories.module';
 import { NewsSourcesModule } from '../modules/news-sources/news-sources.module';
 import { UserNewsPrefsModule } from '../modules/user-news-prefs/user-news-prefs.module';
 import { NewsItemsModule } from '../modules/news-items/news-items.module';
+import { NewsDigestModule } from '../modules/news-digest/news-digest.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { NewsItemsModule } from '../modules/news-items/news-items.module';
     NewsSourcesModule,
     UserNewsPrefsModule,
     NewsItemsModule,
+    NewsDigestModule,
   ],
   controllers: [AppController],
   providers: [AppService, JwtStrategy],
