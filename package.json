@@ -1,6 +1,6 @@
 {
   "name": "@hydrabyte/source",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "license": "MIT",
   "scripts": {},
   "private": true,
@@ -41,6 +41,7 @@
     "@types/node-telegram-bot-api": "^0.64.14",
     "ai": "^6.0.116",
     "ajv": "^8.17.1",
+    "asynckit": "^0.5.0",
     "axios": "^1.13.2",
     "bullmq": "^5.66.5",
     "cheerio": "^1.2.0",
@@ -48,6 +49,7 @@
     "dockerode": "^4.0.9",
     "handlebars": "^4.7.8",
     "ioredis": "^5.9.1",
+    "iterare": "^1.2.1",
     "langchain": "^1.2.32",
     "mammoth": "^1.12.0",
     "marked": "^17.0.3",
