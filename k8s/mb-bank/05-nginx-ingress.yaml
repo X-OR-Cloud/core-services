@@ -1,0 +1,176 @@
+# =============================================================================
+# Nginx — Reverse proxy / API Gateway nội bộ
+# Image: nginx:1.27-alpine (load từ air-gap bundle)
+#
+# Cấu hình này expose tất cả services qua 1 entry point.
+# Thay <DOMAIN> bằng domain nội bộ của MB Bank (VD: hydra.mbbank.internal)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: hydra-prod
+data:
+  nginx.conf: |
+    events {
+      worker_connections 4096;
+    }
+
+    http {
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+      proxy_read_timeout     300s;
+      proxy_connect_timeout  30s;
+      proxy_send_timeout     300s;
+
+      # WebSocket upgrade headers
+      map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+      }
+
+      upstream iam_backend       { server iam-service:3310; }
+      upstream aiwm_backend      { server aiwm-service:3330; }
+      upstream aiwm_mcp_backend  { server aiwm-mcp-service:3355; }
+      upstream aiwm_aws_backend  { server aiwm-aws-service:3400; }
+      upstream aiwm_nws_backend  { server aiwm-nws-service:3403; }
+      upstream aiwm_cws_backend  { server aiwm-cws-service:3407; }
+      upstream cbm_backend       { server cbm-service:3340; }
+      upstream cbm_rtc_backend   { server cbm-rtc-service:4014; }
+      upstream mona_backend      { server mona-service:3350; }
+
+      server {
+        listen 80;
+        server_name _;
+
+        # IAM — /iam/*
+        location /iam/ {
+          proxy_pass http://iam_backend/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        # AIWM API — /aiwm/*
+        location /aiwm/ {
+          proxy_pass http://aiwm_backend/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        # AIWM MCP — /mcp/*
+        location /mcp/ {
+          proxy_pass http://aiwm_mcp_backend/;
+          proxy_set_header Host $host;
+        }
+
+        # AIWM WebSocket gateways
+        location /ws/agent {
+          proxy_pass http://aiwm_aws_backend;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+        }
+
+        location /ws/node {
+          proxy_pass http://aiwm_nws_backend;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+        }
+
+        location /ws/chat {
+          proxy_pass http://aiwm_cws_backend;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+        }
+
+        # CBM — /cbm/*
+        location /cbm/ {
+          proxy_pass http://cbm_backend/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # CBM Real-time chat WebSocket
+        location /ws/rtc {
+          proxy_pass http://cbm_rtc_backend;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+        }
+
+        # MONA — /mona/*
+        location /mona/ {
+          proxy_pass http://mona_backend/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # Health check tổng
+        location /health {
+          return 200 '{"status":"ok"}';
+          add_header Content-Type application/json;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-gateway
+  namespace: hydra-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-gateway
+  template:
+    metadata:
+      labels:
+        app: nginx-gateway
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-gateway
+  namespace: hydra-prod
+spec:
+  selector:
+    app: nginx-gateway
+  type: NodePort        # đổi thành LoadBalancer nếu cluster có LB controller
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080     # truy cập qua <node-ip>:30080

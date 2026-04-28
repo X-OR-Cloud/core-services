@@ -1,0 +1,231 @@
+# =============================================================================
+# CBM Service — Core Business Management (3 modes)
+# Image: xai/cbm:latest (load từ air-gap bundle cbm.tar.gz)
+#
+# Modes:
+#   api    (3340) — HTTP REST API
+#   emb           — Embedding/indexing worker (no HTTP)
+#   rtc    (4014) — Real-time chat WebSocket
+# =============================================================================
+
+# ---- API Mode ---------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cbm-api
+  namespace: hydra-prod
+  labels:
+    app: cbm
+    mode: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cbm
+      mode: api
+  template:
+    metadata:
+      labels:
+        app: cbm
+        mode: api
+    spec:
+      containers:
+      - name: cbm
+        image: xai/cbm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3340
+          name: http
+        env:
+        - name: MODE
+          value: "api"
+        - name: PORT
+          value: "3340"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        - name: knowledge-storage
+          mountPath: /data/cbm/knowledge
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3340
+          failureThreshold: 12
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3340
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3340
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+      - name: knowledge-storage
+        persistentVolumeClaim:
+          claimName: pvc-cbm-knowledge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cbm-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: cbm
+    mode: api
+  ports:
+  - port: 3340
+    targetPort: 3340
+
+---
+# ---- Embedding Worker (emb) — no HTTP ---------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cbm-emb
+  namespace: hydra-prod
+  labels:
+    app: cbm
+    mode: emb
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cbm
+      mode: emb
+  template:
+    metadata:
+      labels:
+        app: cbm
+        mode: emb
+    spec:
+      containers:
+      - name: cbm
+        image: xai/cbm:latest
+        imagePullPolicy: Never
+        env:
+        - name: MODE
+          value: "emb"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        - name: knowledge-storage
+          mountPath: /data/cbm/knowledge
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+      - name: knowledge-storage
+        persistentVolumeClaim:
+          claimName: pvc-cbm-knowledge
+
+---
+# ---- Real-time Chat (rtc) ---------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cbm-rtc
+  namespace: hydra-prod
+  labels:
+    app: cbm
+    mode: rtc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cbm
+      mode: rtc
+  template:
+    metadata:
+      labels:
+        app: cbm
+        mode: rtc
+    spec:
+      containers:
+      - name: cbm
+        image: xai/cbm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 4014
+          name: ws
+        env:
+        - name: MODE
+          value: "rtc"
+        - name: CBM_RTC_PORT
+          value: "4014"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cbm-rtc-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: cbm
+    mode: rtc
+  ports:
+  - port: 4014
+    targetPort: 4014

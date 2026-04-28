@@ -1,0 +1,83 @@
+# =============================================================================
+# Qdrant v1.14.0 — Vector database cho RAG pipeline
+# Image: qdrant/qdrant:v1.14.0 (load từ air-gap bundle)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: hydra-prod
+spec:
+  serviceName: qdrant-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+      - name: qdrant
+        image: qdrant/qdrant:v1.14.0
+        imagePullPolicy: Never
+        ports:
+        - name: http
+          containerPort: 6333
+        - name: grpc
+          containerPort: 6334
+        env:
+        - name: QDRANT__SERVICE__API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hydra-db-secrets
+              key: QDRANT_API_KEY
+        - name: QDRANT__SERVICE__READ_ONLY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hydra-db-secrets
+              key: QDRANT_API_KEY
+              optional: true
+        volumeMounts:
+        - name: data
+          mountPath: /qdrant/storage
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 6333
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 6333
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "16Gi"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: pvc-qdrant
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: qdrant
+  ports:
+  - name: http
+    port: 6333
+    targetPort: 6333
+  - name: grpc
+    port: 6334
+    targetPort: 6334

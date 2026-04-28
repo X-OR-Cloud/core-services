@@ -1,0 +1,86 @@
+# =============================================================================
+# MONA Service — Monitoring & Analytics
+# Image: xai/mona:latest (load từ air-gap bundle mona.tar.gz)
+# Port: 3350
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mona
+  namespace: hydra-prod
+  labels:
+    app: mona
+    version: "1.8.2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mona
+  template:
+    metadata:
+      labels:
+        app: mona
+    spec:
+      containers:
+      - name: mona
+        image: xai/mona:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3350
+          name: http
+        env:
+        - name: PORT
+          value: "3350"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3350
+          failureThreshold: 12
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3350
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3350
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mona-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: mona
+  ports:
+  - port: 3350
+    targetPort: 3350

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hydra-prod
+  labels:
+    app.kubernetes.io/managed-by: hydrabyte
+    customer: mb-bank

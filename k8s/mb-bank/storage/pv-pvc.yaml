@@ -1,0 +1,193 @@
+# =============================================================================
+# PersistentVolumes & PersistentVolumeClaims
+#
+# Cluster MB Bank có NFS shared storage tại /home-dev (31 TB).
+# Các PVs dưới đây dùng NFS làm backend.
+#
+# Thay <NFS_SERVER_IP> bằng IP thực của NFS server.
+# Thay các đường dẫn NFS path nếu cần.
+# =============================================================================
+
+# ---- MongoDB ----------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-mongodb
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/mongodb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-mongodb
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: ""
+  volumeName: pv-mongodb
+
+---
+# ---- Redis ------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-redis
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/redis
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-redis
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: ""
+  volumeName: pv-redis
+
+---
+# ---- Qdrant -----------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-qdrant
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/qdrant
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-qdrant
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: ""
+  volumeName: pv-qdrant
+
+---
+# ---- SeaweedFS --------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-seaweedfs-master
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/seaweedfs/master
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-seaweedfs-master
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: ""
+  volumeName: pv-seaweedfs-master
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-seaweedfs-volume
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/seaweedfs/volume
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-seaweedfs-volume
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Ti
+  storageClassName: ""
+  volumeName: pv-seaweedfs-volume
+
+---
+# ---- CBM knowledge storage --------------------------------------------------
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-cbm-knowledge
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteMany   # nhiều pods cbm-emb worker cùng đọc
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: <NFS_SERVER_IP>
+    path: /home-dev/hydra-prod/cbm/knowledge
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-cbm-knowledge
+  namespace: hydra-prod
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: ""
+  volumeName: pv-cbm-knowledge

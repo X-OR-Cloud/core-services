@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hydra-config
+  namespace: hydra-prod
+data:
+  NODE_ENV: "production"
+
+  # Internal service URLs (K8s DNS trong cluster)
+  IAM_SERVICE_URL: "http://iam-service:3310"
+  AIWM_SERVICE_URL: "http://aiwm-service:3330"
+  CBM_BASE_URL: "http://cbm-service:3340"
+  MONA_BASE_URL: "http://mona-service:3350"
+
+  # Frontend URL (thay bằng URL thực của MB Bank)
+  FE_BASE_URL: "https://<frontend-domain>"
+  GOOGLE_REDIRECT_URI: "https://<frontend-domain>/auth/google/callback"
+
+  # Token TTL
+  AGENT_TOKEN_EXPIRES_IN_SECONDS: "3600"
+
+  # MCP server (trỏ về aiwm-mcp service nội bộ)
+  MCP_SERVER_URL: "http://aiwm-mcp-service:3355"
+  MCP_ALLOWED_HOSTS: "localhost,127.0.0.1,aiwm-service,cbm-service,iam-service"
+
+  # WebSocket chat URL (trỏ về aiwm-cws service nội bộ)
+  WS_CHAT_URL: "ws://aiwm-cws-service:3407"
+
+  # Knowledge Base — trỏ về vLLM nội bộ
+  KB_EMBEDDING_API_URL: "http://vllm-service:8000/v1"
+  KB_EMBEDDING_MODEL: "Qwen/Qwen3-Embedding-8B"
+  KB_OCR_API_URL: "http://vllm-service:8000/v1/chat/completions"
+  KB_OCR_MODEL: "Qwen/Qwen3.6-35B-A3B-Instruct"
+  KB_CHUNK_SIZE: "512"
+  KB_CHUNK_OVERLAP: "64"
+  KB_CHUNK_STRATEGY: "sentence"
+  KB_OCR_MAX_PAGES: "50"
+  KB_WORKER_CONCURRENCY: "3"
+  KB_STORAGE_PATH: "/data/cbm/knowledge"

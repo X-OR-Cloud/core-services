@@ -1,0 +1,545 @@
+# =============================================================================
+# AIWM Service — AI Workload Manager (8 modes)
+# Image: xai/aiwm:latest (load từ air-gap bundle aiwm.tar.gz)
+#
+# Modes deploy:
+#   api    (3330) — HTTP REST API + Swagger
+#   mcp    (3355) — MCP server
+#   aws    (3400) — Agent WebSocket gateway
+#   nws    (3403) — Node WebSocket gateway
+#   cws    (3407) — Chat WebSocket gateway
+#   worker        — BullMQ job processor (no HTTP)
+#   agt           — Hosted agent runner (no HTTP)
+#   con           — Channel connector Discord/Telegram (no HTTP)
+# =============================================================================
+
+# ---- API Mode ---------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-api
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: api
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: api
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3330
+          name: http
+        env:
+        - name: MODE
+          value: "api"
+        - name: PORT
+          value: "3330"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3330
+          failureThreshold: 12
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3330
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3330
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiwm-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: aiwm
+    mode: api
+  ports:
+  - port: 3330
+    targetPort: 3330
+
+---
+# ---- MCP Mode ---------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-mcp
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: mcp
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: mcp
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3355
+          name: http
+        env:
+        - name: MODE
+          value: "mcp"
+        - name: PORT
+          value: "3355"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiwm-mcp-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: aiwm
+    mode: mcp
+  ports:
+  - port: 3355
+    targetPort: 3355
+
+---
+# ---- Agent WebSocket Gateway (aws) ------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-aws
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: aws
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: aws
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: aws
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3400
+          name: ws
+        env:
+        - name: MODE
+          value: "aws"
+        - name: PORT
+          value: "3400"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiwm-aws-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: aiwm
+    mode: aws
+  ports:
+  - port: 3400
+    targetPort: 3400
+
+---
+# ---- Node WebSocket Gateway (nws) -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-nws
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: nws
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: nws
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: nws
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3403
+          name: ws
+        env:
+        - name: MODE
+          value: "nws"
+        - name: PORT
+          value: "3403"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiwm-nws-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: aiwm
+    mode: nws
+  ports:
+  - port: 3403
+    targetPort: 3403
+
+---
+# ---- Chat WebSocket Gateway (cws) -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-cws
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: cws
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: cws
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: cws
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3407
+          name: ws
+        env:
+        - name: MODE
+          value: "cws"
+        - name: PORT
+          value: "3407"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiwm-cws-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: aiwm
+    mode: cws
+  ports:
+  - port: 3407
+    targetPort: 3407
+
+---
+# ---- Worker Mode (no HTTP) --------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-worker
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: worker
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: worker
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        env:
+        - name: MODE
+          value: "worker"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+
+---
+# ---- Agent Runner (agt) — no HTTP -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-agt
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: agt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: agt
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: agt
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        env:
+        - name: MODE
+          value: "agt"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license
+
+---
+# ---- Connection Worker (con) — Discord/Telegram, no HTTP -------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiwm-con
+  namespace: hydra-prod
+  labels:
+    app: aiwm
+    mode: con
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiwm
+      mode: con
+  template:
+    metadata:
+      labels:
+        app: aiwm
+        mode: con
+    spec:
+      containers:
+      - name: aiwm
+        image: xai/aiwm:latest
+        imagePullPolicy: Never
+        env:
+        - name: MODE
+          value: "con"
+        envFrom:
+        - configMapRef:
+            name: hydra-config
+        - secretRef:
+            name: hydra-db-secrets
+        - secretRef:
+            name: hydra-app-secrets
+        volumeMounts:
+        - name: license
+          mountPath: /app/.license
+          subPath: .license
+          readOnly: true
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+      volumes:
+      - name: license
+        secret:
+          secretName: hydra-license

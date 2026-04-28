@@ -1,0 +1,98 @@
+# =============================================================================
+# MongoDB 8.0 — Single node (production-grade cần replica set)
+# Image: mongo:8.0 (load từ air-gap bundle)
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: hydra-prod
+spec:
+  serviceName: mongodb-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:8.0
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: "root"
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hydra-db-secrets
+              key: MONGODB_ROOT_PASSWORD
+              optional: true
+        volumeMounts:
+        - name: data
+          mountPath: /data/db
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        readinessProbe:
+          exec:
+            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: pvc-mongodb
+      - name: init-scripts
+        configMap:
+          name: mongodb-init
+          optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: hydra-prod
+spec:
+  selector:
+    app: mongodb
+  ports:
+  - port: 27017
+    targetPort: 27017
+  clusterIP: None  # headless — dùng cho StatefulSet
+
+---
+# Init script: tạo app user với quyền hạn chế
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-init
+  namespace: hydra-prod
+data:
+  01-create-user.js: |
+    db.getSiblingDB('admin').createUser({
+      user: 'core_app_user',
+      pwd: '<app-user-password>',
+      roles: [
+        { role: 'readWrite', db: 'core_iam' },
+        { role: 'readWrite', db: 'core_aiwm' },
+        { role: 'readWrite', db: 'core_cbm' },
+        { role: 'readWrite', db: 'core_mona' },
+      ]
+    });
