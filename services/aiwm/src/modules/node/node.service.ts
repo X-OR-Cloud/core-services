@@ -290,8 +290,10 @@ export class NodeService extends BaseService<Node> {
 
     return {
       nodeId,
-      secret, // Shown ONCE — node agent must save this
+      secret,
       warning: 'Save this secret now. It will not be shown again.',
+      wsBaseUrl: decoded.wsBaseUrl,
+      wsPath: decoded.wsPath,
     };
   }
 

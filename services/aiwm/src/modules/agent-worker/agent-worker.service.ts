@@ -262,7 +262,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     if (!this.runners.size) return;
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const refreshThresholdSec = 60 * 60; // 1 hour
+    const refreshThresholdSec = 30 * 60; // 30 minutes — must be less than token lifetime
 
     for (const [agentId, runner] of this.runners.entries()) {
       const exp = runner.getAccessTokenExpiry();

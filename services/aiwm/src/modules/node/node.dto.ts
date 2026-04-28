@@ -125,6 +125,12 @@ export class NodeBootstrapResponseDto {
 
   @ApiProperty({ description: 'Warning message' })
   warning: string;
+
+  @ApiProperty({ description: 'WebSocket base URL (e.g. wss://ws.example.com)' })
+  wsBaseUrl: string;
+
+  @ApiProperty({ description: 'WebSocket path for node gateway' })
+  wsPath: string;
 }
 
 export class UpdateNodeDto {
