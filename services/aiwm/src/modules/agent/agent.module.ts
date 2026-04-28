@@ -8,6 +8,7 @@ import { AgentService } from './agent.service';
 import { Agent, AgentSchema } from './agent.schema';
 import { Instruction, InstructionSchema } from '../instruction/instruction.schema';
 import { Tool, ToolSchema } from '../tool/tool.schema';
+import { AgentMemory, AgentMemorySchema } from '../memory/memory.schema';
 import { QueueModule } from '../../queues/queue.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DeploymentModule } from '../deployment/deployment.module';
@@ -25,6 +26,7 @@ import { HeartbeatModule } from '../heartbeat/heartbeat.module';
       { name: Agent.name, schema: AgentSchema },
       { name: Instruction.name, schema: InstructionSchema },
       { name: Tool.name, schema: ToolSchema },
+      { name: AgentMemory.name, schema: AgentMemorySchema },
     ]),
     // Use registerAsync to ensure ConfigService is loaded before accessing JWT_SECRET
     JwtModule.registerAsync({

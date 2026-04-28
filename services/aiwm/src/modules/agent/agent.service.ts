@@ -33,6 +33,7 @@ import { Agent, AgentDocument } from './agent.schema';
 import { AGENT_CODE_ADJS, AGENT_CODE_NAMES } from './agent.const';
 import { Instruction } from '../instruction/instruction.schema';
 import { Tool } from '../tool/tool.schema';
+import { AgentMemory, MemoryCategory } from '../memory/memory.schema';
 import {
   CreateAgentDto,
   UpdateAgentDto,
@@ -81,6 +82,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(Instruction.name) private instructionModel: Model<Instruction>,
     @InjectModel(Tool.name) private toolModel: Model<Tool>,
+    @InjectModel(AgentMemory.name) private memoryModel: Model<AgentMemory>,
     private readonly jwtService: JwtService,
     private readonly agentProducer: AgentProducer,
     private readonly configurationService: ConfigurationService,
@@ -655,22 +657,8 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     // Build instruction object (with context injection using agent token)
     const instruction = await this.buildInstructionObjectForAgent(agent, token);
 
-    // Get allowed tools — MemoryManagement always injected
-    const tools = await this.getAllowedToolsWithMemory(agent);
-
-    // Build effective allowedFunctions: agent's list + memory functions (always included)
-    const memoryFunctions = [
-      'mcp__Builtin__SearchMemory',
-      'mcp__Builtin__UpsertMemory',
-      'mcp__Builtin__ListMemoryKeys',
-      'mcp__Builtin__DeleteMemory',
-    ];
-    const agentFunctions = agent.allowedFunctions || [];
-    // Empty agentFunctions means "all allowed" — memory functions are implicitly covered
-    const allowedFunctions =
-      agentFunctions.length === 0
-        ? []
-        : [...new Set([...agentFunctions, ...memoryFunctions])];
+    const tools = await this.getAllowedTools(agent);
+    const allowedFunctions = agent.allowedFunctions || [];
 
     // Update connection tracking + set status to idle
     const connectionUpdate: Record<string, any> = { lastConnectedAt: new Date(), status: 'idle' };
@@ -906,9 +894,13 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       );
     }
 
-    // Get allowed tools to inject conditional rule blocks (always includes MemoryManagement)
-    const tools = await this.getAllowedToolsWithMemory(agent);
+    const tools = await this.getAllowedTools(agent);
     const agentId = (agent as any)._id.toString();
+
+    const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
+    const memorySummaries = hasMemory
+      ? await this.fetchMemorySummaries(agentId)
+      : [];
 
     const result: { id: string; systemPrompt: string; isPreview?: boolean } = {
       id: agentId,
@@ -917,6 +909,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         contextBlocks,
         tools,
         agentId,
+        memorySummaries,
         agent.code || undefined,
         agent.instructionId?.toString(),
         agent.owner?.orgId
@@ -1120,6 +1113,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     contextBlocks: string[],
     tools: Tool[],
     agentId: string,
+    memorySummaries: { category: MemoryCategory; key: string; summary: string }[],
     agentCode?: string,
     instructionId?: string,
     orgId?: string
@@ -1129,8 +1123,26 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     const ruleBlocks: string[] = [];
 
     if (toolNames.has('MemoryManagement')) {
+      const snapshotLines: string[] = [];
+      if (memorySummaries.length > 0) {
+        const byCategory = new Map<string, typeof memorySummaries>();
+        for (const m of memorySummaries) {
+          if (!byCategory.has(m.category)) byCategory.set(m.category, []);
+          byCategory.get(m.category)!.push(m);
+        }
+        for (const [cat, entries] of byCategory) {
+          snapshotLines.push(`[${cat}]`);
+          for (const e of entries) snapshotLines.push(`- ${e.key}: ${e.summary}`);
+        }
+      }
+
+      const snapshotBlock =
+        snapshotLines.length > 0
+          ? `MEMORY SNAPSHOT (at session start):\n${snapshotLines.join('\n')}\n\n`
+          : '';
+
       ruleBlocks.push(
-        `MEMORY RULES:
+        `${snapshotBlock}MEMORY RULES:
 - Trước khi trả lời về quyết định đã đưa ra, preferences của ai đó, notes đặc biệt:
   gọi mcp__Builtin__SearchMemory với category và keyword phù hợp trước
 - Sau cuộc trò chuyện có thông tin mới thuộc 1 trong 4 categories:
@@ -1195,6 +1207,23 @@ These blocks are system metadata, not questions. Never explain them. Never repea
     return parts.join('\n\n---\n\n');
   }
 
+  private async fetchMemorySummaries(
+    agentId: string
+  ): Promise<{ category: MemoryCategory; key: string; summary: string }[]> {
+    const entries = await this.memoryModel
+      .find({ agentId, isDeleted: false })
+      .sort({ category: 1, updatedAt: -1 })
+      .select('category key summary content')
+      .lean()
+      .exec();
+
+    return entries.map((e) => ({
+      category: e.category as MemoryCategory,
+      key: e.key,
+      summary: (e as any).summary || (e.content as string).substring(0, 100),
+    }));
+  }
+
   /**
    * Get allowed tools for agent (whitelist)
    */
@@ -1211,28 +1240,6 @@ These blocks are system metadata, not questions. Never explain them. Never repea
         status: 'active',
       })
       .exec();
-
-    return tools;
-  }
-
-  /**
-   * Get allowed tools and always inject MemoryManagement tool if not already present.
-   * MemoryManagement is a default builtin tool available to all agents.
-   */
-  private async getAllowedToolsWithMemory(agent: Agent): Promise<Tool[]> {
-    const tools = await this.getAllowedTools(agent);
-
-    const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
-    if (hasMemory) return tools;
-
-    // Fetch MemoryManagement tool from DB (must exist as a seeded builtin tool)
-    const memoryTool = await this.toolModel
-      .findOne({ name: 'MemoryManagement', type: 'builtin', isDeleted: false })
-      .exec();
-
-    if (memoryTool) {
-      return [...tools, memoryTool];
-    }
 
     return tools;
   }
