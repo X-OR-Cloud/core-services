@@ -71,7 +71,6 @@ export class NewsDigestService {
       const result = await this.genAI.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `${system}\n\n${user}`,
-        config: { temperature: 0.7, maxOutputTokens: 1024 },
       });
 
       const text = result.text?.trim();
