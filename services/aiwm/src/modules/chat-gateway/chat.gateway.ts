@@ -205,14 +205,16 @@ export class ChatWsGateway
 
         if (payload.isFinal && payload.role === 'assistant' && this.redisPub) {
           const outboundLockKey = `lock:outbound:${actionId}`;
-          this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then((acquired) => {
+          this.redisPub.set(outboundLockKey, '1', 'EX', 10, 'NX').then(async (acquired) => {
             if (acquired && this.redisPub) {
+              const sourcePlatform = await this.redisPub.get(`conv:trigger-platform:${conversationId}`).catch(() => null) ?? 'external';
               this.redisPub.publish(
                 'outbound:message',
                 JSON.stringify({
                   conversationId,
                   text: payload.content,
                   actionType: payload.type === 'system' ? 'notice' : (payload.type ?? 'message'),
+                  sourcePlatform,
                 }),
               ).catch((err: Error) => this.logger.error(`Failed to publish outbound:message: ${err.message}`));
             }
@@ -315,6 +317,12 @@ export class ChatWsGateway
             ...(skipAgent ? { skipAgent: true } : {}),
           };
           this.emitToRoom(`conversation:${conversationId}`, 'message:new', broadcastPayload);
+
+          // Track trigger platform so outbound routing can forward to the correct platform
+          if (platform && this.redisPub) {
+            this.redisPub.set(`conv:trigger-platform:${conversationId}`, platform, 'EX', 600)
+              .catch(() => {});
+          }
 
           if (!skipAgent && agentId) {
             if ((agentDoc as any)?.type === 'assistant') {
@@ -868,6 +876,12 @@ export class ChatWsGateway
         ...(skipAgent ? { skipAgent: true } : {}),
         ...(!isAgent && client.data.userId ? { userId: client.data.userId, username: client.data.username, fullname: client.data.fullname } : {}),
       };
+
+      // Track trigger platform so outbound routing can skip Discord forward for portal-originated messages
+      if (!isAgent && this.redisPub) {
+        this.redisPub.set(`conv:trigger-platform:${conversationId}`, 'portal', 'EX', 600)
+          .catch(() => {});
+      }
 
       if (sleepNoticeContent) {
         try {

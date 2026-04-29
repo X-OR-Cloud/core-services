@@ -57,8 +57,8 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.redisSub.on('message', async (channel, message) => {
       if (channel === CHANNEL_OUTBOUND) {
         try {
-          const { conversationId, text, actionType } = JSON.parse(message);
-          await this.handleOutbound(conversationId, text, actionType);
+          const { conversationId, text, actionType, sourcePlatform } = JSON.parse(message);
+          await this.handleOutbound(conversationId, text, actionType, sourcePlatform);
         } catch (err: any) {
           this.logger.error(`Failed to process outbound:message: ${err.message}`);
         }
@@ -202,7 +202,9 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
    * Forwards the response to the correct external platform.
    * actionType defaults to 'message' — only 'message' is forwarded unless verboseActions is configured.
    */
-  async handleOutbound(conversationId: string, text: string, actionType = 'message'): Promise<void> {
+  async handleOutbound(conversationId: string, text: string, actionType = 'message', sourcePlatform?: string): Promise<void> {
+    if (sourcePlatform === 'portal') return;
+
     const verboseActions = this.conversationVerboseActions.get(conversationId);
     const isAllowed =
       actionType === 'message' ||
