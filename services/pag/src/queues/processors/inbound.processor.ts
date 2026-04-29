@@ -466,9 +466,19 @@ export class InboundProcessor extends WorkerHost {
     const soulId = (soul as any)._id.toString();
     const setupKey = `${data.platformUserId}:${soulId}`;
 
+    // ── Quick-command escape: always handle recognized commands, even if setup is pending ──
+    const isQuickCommand =
+      text === 'tin tức' || text === 'news' ||
+      text === 'cài tin tức' || text === 'đăng ký tin tức' || text === 'cai tin tuc' ||
+      text === 'tắt tin tức' || text === 'dừng tin tức' || text === 'tat tin tuc' ||
+      text === 'bật tin tức' || text === 'bat tin tuc';
+    if (isQuickCommand) {
+      this.newsSetupPending.delete(setupKey); // clear any stale pending state
+    }
+
     // ── Check if we're awaiting a setup reply ─────────────────────────────────
     const pendingExpiry = this.newsSetupPending.get(setupKey);
-    if (pendingExpiry && Date.now() < pendingExpiry) {
+    if (!isQuickCommand && pendingExpiry && Date.now() < pendingExpiry) {
       const parsed = this.parseNewsSetupReply(data.messageText.trim());
       if (parsed) {
         // Valid setup reply → save pref
