@@ -15,7 +15,7 @@
 4. [Phone Numbers](#4-phone-numbers)
 5. [Routes](#5-routes)
 6. [Dialplans](#6-dialplans)
-7. [Call Logs](#7-call-logs)
+7. [Calls](#7-calls)
 8. [Webhook — AMI Bridge](#8-webhook--ami-bridge)
 9. [Permission Matrix](#9-permission-matrix)
 
@@ -31,13 +31,13 @@
 |-------|------|----------|-------|
 | `_id` | ObjectId | auto | Primary key |
 | `name` | string | ✅ | Tên hiển thị (vd: `PBX HN-01`) |
-| `hostname` | string | ✅ | IP hoặc hostname của Asterisk server |
+| `hostname` | string | ✅ | IP hoặc hostname nội bộ của Asterisk server |
 | `ami` | object | ✅ | Thông số kết nối AMI (xem bên dưới) |
-| `wssPort` | number | ❌ | WebRTC WSS port, mặc định `8089` |
+| `wss` | object | ❌ | WebRTC WSS config (xem bên dưới) |
 | `status` | enum | auto | `online` \| `offline` \| `error` — AMI bridge cập nhật |
 | `owner` | object | auto | `{ orgId, userId }` từ BaseSchema |
-| `createdBy` | object | auto | `{ type, id }` |
-| `updatedBy` | object | auto | `{ type, id }` |
+| `createdBy` | object | auto | |
+| `updatedBy` | object | auto | |
 | `isDeleted` | boolean | auto | Soft delete |
 | `createdAt` | Date | auto | |
 | `updatedAt` | Date | auto | |
@@ -48,7 +48,23 @@
 |-------|------|----------|-------|
 | `port` | number | ❌ | AMI port, mặc định `5038` |
 | `username` | string | ✅ | AMI username |
-| `secret` | string | ✅ | AMI secret (lưu encrypted, không trả về trong GET) |
+| `secret` | string | ✅ | AMI secret — lưu encrypted, không trả về trong GET, decrypt tại runtime |
+
+#### WSS Object
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|-------|
+| `hostname` | string | ✅ | Public hostname/IP để WebRTC client kết nối (có thể khác `node.hostname`) |
+| `port` | number | ❌ | WSS port, mặc định `8089` |
+| `path` | string | ❌ | WebSocket path, mặc định `/ws` |
+
+> WebRTC client connect: `wss://<wss.hostname>:<wss.port><wss.path>`
+
+#### Encryption Pattern cho `ami.secret`
+
+- **Write**: service nhận plaintext → `encryptionService.encrypt(secret)` → lưu DB
+- **GET /nodes**: `ami.secret` có `select: false` trên Mongoose → **không bao giờ trả về**
+- **AMI bridge dùng**: gọi `GET /nodes/:id/credentials` (internal endpoint) → service decrypt → trả về plaintext
 
 ### 1.2 API Endpoints
 
@@ -60,6 +76,7 @@
 | `PATCH` | `/nodes/:id` | Cập nhật node |
 | `DELETE` | `/nodes/:id` | Xóa node (soft delete) |
 | `GET` | `/nodes/:id/status` | Trạng thái AMI connection hiện tại |
+| `GET` | `/nodes/:id/credentials` | **Internal** — trả về AMI credentials đã decrypt, auth bằng `AMI_BRIDGE_TOKEN` |
 
 ### 1.3 Example
 
@@ -72,7 +89,11 @@
     "port": 5038,
     "username": "vsm-bridge"
   },
-  "wssPort": 8089,
+  "wss": {
+    "hostname": "pbx-hn01.example.com",
+    "port": 8089,
+    "path": "/ws"
+  },
   "status": "online",
   "owner": { "orgId": "64org001...", "userId": "64user001..." },
   "createdAt": "2026-01-01T00:00:00.000Z"
@@ -94,15 +115,15 @@ Tài khoản SIP/WebRTC gắn với một user. MongoDB `_id` dùng làm SIP use
 | `_id` | ObjectId | auto | Primary key — dùng làm SIP username |
 | `nodeId` | ObjectId | ✅ | Node Asterisk chứa account |
 | `userId` | string | ❌ | User ID trong hệ thống |
-| `ext` | string | ✅ | Mã gọi nội bộ, unique trong org (vd: `8898`) — dùng để gọi nhanh trong cùng org |
+| `ext` | string | ✅ | Mã gọi nội bộ, unique trong org (vd: `8898`) |
 | `displayName` | string | ✅ | Tên hiển thị |
 | `password` | string | ✅ | SIP password (lưu encrypted, không trả về trong GET) |
-| `protocol` | enum | ✅ | `sip` \| `webrtc` \| `both` |
+| `protocol` | enum | ✅ | `sip` \| `webrtc` |
 | `status` | enum | auto | `online` \| `offline` — AMI bridge cập nhật (PeerStatus) |
 | `state` | enum | auto | `idle` \| `ringing` \| `in_call` — AMI bridge cập nhật (DeviceStateChange) |
 | `codecs` | string[] | ❌ | Codec cho phép, mặc định `["opus","ulaw","alaw"]` |
-| `syncedAt` | Date | auto | Lần cuối sync config lên Asterisk |
 | `syncStatus` | enum | auto | `pending` \| `synced` \| `error` |
+| `syncedAt` | Date | auto | Lần cuối sync config lên Asterisk |
 | `owner` | object | auto | `{ orgId, userId }` từ BaseSchema |
 | `createdBy` | object | auto | |
 | `updatedBy` | object | auto | |
@@ -403,21 +424,21 @@ Cấu hình dialplan Asterisk — cách xử lý cuộc gọi khi vào một con
 
 ---
 
-## 7. Call Logs
+## 7. Calls
 
-CDR (Call Detail Record) — ghi log đầy đủ mọi cuộc gọi. Được tạo bởi AMI bridge qua webhook, không tạo trực tiếp qua API client.
+CDR (Call Detail Record) — ghi log đầy đủ mọi cuộc gọi. Được tạo bởi AMI bridge qua webhook; không tạo trực tiếp qua API client ngoại trừ `POST /calls/originate`.
 
 ### 7.1 Schema
 
 | Field | Type | Required | Mô tả |
 |-------|------|----------|-------|
 | `_id` | ObjectId | auto | Primary key |
-| `cdr` | object | ❌ | Raw CDR object từ Asterisk AMI |
 | `nodeId` | ObjectId | ✅ | Node xử lý cuộc gọi |
 | `trunkId` | ObjectId | ❌ | Trunk được sử dụng |
 | `dialplanId` | ObjectId | ❌ | Dialplan xử lý cuộc gọi |
 | `phoneNumberId` | ObjectId | ❌ | DID number liên quan |
 | `direction` | enum | ✅ | `inbound` \| `outbound` \| `local` |
+| `mode` | enum | ✅ | Cách khởi tạo cuộc gọi (xem bên dưới) |
 | `fromNumber` | string | ✅ | Số gọi đi (E.164) |
 | `toNumber` | string | ✅ | Số nhận (E.164) |
 | `fromAccountId` | ObjectId | ❌ | Account gọi đi |
@@ -428,53 +449,90 @@ CDR (Call Detail Record) — ghi log đầy đủ mọi cuộc gọi. Được t
 | `endedAt` | Date | ❌ | Thời điểm kết thúc |
 | `duration` | number | auto | Tổng thời gian (giây) từ dial đến hangup |
 | `answeredDuration` | number | auto | Thời gian đàm thoại (giây) từ answer đến hangup |
-| `recordingFile` | string | ❌ | S3/MinIO object key (vd: `recordings/2026/04/19/<id>.wav`) — set bởi AMI bridge từ CDR event |
+| `scheduledAt` | Date | ❌ | Thời điểm hẹn (chỉ dùng cho `mode: auto`) |
+| `audio` | object | ❌ | File/TTS phát khi kết nối (chỉ dùng cho `mode: auto`) |
+| `recordingFile` | string | ❌ | S3/MinIO object key (vd: `recordings/2026/04/19/<id>.wav`) |
+| `cdr` | object | ❌ | Raw CDR object từ Asterisk AMI |
 | `owner` | object | auto | |
 | `createdBy` | object | auto | `{ type: "system", id: "ami-bridge" }` |
 | `isDeleted` | boolean | auto | |
 | `createdAt` | Date | auto | |
 | `updatedAt` | Date | auto | |
 
-#### Call Result Values
+#### Call Mode
 
 | Value | Mô tả |
 |-------|-------|
+| `manual` | Agent bấm số trực tiếp trên softphone |
+| `click-to-call` | Khởi tạo qua API (FE click gọi cho khách) |
+| `auto` | Auto-dialer — hẹn giờ, phát file audio hoặc TTS |
+
+#### Call Result
+
+| Value | Mô tả |
+|-------|-------|
+| `pending` | Scheduled auto call — chưa thực thi |
+| `queued` | Originate job đã enqueue vào BullMQ |
 | `answered` | Cuộc gọi được trả lời |
-| `no_answer` | Không có người nhận |
+| `not-answered` | Đổ chuông nhưng không có người nhấc (timeout) |
 | `busy` | Máy bận |
-| `failed` | Lỗi kỹ thuật |
 | `canceled` | Người gọi cúp trước khi được nhấc |
+| `terminated` | Người nhận bấm từ chối |
+| `failed` | Lỗi kỹ thuật |
+
+#### Audio Object (cho `mode: auto`)
+
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `type` | enum | `file` \| `tts` |
+| `value` | string | S3 key (nếu `file`) hoặc text nội dung (nếu `tts`) |
 
 ### 7.2 API Endpoints
 
 | Method | Path | Mô tả |
 |--------|------|-------|
-| `GET` | `/call-logs` | Danh sách call logs (paginated) |
-| `GET` | `/call-logs/:id` | Chi tiết cuộc gọi |
-| `DELETE` | `/call-logs/:id` | Xóa log (soft delete) |
-| `GET` | `/call-logs/stats` | Thống kê tổng hợp |
-| `POST` | `/call-logs/originate` | Khởi tạo outbound call |
-| `GET` | `/call-logs/:id/recording-url` | Lấy signed URL để phát lại recording (TTL 15 phút) |
+| `GET` | `/calls` | Danh sách calls (paginated) |
+| `GET` | `/calls/:id` | Chi tiết cuộc gọi |
+| `DELETE` | `/calls/:id` | Xóa (soft delete) |
+| `GET` | `/calls/stats` | Thống kê tổng hợp |
+| `POST` | `/calls/originate` | Khởi tạo outbound call |
+| `GET` | `/calls/:id/recording-url` | Lấy signed URL để phát lại recording (TTL 15 phút) |
 
 ### 7.3 Query Parameters
 
 ```
-GET /call-logs?direction=inbound
-GET /call-logs?result=answered
-GET /call-logs?fromNumber=+84241234567
-GET /call-logs?nodeId=xxx
-GET /call-logs?fromAccountId=xxx
-GET /call-logs?startedAt:gte=2026-04-01&startedAt:lte=2026-04-30
-GET /call-logs?page=1&limit=50&sort=startedAt:desc
+GET /calls?direction=inbound
+GET /calls?result=answered
+GET /calls?mode=click-to-call
+GET /calls?fromNumber=+84241234567
+GET /calls?nodeId=xxx
+GET /calls?fromAccountId=xxx
+GET /calls?startedAt:gte=2026-04-01&startedAt:lte=2026-04-30
+GET /calls?page=1&limit=50&sort=startedAt:desc
 ```
 
-### 7.4 POST /call-logs/originate
+### 7.4 POST /calls/originate
 
-**Request:**
+**Click-to-Call:**
 ```json
 {
+  "mode": "click-to-call",
   "fromAccountId": "64b110001bdbfc44ef96aa01",
   "toNumber": "+84912345678"
+}
+```
+
+**Auto call (hẹn giờ + audio):**
+```json
+{
+  "mode": "auto",
+  "fromAccountId": "64b110001bdbfc44ef96aa01",
+  "toNumber": "+84912345678",
+  "scheduledAt": "2026-04-28T09:00:00.000Z",
+  "audio": {
+    "type": "tts",
+    "value": "Xin chào, đây là thông báo từ hệ thống..."
+  }
 }
 ```
 
@@ -487,21 +545,31 @@ GET /call-logs?page=1&limit=50&sort=startedAt:desc
 }
 ```
 
-### 7.5 GET /call-logs/:id/recording-url
+**Auto call (pending):**
+```json
+{
+  "_id": "64g770001bdbfc44ef96gg08",
+  "result": "pending",
+  "scheduledAt": "2026-04-28T09:00:00.000Z",
+  "message": "Call scheduled"
+}
+```
 
-File ghi âm được lưu trên S3/MinIO qua s3fs mount trên Asterisk server. VSM generate presigned URL để FE stream trực tiếp mà không qua backend.
+### 7.5 GET /calls/:id/recording-url
+
+File ghi âm được lưu trên S3/MinIO qua s3fs mount trên Asterisk server. VSM generate presigned URL để FE stream trực tiếp.
 
 **Response:**
 ```json
 {
-  "url": "https://minio.example.com/vsm-recordings/recordings/2026/04/19/<id>.wav?X-Amz-Expires=900&X-Amz-Signature=...",
+  "url": "https://minio.example.com/vsm-recordings/recordings/2026/04/19/<id>.wav?X-Amz-Expires=900&...",
   "expiresAt": "2026-04-19T08:15:00.000Z"
 }
 ```
 
-> Trả về `404` nếu `recordingFile` chưa có (cuộc gọi không được ghi âm hoặc CDR chưa về).
+> Trả về `404` nếu `recordingFile` chưa có.
 
-### 7.6 Example Call Log
+### 7.6 Example Call
 
 ```json
 {
@@ -509,6 +577,7 @@ File ghi âm được lưu trên S3/MinIO qua s3fs mount trên Asterisk server. 
   "nodeId": "64a920341bdbfc44ef96cc3c",
   "trunkId": "64c220001bdbfc44ef96bb02",
   "direction": "outbound",
+  "mode": "click-to-call",
   "fromNumber": "+842412345678",
   "toNumber": "+84912345678",
   "fromAccountId": "64b110001bdbfc44ef96aa01",
@@ -521,8 +590,7 @@ File ghi âm được lưu trên S3/MinIO qua s3fs mount trên Asterisk server. 
   "recordingFile": "recordings/2026/04/19/64g770001bdbfc44ef96gg07.wav",
   "cdr": {
     "UniqueID": "1713510000.42",
-    "Disposition": "ANSWERED",
-    "RecordingFile": "/var/spool/asterisk/monitor/recordings/2026/04/19/64g770001bdbfc44ef96gg07.wav"
+    "Disposition": "ANSWERED"
   }
 }
 ```
@@ -547,7 +615,7 @@ Content-Type: application/json
   "nodeId": "64a920341bdbfc44ef96cc3c",
   "event": "Cdr",
   "receivedAt": "2026-04-19T08:03:45.000Z",
-  "payload": { ...rawAmiEvent }
+  "payload": { "...rawAmiEvent": "..." }
 }
 ```
 
@@ -555,29 +623,27 @@ Content-Type: application/json
 
 | Event | Xử lý |
 |-------|-------|
-| `Cdr` | Tạo call-log; parse Disposition → result; tính duration, answeredDuration; extract S3 key từ `RecordingFile` |
+| `Cdr` | Tạo/cập nhật call; parse Disposition → result; tính duration; extract S3 key từ `RecordingFile` |
 | `PeerStatus` | Cập nhật `account.status` (online/offline) |
 | `DeviceStateChange` | Cập nhật `account.state` (idle/ringing/in_call) |
-| `DialBegin` | Cập nhật call-log state nếu có cdrId |
-| `DialEnd` | Cập nhật call-log state theo DialStatus |
-| `Hangup` | Finalize call-log nếu CDR chưa về |
+| `DialBegin` | Cập nhật call state nếu có cdrId |
+| `DialEnd` | Cập nhật call state theo DialStatus |
+| `Hangup` | Finalize call nếu CDR chưa về |
 
 ### 8.3 RecordingFile — S3 Key Extraction
-
-AMI bridge nhận `RecordingFile` từ CDR event là absolute path trên Asterisk server. Bridge strip prefix để lấy S3 object key trước khi gửi về VSM:
 
 ```
 CDR.RecordingFile = "/var/spool/asterisk/monitor/recordings/2026/04/19/<id>.wav"
                                                  ↓ strip prefix
-call-log.recordingFile = "recordings/2026/04/19/<id>.wav"   ← S3 key
+call.recordingFile = "recordings/2026/04/19/<id>.wav"   ← S3 key
 ```
 
 ---
 
 ## 9. Permission Matrix
 
-| Role | nodes | accounts | trunks | phone-numbers | routes | dialplans | call-logs |
-|------|-------|----------|--------|---------------|--------|-----------|-----------|
+| Role | nodes | accounts | trunks | phone-numbers | routes | dialplans | calls |
+|------|-------|----------|--------|---------------|--------|-----------|-------|
 | `org.owner` | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Read + Delete |
 | `org.admin` | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Full CRUD | Read |
 | `org.editor` | Read | Own only | Read | Read | Read | Read | Own only |
