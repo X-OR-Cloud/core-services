@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { IsEnum } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
@@ -50,6 +52,14 @@ export class NodesController {
   @UseGuards(AmiAuthGuard)
   getCredentials(@Param('id') id: string) {
     return this.service.getCredentials(id);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: '[Internal] Update node AMI connection status — AMI bridge only' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(AmiAuthGuard)
+  updateStatus(@Param('id') id: string, @Body() body: { status: 'online' | 'offline' | 'error' }) {
+    return this.service.updateStatus(id, body.status);
   }
 
   @Patch(':id')

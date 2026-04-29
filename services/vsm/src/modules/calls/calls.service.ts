@@ -154,4 +154,27 @@ export class CallsService extends BaseService<Call> {
   async findByUniqueId(asteriskUniqueId: string): Promise<any> {
     return this.model.findOne({ asteriskUniqueId }).lean();
   }
+
+  /** Aggregate call stats for an org — total, by result, by direction */
+  async getStats(orgId: string): Promise<any> {
+    const match = { 'owner.orgId': orgId, isDeleted: false };
+
+    const [totals, byResult, byDirection] = await Promise.all([
+      this.model.countDocuments(match),
+      this.model.aggregate([
+        { $match: match },
+        { $group: { _id: '$result', count: { $sum: 1 } } },
+      ]),
+      this.model.aggregate([
+        { $match: match },
+        { $group: { _id: '$direction', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    return {
+      total: totals,
+      byResult: Object.fromEntries(byResult.map((r: any) => [r._id, r.count])),
+      byDirection: Object.fromEntries(byDirection.map((r: any) => [r._id, r.count])),
+    };
+  }
 }

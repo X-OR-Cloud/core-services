@@ -27,6 +27,14 @@ export class CallsController {
     return this.service.scheduleAuto(dto, ctx);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: 'Get call statistics (total, by result, by direction)' })
+  @ApiOkResponse({ schema: { example: { total: 42, byResult: { answered: 30, failed: 12 }, byDirection: { inbound: 20, outbound: 22 } } } })
+  @UseGuards(JwtAuthGuard)
+  getStats(@CurrentUser() ctx: RequestContext) {
+    return this.service.getStats(ctx.orgId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List call logs' })
   @ApiReadErrors({ notFound: false })

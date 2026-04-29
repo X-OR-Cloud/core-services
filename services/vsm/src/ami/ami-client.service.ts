@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import * as net from 'net';
+import * as https from 'https';
+import * as http from 'http';
 
 export interface AmiAction {
   Action: string;
@@ -38,6 +40,9 @@ export class AmiClientService implements OnApplicationBootstrap, OnApplicationSh
   private readonly username: string;
   private readonly secret: string;
   private readonly reconnectDelay: number;
+  private readonly nodeId: string;
+  private readonly apiUrl: string;
+  private readonly bridgeToken: string;
 
   private readonly eventHandlers: EventHandler[] = [];
   private readonly pendingActions = new Map<string, (response: Record<string, string>) => void>();
@@ -49,6 +54,9 @@ export class AmiClientService implements OnApplicationBootstrap, OnApplicationSh
     this.username = process.env['AMI_USERNAME'] || '';
     this.secret = process.env['AMI_SECRET'] || '';
     this.reconnectDelay = parseInt(process.env['AMI_RECONNECT_DELAY'] || '5000', 10);
+    this.nodeId = process.env['NODE_ID'] || '';
+    this.apiUrl = process.env['VSM_API_URL'] || 'http://localhost:3009';
+    this.bridgeToken = process.env['AMI_BRIDGE_TOKEN'] || '';
   }
 
   onApplicationBootstrap() {
@@ -113,8 +121,10 @@ export class AmiClientService implements OnApplicationBootstrap, OnApplicationSh
     });
 
     this.socket.on('close', () => {
+      const wasLoggedIn = this.loggedIn;
       this.loggedIn = false;
       this.logger.warn('AMI connection closed, scheduling reconnect...');
+      if (wasLoggedIn) this.patchNodeStatus('offline');
       this.scheduleReconnect();
     });
   }
@@ -168,6 +178,7 @@ export class AmiClientService implements OnApplicationBootstrap, OnApplicationSh
     if (msg['Response'] === 'Success' && !this.loggedIn) {
       this.loggedIn = true;
       this.logger.log('AMI login successful');
+      this.patchNodeStatus('online');
       return;
     }
 
@@ -201,5 +212,20 @@ export class AmiClientService implements OnApplicationBootstrap, OnApplicationSh
 
   isConnected(): boolean {
     return this.loggedIn;
+  }
+
+  private patchNodeStatus(status: 'online' | 'offline' | 'error'): void {
+    if (!this.nodeId) return;
+    const url = new URL(`${this.apiUrl}/nodes/${this.nodeId}/status`);
+    const body = JSON.stringify({ status });
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      { hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80), path: url.pathname, method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.bridgeToken}`, 'Content-Length': Buffer.byteLength(body) } },
+      (res) => { this.logger.log(`Node status → ${status} (HTTP ${res.statusCode})`); },
+    );
+    req.on('error', (err) => this.logger.error(`patchNodeStatus error: ${err.message}`));
+    req.write(body);
+    req.end();
   }
 }

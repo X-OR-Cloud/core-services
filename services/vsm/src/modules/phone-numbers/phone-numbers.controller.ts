@@ -27,6 +27,14 @@ export class PhoneNumbersController {
     return this.service.findAll(parseQueryString(query), ctx);
   }
 
+  @Get('resolve/:number')
+  @ApiOperation({ summary: 'Resolve phone number by E.164 string' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  resolve(@Param('number') number: string) {
+    return this.service.findByNumber(number);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get phone number by ID' })
   @ApiReadErrors()

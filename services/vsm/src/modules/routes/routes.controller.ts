@@ -1,9 +1,21 @@
 import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { RoutesService } from './routes.service';
 import { CreateRouteDto, UpdateRouteDto } from './routes.dto';
+
+class ResolveRouteDto {
+  @ApiProperty({ enum: ['inbound', 'outbound'] })
+  @IsEnum(['inbound', 'outbound'])
+  direction: 'inbound' | 'outbound';
+
+  @ApiPropertyOptional() @IsOptional() @IsString() fromNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() toNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() fromAccountId?: string;
+}
 
 @ApiTags('routes')
 @ApiBearerAuth()
@@ -17,6 +29,14 @@ export class RoutesController {
   @UseGuards(JwtAuthGuard)
   create(@Body() dto: CreateRouteDto, @CurrentUser() ctx: RequestContext) {
     return this.service.create(dto, ctx);
+  }
+
+  @Post('resolve')
+  @ApiOperation({ summary: 'Resolve best matching route for a call' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  resolve(@Body() dto: ResolveRouteDto, @CurrentUser() ctx: RequestContext) {
+    return this.service.resolve({ ...dto, orgId: ctx.orgId });
   }
 
   @Get()
