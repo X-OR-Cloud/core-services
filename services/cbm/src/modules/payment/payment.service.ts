@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, ObjectId } from 'mongoose';
@@ -28,8 +28,6 @@ import { decryptConfig } from '../provider/provider.service';
  */
 @Injectable()
 export class PaymentService extends BaseService<Payment> {
-  private readonly logger = new Logger(PaymentService.name);
-
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Provider.name) private providerModel: Model<Provider>,

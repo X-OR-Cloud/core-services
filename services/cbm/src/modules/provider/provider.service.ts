@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
@@ -41,7 +40,6 @@ export function decryptConfig(encryptedHex: string, key: Buffer): string {
 
 @Injectable()
 export class ProviderService extends BaseService<Provider> {
-  private readonly logger = new Logger(ProviderService.name);
   private readonly encryptionKey: Buffer;
 
   constructor(@InjectModel(Provider.name) private providerModel: Model<Provider>) {
@@ -67,7 +65,7 @@ export class ProviderService extends BaseService<Provider> {
     context: RequestContext,
   ): Promise<FindManyResult<Provider>> {
     const result = await super.findAll(options, context);
-    result.data = result.data.map((p) => this.stripConfig(p));
+    result.data = result.data.map((p) => this.stripConfig(p)) as any;
     return result;
   }
 
