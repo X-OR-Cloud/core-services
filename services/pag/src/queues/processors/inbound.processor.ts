@@ -16,6 +16,56 @@ import { TaskProducer } from '../producers/task.producer';
 import { TasksService } from '../../modules/tasks/tasks.service';
 import { QuotaService } from '../../modules/quota/quota.service';
 import { PlansService } from '../../modules/plans/plans.service';
+import { UserNewsPrefsService } from '../../modules/user-news-prefs/user-news-prefs.service';
+
+// ─── News Digest UX constants ────────────────────────────────────────────────
+
+const NEWS_CATEGORY_MAP: Record<string, string[]> = {
+  '1': ['world', 'politics'],
+  '2': ['business'],
+  '3': ['technology'],
+  '4': ['life'],
+  '5': ['entertainment', 'sports'],
+  '6': ['education'],
+};
+
+const NEWS_CATEGORY_NAMES: Record<string, string> = {
+  '1': 'Thế giới & chính trị',
+  '2': 'Kinh doanh & tài chính',
+  '3': 'Công nghệ',
+  '4': 'Đời sống & sức khỏe',
+  '5': 'Giải trí & thể thao',
+  '6': 'Giáo dục',
+};
+
+const NEWS_SLUG_NAMES: Record<string, string> = {
+  world: 'Thế giới', politics: 'Chính trị', business: 'Kinh doanh',
+  technology: 'Công nghệ', life: 'Đời sống', entertainment: 'Giải trí',
+  sports: 'Thể thao', education: 'Giáo dục',
+};
+
+const NEWS_FREQ_MAP: Record<string, string> = { m: 'morning', e: 'evening', b: 'both' };
+
+const NEWS_FREQ_DISPLAY: Record<string, string> = {
+  morning: 'Sáng 07:00',
+  evening: 'Chiều 18:00',
+  both: 'Sáng 07:00 & Chiều 18:00',
+};
+
+const NEWS_SETUP_MENU =
+  '📰 Cài bản tin hàng ngày ☕\n\n' +
+  'Chọn chủ đề (gõ số, cách nhau bằng dấu phẩy):\n' +
+  '1. Thế giới & chính trị\n' +
+  '2. Kinh doanh & tài chính\n' +
+  '3. Công nghệ\n' +
+  '4. Đời sống & sức khỏe\n' +
+  '5. Giải trí & thể thao\n' +
+  '6. Giáo dục\n\n' +
+  'Chọn giờ giao: M (Sáng 7h) / E (Chiều 18h) / B (Cả hai)\n\n' +
+  'Gõ trong 1 tin, ví dụ: "1, 3, 4 - M"\n' +
+  'Hoặc "tất cả - B" để nhận tất cả chủ đề cả 2 buổi.';
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface TaskBlock {
   title: string;
@@ -38,6 +88,8 @@ interface InboundJobData {
 export class InboundProcessor extends WorkerHost {
   private readonly logger = new Logger(InboundProcessor.name);
   private genAI: GoogleGenAI | null = null;
+  // In-memory TTL map for 2-turn news setup wizard: key → expiry timestamp
+  private readonly newsSetupPending = new Map<string, number>();
 
   private get systemContext(): RequestContext {
     return {
@@ -61,6 +113,7 @@ export class InboundProcessor extends WorkerHost {
     private tasksService: TasksService,
     private quotaService: QuotaService,
     private plansService: PlansService,
+    private userNewsPrefsService: UserNewsPrefsService,
   ) {
     super();
     const apiKey = process.env['GOOGLE_API_KEY'];
@@ -91,6 +144,12 @@ export class InboundProcessor extends WorkerHost {
       const taskCommandResult = await this.handleTaskCommand(data);
       if (taskCommandResult) {
         return taskCommandResult;
+      }
+
+      // 0b. Handle news quick commands ("tin tức", "cài tin tức", etc.)
+      const newsCommandResult = await this.handleNewsCommand(data);
+      if (newsCommandResult) {
+        return newsCommandResult;
       }
 
       // 1. Load soul config
@@ -127,8 +186,11 @@ export class InboundProcessor extends WorkerHost {
         (soul as any)._id.toString(),
       );
 
-      // 5a. Load plan+quota context for LLM
-      const quotaSummary = await this.quotaService.getUserQuotaSummary(data.platformUserId);
+      // 5a. Load plan+quota + news pref context for LLM (parallel)
+      const [quotaSummary, newsPref] = await Promise.all([
+        this.quotaService.getUserQuotaSummary(data.platformUserId),
+        this.userNewsPrefsService.findByUser(data.platformUserId, (soul as any)._id.toString()),
+      ]);
       const planDoc = await this.plansService.findBySlug(quotaSummary.planSlug);
 
       // 5c. Check daily chat quota (atomic check-and-consume)
@@ -151,7 +213,7 @@ export class InboundProcessor extends WorkerHost {
         throw new Error('GOOGLE_API_KEY not configured');
       }
 
-      const contents = this.buildContents(soul, memories, recentMessages, data.messageText, pendingTasks, quotaSummary, planDoc);
+      const contents = this.buildContents(soul, memories, recentMessages, data.messageText, pendingTasks, quotaSummary, planDoc, newsPref);
       const result = await this.genAI.models.generateContent({
         model: soul.llm?.model || 'gemini-2.5-flash',
         contents,
@@ -393,6 +455,193 @@ export class InboundProcessor extends WorkerHost {
   }
 
   /**
+   * Handle news digest quick commands: "tin tức", "cài tin tức", "tắt tin tức", "bật tin tức"
+   * Also intercepts setup reply when awaiting user's category/frequency input.
+   * Returns a result object if handled, null if not a news command.
+   */
+  private async handleNewsCommand(data: InboundJobData): Promise<any | null> {
+    const text = data.messageText.trim().toLowerCase();
+    const soul = await this.soulsService.findBySlug(data.soulSlug);
+    if (!soul) return null;
+    const soulId = (soul as any)._id.toString();
+    const setupKey = `${data.platformUserId}:${soulId}`;
+
+    // ── Check if we're awaiting a setup reply ─────────────────────────────────
+    const pendingExpiry = this.newsSetupPending.get(setupKey);
+    if (pendingExpiry && Date.now() < pendingExpiry) {
+      const parsed = this.parseNewsSetupReply(data.messageText.trim());
+      if (parsed) {
+        // Valid setup reply → save pref
+        this.newsSetupPending.delete(setupKey);
+        await this.userNewsPrefsService.upsert(data.platformUserId, soulId, data.channelId, {
+          categories: parsed.categories,
+          frequency: parsed.frequency,
+        });
+        const freqDisplay = NEWS_FREQ_DISPLAY[parsed.frequency] || parsed.frequency;
+        const reply =
+          `✅ Đã cài bản tin:\n` +
+          `− Chủ đề: ${parsed.catNames}\n` +
+          `− Giao: ${freqDisplay} GMT+7\n\n` +
+          `Bản tin đầu tiên sẽ đến theo lịch. Gõ "tắt tin tức" để dừng bất cứ lúc nào.`;
+        await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+        await this.messagesService.create({
+          conversationId: new Types.ObjectId(data.conversationId) as any,
+          role: 'assistant',
+          content: reply,
+        }, this.systemContext);
+        return { processed: true, newsCommand: 'setup_saved' };
+      } else {
+        // Invalid format — show hint, keep waiting
+        const hint = 'Chưa đúng định dạng. Hãy gõ theo mẫu: "1, 3, 4 - M" (số chủ đề - giờ giao M/E/B)\nVí dụ: "1, 3 - M" → Thế giới, Công nghệ vào sáng 7h.';
+        await this.sendZaloReply(data.channelId, data.platformUserId, hint);
+        await this.messagesService.create({
+          conversationId: new Types.ObjectId(data.conversationId) as any,
+          role: 'assistant',
+          content: hint,
+        }, this.systemContext);
+        return { processed: true, newsCommand: 'setup_invalid_format' };
+      }
+    }
+
+    // ── Exact keyword commands ────────────────────────────────────────────────
+
+    // "tin tức" / "news" — show current status
+    if (text === 'tin tức' || text === 'news') {
+      const pref = await this.userNewsPrefsService.findByUser(data.platformUserId, soulId);
+      let reply: string;
+      if (!pref) {
+        reply = '📰 Bạn chưa cài bản tin hàng ngày.\nGõ "cài tin tức" để bắt đầu nhận tin nóng mỗi ngày từ TranGPT ☕';
+      } else if (!pref.active) {
+        reply =
+          '📰 Bản tin hàng ngày của bạn:\n' +
+          '− Trạng thái: đã tắt ❌\n\n' +
+          'Gõ "bật tin tức" để bật lại, "cài tin tức" để thay đổi cài đặt.';
+      } else {
+        const catDisplay = pref.categories?.length
+          ? pref.categories.map((s: string) => NEWS_SLUG_NAMES[s] || s).join(', ')
+          : 'Tất cả chủ đề';
+        const freqDisplay = NEWS_FREQ_DISPLAY[pref.frequency] || pref.frequency;
+        reply =
+          '📰 Bản tin hàng ngày của bạn:\n' +
+          `− Trạng thái: đang bật ✅\n` +
+          `− Chủ đề: ${catDisplay}\n` +
+          `− Giờ giao: ${freqDisplay} GMT+7\n\n` +
+          'Gõ "cài tin tức" để thay đổi, "tắt tin tức" để dừng.';
+      }
+      await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: reply,
+      }, this.systemContext);
+      return { processed: true, newsCommand: 'status' };
+    }
+
+    // "cài tin tức" — start setup wizard
+    if (text === 'cài tin tức' || text === 'đăng ký tin tức' || text === 'cai tin tuc') {
+      // Set pending state (TTL 5 minutes)
+      this.newsSetupPending.set(setupKey, Date.now() + 5 * 60 * 1000);
+      await this.sendZaloReply(data.channelId, data.platformUserId, NEWS_SETUP_MENU);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: NEWS_SETUP_MENU,
+      }, this.systemContext);
+      return { processed: true, newsCommand: 'setup_start' };
+    }
+
+    // "tắt tin tức" / "dừng tin tức" — disable
+    if (text === 'tắt tin tức' || text === 'dừng tin tức' || text === 'tat tin tuc') {
+      const pref = await this.userNewsPrefsService.findByUser(data.platformUserId, soulId);
+      let reply: string;
+      if (!pref) {
+        reply = 'Bạn chưa cài bản tin nên không cần tắt. Gõ "cài tin tức" nếu muốn bắt đầu nhận tin.';
+      } else {
+        await this.userNewsPrefsService.setActive(data.platformUserId, soulId, false);
+        reply = '✅ Đã tắt bản tin. Bạn sẽ không nhận tin tức hàng ngày nữa.\nGõ "bật tin tức" để bật lại bất cứ lúc nào.';
+      }
+      await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: reply,
+      }, this.systemContext);
+      return { processed: true, newsCommand: 'disable' };
+    }
+
+    // "bật tin tức" / "mở tin tức" — enable
+    if (text === 'bật tin tức' || text === 'mở tin tức' || text === 'bat tin tuc') {
+      const pref = await this.userNewsPrefsService.findByUser(data.platformUserId, soulId);
+      let reply: string;
+      if (!pref) {
+        reply = 'Bạn chưa cài bản tin. Gõ "cài tin tức" để bắt đầu.';
+      } else {
+        await this.userNewsPrefsService.setActive(data.platformUserId, soulId, true);
+        const catDisplay = pref.categories?.length
+          ? pref.categories.map((s: string) => NEWS_SLUG_NAMES[s] || s).join(', ')
+          : 'Tất cả chủ đề';
+        const freqDisplay = NEWS_FREQ_DISPLAY[pref.frequency] || pref.frequency;
+        reply =
+          `✅ Đã bật lại bản tin. Bạn sẽ nhận tin theo lịch cũ:\n` +
+          `− Chủ đề: ${catDisplay}\n` +
+          `− Giờ giao: ${freqDisplay} GMT+7`;
+      }
+      await this.sendZaloReply(data.channelId, data.platformUserId, reply);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: reply,
+      }, this.systemContext);
+      return { processed: true, newsCommand: 'enable' };
+    }
+
+    return null;
+  }
+
+  /**
+   * Parse user's setup reply: "1, 3, 4 - M" or "tất cả - B"
+   */
+  private parseNewsSetupReply(text: string): { categories: string[]; frequency: string; catNames: string } | null {
+    const m = text.match(/^([\d,\s]+|tất cả)\s*[-–]\s*([MEB])$/i);
+    if (!m) return null;
+    const catPart = m[1].trim();
+    const freqKey = m[2].toLowerCase();
+    const frequency = NEWS_FREQ_MAP[freqKey];
+    if (!frequency) return null;
+
+    let categories: string[];
+    let catNames: string;
+    if (catPart.toLowerCase() === 'tất cả') {
+      categories = ['world', 'politics', 'business', 'technology', 'life', 'entertainment', 'sports', 'education'];
+      catNames = 'Tất cả chủ đề';
+    } else {
+      const nums = catPart.split(',').map(n => n.trim()).filter(n => NEWS_CATEGORY_MAP[n]);
+      if (!nums.length) return null;
+      categories = [...new Set(nums.flatMap(n => NEWS_CATEGORY_MAP[n]))];
+      catNames = nums.map(n => NEWS_CATEGORY_NAMES[n]).join(', ');
+    }
+
+    return { categories, frequency, catNames };
+  }
+
+  /**
+   * Build news digest context string for LLM prompt injection.
+   */
+  private buildNewsContext(pref: any): string {
+    if (!pref) {
+      return 'THÔNG TIN BẢN TIN: Người dùng chưa cài bản tin hàng ngày. Nếu họ hỏi về tin tức hoặc bản tin, hướng dẫn gõ "cài tin tức".';
+    }
+    if (!pref.active) {
+      return 'THÔNG TIN BẢN TIN: Đã tắt. Người dùng có thể gõ "bật tin tức" để bật lại.';
+    }
+    const catDisplay = pref.categories?.length
+      ? pref.categories.map((s: string) => NEWS_SLUG_NAMES[s] || s).join(', ')
+      : 'tất cả chủ đề';
+    const freqStr = NEWS_FREQ_DISPLAY[pref.frequency] || pref.frequency;
+    return `THÔNG TIN BẢN TIN: Đang bật. Chủ đề: ${catDisplay}. Giao: ${freqStr} GMT+7. Nếu người dùng hỏi về bản tin, hãy trả lời dựa trên thông tin này. Gõ "cài tin tức" để thay đổi cài đặt.`;
+  }
+
+  /**
    * Extract <task> JSON blocks from AI response
    */
   private extractTaskBlocks(response: string): { cleanResponse: string; tasks: TaskBlock[] } {
@@ -493,7 +742,7 @@ export class InboundProcessor extends WorkerHost {
   /**
    * Build Gemini API contents array from soul config, memories, history, and current message
    */
-  private buildContents(soul: any, memories: any[], recentMessages: any[], currentMessage: string, pendingTasks: any[] = [], quotaSummary?: any, planDoc?: any): string {
+  private buildContents(soul: any, memories: any[], recentMessages: any[], currentMessage: string, pendingTasks: any[] = [], quotaSummary?: any, planDoc?: any, newsPref?: any): string {
     const parts: string[] = [];
 
     // System prompt + timezone
@@ -540,6 +789,9 @@ Quy tắc:
       const recurringLine = quotaSummary.features.recurringTasks ? 'có' : 'không';
       parts.push(`\nTHÔNG TIN GÓI CỦA NGƯỜI DÙNG:\n− Gói hiện tại: ${planName}\n− Tin nhắn hôm nay: ${chatLine}\n− Tasks đang chờ: ${taskLine}\n− Nhắc nhở lặp lại: ${recurringLine}\nNếu người dùng hỏi về plan, quota, gói dịch vụ, số tin nhắn còn lại — hãy dùng thông tin trên để trả lời chính xác, thân thiện.`);
     }
+
+    // News digest context
+    parts.push('\n' + this.buildNewsContext(newsPref));
 
     // Pending tasks context
     if (pendingTasks.length > 0) {

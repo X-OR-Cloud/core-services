@@ -76,4 +76,27 @@ export class UserNewsPrefsService {
       { $set: { lastDeliveredAt: new Date() } },
     ).exec();
   }
+
+  /** Upsert preferences (create or overwrite). Used by chat setup wizard. */
+  async upsert(
+    platformUserId: string,
+    soulId: string,
+    channelId: string,
+    data: { categories: string[]; frequency: string },
+  ): Promise<UserNewsPrefDocument> {
+    return this.model.findOneAndUpdate(
+      { platformUserId, soulId },
+      { $set: { channelId, categories: data.categories, frequency: data.frequency, active: true } },
+      { new: true, upsert: true },
+    ).exec();
+  }
+
+  /** Enable or disable news digest for a user. */
+  async setActive(platformUserId: string, soulId: string, active: boolean): Promise<UserNewsPrefDocument | null> {
+    return this.model.findOneAndUpdate(
+      { platformUserId, soulId },
+      { $set: { active } },
+      { new: true },
+    ).exec();
+  }
 }
