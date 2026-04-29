@@ -188,6 +188,46 @@ export class InvoiceService extends BaseService<Invoice> {
   }
 
   /**
+   * Internal method — called by PaymentService (gateway flow) to auto-create a paid Invoice.
+   * Bypasses state machine — sets status = 'paid' directly.
+   * Not exposed via HTTP.
+   */
+  async createAutoInvoice(
+    amount: { currency: string; value: number },
+    description: string,
+    paidAt: Date,
+    orgOwner: { orgId: string; userId: string },
+  ): Promise<Invoice & { _id: any }> {
+    const year = paidAt.getFullYear();
+    const prefix = `INV-${year}-`;
+    const orgMatch: any = { isDeleted: { $ne: true }, code: new RegExp(`^${prefix}`), 'owner.orgId': orgOwner.orgId };
+    const last = await this.invoiceModel.findOne(orgMatch).sort({ code: -1 }).select('code').lean();
+
+    let seq = 1;
+    if (last?.code) {
+      const parts = (last.code as string).split('-');
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) seq = lastSeq + 1;
+    }
+    const code = `${prefix}${String(seq).padStart(4, '0')}`;
+
+    const invoice = await this.invoiceModel.create({
+      code,
+      status: 'paid',
+      items: [{ description, qty: 1, unitPrice: amount, amount }],
+      subtotal: amount,
+      tax: { currency: amount.currency, value: 0 },
+      totalAmount: amount,
+      issuedDate: paidAt,
+      dueDate: paidAt,
+      owner: { orgId: orgOwner.orgId, userId: orgOwner.userId },
+      createdBy: orgOwner.userId,
+      isDeleted: false,
+    });
+    return invoice as unknown as Invoice & { _id: any };
+  }
+
+  /**
    * Internal method — called by PaymentService to update status after payment.
    * Not exposed via HTTP.
    */

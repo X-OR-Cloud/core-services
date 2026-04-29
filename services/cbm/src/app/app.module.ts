@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
+import { ScheduleModule } from '@nestjs/schedule';
 import {
   HealthModule,
   LicenseGuard,
@@ -29,6 +30,7 @@ import { PaymentModule } from '../modules/payment/payment.module';
 import { TransactionModule } from '../modules/transaction/transaction.module';
 import { ContractModule } from '../modules/contract/contract.module';
 import { ContractAnnexModule } from '../modules/contract-annex/contract-annex.module';
+import { ProviderModule } from '../modules/provider/provider.module';
 import { SkillModule } from '../skill/skill.module';
 
 @Module({
@@ -36,6 +38,7 @@ import { SkillModule } from '../skill/skill.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.cbm.name}`)),
     PassportModule,
     HealthModule,
@@ -59,6 +62,8 @@ import { SkillModule } from '../skill/skill.module';
     // Contract modules (CRM)
     ContractModule,
     ContractAnnexModule,
+    // Provider (payment gateway, e-invoice config)
+    ProviderModule,
     // Skill manifest endpoint
     SkillModule,
   ],
