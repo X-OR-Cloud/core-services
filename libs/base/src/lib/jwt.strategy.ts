@@ -34,6 +34,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt-auth') {
       userId: payload.userId || '',
       type: payload.type || 'user',
       licenses: payload.licenses || {}, // License map from JWT payload
+      permissions: payload.permissions || [], // Service account permissions
     };
   }
 }
