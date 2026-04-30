@@ -14,6 +14,7 @@ import { LicenseModule } from './modules/license/license.module';
 import { IamAppModule } from './modules/app/app.module';
 import { IamQueueModule } from './queues/queue.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { ServiceAccountModule } from './modules/service-account/service-account.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SetupModule } from './modules/setup/setup.module';
     LicenseModule,
     IamAppModule,
     SetupModule,
+    ServiceAccountModule,
   ],
   controllers: [AppController],
   providers: [
