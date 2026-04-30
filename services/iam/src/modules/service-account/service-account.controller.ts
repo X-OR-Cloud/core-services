@@ -1,11 +1,12 @@
 import {
   Controller, Get, Post, Body, Patch, Param, Delete,
-  UseGuards, Query, HttpCode, HttpStatus,
+  UseGuards, Query, HttpCode, HttpStatus, Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard, CurrentUser, parseQueryString, QueryStringParams,
   ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors,
+  ServiceAccountPermissionGuard, RequirePermission,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { ServiceAccountService } from './service-account.service';
@@ -38,6 +39,34 @@ export class ServiceAccountController {
   @ApiReadErrors({ notFound: false })
   async findAll(@Query() query: QueryStringParams, @CurrentUser() context: RequestContext) {
     return this.service.findAll(parseQueryString(query), context);
+  }
+
+  // ─── Test endpoint ────────────────────────────────────────────────────────
+  // Yêu cầu SA token với permission: iam / ping / read
+  // Dùng để test ServiceAccountPermissionGuard hoạt động đúng
+  // IMPORTANT: Must be declared BEFORE GET /:id to avoid route conflict
+  @Get('ping')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, ServiceAccountPermissionGuard)
+  @RequirePermission('iam', 'ping', 'read')
+  @ApiOperation({
+    summary: '[TEST] Ping — requires SA permission: iam/ping/read',
+    description: 'Test endpoint. Requires service account token with permission { service: "iam", resource: "ping", action: "read" }.',
+  })
+  @ApiResponse({ status: 200, description: 'OK — returns caller identity' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'SA token lacks required permission' })
+  ping(@Request() req: any) {
+    return {
+      message: 'pong',
+      caller: {
+        sub: req.user?.sub,
+        type: req.user?.type,
+        orgId: req.user?.orgId,
+        permissions: req.user?.permissions,
+        roles: req.user?.roles,
+      },
+    };
   }
 
   @Get(':id')
