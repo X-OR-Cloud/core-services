@@ -99,11 +99,11 @@ export class PresenceService {
 
   async setAgentOffline(agentId: string, socketId: string): Promise<void> {
     try {
+      // Only remove this specific socket. Do NOT delete the key when the set becomes empty —
+      // that creates a race: if a reconnect's setAgentOnline runs between our SREM and SCARD,
+      // the subsequent DEL would erase the newly-registered socket. The key expires via its
+      // TTL; setAgentOnline always rebuilds it on reconnect.
       await this.redis.srem(`presence:agent:${agentId}`, socketId);
-      const remaining = await this.redis.scard(`presence:agent:${agentId}`);
-      if (remaining === 0) {
-        await this.redis.del(`presence:agent:${agentId}`);
-      }
     } catch (error) {
       this.logger.error(`Error setting agent offline:`, (error as Error).message);
     }
