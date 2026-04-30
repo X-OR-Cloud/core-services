@@ -159,7 +159,7 @@ export class DocumentService extends BaseService<Document> {
     // Creator always has full access regardless of shareMode or project
     if (canViewPrivateDocument(doc, context)) return true;
 
-    if (shareMode === 'organization') {
+    if (shareMode === 'organization' || shareMode === 'organization-edit') {
       // All same-org members (filtered by owner.orgId in query) can view
       return true;
     }
@@ -218,7 +218,7 @@ export class DocumentService extends BaseService<Document> {
         // creator always sees their own docs regardless of shareMode/project
         ...creatorConditions,
         // organization-shared docs: all org members can view (orgId already filtered in findAll)
-        { shareMode: 'organization' },
+        { shareMode: { $in: ['organization', 'organization-edit'] } },
         ...privateConditions,
       ],
     };
