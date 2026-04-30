@@ -208,6 +208,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     const verboseActions = this.conversationVerboseActions.get(conversationId);
     const isAllowed =
       actionType === 'message' ||
+      actionType === 'notice' ||
       (verboseActions && (verboseActions.includes('*') || verboseActions.includes(actionType)));
 
     if (isAllowed) {
