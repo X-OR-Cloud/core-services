@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, ObjectId } from 'mongoose';
-import { createHmac } from 'crypto';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { WEBHOOK_OUTBOUND_QUEUE } from './webhook-outbound.processor';
 import { Payment } from './payment.schema';
 import { InvoiceService } from '../invoice/invoice.service';
 import { TransactionService } from '../transaction/transaction.service';
@@ -33,6 +35,7 @@ export class PaymentService extends BaseService<Payment> {
     @InjectModel(Provider.name) private providerModel: Model<Provider>,
     private readonly invoiceService: InvoiceService,
     private readonly transactionService: TransactionService,
+    @InjectQueue(WEBHOOK_OUTBOUND_QUEUE) private readonly webhookQueue: Queue,
   ) {
     super(paymentModel);
   }
@@ -142,6 +145,7 @@ export class PaymentService extends BaseService<Payment> {
         qrCode: payosResult.qrCode,
         checkoutUrl: payosResult.checkoutUrl,
       },
+      ...(data.webhookUrl ? { webhookUrl: data.webhookUrl, webhookSecret: data.webhookSecret } : {}),
     }, context) as Payment & { _id: any };
 
     return {
@@ -212,13 +216,28 @@ export class PaymentService extends BaseService<Payment> {
       return;
     }
 
-    await this.notifyPagWebhook({
-      event: 'payment.success',
-      paymentId: String(payment._id),
-      metadata: payment.metadata,
-      paidAt: paidAt.toISOString(),
-      reconciliation: { needed: false },
-    });
+    if (payment.webhookUrl) {
+      await this.webhookQueue.add(
+        'payment.success',
+        {
+          url: payment.webhookUrl,
+          secret: payment.webhookSecret || '',
+          payload: {
+            event: 'payment.success',
+            paymentId: String(payment._id),
+            metadata: payment.metadata,
+            paidAt: paidAt.toISOString(),
+            reconciliation: { needed: false },
+          },
+        },
+        {
+          attempts: 4,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
+      );
+    }
   }
 
   // ─── Soft delete ──────────────────────────────────────────────────────────
@@ -276,26 +295,6 @@ export class PaymentService extends BaseService<Payment> {
 
     const totalPaid = payments.reduce((sum, p) => sum + (p.amount?.value ?? 0), 0);
     await this.invoiceService.recalculateStatus(invoiceId, totalPaid, currency);
-  }
-
-  private async notifyPagWebhook(payload: object): Promise<void> {
-    const webhookUrl = process.env.PAG_PAYMENT_WEBHOOK_URL;
-    const secret = process.env.PAG_WEBHOOK_SECRET || '';
-    if (!webhookUrl) return;
-
-    const body = JSON.stringify(payload);
-    const signature = createHmac('sha256', secret).update(body).digest('hex');
-
-    try {
-      const res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Signature': `sha256=${signature}` },
-        body,
-      });
-      if (!res.ok) this.logger.error(`PAG webhook returned ${res.status}`);
-    } catch (err: any) {
-      this.logger.error(`PAG webhook failed: ${err.message}`);
-    }
   }
 
   private async sendDiscordAlert(message: string): Promise<void> {

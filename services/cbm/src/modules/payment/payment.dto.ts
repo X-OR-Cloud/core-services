@@ -71,6 +71,24 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({
+    description: 'Callback URL — CBM will POST payment confirmation here when payment is confirmed via webhook',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  webhookUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Shared secret for HMAC-SHA256 X-Signature header on webhook callback',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  webhookSecret?: string;
 }
 
 export class PaymentQueryDto extends PaginationQueryDto {
