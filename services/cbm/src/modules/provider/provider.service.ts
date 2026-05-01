@@ -112,8 +112,8 @@ export class ProviderService extends BaseService<Provider> {
       if (provider.provider === 'payos') {
         // Ping PayOS by fetching a non-existent order — if it returns 404 from PayOS (not a network error), connection is OK
         const { PayOS } = require('@payos/node');
-        const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
-        await payos.getPaymentLinkInformation('test-connection-probe').catch((e: any) => {
+        const payos = new PayOS({ clientId: config.clientId, apiKey: config.apiKey, checksumKey: config.checksumKey });
+        await payos.paymentRequests.get('test-connection-probe').catch((e: any) => {
           if (!e?.message?.includes('network') && !e?.message?.includes('ECONNREFUSED')) return; // PayOS responded = OK
           throw e;
         });
@@ -154,17 +154,21 @@ export class ProviderService extends BaseService<Provider> {
     }
 
     if (provider.provider === 'payos') {
+      if (!config.clientId || !config.checksumKey) {
+        throw new BadRequestException('Provider not configured: missing PayOS credentials');
+      }
       const { PayOS } = require('@payos/node');
-      const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
       try {
-        const data = payos.verifyPaymentWebhookData(body);
+        const payos = new PayOS({ clientId: config.clientId, apiKey: config.apiKey, checksumKey: config.checksumKey });
+        const data = await payos.webhooks.verify(body);
         return {
           orderCode: data.orderCode,
           paymentLinkId: data.paymentLinkId,
           amount: data.amount,
           paidAt: data.transactionDateTime ? new Date(data.transactionDateTime) : new Date(),
         };
-      } catch {
+      } catch (err: any) {
+        if (err?.status >= 400 && err?.status < 500) throw err; // re-throw NestJS exceptions
         throw new BadRequestException('Invalid webhook signature');
       }
     }

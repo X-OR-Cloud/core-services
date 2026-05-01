@@ -113,11 +113,11 @@ export class PaymentService extends BaseService<Payment> {
     const description = (data.metadata?.planName || data.note || 'TranGPT subscription').slice(0, 25);
 
     const { PayOS } = require('@payos/node');
-    const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
+    const payos = new PayOS({ clientId: config.clientId, apiKey: config.apiKey, checksumKey: config.checksumKey });
 
     let payosResult: any;
     try {
-      payosResult = await payos.createPaymentLink({
+      payosResult = await payos.paymentRequests.create({
         orderCode,
         amount: data.amount.value,
         description,
@@ -127,7 +127,7 @@ export class PaymentService extends BaseService<Payment> {
         buyerName: data.metadata?.platformUserId,
       });
     } catch (err: any) {
-      this.logger.error(`PayOS createPaymentLink failed: ${err.message}`);
+      this.logger.error(`PayOS paymentRequests.create failed: ${err.message}`);
       throw new BadRequestException(`Payment gateway error: ${err.message}`);
     }
 
