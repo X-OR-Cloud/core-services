@@ -111,7 +111,7 @@ export class ProviderService extends BaseService<Provider> {
     try {
       if (provider.provider === 'payos') {
         // Ping PayOS by fetching a non-existent order — if it returns 404 from PayOS (not a network error), connection is OK
-        const PayOS = require('@payos/node');
+        const { PayOS } = require('@payos/node');
         const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
         await payos.getPaymentLinkInformation('test-connection-probe').catch((e: any) => {
           if (!e?.message?.includes('network') && !e?.message?.includes('ECONNREFUSED')) return; // PayOS responded = OK
@@ -154,7 +154,7 @@ export class ProviderService extends BaseService<Provider> {
     }
 
     if (provider.provider === 'payos') {
-      const PayOS = require('@payos/node');
+      const { PayOS } = require('@payos/node');
       const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
       try {
         const data = payos.verifyPaymentWebhookData(body);

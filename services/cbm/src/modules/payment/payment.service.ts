@@ -112,7 +112,7 @@ export class PaymentService extends BaseService<Payment> {
     const expiredAt = new Date(Date.now() + 15 * 60 * 1000);
     const description = (data.metadata?.planName || data.note || 'TranGPT subscription').slice(0, 25);
 
-    const PayOS = require('@payos/node');
+    const { PayOS } = require('@payos/node');
     const payos = new PayOS(config.clientId, config.apiKey, config.checksumKey);
 
     let payosResult: any;
