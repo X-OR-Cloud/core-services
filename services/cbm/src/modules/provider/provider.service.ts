@@ -185,7 +185,8 @@ export class ProviderService extends BaseService<Provider> {
   // ─── Private helpers ───────────────────────────────────────────────────────
 
   private stripConfig(provider: Partial<Provider>): Partial<Provider> {
-    const { config: _config, ...rest } = provider as any;
+    const plain = (provider as any).toObject ? (provider as any).toObject() : provider;
+    const { config: _config, ...rest } = plain;
     return rest;
   }
 
