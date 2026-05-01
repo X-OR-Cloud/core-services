@@ -378,6 +378,18 @@ export class InboundProcessor extends WorkerHost {
       return { processed: true, taskCommand: 'plan_info' };
     }
 
+    // "gói dịch vụ" / "nâng cấp" / "upgrade" — show all available plans (instant, no LLM)
+    if (text === 'gói dịch vụ' || text === 'nâng cấp' || text === 'upgrade' || text === 'các gói') {
+      const display = await this.plansService.getPlansDisplay();
+      await this.sendZaloReply(data.channelId, data.platformUserId, display);
+      await this.messagesService.create({
+        conversationId: new Types.ObjectId(data.conversationId) as any,
+        role: 'assistant',
+        content: display,
+      }, this.systemContext);
+      return { processed: true, taskCommand: 'plans_display' };
+    }
+
     // "xong" or "done" — mark most recent notified task as done
     if (text === 'xong' || text === 'done' || text === 'hoàn thành') {
       const soul = await this.soulsService.findBySlug(data.soulSlug);
