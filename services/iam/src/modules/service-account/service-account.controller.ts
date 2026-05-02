@@ -69,6 +69,20 @@ export class ServiceAccountController {
     };
   }
 
+  @Post(':id/rotate-secret')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Rotate secret',
+    description: 'Generate a new secret for this service account. Returns rawSecret once — store it securely. Old tokens remain valid until they expire.',
+  })
+  @ApiResponse({ status: 200, description: 'Secret rotated. rawSecret returned once only.' })
+  @ApiResponse({ status: 404, description: 'Service account not found' })
+  async rotateSecret(@Param('id') id: string) {
+    return this.service.rotateSecret(id);
+  }
+
   @Get(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

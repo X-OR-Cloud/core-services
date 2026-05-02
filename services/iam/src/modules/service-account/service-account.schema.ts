@@ -29,6 +29,9 @@ export class ServiceAccount extends BaseSchema {
 
   @Prop()
   lastUsedAt?: Date;
+
+  @Prop({ type: Date, default: null })
+  secretRotatedAt?: Date | null;
 }
 
 export const ServiceAccountSchema = SchemaFactory.createForClass(ServiceAccount);

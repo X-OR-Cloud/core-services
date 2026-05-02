@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { sign } from 'jsonwebtoken';
@@ -70,6 +70,24 @@ export class ServiceAccountService extends BaseService<ServiceAccount> {
     await this.saModel.updateOne({ _id: record._id }, { $set: { lastUsedAt: new Date() } });
 
     return { accessToken, expiresIn: expiresInSeconds };
+  }
+
+  async rotateSecret(id: string): Promise<{ rawSecret: string; secretRotatedAt: Date }> {
+    const record = await this.saModel.findOne({ _id: id, isDeleted: false }).lean();
+    if (!record) {
+      throw new NotFoundException('Service account not found');
+    }
+
+    const rawSecret = crypto.randomBytes(32).toString('hex');
+    const hashedSecret = await bcrypt.hash(rawSecret, SALT_ROUNDS);
+    const secretRotatedAt = new Date();
+
+    await this.saModel.updateOne(
+      { _id: id },
+      { $set: { secret: hashedSecret, secretRotatedAt } },
+    );
+
+    return { rawSecret, secretRotatedAt };
   }
 
   private parseExpiresIn(value: string): number {
