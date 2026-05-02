@@ -187,6 +187,17 @@ export class ConnectionRunner {
         const command = slashMatch[1].toLowerCase();
         const rest = slashMatch[2]?.trim();
         if (['stop', 'start', 'restart', 'update', 'reload', 'inspect', 'sleep', 'wake'].includes(command)) {
+          // Ensure outbound handler is registered and trigger platform is current so the
+          // response routes back to this platform (not a stale Portal session).
+          this.onOutbound(
+            resolved.conversationId,
+            async (responseText: string) => {
+              await this.sendResponse(chatDest, responseText, threadId, teamsServiceUrl, teamsConversationId);
+            },
+            resolved.verboseActions,
+            resolved.verboseLogsChannelId,
+          );
+          this.redisPub.set(`conv:trigger-platform:${resolved.conversationId}`, msg.provider, 'EX', 600).catch(() => {});
           this.onCommand({ agentId: resolved.agentId, conversationId: resolved.conversationId, command, reason: rest });
           this.writeLog('info', `Slash command /${command} forwarded to agent`, { command, conversationId: resolved.conversationId });
           return;

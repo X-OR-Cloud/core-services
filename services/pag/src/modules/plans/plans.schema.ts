@@ -3,13 +3,22 @@ import { Document } from 'mongoose';
 
 export type PlanDocument = Plan & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'plans' })
 export class Plan {
-  @Prop({ required: true, enum: ['mortal', 'immortal', 'god'], unique: true })
+  @Prop({ required: true, unique: true })
   slug: string;
 
   @Prop({ required: true })
   name: string;
+
+  @Prop({ default: '' })
+  description: string;
+
+  @Prop({ type: Number, default: 0 })
+  price: number;                        // VND/month (0 = free)
+
+  @Prop({ type: Boolean, default: true })
+  isActive: boolean;
 
   // AI Chat
   @Prop({ type: Number, default: null })

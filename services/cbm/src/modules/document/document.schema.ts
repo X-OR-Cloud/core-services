@@ -30,8 +30,8 @@ export class Document extends BaseSchema {
   @Prop({ type: String })
   projectId?: string; // Optional reference to Project
 
-  @Prop({ enum: ['private', 'organization'], default: 'private' })
-  shareMode?: string; // Sharing mode: 'private' (creator/leads/admins only) or 'organization' (all org members can view)
+  @Prop({ enum: ['private', 'organization', 'organization-edit'], default: 'private' })
+  shareMode?: string; // 'private': creator/leads/admins only | 'organization': all org members can view | 'organization-edit': all org members can view and edit
 
   // ── Knowledge Base (RAG) extension fields ──
   @Prop({ type: Boolean, default: false })

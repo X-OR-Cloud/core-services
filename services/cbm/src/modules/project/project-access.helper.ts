@@ -366,6 +366,7 @@ export function canViewPrivateDocument(doc: any, context: RequestContext): boole
 export function assertCanWriteDocument(doc: any, project: any | null, context: RequestContext): void {
   if (isSuperAdmin(context)) return;
   if (isDocumentCreator(doc, context)) return;
+  if (doc.shareMode === 'organization-edit' && context.orgId) return;
   if (project) {
     const role = getMemberRole(project, context);
     if (role === 'project.lead') return;

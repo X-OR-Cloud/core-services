@@ -11,6 +11,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
+  ServiceAccountPermissionGuard,
+  RequirePermission,
   CurrentUser,
   ApiCreateErrors,
   ApiReadErrors,
@@ -31,7 +33,8 @@ export class PaymentController {
   @Post()
   @ApiOperation({ summary: 'Record a new payment against an invoice' })
   @ApiCreateErrors()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ServiceAccountPermissionGuard)
+  @RequirePermission('cbm', 'payment', 'create')
   async create(
     @Body() createPaymentDto: CreatePaymentDto,
     @CurrentUser() context: RequestContext
@@ -40,9 +43,10 @@ export class PaymentController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List payments (filter by invoiceId, date, method)' })
+  @ApiOperation({ summary: 'List payments (filter by invoiceId, date, method, status)' })
   @ApiReadErrors({ notFound: false })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ServiceAccountPermissionGuard)
+  @RequirePermission('cbm', 'payment', 'findAll')
   async findAll(
     @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
@@ -54,7 +58,8 @@ export class PaymentController {
   @Get(':id')
   @ApiOperation({ summary: 'Get payment by ID' })
   @ApiReadErrors()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ServiceAccountPermissionGuard)
+  @RequirePermission('cbm', 'payment', 'findOne')
   async findOne(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext

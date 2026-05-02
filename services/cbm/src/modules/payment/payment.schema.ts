@@ -75,6 +75,14 @@ export class Payment extends BaseSchema {
 
   @Prop({ type: Object })
   reconciliation?: ReconciliationData;
+
+  // ── Outbound webhook (caller-supplied) ────────────────────────────────────
+
+  @Prop({ maxlength: 500 })
+  webhookUrl?: string; // URL CBM calls back on payment confirmed
+
+  @Prop({ maxlength: 200 })
+  webhookSecret?: string; // HMAC-SHA256 shared secret for X-Signature header
 }
 
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
