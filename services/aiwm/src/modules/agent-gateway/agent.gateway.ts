@@ -353,6 +353,9 @@ export class AgentGateway
       this.logger.debug(
         `[heartbeat] agentId=${agentId} socketId=${client.id} presence=${JSON.stringify(presenceSockets)} mcpConnected=${data.mcpConnected ?? 'n/a'} availableFunctions=${data.availableFunctions?.length ?? 'n/a'}`,
       );
+      // Refresh presence key TTL on each heartbeat — prevents the 1-hour expiry from
+      // breaking socketsJoin in chat:message-new for conversations not auto-rejoined at connect time.
+      await this.presenceService.setAgentOnline(agentId, client.id);
 
       const resolvedStatus = data.status === 'sleep' ? 'idle' : data.status;
       await this.presenceService.setAgentStatus(agentId, {
