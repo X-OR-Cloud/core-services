@@ -46,12 +46,15 @@ Quy trình capture lesson learned sau mỗi feature ship prod:
 
 ## Development Workflow
 
-1. **Discuss** - Gather requirements, clarify scope
-2. **Propose** - Create plan at `docs/cbm/<feature>/`
-3. **Approve** - Wait for confirmation before coding
-4. **Branch** - Create git branch for the change
-5. **Implement** - Execute the plan
-6. **Verify** - Build, type-check, test
+> ⚠️ **Repo này có nhiều agent cùng contribute.** Luôn pull code mới nhất trước khi bắt đầu bất kỳ thay đổi nào để tránh conflict và overwrite work của agent khác.
+
+1. **Sync** - `git pull origin main` — **bắt buộc trước khi chạm vào code**
+2. **Discuss** - Gather requirements, clarify scope
+3. **Propose** - Create plan at `docs/cbm/<feature>/`
+4. **Approve** - Wait for confirmation before coding
+5. **Branch** - Create git branch for the change
+6. **Implement** - Execute the plan
+7. **Verify** - Build, type-check, test
 
 ### Task Management
 
