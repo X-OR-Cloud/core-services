@@ -24,6 +24,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { AppService } from '../app/app.service';
 import { AuthService } from './auth.service';
 import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { TokenData } from './auth.entity';
@@ -37,6 +38,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly appService: AppService,
   ) {}
 
   @Post('login')
@@ -166,6 +168,19 @@ export class AuthController {
     @Query('callbackUrl') callbackUrl: string,
     @Res() res: Response,
   ): Promise<void> {
+    // Validate callbackUrl origin against App allowOrigins before redirecting to Google
+    if (appId && callbackUrl) {
+      try {
+        const callbackOrigin = new URL(callbackUrl).origin;
+        const appResult = await this.appService.validateSsoAccess(appId, '', callbackOrigin);
+        if ('error' in appResult && appResult.error === 'origin_not_allowed') {
+          return res.redirect(`${callbackUrl}?error=origin_not_allowed`) as any;
+        }
+      } catch {
+        return res.redirect(`${callbackUrl}?error=invalid_callback_url`) as any;
+      }
+    }
+
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
     const redirectUri = this.configService.get<string>('GOOGLE_REDIRECT_URI');
     const stateData: Record<string, string> = {};

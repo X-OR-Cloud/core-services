@@ -19,6 +19,7 @@ import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { GoogleUserProfile } from './dto/google-auth.dto';
 import { AppService } from '../app/app.service';
+import { AppWebhookService } from '../app/app-webhook.service';
 import { IamEventProducer } from '../../queues/producers/iam-event.producer';
 
 @Injectable()
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly licenseService: LicenseService,
     private readonly httpService: HttpService,
     private readonly appService: AppService,
+    private readonly appWebhookService: AppWebhookService,
     @Optional() private readonly iamEventProducer: IamEventProducer,
   ) {}
 
@@ -499,6 +501,7 @@ export class AuthService {
     // --- App-based SSO validation ---
     let defaultOrgId = '';
     let defaultRole = 'organization.editor';
+    let validatedApp: import('../app/app.schema').App | null = null;
 
     if (appId) {
       const appResult = await this.appService.validateSsoAccess(appId, googleUser.email);
@@ -507,6 +510,7 @@ export class AuthService {
       }
       defaultOrgId = appResult.app.defaultOrgId;
       defaultRole = appResult.app.defaultRole;
+      validatedApp = appResult.app;
     }
 
     let user = await this.userRepo.findOne({
@@ -546,15 +550,21 @@ export class AuthService {
         },
         isDeleted: false,
       });
-      await this.iamEventProducer?.emitUserCreated({
+      const eventPayload = {
         userId: user._id.toString(),
         username: user.username,
         role: user.role,
         orgId: defaultOrgId,
-        provider: 'google',
+        provider: 'google' as const,
         status: user.status,
         fullname: user.fullname,
-      });
+      };
+      await this.iamEventProducer?.emitUserCreated(eventPayload);
+
+      // Fire webhook if app config has webhookUrl (fire-and-forget)
+      if (validatedApp) {
+        this.appWebhookService.fireUserCreated(validatedApp, eventPayload);
+      }
     } else {
       // User found by Google ID — check account status
       if (user.status !== UserStatuses.Active) {

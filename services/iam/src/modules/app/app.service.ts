@@ -21,6 +21,7 @@ export class AppService extends BaseService<App> {
   async validateSsoAccess(
     appId: string,
     email: string,
+    callbackOrigin?: string,
   ): Promise<{ app: App } | { error: string }> {
     const app = await this.model.findOne({
       _id: appId,
@@ -39,8 +40,16 @@ export class AppService extends BaseService<App> {
       return { error: 'sso_disabled' };
     }
 
+    // Check callbackUrl origin against allowOrigins
+    if (callbackOrigin && app.allowOrigins.length > 0) {
+      const allowed = app.allowOrigins.some((o) => o === callbackOrigin);
+      if (!allowed) {
+        return { error: 'origin_not_allowed' };
+      }
+    }
+
     // Check email domain against allowedDomains
-    if (app.allowedDomains.length > 0) {
+    if (email && app.allowedDomains.length > 0) {
       const emailDomain = email.split('@')[1]?.toLowerCase();
       const allowed = app.allowedDomains.some(
         (d) => d.toLowerCase() === emailDomain,

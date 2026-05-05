@@ -29,6 +29,15 @@ export class App extends BaseSchema {
   @Prop({ type: Boolean, default: true })
   ssoEnabled: boolean;
 
+  @Prop({ type: [String], default: [] })
+  allowOrigins: string[];
+
+  @Prop({ type: String, default: null })
+  webhookUrl: string | null;
+
+  @Prop({ type: String, default: null })
+  webhookSecret: string | null;
+
   @Prop({ type: String, enum: Object.values(AppStatus), default: AppStatus.Active })
   status: AppStatus;
 }

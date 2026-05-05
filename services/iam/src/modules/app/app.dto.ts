@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsBoolean, IsArray, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsBoolean, IsArray, IsEnum, IsUrl } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { AppStatus } from './app.schema';
 
@@ -36,6 +36,27 @@ export class CreateAppDTO {
   @IsOptional()
   @IsBoolean()
   ssoEnabled?: boolean;
+
+  @ApiProperty({
+    description: 'Allowed frontend origins for SSO. Empty = no restriction.',
+    example: ['https://app.example.com', 'https://staging.example.com'],
+    type: [String],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUrl({ require_tld: false }, { each: true })
+  allowOrigins?: string[];
+
+  @ApiProperty({ description: 'Webhook URL — IAM POSTs here when a new SSO user is created', example: 'https://dgt.example.com/iam/webhook', required: false })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  webhookUrl?: string;
+
+  @ApiProperty({ description: 'Webhook secret for HMAC-SHA256 signature verification', required: false })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
 
 export class UpdateAppDTO {
@@ -74,4 +95,20 @@ export class UpdateAppDTO {
   @IsOptional()
   @IsEnum(AppStatus)
   status?: AppStatus;
+
+  @ApiProperty({ type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsUrl({ require_tld: false }, { each: true })
+  allowOrigins?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  webhookUrl?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
 }
