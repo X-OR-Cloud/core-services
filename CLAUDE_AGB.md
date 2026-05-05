@@ -129,7 +129,6 @@ hydra-services/              ← repo root (cũng là Docker build context)
 │   ├── cbm/                 ← Core Business Management
 │   ├── mona/                ← Monitoring & Analytics
 │   ├── aivp/                ← AI Video Processing
-│   ├── dgt/                 ← Digital Gold Trader
 │   ├── pag/                 ← Personal Agent Gateway
 │   ├── schd/                ← Scheduler
 │   └── vbx/                 ← Video Box
@@ -165,7 +164,6 @@ nx run <service>:build
 | cbm | api, emb, rtc | - |
 | mona | api | - |
 | aivp | api | - |
-| dgt | api, wrk:shd, wrk:ing, wrk:sig, wrk:mon | 5 modes |
 | pag | api, wrk | dist có: main.js, api.main.js, worker.main.js |
 | schd | api, wrk | - |
 | vbx | api | - |
@@ -268,7 +266,7 @@ esac
 ### Chạy tất cả services
 
 ```bash
-SERVICES="template iam noti aiwm cbm mona aivp dgt pag schd vbx"
+SERVICES="template iam noti aiwm cbm mona aivp pag schd vbx"
 OUT="./air-gap-builder/artifacts/images/services"
 
 # Services có LicenseGuard — phải export LICENSE_SECRET trước

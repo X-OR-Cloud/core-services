@@ -7,13 +7,12 @@ IAM phát tán sự kiện người dùng và tổ chức qua BullMQ (Redis) the
 ```
 IAM Service (Producer)
   └── IamEventProducer
-        ├── push → [iam.events.noti]  → NOTI Worker consume
-        └── push → [iam.events.dgt]   → DGT Worker consume
+        └── push → [iam.events.noti]  → NOTI Worker consume
 ```
 
 **Đặc điểm quan trọng:**
 
-- **Fan-out độc lập**: NOTI consume xong không ảnh hưởng DGT, và ngược lại. Mỗi service có hàng đợi riêng.
+- **Fan-out độc lập**: Mỗi service có hàng đợi riêng, consume độc lập nhau.
 - **ACK tự động**: BullMQ mark job `completed` khi `process()` resolve; throw exception → `failed` → retry theo config.
 - **Non-blocking**: IAM emit event theo kiểu fire-and-forget — failure emit **không** làm fail operation chính (create user, login SSO, v.v.).
 - **Dồn ứ**: Nếu consumer worker của một service không chạy, job chỉ tích lũy trong queue của service đó, không ảnh hưởng các queue khác.
@@ -25,7 +24,6 @@ IAM Service (Producer)
 | Queue | Subscriber |
 |-------|-----------|
 | `iam.events.noti` | NOTI Service |
-| `iam.events.dgt` | DGT Service |
 
 > Khi cần thêm subscriber mới, liên hệ IAM team để thêm queue mới vào `QUEUE_NAMES` và `ALL_IAM_SUBSCRIBER_QUEUES` trong `services/iam/src/queues/queue.config.ts`.
 
@@ -165,13 +163,13 @@ Trong service của bạn, tạo config connect Redis và đăng ký queue `iam.
 // src/queues/iam-events.config.ts
 import { BullModule } from '@nestjs/bullmq';
 
-export const IAM_EVENTS_QUEUE = 'iam.events.noti'; // hoặc 'iam.events.dgt'
+export const IAM_EVENTS_QUEUE = 'iam.events.noti';
 
 export const registerIamEventsQueue = () =>
   BullModule.registerQueue({ name: IAM_EVENTS_QUEUE });
 ```
 
-> **Lưu ý**: Dùng đúng tên queue của service mình (`iam.events.noti` cho NOTI, `iam.events.dgt` cho DGT). Tên này phải khớp với tên IAM đã đăng ký trong producer.
+> **Lưu ý**: Dùng đúng tên queue của service mình. Tên này phải khớp với tên IAM đã đăng ký trong producer.
 
 ### Bước 3 — Tạo Processor
 
@@ -212,7 +210,6 @@ export class IamEventProcessor extends WorkerHost {
   private async handleUserCreated(data: { userId: string; username: string; provider: string; orgId: string }) {
     // Implement logic cho service của bạn
     // VD NOTI: gửi welcome notification
-    // VD DGT: tạo account mặc định
   }
 
   private async handleUserUpdated(data: { userId: string; updatedFields: string[] }) {

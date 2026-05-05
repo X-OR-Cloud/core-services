@@ -200,7 +200,6 @@ Creating an organization auto-creates default licenses (`type: full`) for all re
 | Queue | Events |
 |-------|--------|
 | `iam.events.noti` | `user.created`, `user.updated`, `user.deleted`, `organization.created`, `organization.updated`, `organization.deleted` |
-| `iam.events.dgt` | Same events for DGT service consumption |
 
 ---
 

@@ -44,7 +44,6 @@ This document defines the standardized port allocation strategy for all services
 |---------|------|-------|----------|-------------|-------------|
 | **PAG** | Business | **3006** | 3360-3361 | N/A (BullMQ) | Personal Agent Gateway (Zalo OA, chat) |
 | **AIVP** | Business | **3007** | 3370-3373 | 3374-3379 | AI Video Processing |
-| **DGT** | Business | **3008** | 3380-3383 | 3384-3389 | Digital Gold Trader |
 | **VSM** | Business | **3009** | 3390-3393 | 3394-3399 | Voice Service Management (PBX, SIP, WebRTC) |
 
 ### D. AIWM WebSocket Processes (dedicated range)
@@ -282,30 +281,6 @@ pm2 start ecosystem.config.js --only core.aivp.api00
 
 ---
 
-### DGT Service (Digital Gold Trader)
-
-**Purpose**: Digital gold trading and management
-
-```yaml
-Local Development:  3008
-Production:
-  API Instances:    3380, 3381, 3382, 3383  # 4 HTTP/REST instances
-  Reserved:         3384-3389                # Future modes
-```
-
-**Usage**:
-```bash
-# Local
-npx nx run dgt:api
-
-# Production (PM2)
-pm2 start ecosystem.config.js --only core.dgt.api00
-```
-
-**Default Port in Code**: `process.env.PORT || 3008`
-
----
-
 ### VSM Service (Voice Service Management)
 
 **Purpose**: Asterisk PBX management, SIP/WebRTC accounts, call routing, CDR logging
@@ -437,7 +412,6 @@ When updating services to new port allocation:
 | CBM | http://localhost:3004 | http://localhost:3004/api-docs |
 | MONA | http://localhost:3005 | http://localhost:3005/api-docs |
 | AIVP | http://localhost:3007 | http://localhost:3007/api-docs |
-| DGT | http://localhost:3008 | http://localhost:3008/api-docs |
 | VSM | http://localhost:3009 | http://localhost:3009/api-docs |
 
 ### Production URLs (Behind Nginx)
@@ -450,7 +424,6 @@ When updating services to new port allocation:
 | CBM | https://api.x-or.cloud/cbm | 3340-3343 |
 | MONA | https://api.x-or.cloud/mona | 3350-3353 |
 | AIVP | https://api.x-or.cloud/aivp | 3370-3373 |
-| DGT | https://api.x-or.cloud/dgt | 3380-3383 |
 | VSM | https://api.x-or.cloud/vsm | 3390-3393 |
 
 ---

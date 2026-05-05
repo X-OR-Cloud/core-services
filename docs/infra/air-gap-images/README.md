@@ -27,7 +27,7 @@
 |-------|-----|------|-----------|
 | `node` | `20-alpine3.21` | ~130 MB | https://hub.docker.com/_/node |
 
-**Mục đích:** Base image để build và chạy tất cả 8 NestJS microservices trong monorepo (template, iam, noti, aiwm, cbm, mona, aivp, dgt). Alpine variant để giảm kích thước image. Cần cài thêm `curl`, `bash`, `ca-certificates` khi build Dockerfile cho từng service.
+**Mục đích:** Base image để build và chạy tất cả NestJS microservices trong monorepo (template, iam, noti, aiwm, cbm, mona, aivp). Alpine variant để giảm kích thước image. Cần cài thêm `curl`, `bash`, `ca-certificates` khi build Dockerfile cho từng service.
 
 ---
 

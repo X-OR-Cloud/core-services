@@ -2,7 +2,6 @@ import { BullModule } from '@nestjs/bullmq';
 
 export const QUEUE_NAMES = {
   IAM_EVENTS_NOTI: 'iam.events.noti',
-  IAM_EVENTS_DGT: 'iam.events.dgt',
 } as const;
 
 export type IamQueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -24,7 +23,6 @@ export type IamEvent = (typeof IAM_EVENTS)[keyof typeof IAM_EVENTS];
  */
 export const ALL_IAM_SUBSCRIBER_QUEUES = [
   { name: QUEUE_NAMES.IAM_EVENTS_NOTI },
-  { name: QUEUE_NAMES.IAM_EVENTS_DGT },
 ];
 
 export const getBullModuleConfig = () =>

@@ -75,6 +75,16 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 5. **Implement** — Execute the approved plan
 6. **Verify** — Build, test, and validate
 
+### Sync Before Coding
+
+**Always pull latest code before making any changes.**
+
+```bash
+git pull
+```
+
+Run this before touching any file. In a monorepo with multiple contributors, local branch can be behind remote — editing stale code leads to version conflicts and overwritten changes at commit/push time.
+
 ### Task Management
 
 - Use **micro-task principle**: break complex tasks into small, granular todos
@@ -193,12 +203,6 @@ docker save xai/<service>:latest | gzip > $REPO/air-gap-builder/artifacts/images
 # MONA-specific modes
 ./node_modules/.bin/nx run mona:agg        # Aggregation worker (BullMQ, no HTTP)
 
-# DGT-specific modes
-./node_modules/.bin/nx run dgt:shd         # Scheduler
-./node_modules/.bin/nx run dgt:ing         # Data ingestion
-./node_modules/.bin/nx run dgt:sig         # Signal generation
-./node_modules/.bin/nx run dgt:mon         # SL/TP monitoring
-
 # TypeScript check
 npx tsc --noEmit -p services/<service>/tsconfig.app.json
 
@@ -234,7 +238,6 @@ core-services/
 | **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
 | **pag** | 3006 | 3360–3369 | Personal Agent Gateway |
 | **aivp** | 3007 | 3370–3379 | AI Video Processing |
-| **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals |
 | **schd** | 3009 | 3390–3399 | Scheduler |
 | **vbx** | 3010 | 3400–3409 | Video Box |
 

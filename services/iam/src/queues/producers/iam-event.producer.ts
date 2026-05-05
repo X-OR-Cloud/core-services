@@ -22,7 +22,6 @@ export class IamEventProducer {
 
   constructor(
     @Optional() @InjectQueue(QUEUE_NAMES.IAM_EVENTS_NOTI) private readonly notiQueue: Queue | null,
-    @Optional() @InjectQueue(QUEUE_NAMES.IAM_EVENTS_DGT) private readonly dgtQueue: Queue | null,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -100,7 +99,6 @@ export class IamEventProducer {
   private async fanOut(jobName: string, payload: object): Promise<void> {
     const candidates: Array<{ queue: Queue | null; name: string }> = [
       { queue: this.notiQueue, name: QUEUE_NAMES.IAM_EVENTS_NOTI },
-      { queue: this.dgtQueue, name: QUEUE_NAMES.IAM_EVENTS_DGT },
     ];
 
     await Promise.allSettled(

@@ -24,7 +24,6 @@ Nx monorepo containing backend microservices for the core platform, built on Nes
 | **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
 | **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
 | **aivp** | 3007 | 3370–3379 | AI Video Processing |
-| **dgt** | 3008 | 3380–3389 | Digital Gold Trader — paper trading, AI signals, 9 data collectors |
 
 Services in development: `schd` (Scheduler), `pag` (Personal Agent Gateway).
 
@@ -137,8 +136,7 @@ core-services/
 │   ├── aiwm/
 │   ├── cbm/
 │   ├── mona/
-│   ├── aivp/
-│   └── dgt/
+│   └── aivp/
 ├── libs/
 │   ├── base/           # @core/base
 │   └── shared/         # @core/shared
