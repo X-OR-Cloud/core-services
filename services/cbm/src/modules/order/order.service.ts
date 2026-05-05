@@ -1,0 +1,136 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, ObjectId } from 'mongoose';
+import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
+import { RequestContext } from '@hydrabyte/shared';
+import { Order } from './order.schema';
+
+const EDITABLE_STATUSES = ['new', 'processing'];
+
+@Injectable()
+export class OrderService extends BaseService<Order> {
+  constructor(
+    @InjectModel(Order.name) private orderModel: Model<Order>
+  ) {
+    super(orderModel);
+  }
+
+  async create(data: any, context: RequestContext): Promise<Partial<Order>> {
+    data.code = await this.generateCode(context);
+    data.status = 'new';
+    return super.create(data, context);
+  }
+
+  async findAll(
+    options: FindManyOptions & { search?: string },
+    context: RequestContext
+  ): Promise<FindManyResult<Order>> {
+    if (options.search) {
+      const regex = new RegExp(options.search, 'i');
+      const { search, ...rest } = options;
+      options = {
+        ...rest,
+        $or: [{ code: regex }, { 'customer.name': regex }, { 'customer.phone': regex }],
+      } as any;
+    }
+    delete (options as any).search;
+
+    const findResult = await super.findAll(options, context);
+
+    const baseMatch: any = { isDeleted: false };
+    if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
+
+    const statusStats = await super.aggregate(
+      [{ $match: baseMatch }, { $group: { _id: '$status', count: { $sum: 1 } } }],
+      context
+    );
+
+    const statistics: any = { total: findResult.pagination.total, byStatus: {} };
+    statusStats.forEach((s: any) => { statistics.byStatus[s._id] = s.count; });
+    findResult.statistics = statistics;
+
+    return findResult;
+  }
+
+  async findById(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
+  async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (!EDITABLE_STATUSES.includes(order.status as string)) {
+      throw new BadRequestException(`Order can only be updated in new or processing status (current: ${order.status})`);
+    }
+    return super.update(id, data, context);
+  }
+
+  async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === 'done') {
+      throw new BadRequestException('Cannot delete a completed order');
+    }
+    return super.softDelete(id, context);
+  }
+
+  // ── State machine ──────────────────────────────────────────────────────────
+
+  async process(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'new') {
+      throw new BadRequestException(`Order must be in new status to process (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'processing' }, context);
+  }
+
+  async complete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (!EDITABLE_STATUSES.includes(order.status as string)) {
+      throw new BadRequestException(`Order must be in new or processing status to complete (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'done' }, context);
+  }
+
+  async cancel(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === 'cancelled') {
+      throw new BadRequestException('Order is already cancelled');
+    }
+    if (order.status === 'done') {
+      throw new BadRequestException('Cannot cancel a completed order');
+    }
+    return super.update(id, { status: 'cancelled' }, context);
+  }
+
+  // ── Code generation ────────────────────────────────────────────────────────
+
+  private async generateCode(context: RequestContext): Promise<string> {
+    const today = new Date();
+    const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `ORD-${yyyymmdd}-`;
+
+    const orgMatch: any = { isDeleted: { $ne: true }, code: new RegExp(`^${prefix}`) };
+    if (context.orgId) orgMatch['owner.orgId'] = context.orgId;
+
+    const last = await this.orderModel
+      .findOne(orgMatch)
+      .sort({ code: -1 })
+      .select('code')
+      .lean();
+
+    let seq = 1;
+    if (last?.code) {
+      const parts = (last.code as string).split('-');
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) seq = lastSeq + 1;
+    }
+
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
+}

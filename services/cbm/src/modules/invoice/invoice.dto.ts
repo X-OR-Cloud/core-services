@@ -61,10 +61,10 @@ export class InvoiceItemDto {
   @IsObject()
   @ValidateNested()
   @Type(() => MoneyAmountDto)
-  unitPrice!: MoneyAmountDto;
+  price!: MoneyAmountDto;
 
   @ApiProperty({
-    description: 'Line total (qty × unitPrice)',
+    description: 'Line total (qty × price)',
     type: MoneyAmountDto,
   })
   @IsObject()

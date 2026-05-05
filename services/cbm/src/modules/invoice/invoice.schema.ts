@@ -1,19 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document as MongooseDocument } from 'mongoose';
 import { BaseSchema } from '@hydrabyte/base';
+import { MoneyAmount } from '../../shared-types/money.types';
+
+export { MoneyAmount };
 
 export type InvoiceDocument = Invoice & MongooseDocument;
-
-export interface MoneyAmount {
-  currency: string; // ISO 4217: 'VND', 'USD', 'EUR', ...
-  value: number;
-}
 
 export interface InvoiceItem {
   description: string;
   qty: number;
-  unitPrice: MoneyAmount;
-  amount: MoneyAmount; // = qty × unitPrice.value (same currency)
+  price: MoneyAmount;
+  amount: MoneyAmount; // = qty × price.value (same currency)
 }
 
 export interface EInvoiceLink {
@@ -46,7 +44,7 @@ export class Invoice extends BaseSchema {
         _id: false,
         description: { type: String, required: true },
         qty: { type: Number, required: true },
-        unitPrice: { type: Object, required: true },
+        price: { type: Object, required: true },
         amount: { type: Object, required: true },
       },
     ],

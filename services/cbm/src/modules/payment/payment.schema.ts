@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document as MongooseDocument } from 'mongoose';
 import { BaseSchema } from '@hydrabyte/base';
-import { MoneyAmount } from '../invoice/invoice.schema';
+import { MoneyAmount } from '../../shared-types/money.types';
 
 export type PaymentDocument = Payment & MongooseDocument;
 

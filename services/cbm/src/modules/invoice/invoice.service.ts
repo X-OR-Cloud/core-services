@@ -214,7 +214,7 @@ export class InvoiceService extends BaseService<Invoice> {
     const invoice = await this.invoiceModel.create({
       code,
       status: 'paid',
-      items: [{ description, qty: 1, unitPrice: amount, amount }],
+      items: [{ description, qty: 1, price: amount, amount }],
       subtotal: amount,
       tax: { currency: amount.currency, value: 0 },
       totalAmount: amount,

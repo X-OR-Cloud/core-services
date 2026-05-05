@@ -32,6 +32,9 @@ import { TransactionModule } from '../modules/transaction/transaction.module';
 import { ContractModule } from '../modules/contract/contract.module';
 import { ContractAnnexModule } from '../modules/contract-annex/contract-annex.module';
 import { ProviderModule } from '../modules/provider/provider.module';
+import { ProductCategoryModule } from '../modules/product-category/product-category.module';
+import { ProductModule } from '../modules/product/product.module';
+import { OrderModule } from '../modules/order/order.module';
 import { SkillModule } from '../skill/skill.module';
 
 @Module({
@@ -79,6 +82,10 @@ import { SkillModule } from '../skill/skill.module';
     ContractAnnexModule,
     // Provider (payment gateway, e-invoice config)
     ProviderModule,
+    // Product & Order modules
+    ProductCategoryModule,
+    ProductModule,
+    OrderModule,
     // Skill manifest endpoint
     SkillModule,
   ],
