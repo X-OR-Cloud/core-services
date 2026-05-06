@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
-import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
+import {
+  BaseService,
+  FindManyOptions,
+  FindManyResult,
+  buildSearchFilter,
+} from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Product } from './product.schema';
 import { CreateProductDto } from './product.dto';
@@ -18,13 +23,14 @@ export class ProductService extends BaseService<Product> {
     options: FindManyOptions & { search?: string },
     context: RequestContext
   ): Promise<FindManyResult<Product>> {
-    if (options.search) {
-      const regex = new RegExp(options.search, 'i');
-      const { search, ...rest } = options;
-      options = { ...rest, $or: [{ name: regex }, { code: regex }] } as any;
+    const { search, ...rest } = options;
+    if (search) {
+      const searchFilter = buildSearchFilter('searchText', search);
+      if (searchFilter) {
+        rest.filter = { ...(rest.filter || {}), ...searchFilter };
+      }
     }
-    delete (options as any).search;
-    return super.findAll(options, context);
+    return super.findAll(rest, context);
   }
 
   async findById(id: ObjectId, context: RequestContext): Promise<Partial<Product>> {

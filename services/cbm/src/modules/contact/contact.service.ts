@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
-import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
+import {
+  BaseService,
+  FindManyOptions,
+  FindManyResult,
+  buildSearchFilter,
+} from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Contact, PlatformLink } from './contact.schema';
 
@@ -27,25 +32,14 @@ export class ContactService extends BaseService<Contact> {
     options: FindManyOptions & { search?: string },
     context: RequestContext
   ): Promise<FindManyResult<Contact>> {
-    const searchQuery = options.search || (options.filter as any)?.search;
-    if (searchQuery && typeof searchQuery === 'string') {
-      const searchRegex = new RegExp(searchQuery, 'i');
-      const searchConditions = [
-        { name: searchRegex },
-        { email: searchRegex },
-        { notes: searchRegex },
-        { tags: searchQuery },
-      ];
-      const existingFilter: any = {};
-      if (options) {
-        Object.keys(options).forEach((key) => {
-          if (key !== 'search') existingFilter[key] = (options as any)[key];
-        });
+    const { search, ...rest } = options;
+    if (search) {
+      const searchFilter = buildSearchFilter('searchText', search);
+      if (searchFilter) {
+        rest.filter = { ...(rest.filter || {}), ...searchFilter };
       }
-      options = { ...existingFilter, $or: searchConditions };
     }
-
-    delete options.search;
+    options = rest;
 
     const findResult = await super.findAll(options, context);
 
