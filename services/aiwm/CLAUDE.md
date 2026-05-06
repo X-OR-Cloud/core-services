@@ -81,6 +81,7 @@ AIWM hỗ trợ hai loại agent với cơ chế vận hành khác nhau:
 When working on a specific module, read the corresponding docs:
 
 - **Agent module**: Read `docs/aiwm/agents/` directory AND `docs/aiwm/agent/OVERVIEW.md` + `docs/aiwm/agent/ROADMAP.md`
+- **Debug — engineer agent không nhận việc**: Read `docs/aiwm/agents/DEBUG-WORK-ASSIGNMENT.md` (4-lớp methodology: DB → CBM → AWS heartbeat → agent client) + tool `scripts/debug-agent-heartbeat.js`
 - **Node module**: Read `docs/aiwm/node/OVERVIEW.md` + `docs/aiwm/node/ROADMAP.md` AND `docs/aiwm/node-agent/` directory (client integration)
 - **Instruction module**: Read `docs/aiwm/instruction/OVERVIEW.md` + `docs/aiwm/instruction/ROADMAP.md`
 - **Chat/WebSocket**: Read `docs/aiwm/CHAT-WEBSOCKET-EVENTS.md` (full event + payload reference) and `docs/aiwm/CHAT-WEBSOCKET-ARCHITECTURE.md` (architecture overview)
