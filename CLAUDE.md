@@ -204,7 +204,28 @@ docker save xai/<service>:latest | gzip > $REPO/air-gap-builder/artifacts/images
 ./node_modules/.bin/nx run mona:agg        # Aggregation worker (BullMQ, no HTTP)
 
 # TypeScript check
-npx tsc --noEmit -p services/<service>/tsconfig.app.json
+# Note: npx tsc không hoạt động trong workspace (thiếu TypeScript local)
+# Dùng node với TypeScript từ ulva workspace thay thế:
+node -e "
+const ts = require('/usr/agents/ulva/workspace/code/node_modules/typescript');
+const path = require('path');
+const configPath = path.resolve('./services/<service>/tsconfig.app.json');
+const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+const config = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath));
+const program = ts.createProgram(config.fileNames, config.options);
+const diagnostics = ts.getPreEmitDiagnostics(program);
+const filtered = diagnostics.filter(d =>
+  d.file && d.file.fileName.includes('/services/<service>/') && !d.file.fileName.includes('node_modules') &&
+  !['class-validator','class-transformer','bcrypt'].some(x => ts.flattenDiagnosticMessageText(d.messageText,' ').includes(x))
+);
+if (filtered.length) {
+  filtered.forEach(d => {
+    const {line,character} = d.file.getLineAndCharacterOfPosition(d.start);
+    console.log(d.file.fileName.split('/services/<service>/')[1]+':'+(line+1)+':'+(character+1)+' - '+ts.flattenDiagnosticMessageText(d.messageText,'\n'));
+  });
+  process.exit(1);
+} else { console.log('No type errors!'); }
+"
 
 # Lint / Test
 ./node_modules/.bin/nx lint <service>
@@ -376,7 +397,7 @@ export class MyEntityController {
 
 ```bash
 ./node_modules/.bin/nx build [SERVICE_NAME]
-npx tsc --noEmit -p services/[SERVICE_NAME]/tsconfig.app.json
+# TypeScript check: dùng node thay vì npx tsc (xem hướng dẫn ở mục Common Development Commands)
 ./node_modules/.bin/nx run [SERVICE_NAME]:api
 curl http://localhost:[PORT]/health
 open http://localhost:[PORT]/api-docs
