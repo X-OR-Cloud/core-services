@@ -1024,8 +1024,12 @@ export class AgentRunner {
     const searchFn = this.config.searchKnowledgeInternal!;
     const deployment = this.config.deployment;
 
-    // Step 1: Intent classification
-    const intent = await svc.classifyIntent(userContent, ragConfig, deployment);
+    // Step 1: Intent classification — dùng 6 messages gần nhất để detect follow-up
+    const recentHistory = history.slice(-6).map((m: any) => ({
+      role: String(m.role),
+      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+    }));
+    const intent = await svc.classifyIntent(userContent, ragConfig, deployment, recentHistory);
     this.logger.debug(`[adaptive-rag] intent=${intent.name} requiresRag=${intent.requiresRag}`);
 
     if (!intent.requiresRag) return empty;

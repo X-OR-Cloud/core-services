@@ -46,31 +46,46 @@ export class AdaptiveRagService {
   // ── Intent classification ─────────────────────────────────────────────────
 
   /**
-   * Phân loại ý định người dùng.
-   * Ưu tiên heuristic (0 cost). Nếu intentClassifier.enabled = true và có deployment
-   * → gọi LLM để phân loại chính xác hơn.
+   * Phân loại ý định người dùng, có xét đến lịch sử hội thoại gần nhất.
+   *
+   * Ưu tiên:
+   * 1. Heuristic (0 cost) — slash command, greeting rõ ràng
+   * 2. History-aware heuristic — follow-up ngắn sau câu hỏi có RAG
+   * 3. LLM classification (nếu intentClassifier.enabled = true và có deployment)
+   *
+   * @param recentHistory - Tối đa 6 messages gần nhất (CoreMessage format: { role, content })
    */
   async classifyIntent(
     query: string,
     ragConfig: AgentRagConfig,
     deployment?: DeploymentConfig,
+    recentHistory: Array<{ role: string; content: string }> = [],
   ): Promise<ClassifiedIntent> {
     const { intentClassifier } = ragConfig;
     const intents = intentClassifier?.intents ?? [];
 
-    // Heuristic: trả về GREETING nếu khớp pattern
-    if (GREETING_PATTERNS.some((p) => p.test(query.trim()))) {
+    // Heuristic: slash command → skip (không phụ thuộc history)
+    if (SLASH_CMD_PATTERN.test(query.trim())) {
+      return { name: 'SKIP_COMMAND', requiresRag: false };
+    }
+
+    // Heuristic: greeting rõ ràng (chỉ áp dụng khi không có history về thủ tục)
+    const isGreeting = GREETING_PATTERNS.some((p) => p.test(query.trim()));
+    if (isGreeting && !this._hasRecentRagContext(recentHistory)) {
       const greetingRule = intents.find((r) => r.name === 'GREETING');
       if (greetingRule) return { name: 'GREETING', requiresRag: greetingRule.requiresRag };
       return { name: 'GREETING', requiresRag: false };
     }
 
-    // Heuristic: slash command → skip
-    if (SLASH_CMD_PATTERN.test(query.trim())) {
-      return { name: 'SKIP_COMMAND', requiresRag: false };
+    // History-aware heuristic: message ngắn nhưng đang trong luồng hỏi về thủ tục
+    // → treat as follow-up, cần RAG (vd: "còn phí thì sao?", "thế thời gian?")
+    if (query.trim().length < 15 && this._hasRecentRagContext(recentHistory)) {
+      const followUpRule = intents.find((r) => r.name === 'SIMPLE_RAG') ?? intents.find((r) => r.requiresRag);
+      if (followUpRule) return { name: followUpRule.name, requiresRag: followUpRule.requiresRag };
+      return { name: 'SIMPLE_RAG', requiresRag: true };
     }
 
-    // Heuristic: quá ngắn → không cần RAG
+    // Heuristic: quá ngắn và không có context hội thoại → không cần RAG
     if (query.trim().length < 15) {
       return { name: 'SHORT', requiresRag: false };
     }
@@ -87,26 +102,45 @@ export class AdaptiveRagService {
       return { name: 'SIMPLE_RAG', requiresRag: true };
     }
 
-    // LLM-based classification
+    // LLM-based classification (với history context)
     try {
-      return await this._classifyWithLlm(query, intents, deployment);
+      return await this._classifyWithLlm(query, intents, deployment, recentHistory);
     } catch (err) {
       this.logger.warn(`Intent classification LLM failed, fallback SIMPLE_RAG: ${(err as Error).message}`);
       return { name: 'SIMPLE_RAG', requiresRag: true };
     }
   }
 
+  /**
+   * Kiểm tra history gần nhất có chứa assistant response có RAG context không.
+   * Dùng để detect follow-up questions trong cùng một chủ đề.
+   * Chỉ xét 4 messages gần nhất (2 turns).
+   */
+  private _hasRecentRagContext(history: Array<{ role: string; content: string }>): boolean {
+    const recent = history.slice(-4);
+    return recent.some((m) => m.role === 'assistant' && m.content?.length > 50);
+  }
+
   private async _classifyWithLlm(
     query: string,
     intents: RagIntentRule[],
     deployment: DeploymentConfig,
+    recentHistory: Array<{ role: string; content: string }> = [],
   ): Promise<ClassifiedIntent> {
     const intentNames = intents.map((r) => r.name).join(' | ');
+
+    // Build history context (tối đa 3 turns gần nhất)
+    const historyLines = recentHistory
+      .slice(-6)
+      .map((m) => `[${m.role}]: ${String(m.content).slice(0, 200)}`)
+      .join('\n');
+
     const prompt = [
       `Classify the user query into exactly one of these intent labels: ${intentNames}`,
       `Reply with ONLY the label name, nothing else.`,
-      `User query: """${query}"""`,
-    ].join('\n');
+      historyLines ? `Recent conversation:\n${historyLines}` : '',
+      `Current user query: """${query}"""`,
+    ].filter(Boolean).join('\n');
 
     const model = this._buildModel(deployment);
     const { text } = await generateText({ model, prompt, maxOutputTokens: 20 });
