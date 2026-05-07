@@ -1023,66 +1023,125 @@ export class AgentRunner {
     const svc = this.config.adaptiveRagService!;
     const searchFn = this.config.searchKnowledgeInternal!;
     const deployment = this.config.deployment;
+    const traceLevel: 'off' | 'summary' | 'verbose' = ragConfig.traceLevel ?? 'summary';
+    const traceSummary = traceLevel !== 'off';
+    const traceVerbose = traceLevel === 'verbose';
 
     // Step 1: Intent classification — dùng 6 messages gần nhất để detect follow-up
     const recentHistory = history.slice(-6).map((m: any) => ({
       role: String(m.role),
       content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
     }));
+    const t0 = Date.now();
     const intent = await svc.classifyIntent(userContent, ragConfig, deployment, recentHistory);
-    this.logger.debug(`[adaptive-rag] intent=${intent.name} requiresRag=${intent.requiresRag}`);
+    const intentMs = Date.now() - t0;
+    this.logger.debug(`[adaptive-rag] intent=${intent.name} requiresRag=${intent.requiresRag} (${intentMs}ms)`);
+
+    if (traceVerbose) {
+      this.publishResponse(conversationId, {
+        type: 'thinking',
+        role: 'assistant',
+        content: `[intent] ${intent.name} requiresRag=${intent.requiresRag} (${intentMs}ms)`,
+        ...(workId ? { workId } : {}),
+      });
+    }
 
     if (!intent.requiresRag) return empty;
 
     // Find matching intent rule for collection override
     const intentRule = ragConfig.intentClassifier?.intents?.find((r) => r.name === intent.name);
 
-    // Step 2: Route collections
+    // Step 2: Route collections (deterministic — gộp vào tool_use Step 3)
     const collections = svc.routeCollections(intent, ragConfig, intentRule);
     if (!collections.length) return empty;
+    const collectionLabels = collections.map((c) => c.label || c.collectionId).join(', ');
 
-    // Publish tool_use
-    this.publishResponse(conversationId, {
-      type: 'tool_use',
-      role: 'assistant',
-      content: `🧠 **Knowledge Search** [${intent.name}]\n${userContent}`,
-      ...(workId ? { workId } : {}),
-    });
+    // Publish tool_use (summary+verbose)
+    if (traceSummary) {
+      this.publishResponse(conversationId, {
+        type: 'tool_use',
+        role: 'assistant',
+        content: `🧠 **Knowledge Search** [${intent.name}] → ${collectionLabels}\n${userContent}`,
+        toolName: 'AdaptiveRagSearch',
+        toolInput: {
+          intent: intent.name,
+          query: userContent,
+          collections: collections.map((c) => ({
+            collectionId: c.collectionId,
+            label: c.label,
+            topK: c.topK,
+            minScore: c.minScore,
+          })),
+          parallel: ragConfig.query?.parallelSearch ?? true,
+        },
+        ...(workId ? { workId } : {}),
+      });
+    }
 
     // Step 3: Search
     const parallel = ragConfig.query?.parallelSearch ?? true;
+    const tSearch = Date.now();
     let chunks = await svc.search(collections, userContent, searchFn, parallel);
+    const searchMs = Date.now() - tSearch;
 
     // Step 4: Query reformulation (retry if no results and reformulate enabled)
+    let reformulatedQuery: string | null = null;
     if (!chunks.length && ragConfig.query?.reformulateOnLowScore && deployment) {
       const reformulated = await svc.reformulateQuery(userContent, deployment);
       if (reformulated !== userContent) {
+        reformulatedQuery = reformulated;
         this.logger.debug(`[adaptive-rag] reformulated query: "${reformulated}"`);
+        if (traceVerbose) {
+          this.publishResponse(conversationId, {
+            type: 'thinking',
+            role: 'assistant',
+            content: `[reformulate] "${userContent}" → "${reformulated}"`,
+            ...(workId ? { workId } : {}),
+          });
+        }
         chunks = await svc.search(collections, reformulated, searchFn, parallel);
       }
     }
 
     if (!chunks.length) {
-      this.publishResponse(conversationId, {
-        type: 'tool_result',
-        role: 'assistant',
-        content: 'No relevant knowledge found.',
-        ...(workId ? { workId } : {}),
-      });
+      if (traceSummary) {
+        this.publishResponse(conversationId, {
+          type: 'tool_result',
+          role: 'assistant',
+          content: `No relevant knowledge found [intent=${intent.name}, search=${searchMs}ms${reformulatedQuery ? ', reformulated' : ''}].`,
+          toolName: 'AdaptiveRagSearch',
+          toolResult: { count: 0, intent: intent.name, reformulated: !!reformulatedQuery },
+          ...(workId ? { workId } : {}),
+        });
+      }
       return empty;
     }
 
     // Step 5: Relevance grading (optional)
     let finalChunks = chunks;
+    let gradeMs = 0;
     if (ragConfig.grader?.relevanceEnabled) {
       const graderDeployment = ragConfig.grader.deploymentId ? deployment : deployment;
+      const tGrade = Date.now();
       finalChunks = await svc.gradeRelevance(
         chunks,
         userContent,
         ragConfig.grader.relevanceThreshold,
         graderDeployment,
       );
+      gradeMs = Date.now() - tGrade;
+      const droppedScores = chunks
+        .filter((c) => !finalChunks.includes(c))
+        .map((c) => c.score.toFixed(2));
       this.logger.debug(`[adaptive-rag] graded: ${chunks.length} → ${finalChunks.length} relevant chunks`);
+      if (traceVerbose) {
+        this.publishResponse(conversationId, {
+          type: 'thinking',
+          role: 'assistant',
+          content: `[grader] kept ${finalChunks.length}/${chunks.length} chunks (threshold=${ragConfig.grader.relevanceThreshold}, ${gradeMs}ms)${droppedScores.length ? ` dropped=[${droppedScores.join(', ')}]` : ''}`,
+          ...(workId ? { workId } : {}),
+        });
+      }
     }
 
     // Sort by score, take max topK
@@ -1090,12 +1149,16 @@ export class AgentRunner {
     const topChunks = finalChunks.sort((a, b) => b.score - a.score).slice(0, maxTopK);
 
     if (!topChunks.length) {
-      this.publishResponse(conversationId, {
-        type: 'tool_result',
-        role: 'assistant',
-        content: 'No relevant knowledge found after grading.',
-        ...(workId ? { workId } : {}),
-      });
+      if (traceSummary) {
+        this.publishResponse(conversationId, {
+          type: 'tool_result',
+          role: 'assistant',
+          content: `No relevant knowledge found after grading [intent=${intent.name}].`,
+          toolName: 'AdaptiveRagSearch',
+          toolResult: { count: 0, intent: intent.name, gradedOut: chunks.length },
+          ...(workId ? { workId } : {}),
+        });
+      }
       return empty;
     }
 
@@ -1108,12 +1171,32 @@ export class AgentRunner {
       sourceType: c.sourceType || undefined,
     }));
 
-    this.publishResponse(conversationId, {
-      type: 'tool_result',
-      role: 'assistant',
-      content: `Retrieved ${topChunks.length} chunk(s) [intent=${intent.name}].`,
-      ...(workId ? { workId } : {}),
-    });
+    // Build per-collection breakdown for tool_result
+    const chunksPerCollection: Record<string, number> = {};
+    for (const c of topChunks) {
+      const label = collections.find((col) => col.collectionId === c.collectionId)?.label || c.collectionId;
+      chunksPerCollection[label] = (chunksPerCollection[label] || 0) + 1;
+    }
+    const topScores = topChunks.map((c) => Number(c.score.toFixed(2)));
+
+    if (traceSummary) {
+      this.publishResponse(conversationId, {
+        type: 'tool_result',
+        role: 'assistant',
+        content: `Retrieved ${topChunks.length} chunk(s) [intent=${intent.name}, search=${searchMs}ms${gradeMs ? `, grade=${gradeMs}ms` : ''}].`,
+        toolName: 'AdaptiveRagSearch',
+        toolResult: {
+          count: topChunks.length,
+          intent: intent.name,
+          chunksPerCollection,
+          topScores,
+          searchMs,
+          ...(gradeMs ? { gradeMs } : {}),
+          ...(reformulatedQuery ? { reformulated: true } : {}),
+        },
+        ...(workId ? { workId } : {}),
+      });
+    }
 
     this.writeLog('info', 'Adaptive RAG context injected', { intent: intent.name, chunks: topChunks.length });
     this.logger.debug(`[adaptive-rag] injected chunks=${topChunks.length} scores=[${topChunks.map((c) => c.score.toFixed(2)).join(', ')}]`);

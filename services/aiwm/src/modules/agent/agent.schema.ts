@@ -85,6 +85,14 @@ export interface RagGraderConfig {
   deploymentId?: string;
 }
 
+/**
+ * Mức độ ghi log pipeline vào conversation actions:
+ * - 'off': không publish action nào cho RAG (silent — chỉ sources kèm message cuối)
+ * - 'summary' (mặc định): 1 cặp tool_use/tool_result tổng quanh search step
+ * - 'verbose': summary + thinking action cho intent classify, reformulate (nếu xảy ra), grade (nếu bật)
+ */
+export type AdaptiveRagTraceLevel = 'off' | 'summary' | 'verbose';
+
 /** Cấu hình Adaptive RAG toàn phần cho agent */
 export interface AgentRagConfig {
   enabled: boolean;
@@ -101,6 +109,8 @@ export interface AgentRagConfig {
     reformulateOnLowScore: boolean;
   };
   grader: RagGraderConfig;
+  /** Mức độ trace pipeline ra conversation actions (mặc định 'summary') */
+  traceLevel?: AdaptiveRagTraceLevel;
 }
 
 // ─── End Adaptive RAG interfaces ────────────────────────────────────────────
@@ -332,6 +342,7 @@ export class Agent extends BaseSchema {
         hallucinationIntents: [{ type: String }],
         deploymentId: { type: String },
       },
+      traceLevel: { type: String, enum: ['off', 'summary', 'verbose'], default: 'summary' },
     },
     default: null,
   })

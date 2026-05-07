@@ -206,6 +206,16 @@ export class AgentRagConfigDto {
   @ValidateNested()
   @Type(() => RagGraderConfigDto)
   grader: RagGraderConfigDto;
+
+  @ApiPropertyOptional({
+    description: 'Mức độ ghi log pipeline vào conversation actions. off=im lặng (chỉ sources kèm message cuối), summary=1 cặp tool_use/tool_result quanh search (mặc định), verbose=thêm thinking action cho mỗi bước intent/reformulate/grade',
+    enum: ['off', 'summary', 'verbose'],
+    default: 'summary',
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['off', 'summary', 'verbose'])
+  traceLevel?: 'off' | 'summary' | 'verbose';
 }
 
 // ─── End Adaptive RAG DTOs ───────────────────────────────────────────────────
