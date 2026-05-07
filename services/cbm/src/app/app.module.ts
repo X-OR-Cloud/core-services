@@ -36,6 +36,9 @@ import { ProductCategoryModule } from '../modules/product-category/product-categ
 import { ProductModule } from '../modules/product/product.module';
 import { OrderModule } from '../modules/order/order.module';
 import { SkillModule } from '../skill/skill.module';
+import { OutletModule } from '../modules/outlet/outlet.module';
+import { OutletMemberModule } from '../modules/outlet-member/outlet-member.module';
+import { OutletContextMiddleware } from '../middleware/outlet-context.middleware';
 
 @Module({
   imports: [
@@ -88,6 +91,9 @@ import { SkillModule } from '../skill/skill.module';
     OrderModule,
     // Skill manifest endpoint
     SkillModule,
+    // Outlet modules (BepCoba PWA)
+    OutletModule,
+    OutletMemberModule,
   ],
   controllers: [AppController],
   providers: [
@@ -100,5 +106,7 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     // Apply correlation ID middleware to all routes
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    // Apply outlet context middleware to all routes
+    consumer.apply(OutletContextMiddleware).forRoutes('*');
   }
 }

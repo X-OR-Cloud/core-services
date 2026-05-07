@@ -345,6 +345,34 @@ File Upload --> KnowledgeFile (pending)
 
 ---
 
+## Staging Environment
+
+> Các giá trị cụ thể (domain, IP, path) được lưu trong `.env` tại workspace root — không hardcode vào file này.
+
+| Item | Value |
+|------|-------|
+| VM | Agent VM (workspace root — xem `AGENT_WORKSPACE` trong `.env`) |
+| URL | `${STAGING_BASE_URL}/cbm` (xem `.env`) → port 3340 |
+| PM2 process | `core.cbm.api00` (port 3340) — already running |
+| Ecosystem config | `ecosystem.config.js` tại workspace root |
+| Env file | `.env` tại workspace root (dùng chung với prod) |
+| Branch | Feature branch (không cần checkout main) |
+
+### Deploy to Staging
+
+```bash
+# Từ workspace root (không cần cd)
+nx run cbm:build
+pm2 restart core.cbm.api00
+
+# Verify
+curl http://localhost:3340/health
+```
+
+> **Note:** Staging chạy ngay trên agent VM — không cần SSH. Chỉ cần build + restart là code mới lên staging ngay.
+
+---
+
 ## Important Conventions
 
 1. **Soft delete only** - never hard delete, use `isDeleted` / `deletedAt`
