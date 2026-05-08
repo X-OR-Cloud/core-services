@@ -58,7 +58,7 @@ export class OrderController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Soft delete order (not allowed when done)' })
+  @ApiOperation({ summary: 'Soft delete order. Owner: any status. Editor: new/processing only → 403 ORDER_CANNOT_DELETE for done/cancelled' })
   @ApiDeleteErrors()
   @UseGuards(JwtAuthGuard)
   async remove(@Param('id') id: string, @CurrentUser() context: RequestContext) {

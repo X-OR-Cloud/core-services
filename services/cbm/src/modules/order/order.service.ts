@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { isSuperAdmin } from '../project/project-access.helper';
 import { Order } from './order.schema';
 
 const EDITABLE_STATUSES = ['new', 'processing'];
@@ -90,9 +91,20 @@ export class OrderService extends BaseService<Order> {
   async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
     const order = await super.findById(id, context);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status === 'done') {
-      throw new BadRequestException('Cannot delete a completed order');
+
+    // organization.owner can delete any status
+    // organization.editor can only delete new or processing
+    if (!isSuperAdmin(context)) {
+      const EDITOR_DELETABLE = ['new', 'processing'];
+      if (!EDITOR_DELETABLE.includes(order.status as string)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'ORDER_CANNOT_DELETE',
+          message: `Cannot delete an order with status: ${order.status}`,
+        });
+      }
     }
+
     return super.softDelete(id, context);
   }
 
