@@ -44,6 +44,25 @@ Quy trình capture lesson learned sau mỗi feature ship prod:
 
 ---
 
+## Test Accounts
+
+| Username | Password | Role |
+|----------|----------|------|
+| `trangpt@hydrabyte.co` | `T9Pt_!@#` | `organization.owner` (hydrabyte) |
+| `hienboy@bepcoba.shop` | `123zXc_-` | `organization.owner` (bepcoba) |
+| `nhanvien@bepcoba.shop` | `123zXc_-` | `organization.owner` (bepcoba) |
+
+**IAM URL:** `${IAM_BASE_URL}` — thực tế: `https://api.hydrabyte.co/iam/auth/login`
+
+**Lấy JWT token:**
+```bash
+curl -X POST ${IAM_BASE_URL}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"hienboy@bepcoba.shop","password":"123zXc_-"}'
+```
+
+---
+
 ## Development Workflow
 
 > ⚠️ **Repo này có nhiều agent cùng contribute.** Luôn pull code mới nhất trước khi bắt đầu bất kỳ thay đổi nào để tránh conflict và overwrite work của agent khác.
