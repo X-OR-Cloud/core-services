@@ -402,3 +402,17 @@ curl http://localhost:3340/health
 6. **Knowledge chunks have no BaseSchema** - derived data, no audit trail needed
 7. **Custom query parser** - supports `filter[field]`, `filter.field`, `filter[metadata.x]` syntax
 8. **Validation pipe** - `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`
+
+---
+
+## Bulk Write Rules
+
+Khi task yêu cầu đọc nhiều file (≥3) để produce output lớn — ví dụ: viết/update API doc cho toàn bộ module, scan repo tổng hợp changelog, update nhiều document cùng lúc — spawn `general-purpose` Agent sub-agent thay vì xử lý trực tiếp.
+
+**Quy tắc bắt buộc:**
+1. Spawn sub-agent (`subagent_type: "general-purpose"`) — có đủ tools: Read/Grep + `mcp__Builtin__*Document*`
+2. Brief đầy đủ context: service path, target document ID, scope cụ thể
+3. Prompt PHẢI kết thúc bằng: `"Do NOT return content back. Call the MCP document tools directly to write the output, then return only a short confirmation (doc ID, word count, or similar)."`
+4. Nếu sub-agent fail: report lỗi lên user, không tự retry trực tiếp
+
+**Trigger examples:** "viết lại API doc cho module order", "rà soát toàn bộ repo viết API doc mới nhất", "tổng hợp changelog từ git log", "update tất cả OVERVIEW.md"
