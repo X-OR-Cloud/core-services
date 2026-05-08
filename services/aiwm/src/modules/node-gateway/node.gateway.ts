@@ -90,7 +90,10 @@ export class NodeGateway
   }
 
   private _authMiddleware() {
-    const jwtSecret = process.env.JWT_SECRET || 'hydra-secret-key';
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET environment variable is required for WebSocket authentication');
+    }
     return (socket: Socket, next: (err?: Error) => void) => {
       try {
         const token =

@@ -1,6 +1,5 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { GlobalExceptionFilter } from '@hydrabyte/base';
 import { AgentGatewayModule } from './modules/agent-gateway/agent-gateway.module';
@@ -27,10 +26,7 @@ export async function bootstrapAgentWsServer() {
 
   Logger.log(`🚀 AIWM Agent WS Server is running on: http://localhost:${port}`);
   Logger.log(`🤖 Agent WebSocket Gateway: ws://localhost:${port}/ws/agent`);
-  const redisUrl =
-    app.get(ConfigService).get<string>('REDIS_URL') ||
-    process.env.REDIS_URL ||
-    'redis://localhost:6379';
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
   const redisDisplay = redisUrl.replace(/:\/\/[^@]+@/, '://***@');
   Logger.log(`📊 Redis: ${redisDisplay}`);
 }
