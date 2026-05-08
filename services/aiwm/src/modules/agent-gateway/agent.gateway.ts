@@ -122,12 +122,14 @@ export class AgentGateway
             skipAgent = true;
           }
 
-          // Ensure agent sockets are in the conversation room, then broadcast message:new
+          // Ensure agent sockets are in the conversation room, then broadcast message:new.
+          // Use the per-agent room (joined in handleConnection) instead of the presence:agent:*
+          // Redis key — the latter has proven unreliable, leaving sockets unable to receive
+          // message:new events even when the agent is connected and heartbeating.
           if (!skipAgent && agentId) {
-            const agentSocketIds = await this.presenceService.getAgentSocketIds(agentId);
-            if (agentSocketIds.length > 0) {
-              this.server.in(agentSocketIds).socketsJoin(`conversation:${conversationId}`);
-            }
+            await this.server
+              .in(`agent:${agentId}`)
+              .socketsJoin(`conversation:${conversationId}`);
           }
 
           const broadcastPayload = {
@@ -236,6 +238,30 @@ export class AgentGateway
         (client.handshake.query?.token as string) ||
         '';
 
+      // Kick any stale sockets for this agent before joining the agent room.
+      // Ensures single-socket-per-agent semantics so chat:message-new emits
+      // don't reach duplicate sockets that lingered from a crashed reconnect.
+      try {
+        const existing = await this.server.in(`agent:${agentId}`).fetchSockets();
+        for (const s of existing) {
+          if (s.id !== client.id) {
+            this.logger.warn(
+              `[WS-CONNECT] Kicking stale agent socket ${s.id} (replaced by ${client.id}) agentId=${agentId}`,
+            );
+            s.disconnect(true);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `[WS-CONNECT] Failed to kick stale sockets for agent ${agentId}: ${(err as Error).message}`,
+        );
+      }
+
+      // Join per-agent room. chat:message-new uses this room to find the agent's
+      // sockets without depending on the presence:agent:* Redis key, which has
+      // proven unreliable in production.
+      client.join(`agent:${agentId}`);
+
       await this.presenceService.setAgentOnline(agentId, client.id);
       await this.presenceService.setSocketSession(client.id, {
         type: 'agent',
@@ -244,11 +270,13 @@ export class AgentGateway
         connectedAt: new Date().toISOString(),
       });
 
-      // Auto-rejoin active conversation rooms
+      // Auto-rejoin all active conversation rooms (no time cutoff).
+      // Engineer agents typically have few conversations; joining all active
+      // ones lets proactive emits (typing, presence, system events) reach them
+      // without waiting for chat:message-new to lazily join the room.
       try {
-        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const activeConvs = await this.conversationModel
-          .find({ agentId, status: 'active', isDeleted: false, updatedAt: { $gte: cutoff } })
+          .find({ agentId, status: 'active', isDeleted: false })
           .lean()
           .exec();
         for (const conv of activeConvs) {
