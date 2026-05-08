@@ -277,3 +277,13 @@ export class OrderStatusDto {
   @IsEnum(ORDER_STATUSES)
   status!: string;
 }
+
+export class OrderStatsQueryDto {
+  @ApiProperty({ description: 'Start of period (ISO 8601 UTC)', example: '2026-05-08T17:00:00.000Z' })
+  @IsISO8601()
+  dateFrom!: string;
+
+  @ApiProperty({ description: 'End of period (ISO 8601 UTC)', example: '2026-05-09T16:59:59.999Z' })
+  @IsISO8601()
+  dateTo!: string;
+}

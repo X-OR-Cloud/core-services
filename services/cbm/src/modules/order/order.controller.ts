@@ -12,7 +12,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { OrderService } from './order.service';
-import { CreateOrderDto, UpdateOrderDto } from './order.dto';
+import { CreateOrderDto, UpdateOrderDto, OrderStatsQueryDto } from './order.dto';
 
 @ApiTags('Orders')
 @ApiBearerAuth()
@@ -35,6 +35,17 @@ export class OrderController {
   async findAll(@Query() query: Record<string, any>, @CurrentUser() context: RequestContext) {
     const { search, dateFrom, dateTo, ...rest } = query;
     return this.service.findAll({ ...parseQueryString(rest), search, dateFrom, dateTo }, context);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get revenue stats (owner only)',
+    description: 'Returns totalRevenue, totalOrders and breakdown by item name for done orders in the given date range. Only accessible by organization.owner.',
+  })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getStats(@Query() query: OrderStatsQueryDto, @CurrentUser() context: RequestContext) {
+    return this.service.getStats(query, context);
   }
 
   @Get(':id')

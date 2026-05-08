@@ -140,6 +140,59 @@ export class OrderService extends BaseService<Order> {
     return super.update(id, { status: 'cancelled' }, context);
   }
 
+  // ── Stats ─────────────────────────────────────────────────────────────────
+
+  async getStats(
+    query: { dateFrom: string; dateTo: string },
+    context: RequestContext
+  ): Promise<{ totalRevenue: number; totalOrders: number; items: any[] }> {
+    if (!isSuperAdmin(context)) {
+      throw new ForbiddenException('Only organization owners can access revenue stats');
+    }
+
+    const from = new Date(query.dateFrom);
+    const to = new Date(query.dateTo);
+
+    if (to < from) {
+      throw new BadRequestException('dateTo must be after dateFrom');
+    }
+    if (to.getTime() - from.getTime() > 93 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Date range cannot exceed 93 days');
+    }
+
+    const result = await this.orderModel.aggregate([
+      {
+        $match: {
+          'owner.orgId': context.orgId,
+          status: 'done',
+          isDeleted: { $ne: true },
+          createdAt: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $facet: {
+          totals: [
+            { $group: { _id: null, totalRevenue: { $sum: '$totalAmount.value' }, totalOrders: { $sum: 1 } } },
+          ],
+          items: [
+            { $unwind: '$items' },
+            { $group: { _id: '$items.name', totalAmount: { $sum: '$items.amount.value' }, orderCount: { $sum: 1 } } },
+            { $sort: { totalAmount: -1 } },
+          ],
+        },
+      },
+    ]);
+
+    const totals = result[0]?.totals[0] ?? { totalRevenue: 0, totalOrders: 0 };
+    const items = (result[0]?.items ?? []).map((i: any) => ({
+      name: i._id,
+      totalAmount: i.totalAmount,
+      orderCount: i.orderCount,
+    }));
+
+    return { totalRevenue: totals.totalRevenue, totalOrders: totals.totalOrders, items };
+  }
+
   // ── Code generation ────────────────────────────────────────────────────────
 
   private async generateCode(context: RequestContext): Promise<string> {
