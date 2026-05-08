@@ -155,7 +155,7 @@ export class OutletService extends BaseService<Outlet> {
     }
 
     if (outlet.status !== OutletStatus.Active) {
-      throw new BadRequestException('Outlet is inactive');
+      throw new ForbiddenException({ statusCode: 403, code: 'OUTLET_INACTIVE', message: 'Outlet is inactive' });
     }
 
     // For editors: also check OutletMember assignment
@@ -169,7 +169,7 @@ export class OutletService extends BaseService<Outlet> {
       }).lean();
 
       if (!membership) {
-        throw new ForbiddenException('You do not have access to this outlet');
+        throw new ForbiddenException({ statusCode: 403, code: 'OUTLET_NO_PERMISSION', message: 'Access denied to this outlet' });
       }
     }
   }

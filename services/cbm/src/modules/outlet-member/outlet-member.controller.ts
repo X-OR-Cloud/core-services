@@ -43,14 +43,20 @@ export class OutletMemberController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List outlet members by outletId' })
-  @ApiQuery({ name: 'outletId', required: true, description: 'Outlet ID to filter members' })
+  @ApiOperation({
+    summary: 'List outlet members',
+    description: 'Filter by outletId OR userId. One of the two params is required.',
+  })
+  @ApiQuery({ name: 'outletId', required: false, description: 'Filter by outlet' })
+  @ApiQuery({ name: 'userId', required: false, description: 'Filter by user — returns all outlet assignments for a user' })
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
-  async listByOutlet(
+  async list(
     @Query('outletId') outletId: string,
+    @Query('userId') userId: string,
     @CurrentUser() context: RequestContext,
   ) {
+    if (userId) return this.outletMemberService.listByUser(userId, context);
     return this.outletMemberService.listByOutlet(outletId, context);
   }
 
