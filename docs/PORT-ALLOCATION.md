@@ -257,50 +257,6 @@ pm2 start ecosystem.config.js --only core.mona.api00
 
 ---
 
-### AIVP Service (AI Video Processing)
-
-**Purpose**: AI-powered video processing and analysis
-
-```yaml
-Local Development:  3007
-Production:
-  API Instances:    3370, 3371, 3372, 3373  # 4 HTTP/REST instances
-  Reserved:         3374-3379                # Future modes
-```
-
-**Usage**:
-```bash
-# Local
-npx nx run aivp:api
-
-# Production (PM2)
-pm2 start ecosystem.config.js --only core.aivp.api00
-```
-
-**Default Port in Code**: `process.env.PORT || 3007`
-
----
-
-### VSM Service (Voice Service Management)
-
-**Purpose**: Asterisk PBX management, SIP/WebRTC accounts, call routing, CDR logging
-
-```yaml
-Local Development:  3009
-Production:
-  API Instances:    3390, 3391, 3392, 3393  # 4 HTTP/REST instances
-  Reserved:         3394-3399                # Future modes (WebSocket events)
-  AMI Bridge:       No port (TCP to Asterisk :5038)
-```
-
-**Multi-Mode Service**:
-- **API Mode**: HTTP REST API — `nx run vsm:api`
-- **AMI Mode**: Asterisk AMI bridge worker — `nx run vsm:ami`
-
-**Default Port in Code**: `process.env.PORT || 3009`
-
----
-
 ## 🚀 Production Deployment
 
 ### PM2 Ecosystem Configuration
@@ -423,8 +379,6 @@ When updating services to new port allocation:
 | AIWM | https://api.x-or.cloud/aiwm | 3330-3333 |
 | CBM | https://api.x-or.cloud/cbm | 3340-3343 |
 | MONA | https://api.x-or.cloud/mona | 3350-3353 |
-| AIVP | https://api.x-or.cloud/aivp | 3370-3373 |
-| VSM | https://api.x-or.cloud/vsm | 3390-3393 |
 
 ---
 

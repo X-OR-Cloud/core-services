@@ -128,10 +128,7 @@ hydra-services/              ← repo root (cũng là Docker build context)
 │   ├── aiwm/                ← AI Workload Manager (8 modes)
 │   ├── cbm/                 ← Core Business Management
 │   ├── mona/                ← Monitoring & Analytics
-│   ├── aivp/                ← AI Video Processing
-│   ├── pag/                 ← Personal Agent Gateway
-│   ├── schd/                ← Scheduler
-│   └── vbx/                 ← Video Box
+│   └── schd/                ← Scheduler
 ├── libs/
 │   ├── base/                ← @core/base (BaseSchema, BaseService, guards)
 │   └── shared/              ← @core/shared (constants, enums, logger)
@@ -163,10 +160,7 @@ nx run <service>:build
 | aiwm | api, mcp, wrk, agt, con, aws, nws, cws | 8 modes — 1 image, dùng MODE env var |
 | cbm | api, emb, rtc | - |
 | mona | api | - |
-| aivp | api | - |
-| pag | api, wrk | dist có: main.js, api.main.js, worker.main.js |
 | schd | api, wrk | - |
-| vbx | api | - |
 
 ### License — bắt buộc set trước khi build
 
@@ -254,19 +248,10 @@ CMD ["/app/entrypoint.sh"]
 exec node main.js "${MODE:-api}"
 ```
 
-**Entrypoint pattern cho multi-entry (pag, vbx — có api.main.js + worker.main.js):**
-```sh
-#!/bin/sh
-case "${MODE:-api}" in
-  wrk) exec node worker.main.js ;;
-  *)   exec node api.main.js ;;
-esac
-```
-
 ### Chạy tất cả services
 
 ```bash
-SERVICES="template iam noti aiwm cbm mona aivp pag schd vbx"
+SERVICES="template iam noti aiwm cbm mona schd"
 OUT="./air-gap-builder/artifacts/images/services"
 
 # Services có LicenseGuard — phải export LICENSE_SECRET trước

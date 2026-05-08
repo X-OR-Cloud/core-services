@@ -9,8 +9,8 @@
 ## Queue Names
 ```typescript
 // ⚠️ NO colons in queue names — BullMQ restriction
-// ❌ 'pag:inbound'
-// ✅ 'pag-inbound'
+// ❌ 'myservice:inbound'
+// ✅ 'myservice-inbound'
 
 export const QUEUE_NAMES = {
   INBOUND: 'myservice-inbound',

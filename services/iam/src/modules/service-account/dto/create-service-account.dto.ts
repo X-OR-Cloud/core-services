@@ -4,14 +4,14 @@ import { Type, Transform } from 'class-transformer';
 import { PermissionDto } from './permission.dto';
 
 export class CreateServiceAccountDto {
-  @ApiProperty({ example: 'pag-service', description: 'Service account name' })
+  @ApiProperty({ example: 'integration-service', description: 'Service account name' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   @Transform(({ value }) => value?.trim())
   name: string;
 
-  @ApiProperty({ example: 'PAG service account for CBM integration', required: false })
+  @ApiProperty({ example: 'Service account for CBM integration', required: false })
   @IsString()
   @IsOptional()
   @MaxLength(500)

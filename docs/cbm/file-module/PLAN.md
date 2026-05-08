@@ -332,7 +332,7 @@ Script riêng, chạy sau khi data migration ổn định:
 
 ### 9.3. Các service khác
 
-- `aiwm`, `iam`, `noti`, `mona`, `aivp`, `dgt` không phụ thuộc knowledge-file → không ảnh hưởng.
+- `aiwm`, `iam`, `noti`, `mona` không phụ thuộc knowledge-file → không ảnh hưởng.
 
 ### 9.4. Frontend
 

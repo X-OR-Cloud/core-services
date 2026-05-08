@@ -27,7 +27,7 @@
 |-------|-----|------|-----------|
 | `node` | `20-alpine3.21` | ~130 MB | https://hub.docker.com/_/node |
 
-**Mục đích:** Base image để build và chạy tất cả NestJS microservices trong monorepo (template, iam, noti, aiwm, cbm, mona, aivp). Alpine variant để giảm kích thước image. Cần cài thêm `curl`, `bash`, `ca-certificates` khi build Dockerfile cho từng service.
+**Mục đích:** Base image để build và chạy tất cả NestJS microservices trong monorepo (template, iam, noti, aiwm, cbm, mona, schd). Alpine variant để giảm kích thước image. Cần cài thêm `curl`, `bash`, `ca-certificates` khi build Dockerfile cho từng service.
 
 ---
 
@@ -69,7 +69,7 @@
 |-------|-----|------|-----------|
 | `chrislusf/seaweedfs` | `4.20` | ~100 MB | https://hub.docker.com/r/chrislusf/seaweedfs |
 
-**Mục đích:** S3-compatible object storage tự host — thay thế cho MinIO (vấn đề AGPL-3.0 license). Dùng để lưu trữ file upload, model artifacts, documents của service `cbm` và `aivp`. SeaweedFS có S3 gateway tương thích hoàn toàn, Apache 2.0 license, viết bằng Go nên nhẹ và dễ vận hành trên Kubernetes.
+**Mục đích:** S3-compatible object storage tự host — thay thế cho MinIO (vấn đề AGPL-3.0 license). Dùng để lưu trữ file upload, model artifacts, documents của service `cbm`. SeaweedFS có S3 gateway tương thích hoàn toàn, Apache 2.0 license, viết bằng Go nên nhẹ và dễ vận hành trên Kubernetes.
 
 > **Lý do chọn SeaweedFS thay MinIO:** MinIO đổi sang AGPL-3.0 từ 2021, có thể xung đột với môi trường enterprise/closed-source. SeaweedFS là Apache 2.0, production-ready từ 2012, có Helm chart sẵn cho K8s.
 

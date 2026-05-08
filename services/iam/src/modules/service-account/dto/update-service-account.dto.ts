@@ -4,7 +4,7 @@ import { Type, Transform } from 'class-transformer';
 import { PermissionDto } from './permission.dto';
 
 export class UpdateServiceAccountDto {
-  @ApiProperty({ example: 'pag-service-v2', required: false })
+  @ApiProperty({ example: 'integration-service-v2', required: false })
   @IsString()
   @IsOptional()
   @MaxLength(100)

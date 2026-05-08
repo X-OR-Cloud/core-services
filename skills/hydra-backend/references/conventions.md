@@ -22,7 +22,7 @@
 ## Port Allocation
 | Range | Use |
 |-------|-----|
-| 3000-3009 | Dev ports (template=3000, iam=3001, ..., pag=3006) |
+| 3000-3009 | Dev ports (template=3000, iam=3001, noti=3002, aiwm=3003, cbm=3004, mona=3005, schd=3009) |
 | 3300-3399 | Production (10 ports per service) |
 
 Next available dev port: check existing services.

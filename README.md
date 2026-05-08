@@ -23,9 +23,8 @@ Nx monorepo containing backend microservices for the core platform, built on Nes
 | **aiwm** | 3003 | 3330–3339 | AI Workload Manager — 22 modules, MCP server, hosted agents |
 | **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
 | **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
-| **aivp** | 3007 | 3370–3379 | AI Video Processing |
 
-Services in development: `schd` (Scheduler), `pag` (Personal Agent Gateway).
+Services in development: `schd` (Scheduler).
 
 ### Run Modes
 
@@ -135,8 +134,7 @@ core-services/
 │   ├── noti/
 │   ├── aiwm/
 │   ├── cbm/
-│   ├── mona/
-│   └── aivp/
+│   └── mona/
 ├── libs/
 │   ├── base/           # @core/base
 │   └── shared/         # @core/shared
