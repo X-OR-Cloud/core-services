@@ -147,7 +147,8 @@ export class OrderService extends BaseService<Order> {
     const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `ORD-${yyyymmdd}-`;
 
-    const orgMatch: any = { isDeleted: { $ne: true }, code: new RegExp(`^${prefix}`) };
+    // Include soft-deleted orders to avoid duplicate code (unique index covers all docs)
+    const orgMatch: any = { code: new RegExp(`^${prefix}`) };
     if (context.orgId) orgMatch['owner.orgId'] = context.orgId;
 
     const last = await this.orderModel
