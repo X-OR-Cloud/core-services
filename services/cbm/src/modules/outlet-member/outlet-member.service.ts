@@ -111,6 +111,21 @@ export class OutletMemberService extends BaseService<OutletMember> {
     return members as unknown as OutletMember[];
   }
 
+  /**
+   * List all outlet assignments for a specific user.
+   */
+  async listByUser(userId: string, context: RequestContext): Promise<OutletMember[]> {
+    const members = await this.outletMemberModel
+      .find({
+        userId,
+        'owner.orgId': context.orgId,
+        isDeleted: false,
+      })
+      .lean();
+
+    return members as unknown as OutletMember[];
+  }
+
   async removeMember(id: Types.ObjectId, context: RequestContext): Promise<Partial<OutletMember>> {
     const member = await this.outletMemberModel.findOne({
       _id: id,
