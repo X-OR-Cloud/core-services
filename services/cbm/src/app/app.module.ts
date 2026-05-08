@@ -39,6 +39,7 @@ import { SkillModule } from '../skill/skill.module';
 import { OutletModule } from '../modules/outlet/outlet.module';
 import { OutletMemberModule } from '../modules/outlet-member/outlet-member.module';
 import { OutletContextMiddleware } from '../middleware/outlet-context.middleware';
+import { StaffModule } from '../modules/staff/staff.module';
 
 @Module({
   imports: [
@@ -94,6 +95,8 @@ import { OutletContextMiddleware } from '../middleware/outlet-context.middleware
     // Outlet modules (BepCoba PWA)
     OutletModule,
     OutletMemberModule,
+    // Staff management (proxy to IAM)
+    StaffModule,
   ],
   controllers: [AppController],
   providers: [
