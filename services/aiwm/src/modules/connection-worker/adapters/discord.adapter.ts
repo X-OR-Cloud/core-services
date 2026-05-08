@@ -8,6 +8,9 @@ export class DiscordAdapter extends BaseAdapter {
   private readonly logger = new Logger(DiscordAdapter.name);
   private client: Client | null = null;
 
+  // Max rendered ASCII-table width before falling back to list format (mobile-friendly threshold).
+  private static readonly MAX_TABLE_WIDTH = 55;
+
   constructor(private readonly config: ConnectionConfig) {
     super();
   }
@@ -62,7 +65,8 @@ export class DiscordAdapter extends BaseAdapter {
       throw new Error(`Channel ${target.channelId} not found or not text-based`);
     }
 
-    const chunks = this._splitMarkdown(text, 1900);
+    const transformed = this._convertMarkdownTables(text);
+    const chunks = this._splitMarkdown(transformed, 1900);
     for (const chunk of chunks) {
       await (channel as any).send(chunk);
     }
@@ -199,5 +203,153 @@ export class DiscordAdapter extends BaseAdapter {
 
     if (remaining.trim()) chunks.push(remaining.trim());
     return chunks;
+  }
+
+  /**
+   * Convert markdown tables in text to Discord-friendly format.
+   * Discord doesn't render markdown tables — small tables become ASCII tables
+   * inside a code fence (monospace alignment); large tables become a list.
+   */
+  private _convertMarkdownTables(text: string): string {
+    const lines = text.split('\n');
+    const out: string[] = [];
+    let inFence = false;
+    let i = 0;
+
+    while (i < lines.length) {
+      // Skip over existing fenced code blocks untouched
+      if (/^```/.test(lines[i].trim())) {
+        inFence = !inFence;
+        out.push(lines[i]);
+        i++;
+        continue;
+      }
+      if (inFence) {
+        out.push(lines[i]);
+        i++;
+        continue;
+      }
+
+      const tableEnd = this._detectTable(lines, i);
+      if (tableEnd > i) {
+        out.push(this._renderTable(lines.slice(i, tableEnd)));
+        i = tableEnd;
+      } else {
+        out.push(lines[i]);
+        i++;
+      }
+    }
+
+    return out.join('\n');
+  }
+
+  /**
+   * Detect a markdown table starting at startIdx. Returns exclusive end index,
+   * or startIdx if no table is detected. Requires header + separator + ≥1 row.
+   */
+  private _detectTable(lines: string[], startIdx: number): number {
+    if (startIdx + 2 >= lines.length) return startIdx;
+
+    const header = lines[startIdx].trim();
+    const sep = lines[startIdx + 1].trim();
+
+    if (!header.includes('|')) return startIdx;
+    // Separator: only |, -, :, spaces; must contain at least one '-'
+    if (!/^\|?[\s:|-]+\|?$/.test(sep) || !sep.includes('-')) return startIdx;
+
+    const headerCols = this._parseRow(header);
+    const sepCols = this._parseRow(sep);
+    if (headerCols.length < 2 || headerCols.length !== sepCols.length) return startIdx;
+    if (!sepCols.every((c) => /^:?-+:?$/.test(c.trim()))) return startIdx;
+
+    let end = startIdx + 2;
+    while (end < lines.length) {
+      const line = lines[end].trim();
+      if (!line.includes('|')) break;
+      const cols = this._parseRow(line);
+      if (cols.length !== headerCols.length) break;
+      end++;
+    }
+
+    // Need at least one data row
+    return end > startIdx + 2 ? end : startIdx;
+  }
+
+  private _parseRow(line: string): string[] {
+    return line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+  }
+
+  private _renderTable(tableLines: string[]): string {
+    const headers = this._parseRow(tableLines[0]);
+    const rows = tableLines.slice(2).map((l) => this._parseRow(l));
+
+    const widths = headers.map((h, idx) => {
+      let w = this._displayWidth(h);
+      for (const r of rows) w = Math.max(w, this._displayWidth(r[idx] ?? ''));
+      return w;
+    });
+
+    // "| " + col + " | " + col + " |" → sum(widths) + 3*N + 1
+    const totalWidth = widths.reduce((s, w) => s + w, 0) + 3 * widths.length + 1;
+
+    if (totalWidth <= DiscordAdapter.MAX_TABLE_WIDTH) {
+      return this._renderAsciiTable(headers, rows, widths);
+    }
+    return this._renderListTable(headers, rows);
+  }
+
+  private _renderAsciiTable(headers: string[], rows: string[][], widths: number[]): string {
+    const renderRow = (cells: string[]) =>
+      '| ' + cells.map((c, i) => this._padCell(c ?? '', widths[i])).join(' | ') + ' |';
+    const sep = '|' + widths.map((w) => '-'.repeat(w + 2)).join('|') + '|';
+
+    return '```\n' + [renderRow(headers), sep, ...rows.map(renderRow)].join('\n') + '\n```';
+  }
+
+  private _renderListTable(headers: string[], rows: string[][]): string {
+    const out: string[] = [];
+    rows.forEach((row, idx) => {
+      const title = (row[0] ?? '').trim() || `Row ${idx + 1}`;
+      out.push(`**${idx + 1}. ${title}**`);
+      for (let c = 1; c < headers.length; c++) {
+        const value = (row[c] ?? '').trim();
+        if (value) out.push(`• ${headers[c]}: ${value}`);
+      }
+      out.push('');
+    });
+    while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    return out.join('\n');
+  }
+
+  /** Display width for monospace alignment — CJK/emoji = 2 cells, others = 1. */
+  private _displayWidth(s: string): number {
+    let w = 0;
+    for (const ch of s) {
+      const code = ch.codePointAt(0) ?? 0;
+      if (
+        (code >= 0x1100 && code <= 0x115f) ||
+        (code >= 0x2e80 && code <= 0x303e) ||
+        (code >= 0x3041 && code <= 0x33ff) ||
+        (code >= 0x3400 && code <= 0x4dbf) ||
+        (code >= 0x4e00 && code <= 0x9fff) ||
+        (code >= 0xa000 && code <= 0xa4cf) ||
+        (code >= 0xac00 && code <= 0xd7a3) ||
+        (code >= 0xf900 && code <= 0xfaff) ||
+        (code >= 0xfe30 && code <= 0xfe4f) ||
+        (code >= 0xff00 && code <= 0xff60) ||
+        (code >= 0xffe0 && code <= 0xffe6) ||
+        (code >= 0x1f000 && code <= 0x1ffff)
+      ) {
+        w += 2;
+      } else {
+        w += 1;
+      }
+    }
+    return w;
+  }
+
+  private _padCell(s: string, target: number): string {
+    const cur = this._displayWidth(s);
+    return cur >= target ? s : s + ' '.repeat(target - cur);
   }
 }
