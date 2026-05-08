@@ -1,4 +1,5 @@
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 export const QUEUE_NAMES = {
   IAM_EVENTS_NOTI: 'iam.events.noti',
@@ -26,12 +27,16 @@ export const ALL_IAM_SUBSCRIBER_QUEUES = [
 ];
 
 export const getBullModuleConfig = () =>
-  BullModule.forRoot({
-    connection: {
-      host: process.env['REDIS_HOST'] || 'localhost',
-      port: parseInt(process.env['REDIS_PORT'] || '6379', 10),
-      username: process.env['REDIS_USERNAME'] || undefined,
-      password: process.env['REDIS_PASSWORD'] || undefined,
-      db: parseInt(process.env['REDIS_DB'] || '0', 10),
-    },
+  BullModule.forRootAsync({
+    imports: [ConfigModule],
+    inject: [ConfigService],
+    useFactory: (config: ConfigService) => ({
+      connection: {
+        host: config.get('REDIS_HOST') || 'localhost',
+        port: parseInt(config.get('REDIS_PORT') || '6379', 10),
+        username: config.get('REDIS_USERNAME') || undefined,
+        password: config.get('REDIS_PASSWORD') || undefined,
+        db: parseInt(config.get('REDIS_DB') || '0', 10),
+      },
+    }),
   });
