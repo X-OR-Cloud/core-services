@@ -33,8 +33,8 @@ export class OrderController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(@Query() query: Record<string, any>, @CurrentUser() context: RequestContext) {
-    const { search, ...rest } = query;
-    return this.service.findAll({ ...parseQueryString(rest), search }, context);
+    const { search, dateFrom, dateTo, ...rest } = query;
+    return this.service.findAll({ ...parseQueryString(rest), search, dateFrom, dateTo }, context);
   }
 
   @Get(':id')

@@ -92,4 +92,5 @@ OrderSchema.index({ 'customer.id': 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ 'owner.orgId': 1 });
 OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ 'owner.orgId': 1, createdAt: -1 });
 OrderSchema.index({ code: 'text', 'customer.name': 'text', 'customer.phone': 'text' });

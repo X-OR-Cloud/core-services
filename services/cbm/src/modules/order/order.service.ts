@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -22,20 +22,40 @@ export class OrderService extends BaseService<Order> {
   }
 
   async findAll(
-    options: FindManyOptions & { search?: string },
+    options: FindManyOptions & { search?: string; dateFrom?: string; dateTo?: string },
     context: RequestContext
   ): Promise<FindManyResult<Order>> {
-    if (options.search) {
-      const regex = new RegExp(options.search, 'i');
-      const { search, ...rest } = options;
-      options = {
+    const { search, dateFrom, dateTo, ...rest } = options as any;
+
+    // Validate 90-day range limit
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom).getTime();
+      const to = new Date(dateTo).getTime();
+      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      if (to - from > ninetyDaysMs) {
+        throw new BadRequestException('Date range cannot exceed 90 days');
+      }
+    }
+
+    // Apply date filter
+    if (dateFrom || dateTo) {
+      const createdAtFilter: any = {};
+      if (dateFrom) createdAtFilter.$gte = new Date(dateFrom);
+      if (dateTo) createdAtFilter.$lte = new Date(dateTo);
+      rest.filter = { ...rest.filter, createdAt: createdAtFilter };
+    }
+
+    // Apply search filter
+    let baseOptions = rest;
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      baseOptions = {
         ...rest,
         $or: [{ code: regex }, { 'customer.name': regex }, { 'customer.phone': regex }],
       } as any;
     }
-    delete (options as any).search;
 
-    const findResult = await super.findAll(options, context);
+    const findResult = await super.findAll(baseOptions, context);
 
     const baseMatch: any = { isDeleted: false };
     if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
