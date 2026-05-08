@@ -92,6 +92,7 @@ When working on a specific module, read the corresponding docs:
 - **PII module**: Read `docs/aiwm/pii/OVERVIEW.md` + `docs/aiwm/pii/ROADMAP.md`
 - **MCP module**: Read `docs/aiwm/mcp/OVERVIEW.md` + `docs/aiwm/mcp/ROADMAP.md` AND `services/aiwm/src/mcp/README.md` (builtin tools guide)
 - **Configuration**: Read `docs/aiwm/configuration-management-proposal-v2.md`
+- **Agent RAG config**: Read `docs/aiwm/agent/RAG-CONFIG-API.md` — ý nghĩa thông số ragConfig, API spec, sample response
 
 ## Key Architecture Patterns
 
@@ -176,7 +177,8 @@ Con worker (Discord/Telegram) publish `chat:message-new` → CWS subscribe và x
 
 ### Authentication Token Types
 - **User JWT**: `sub` (userId), `orgId`, `roles`, `groupId`
-- **Agent JWT**: `sub` (agentId), `orgId`, `type: 'agent'`, `roles: ['agent']`
+- **Agent JWT**: `sub` (agentId), `orgId`, `type: 'agent'`, `roles: ['organization.editor']`
+  > ⚠️ Agent JWT KHÔNG có `roles: ['agent']` — phát hiện khi debug bug isAgent(). Detect agent context bằng `!!agentId && !userId`.
 - **Anonymous Token**: `type: 'anonymous'`, `agentId`, `anonymousId`, `tokenId`, `expiresAt`
 - **Node JWT**: `sub` (nodeId), `type`, `username`, `status`, `orgId`
 

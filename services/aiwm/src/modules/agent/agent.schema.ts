@@ -46,6 +46,75 @@ export interface AgentLog {
 }
 
 
+// ─── Adaptive RAG interfaces ────────────────────────────────────────────────
+
+/** Cấu hình cho một intent trong bộ phân loại ý định */
+export interface RagIntentRule {
+  /** Tên intent: GREETING | SKIP_OOD | SKIP_GUARD | SKIP_PII | SIMPLE_RAG | COMPLEX_RAG */
+  name: string;
+  /** Có cần tìm kiếm knowledge base không */
+  requiresRag: boolean;
+  /** Override collectionIds cho intent này (nếu không set → dùng collections chung) */
+  collectionIds?: string[];
+  /** Override topK cho intent này */
+  topK?: number;
+}
+
+/** Cấu hình một knowledge collection */
+export interface RagCollectionConfig {
+  collectionId: string;
+  label?: string;
+  type?: 'faq' | 'procedure' | 'general';
+  topK: number;
+  minScore: number;
+  /** Chỉ search collection này khi intent thuộc danh sách (rỗng = tất cả intents có RAG) */
+  intents?: string[];
+}
+
+/** Cấu hình grader (relevance + hallucination check) */
+export interface RagGraderConfig {
+  /** Bật relevance grading — lọc chunk không liên quan trước khi đưa vào LLM */
+  relevanceEnabled: boolean;
+  /** Ngưỡng score để chunk được coi là relevant (0-1) */
+  relevanceThreshold: number;
+  /** Bật hallucination check — verify câu trả lời có bám sát context không */
+  hallucinationEnabled: boolean;
+  /** Chỉ check hallucination với các intents này (rỗng = tất cả) */
+  hallucinationIntents?: string[];
+  /** Deployment ID dùng cho grading (mặc định dùng deployment của agent) */
+  deploymentId?: string;
+}
+
+/**
+ * Mức độ ghi log pipeline vào conversation actions:
+ * - 'off': không publish action nào cho RAG (silent — chỉ sources kèm message cuối)
+ * - 'summary' (mặc định): 1 cặp tool_use/tool_result tổng quanh search step
+ * - 'verbose': summary + thinking action cho intent classify, reformulate (nếu xảy ra), grade (nếu bật)
+ */
+export type AdaptiveRagTraceLevel = 'off' | 'summary' | 'verbose';
+
+/** Cấu hình Adaptive RAG toàn phần cho agent */
+export interface AgentRagConfig {
+  enabled: boolean;
+  intentClassifier: {
+    enabled: boolean;
+    /** Deployment ID dùng cho intent classification (mặc định dùng deployment của agent) */
+    deploymentId?: string;
+    intents: RagIntentRule[];
+  };
+  collections: RagCollectionConfig[];
+  query: {
+    parallelSearch: boolean;
+    maxRetries: number;
+    reformulateOnLowScore: boolean;
+  };
+  grader: RagGraderConfig;
+  /** Mức độ trace pipeline ra conversation actions (mặc định 'summary') */
+  traceLevel?: AdaptiveRagTraceLevel;
+}
+
+// ─── End Adaptive RAG interfaces ────────────────────────────────────────────
+
 export type AgentDocument = Agent & Document;
 
 /**
@@ -216,7 +285,7 @@ export class Agent extends BaseSchema {
   })
   logs: AgentLog[];
 
-  // RAG configuration
+  // RAG configuration (legacy — kept for backward compatibility)
   @Prop({ default: false })
   ragEnabled: boolean;
 
@@ -234,6 +303,50 @@ export class Agent extends BaseSchema {
     topK: number;
     minScore: number;
   };
+
+  // Adaptive RAG configuration (v2 — replaces legacy ragEnabled/ragCollectionIds/ragSettings)
+  @Prop({
+    type: {
+      enabled: { type: Boolean, default: false },
+      intentClassifier: {
+        enabled: { type: Boolean, default: false },
+        deploymentId: { type: String },
+        intents: [
+          {
+            name: { type: String, required: true },
+            requiresRag: { type: Boolean, required: true },
+            collectionIds: [{ type: String }],
+            topK: { type: Number },
+          },
+        ],
+      },
+      collections: [
+        {
+          collectionId: { type: String, required: true },
+          label: { type: String },
+          type: { type: String, enum: ['faq', 'procedure', 'general'] },
+          topK: { type: Number, default: 5 },
+          minScore: { type: Number, default: 0.7 },
+          intents: [{ type: String }],
+        },
+      ],
+      query: {
+        parallelSearch: { type: Boolean, default: true },
+        maxRetries: { type: Number, default: 1 },
+        reformulateOnLowScore: { type: Boolean, default: false },
+      },
+      grader: {
+        relevanceEnabled: { type: Boolean, default: false },
+        relevanceThreshold: { type: Number, default: 0.5 },
+        hallucinationEnabled: { type: Boolean, default: false },
+        hallucinationIntents: [{ type: String }],
+        deploymentId: { type: String },
+      },
+      traceLevel: { type: String, enum: ['off', 'summary', 'verbose'], default: 'summary' },
+    },
+    default: null,
+  })
+  ragConfig?: AgentRagConfig | null;
 
   // Connection tracking
   @Prop()

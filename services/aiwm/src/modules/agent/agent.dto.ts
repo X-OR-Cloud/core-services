@@ -62,6 +62,164 @@ export class RagSettingsDto {
   minScore?: number;
 }
 
+// ─── Adaptive RAG DTOs ───────────────────────────────────────────────────────
+
+export class RagIntentRuleDto {
+  @ApiProperty({ description: 'Intent name (e.g. GREETING, SKIP_OOD, SIMPLE_RAG, COMPLEX_RAG)', example: 'SIMPLE_RAG' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ description: 'Whether this intent requires RAG retrieval', example: true })
+  @IsBoolean()
+  requiresRag: boolean;
+
+  @ApiPropertyOptional({ description: 'Override collection IDs for this intent', required: false, type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  collectionIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Override topK for this intent', required: false, example: 5 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  topK?: number;
+}
+
+export class RagCollectionConfigDto {
+  @ApiProperty({ description: 'Knowledge collection ID from CBM', example: '69f020f5f11db9f3992ca592' })
+  @IsString()
+  collectionId: string;
+
+  @ApiPropertyOptional({ description: 'Human-readable label for this collection', required: false })
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional({ description: 'Collection type for routing hints', enum: ['faq', 'procedure', 'general'], required: false })
+  @IsOptional()
+  @IsEnum(['faq', 'procedure', 'general'])
+  type?: 'faq' | 'procedure' | 'general';
+
+  @ApiProperty({ description: 'Number of chunks to retrieve', example: 5 })
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  topK: number;
+
+  @ApiProperty({ description: 'Minimum similarity score (0-1)', example: 0.7 })
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  minScore: number;
+
+  @ApiPropertyOptional({ description: 'Only search this collection when intent matches (empty = all RAG intents)', required: false, type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  intents?: string[];
+}
+
+export class RagGraderConfigDto {
+  @ApiProperty({ description: 'Enable relevance grading — filter irrelevant chunks before LLM', example: false })
+  @IsBoolean()
+  relevanceEnabled: boolean;
+
+  @ApiProperty({ description: 'Score threshold to consider a chunk relevant (0-1)', example: 0.5 })
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  relevanceThreshold: number;
+
+  @ApiProperty({ description: 'Enable hallucination check — verify answer is grounded in context', example: false })
+  @IsBoolean()
+  hallucinationEnabled: boolean;
+
+  @ApiPropertyOptional({ description: 'Only check hallucination for these intents (empty = all)', required: false, type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  hallucinationIntents?: string[];
+
+  @ApiPropertyOptional({ description: 'Deployment ID for grading LLM calls (defaults to agent deployment)', required: false })
+  @IsOptional()
+  @IsString()
+  deploymentId?: string;
+}
+
+export class RagQueryConfigDto {
+  @ApiProperty({ description: 'Search all collections in parallel', example: true })
+  @IsBoolean()
+  parallelSearch: boolean;
+
+  @ApiProperty({ description: 'Max query reformulation retries on low score', example: 1 })
+  @IsNumber()
+  @Min(0)
+  @Max(3)
+  maxRetries: number;
+
+  @ApiProperty({ description: 'Reformulate query when retrieved chunks have low scores', example: false })
+  @IsBoolean()
+  reformulateOnLowScore: boolean;
+}
+
+export class RagIntentClassifierDto {
+  @ApiProperty({ description: 'Enable intent classification step', example: true })
+  @IsBoolean()
+  enabled: boolean;
+
+  @ApiPropertyOptional({ description: 'Deployment ID for classification LLM (defaults to agent deployment)', required: false })
+  @IsOptional()
+  @IsString()
+  deploymentId?: string;
+
+  @ApiProperty({ description: 'Intent rules that drive routing decisions', type: [RagIntentRuleDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RagIntentRuleDto)
+  intents: RagIntentRuleDto[];
+}
+
+export class AgentRagConfigDto {
+  @ApiProperty({ description: 'Enable Adaptive RAG pipeline', example: true })
+  @IsBoolean()
+  enabled: boolean;
+
+  @ApiProperty({ description: 'Intent classifier configuration', type: RagIntentClassifierDto })
+  @ValidateNested()
+  @Type(() => RagIntentClassifierDto)
+  intentClassifier: RagIntentClassifierDto;
+
+  @ApiProperty({ description: 'Knowledge collections to search', type: [RagCollectionConfigDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RagCollectionConfigDto)
+  collections: RagCollectionConfigDto[];
+
+  @ApiProperty({ description: 'Query and retrieval settings', type: RagQueryConfigDto })
+  @ValidateNested()
+  @Type(() => RagQueryConfigDto)
+  query: RagQueryConfigDto;
+
+  @ApiProperty({ description: 'Relevance and hallucination grader settings', type: RagGraderConfigDto })
+  @ValidateNested()
+  @Type(() => RagGraderConfigDto)
+  grader: RagGraderConfigDto;
+
+  @ApiPropertyOptional({
+    description: 'Mức độ ghi log pipeline vào conversation actions. off=im lặng (chỉ sources kèm message cuối), summary=1 cặp tool_use/tool_result quanh search (mặc định), verbose=thêm thinking action cho mỗi bước intent/reformulate/grade',
+    enum: ['off', 'summary', 'verbose'],
+    default: 'summary',
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['off', 'summary', 'verbose'])
+  traceLevel?: 'off' | 'summary' | 'verbose';
+}
+
+// ─── End Adaptive RAG DTOs ───────────────────────────────────────────────────
+
 /**
  * DTO for creating a new agent - MVP Minimal Version
  */
@@ -196,6 +354,12 @@ export class CreateAgentDto {
   @ValidateNested()
   @Type(() => RagSettingsDto)
   ragSettings?: RagSettingsDto;
+
+  @ApiPropertyOptional({ description: 'Adaptive RAG pipeline configuration (v2, replaces ragEnabled/ragCollectionIds/ragSettings)', required: false, type: AgentRagConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentRagConfigDto)
+  ragConfig?: AgentRagConfigDto;
 
   @ApiPropertyOptional({
     description: 'Conversation scoping mode for anonymous WS clients and Connection Worker users. Authenticated WS users select conversation manually and are not affected.',
@@ -354,6 +518,12 @@ export class UpdateAgentDto {
   @ValidateNested()
   @Type(() => RagSettingsDto)
   ragSettings?: RagSettingsDto;
+
+  @ApiPropertyOptional({ description: 'Adaptive RAG pipeline configuration (v2, replaces ragEnabled/ragCollectionIds/ragSettings)', required: false, type: AgentRagConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentRagConfigDto)
+  ragConfig?: AgentRagConfigDto;
 
   @ApiPropertyOptional({
     description: 'Conversation scoping mode for anonymous WS clients and Connection Worker users. Authenticated WS users select conversation manually and are not affected.',
@@ -522,6 +692,9 @@ export class AgentConnectResponseDto {
     topK: number;
     minScore: number;
   }>;
+
+  @ApiPropertyOptional({ description: 'Adaptive RAG config (v2)', required: false })
+  ragConfig?: AgentRagConfigDto | null;
 
   @ApiProperty({ description: 'Agent code identifier', example: 'PM-BOT-01', required: false })
   agentCode?: string;

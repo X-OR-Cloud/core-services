@@ -19,6 +19,7 @@ import { FileService } from '../file/file.service';
 import { AgentRunner } from './agent-runner';
 import { AgentLockService } from './agent-lock.service';
 import { CbmKnowledgeService } from './cbm-knowledge.service';
+import { AdaptiveRagService } from './adaptive-rag.service';
 
 /** Hash the fields that actually affect runner behavior */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,6 +73,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly fileService: FileService,
     private readonly cbmKnowledgeService: CbmKnowledgeService,
+    private readonly adaptiveRagService: AdaptiveRagService,
   ) {
     this.agentIdFilter = process.env.AGENT_IDS
       ? process.env.AGENT_IDS.split(',').filter(Boolean)
@@ -141,7 +143,7 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
       // connectInternal: in-process call, no secret needed, no HTTP round-trip through LB
       const connectResp = await this.agentService.connectInternal(agentId);
 
-      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections, agentCode } = connectResp;
+      const { accessToken, instruction, deployment, settings, mcpServers, allowedFunctions, ragEnabled, ragCollections, ragConfig, agentCode } = connectResp;
 
       this.logger.debug(
         `connectResp for ${agentId}: deployment=${JSON.stringify(deployment)}, mcpServers=${JSON.stringify(Object.keys(mcpServers || {}))}, allowedFunctions=${allowedFunctions?.length ?? 0}`,
@@ -212,6 +214,8 @@ export class AgentWorkerService implements OnModuleInit, OnModuleDestroy {
         ragCollections: ragCollections ?? [],
         searchKnowledgeInternal: (collectionId, query, topK, minScore) =>
           this.cbmKnowledgeService.search(collectionId, query, topK, minScore, this.runners.get(agentId)?.getAccessToken() ?? accessToken),
+        ragConfig: ragConfig ?? null,
+        adaptiveRagService: this.adaptiveRagService,
         agentCode: agentCode ?? undefined,
       });
 

@@ -507,6 +507,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         topK: agent.ragSettings?.topK ?? 5,
         minScore: agent.ragSettings?.minScore ?? 0.7,
       })),
+      ragConfig: agent.ragConfig ?? null,
     };
 
     // For autonomous and hosted agents, populate deployment info
@@ -739,6 +740,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       channels: agent.channels || [],
       ragEnabled: agent.ragEnabled ?? false,
       ragCollections,
+      ragConfig: agent.ragConfig ?? null,
       agentCode: agent.code || undefined,
       browserApiUrl: (await this.configurationService.findByKey(
         ConfigKey.PINCHTAB_API_URL as any,

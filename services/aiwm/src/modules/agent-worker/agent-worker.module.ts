@@ -8,6 +8,7 @@ import { FileModule } from '../file/file.module';
 import { AgentWorkerService } from './agent-worker.service';
 import { AgentLockService } from './agent-lock.service';
 import { CbmKnowledgeService } from './cbm-knowledge.service';
+import { AdaptiveRagService } from './adaptive-rag.service';
 
 @Module({
   imports: [
@@ -17,6 +18,6 @@ import { CbmKnowledgeService } from './cbm-knowledge.service';
     ConfigurationModule,
     FileModule,
   ],
-  providers: [AgentLockService, AgentWorkerService, CbmKnowledgeService],
+  providers: [AgentLockService, AgentWorkerService, CbmKnowledgeService, AdaptiveRagService],
 })
 export class AgentWorkerModule {}
