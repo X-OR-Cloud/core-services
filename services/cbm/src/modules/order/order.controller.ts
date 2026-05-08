@@ -33,8 +33,8 @@ export class OrderController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(@Query() query: Record<string, any>, @CurrentUser() context: RequestContext) {
-    const { search, ...rest } = query;
-    return this.service.findAll({ ...parseQueryString(rest), search }, context);
+    const { search, dateFrom, dateTo, ...rest } = query;
+    return this.service.findAll({ ...parseQueryString(rest), search, dateFrom, dateTo }, context);
   }
 
   @Get(':id')
@@ -58,7 +58,7 @@ export class OrderController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Soft delete order (not allowed when done)' })
+  @ApiOperation({ summary: 'Soft delete order. Owner: any status. Editor: new/processing only → 403 ORDER_CANNOT_DELETE for done/cancelled' })
   @ApiDeleteErrors()
   @UseGuards(JwtAuthGuard)
   async remove(@Param('id') id: string, @CurrentUser() context: RequestContext) {

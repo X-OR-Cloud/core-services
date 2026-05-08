@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { isSuperAdmin } from '../project/project-access.helper';
 import { Order } from './order.schema';
 
 const EDITABLE_STATUSES = ['new', 'processing'];
@@ -22,20 +23,40 @@ export class OrderService extends BaseService<Order> {
   }
 
   async findAll(
-    options: FindManyOptions & { search?: string },
+    options: FindManyOptions & { search?: string; dateFrom?: string; dateTo?: string },
     context: RequestContext
   ): Promise<FindManyResult<Order>> {
-    if (options.search) {
-      const regex = new RegExp(options.search, 'i');
-      const { search, ...rest } = options;
-      options = {
+    const { search, dateFrom, dateTo, ...rest } = options as any;
+
+    // Validate 90-day range limit
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom).getTime();
+      const to = new Date(dateTo).getTime();
+      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      if (to - from > ninetyDaysMs) {
+        throw new BadRequestException('Date range cannot exceed 90 days');
+      }
+    }
+
+    // Apply date filter
+    if (dateFrom || dateTo) {
+      const createdAtFilter: any = {};
+      if (dateFrom) createdAtFilter.$gte = new Date(dateFrom);
+      if (dateTo) createdAtFilter.$lte = new Date(dateTo);
+      rest.filter = { ...rest.filter, createdAt: createdAtFilter };
+    }
+
+    // Apply search filter
+    let baseOptions = rest;
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      baseOptions = {
         ...rest,
         $or: [{ code: regex }, { 'customer.name': regex }, { 'customer.phone': regex }],
       } as any;
     }
-    delete (options as any).search;
 
-    const findResult = await super.findAll(options, context);
+    const findResult = await super.findAll(baseOptions, context);
 
     const baseMatch: any = { isDeleted: false };
     if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
@@ -70,9 +91,20 @@ export class OrderService extends BaseService<Order> {
   async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
     const order = await super.findById(id, context);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status === 'done') {
-      throw new BadRequestException('Cannot delete a completed order');
+
+    // organization.owner can delete any status
+    // organization.editor can only delete new or processing
+    if (!isSuperAdmin(context)) {
+      const EDITOR_DELETABLE = ['new', 'processing'];
+      if (!EDITOR_DELETABLE.includes(order.status as string)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'ORDER_CANNOT_DELETE',
+          message: `Cannot delete an order with status: ${order.status}`,
+        });
+      }
     }
+
     return super.softDelete(id, context);
   }
 
