@@ -11,6 +11,7 @@ import {
   Min,
   MinLength,
   IsPositive,
+  IsISO8601,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationQueryDto } from '@hydrabyte/base';
@@ -259,6 +260,16 @@ export class OrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter from date (ISO 8601 UTC)', example: '2026-05-01T00:00:00Z' })
+  @IsOptional()
+  @IsISO8601()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Filter to date (ISO 8601 UTC)', example: '2026-05-08T23:59:59Z' })
+  @IsOptional()
+  @IsISO8601()
+  dateTo?: string;
 }
 
 export class OrderStatusDto {
