@@ -138,3 +138,4 @@ ContactSchema.index({ 'platformLinks.platform': 1, 'platformLinks.platformUserId
 ContactSchema.index({ 'owner.orgId': 1 });
 ContactSchema.index({ createdAt: -1 });
 ContactSchema.index({ 'owner.orgId': 1, searchText: 1 });
+ContactSchema.index({ 'owner.orgId': 1, phone: 1 });  // F-020 dedup lookup

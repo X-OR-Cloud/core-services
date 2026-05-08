@@ -5,13 +5,15 @@ import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { isSuperAdmin } from '../project/project-access.helper';
 import { Order } from './order.schema';
+import { Contact } from '../contact/contact.schema';
 
 const EDITABLE_STATUSES = ['new', 'processing'];
 
 @Injectable()
 export class OrderService extends BaseService<Order> {
   constructor(
-    @InjectModel(Order.name) private orderModel: Model<Order>
+    @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(Contact.name) private contactModel: Model<Contact>
   ) {
     super(orderModel);
   }
@@ -19,7 +21,45 @@ export class OrderService extends BaseService<Order> {
   async create(data: any, context: RequestContext): Promise<Partial<Order>> {
     data.code = await this.generateCode(context);
     data.status = 'new';
+
+    // F-020: Auto-link or create Contact when phone is provided and no existing contactId
+    if (!data.customer?.id && data.customer?.phone) {
+      try {
+        const contactId = await this.autoLinkContact(data, context);
+        if (contactId) data.customer.id = contactId;
+      } catch {
+        // Silent — order creation must not be blocked by contact logic
+      }
+    }
+
     return super.create(data, context);
+  }
+
+  /**
+   * F-020: Find existing contact by phone+orgId (regardless of status) or create a new one.
+   * Returns the contact _id as string, or null on failure.
+   */
+  private async autoLinkContact(data: any, context: RequestContext): Promise<string | null> {
+    const existing = await this.contactModel.findOne({
+      'owner.orgId': context.orgId,
+      phone: data.customer.phone,
+      isDeleted: { $ne: true },
+    }).lean();
+
+    if (existing) return String(existing._id);
+
+    const created = await this.contactModel.create({
+      name: data.customer.name,
+      phone: data.customer.phone,
+      address: data.customer.address || data.delivery?.address || undefined,
+      types: ['customer'],
+      status: 'active',
+      owner: { orgId: context.orgId, userId: context.userId, groupId: '', agentId: '', appId: '' },
+      createdBy: { userId: context.userId, roles: context.roles, orgId: context.orgId, groupId: '', agentId: '', appId: '' },
+      updatedBy: { userId: context.userId, roles: context.roles, orgId: context.orgId, groupId: '', agentId: '', appId: '' },
+    });
+
+    return String(created._id);
   }
 
   async findAll(
