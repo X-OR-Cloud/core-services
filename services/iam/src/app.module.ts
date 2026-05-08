@@ -12,7 +12,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/user/user.module';
 import { LicenseModule } from './modules/license/license.module';
 import { IamAppModule } from './modules/app/app.module';
-import { IamQueueModule } from './queues/queue.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { ServiceAccountModule } from './modules/service-account/service-account.module';
 
@@ -22,7 +21,6 @@ import { ServiceAccountModule } from './modules/service-account/service-account.
     MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.iam.name}`)),
     PassportModule,
     HealthModule,
-    IamQueueModule,
     AuthModule,
     OrganizationsModule,
     UsersModule,

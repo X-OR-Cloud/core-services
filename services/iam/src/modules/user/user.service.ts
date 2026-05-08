@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -10,14 +10,14 @@ import {
   hashPasswordWithAlgorithm,
 } from '../../core/utils/encryption.util';
 import { CreateUserData, ChangePasswordDto, ChangeRoleDto, CreateGoogleUserData } from './user.dto';
-import { IamEventProducer } from '../../queues/producers/iam-event.producer';
+import { AppWebhookService } from '../app/app-webhook.service';
 
 @Injectable()
 export class UsersService extends BaseService<User> {
 
   constructor(
     @InjectModel(User.name) userModel: Model<User>,
-    @Optional() private readonly iamEventProducer: IamEventProducer,
+    private readonly webhookService: AppWebhookService,
   ) {
     super(userModel);
   }
@@ -80,14 +80,14 @@ export class UsersService extends BaseService<User> {
     const created = await super.create(user, context);
     const createdId = (created as { _id?: { toString(): string } })._id?.toString();
     if (createdId) {
-      await this.iamEventProducer?.emitUserCreated({
+      this.webhookService.fireUserCreatedForOrg(context.orgId, {
         userId: createdId,
         username: created.username ?? data.username,
         role: created.role ?? data.role,
         orgId: context.orgId,
         provider: 'local',
         status: (created.status ?? data.status) as string,
-        fullname: created.fullname,
+        fullname: created.fullname ?? '',
       });
     }
     return created;
@@ -109,15 +109,15 @@ export class UsersService extends BaseService<User> {
     this.assertNotEscalatingPrivilege(context.roles, targetUser.role);
 
     const updated = await super.update(id, data, context);
-    // await this.iamEventProducer?.emitUserUpdated({
-    //   userId: id.toString(),
-    //   username: targetUser.username,
-    //   orgId: targetUser.owner?.orgId ?? '',
-    //   updatedFields: Object.keys(data),
-    //   role: data.role,
-    //   status: data.status as string | undefined,
-    //   fullname: data.fullname,
-    // });
+    this.webhookService.fireUserUpdatedForOrg(targetUser.owner?.orgId ?? context.orgId, {
+      userId: id.toString(),
+      username: targetUser.username,
+      orgId: targetUser.owner?.orgId ?? context.orgId,
+      updatedFields: Object.keys(data),
+      role: data.role,
+      status: data.status as string | undefined,
+      fullname: data.fullname,
+    });
     return updated;
   }
 
@@ -172,12 +172,12 @@ export class UsersService extends BaseService<User> {
 
     // Call parent softDelete method
     const deleted = await super.softDelete(id, context);
-    // await this.iamEventProducer?.emitUserDeleted({
-    //   userId: id.toString(),
-    //   username: targetUser?.username ?? '',
-    //   orgId: targetUser?.owner?.orgId ?? '',
-    //   deletedBy: context.userId,
-    // });
+    this.webhookService.fireUserDeletedForOrg(targetUser?.owner?.orgId ?? context.orgId, {
+      userId: id.toString(),
+      username: targetUser?.username ?? '',
+      orgId: targetUser?.owner?.orgId ?? context.orgId,
+      deletedBy: context.userId,
+    });
     return deleted;
   }
 
@@ -219,13 +219,13 @@ export class UsersService extends BaseService<User> {
 
     user.role = changeRoleDto.role;
     const saved = await user.save();
-    // await this.iamEventProducer?.emitUserUpdated({
-    //   userId: userId.toString(),
-    //   username: user.username,
-    //   orgId: user.owner?.orgId ?? '',
-    //   updatedFields: ['role'],
-    //   role: changeRoleDto.role,
-    // });
+    this.webhookService.fireUserUpdatedForOrg(user.owner?.orgId ?? context.orgId, {
+      userId: userId.toString(),
+      username: user.username,
+      orgId: user.owner?.orgId ?? context.orgId,
+      updatedFields: ['role'],
+      role: changeRoleDto.role,
+    });
     return saved;
   }
 

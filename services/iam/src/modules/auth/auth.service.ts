@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, NotFoundException, Logger, Optional } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, Logger } from '@nestjs/common';
 import { sign, verify } from 'jsonwebtoken';
 import { TokenData } from './auth.entity';
 import { LoginData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
@@ -20,7 +20,6 @@ import * as crypto from 'crypto';
 import { GoogleUserProfile } from './dto/google-auth.dto';
 import { AppService } from '../app/app.service';
 import { AppWebhookService } from '../app/app-webhook.service';
-import { IamEventProducer } from '../../queues/producers/iam-event.producer';
 
 @Injectable()
 export class AuthService {
@@ -33,7 +32,6 @@ export class AuthService {
     private readonly httpService: HttpService,
     private readonly appService: AppService,
     private readonly appWebhookService: AppWebhookService,
-    @Optional() private readonly iamEventProducer: IamEventProducer,
   ) {}
 
   async login(data: LoginData): Promise<TokenData> {
@@ -559,8 +557,6 @@ export class AuthService {
         status: user.status,
         fullname: user.fullname,
       };
-      await this.iamEventProducer?.emitUserCreated(eventPayload);
-
       // Fire webhook if app config has webhookUrl (fire-and-forget)
       if (validatedApp) {
         this.appWebhookService.fireUserCreated(validatedApp, eventPayload);

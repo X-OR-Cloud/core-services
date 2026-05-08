@@ -1,18 +1,16 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { Organization } from './organization.schema';
 import { RequestContext } from '@hydrabyte/shared';
 import { LicenseService } from '../license/license.service';
-import { IamEventProducer } from '../../queues/producers/iam-event.producer';
 
 @Injectable()
 export class OrganizationsService extends BaseService<Organization> {
   constructor(
     @InjectModel(Organization.name) OrganizationModel: Model<Organization>,
     private readonly licenseService: LicenseService,
-    @Optional() private readonly iamEventProducer: IamEventProducer,
   ) {
     super(OrganizationModel);
   }
