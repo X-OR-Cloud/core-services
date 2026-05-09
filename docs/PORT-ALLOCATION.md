@@ -38,13 +38,14 @@ This document defines the standardized port allocation strategy for all services
 | **CBM** | Business | **3004** | 3340-3343 | 3344-3349 | Core Business Management |
 | **MONA** | Business | **3005** | 3350-3353 | 3354-3359 | Monitoring & Analytics |
 
-### C. PAG & Future Services
+### C. Workflow & Utility Services
 
-| Service | Type | Local | Prod API | Prod MCP/WS | Description |
+| Service | Type | Local | Prod API | Prod Worker | Description |
 |---------|------|-------|----------|-------------|-------------|
-| **PAG** | Business | **3006** | 3360-3361 | N/A (BullMQ) | Personal Agent Gateway (Zalo OA, chat) |
-| **AIVP** | Business | **3007** | 3370-3373 | 3374-3379 | AI Video Processing |
-| **VSM** | Business | **3009** | 3390-3393 | 3394-3399 | Voice Service Management (PBX, SIP, WebRTC) |
+| **SCHD** | Core | **3006** | 3360-3361 | Worker (no port) | Scheduler — cron-based job orchestration |
+| **SYS** | Core | **3007** | 3370-3371 | Worker (no port) | System utilities — runtime settings + centralized audit-log |
+
+> Next available: 3008, 3009, 3010, 3011, ... (Prod ranges 3380-3389, 3390-3399, ...)
 
 ### D. AIWM WebSocket Processes (dedicated range)
 
@@ -257,6 +258,73 @@ pm2 start ecosystem.config.js --only core.mona.api00
 
 ---
 
+### SCHD Service (Scheduler)
+
+**Purpose**: Cron-based job scheduling and orchestration. Jobs publish to `targetQueue` of consumer services.
+
+```yaml
+Local Development:  3006
+Production:
+  API Instances:    3360, 3361                # 2 HTTP/REST instances
+  Worker:           No port                   # Cron scheduler + result listener
+  Reserved:         3362-3369                  # Future modes
+```
+
+**Multi-Mode**:
+- **API Mode** (default): REST endpoints for job CRUD, execution history
+- **Worker Mode** (`--mode=worker`): Cron checker + BullMQ result processor
+
+**Usage**:
+```bash
+# Local
+npx nx run schd:api
+npx nx run schd:wrk
+
+# Production (PM2)
+pm2 start ecosystem.config.js --only core.schd.api00,core.schd.worker00
+```
+
+**Default Port in Code**: `process.env.PORT || 3006`
+
+---
+
+### SYS Service (System Utilities)
+
+**Purpose**: Centralized runtime settings + audit-log. Service consumer khác truy cập qua `@hydrabyte/sys-client` lib.
+
+```yaml
+Local Development:  3007
+Production:
+  API Instances:    3370, 3371                # 2 HTTP/REST instances (UI + internal endpoints)
+  Worker:           No port                   # BullMQ audit-ingest processor
+  Reserved:         3372-3379                  # Future modes (additional API/worker scaling)
+```
+
+**Multi-Mode**:
+- **API Mode** (default): REST endpoints for setting CRUD, audit-log query, secret reveal
+- **Worker Mode** (`MODE=wrk`): BullMQ `sys-audit-ingest` processor (batch insert audit events)
+
+**Usage**:
+```bash
+# Local
+npx nx run sys:api
+npx nx run sys:wrk
+
+# Production (PM2)
+pm2 start ecosystem.config.js --only core.sys.api00,core.sys.api01,core.sys.worker00
+```
+
+**Default Port in Code**: `process.env.PORT || 3007`
+
+**Internal endpoints security**: `/settings/internal/*` và `/audit-logs/internal/*` được bảo vệ bởi 3 lớp guard:
+1. `CidrAllowlistGuard` (env `SYS_INTERNAL_CIDR_ALLOWLIST`)
+2. `InternalApiKeyGuard` (header `X-Internal-API-Key`)
+3. `RateLimitGuard` (chỉ cho `/settings/internal/secret/*`)
+
+Xem [`docs/sys/PROPOSAL.md`](sys/PROPOSAL.md) §7.
+
+---
+
 ## 🚀 Production Deployment
 
 ### PM2 Ecosystem Configuration
@@ -367,8 +435,8 @@ When updating services to new port allocation:
 | AIWM | http://localhost:3003 | http://localhost:3003/api-docs |
 | CBM | http://localhost:3004 | http://localhost:3004/api-docs |
 | MONA | http://localhost:3005 | http://localhost:3005/api-docs |
-| AIVP | http://localhost:3007 | http://localhost:3007/api-docs |
-| VSM | http://localhost:3009 | http://localhost:3009/api-docs |
+| SCHD | http://localhost:3006 | http://localhost:3006/api-docs |
+| SYS | http://localhost:3007 | http://localhost:3007/api-docs |
 
 ### Production URLs (Behind Nginx)
 
@@ -379,6 +447,8 @@ When updating services to new port allocation:
 | AIWM | https://api.x-or.cloud/aiwm | 3330-3333 |
 | CBM | https://api.x-or.cloud/cbm | 3340-3343 |
 | MONA | https://api.x-or.cloud/mona | 3350-3353 |
+| SCHD | https://api.x-or.cloud/schd | 3360-3361 |
+| SYS | https://api.x-or.cloud/sys | 3370-3371 |
 
 ---
 
@@ -398,11 +468,12 @@ PORT=8080 npx nx serve iam
 
 ### Q: How do I add a new service?
 **A**:
-1. Choose next available local port (3006+)
-2. Allocate next production range (3360-3369)
+1. Choose next available local port (3008+, vì 3006 dùng SCHD và 3007 dùng SYS)
+2. Allocate next production range (3380-3389, 3390-3399, ...)
 3. Update this document
-4. Update CLAUDE.md
-5. Create service README.md
+4. Update CLAUDE.md services table
+5. Update `ecosystem.config.js`
+6. Create `services/<name>/CLAUDE.md` per-service docs
 
 ### Q: What about Worker modes (no port)?
 **A**: Services like AIWM worker don't need ports. They consume from BullMQ queue. Configure via PM2 with `MODE=worker` but no `PORT`.
@@ -418,5 +489,5 @@ PORT=8080 npx nx serve iam
 
 ---
 
-**Last Updated**: 2026-04-23
-**Version**: 1.1.0
+**Last Updated**: 2026-05-09
+**Version**: 1.2.0 — added SCHD (3006/3360-3369), SYS (3007/3370-3379); removed PAG/AIVP/VSM (services deleted in v2.0.0)
