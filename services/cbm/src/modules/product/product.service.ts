@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import {
@@ -10,6 +10,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Product } from './product.schema';
 import { CreateProductDto } from './product.dto';
+import { isSuperAdmin } from '../project/project-access.helper';
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -39,13 +40,26 @@ export class ProductService extends BaseService<Product> {
     return product;
   }
 
+  async create(data: any, context: RequestContext): Promise<Partial<Product>> {
+    if (!isSuperAdmin(context)) {
+      throw new ForbiddenException('Only organization owners can manage products');
+    }
+    return super.create(data, context);
+  }
+
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Product>> {
+    if (!isSuperAdmin(context)) {
+      throw new ForbiddenException('Only organization owners can manage products');
+    }
     const product = await super.findById(id, context);
     if (!product) throw new NotFoundException('Product not found');
     return super.update(id, data, context);
   }
 
   async softDelete(id: ObjectId, context: RequestContext): Promise<Partial<Product>> {
+    if (!isSuperAdmin(context)) {
+      throw new ForbiddenException('Only organization owners can manage products');
+    }
     const product = await super.findById(id, context);
     if (!product) throw new NotFoundException('Product not found');
     return super.softDelete(id, context);
@@ -55,6 +69,9 @@ export class ProductService extends BaseService<Product> {
     items: CreateProductDto[],
     context: RequestContext
   ): Promise<{ created: number; updated: number; errors: string[] }> {
+    if (!isSuperAdmin(context)) {
+      throw new ForbiddenException('Only organization owners can manage products');
+    }
     let created = 0;
     let updated = 0;
     const errors: string[] = [];
