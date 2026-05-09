@@ -16,7 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@hydrabyte/base": ["libs/base/src/index.ts"],
-      "@hydrabyte/shared": ["libs/shared/src/index.ts"]
+      "@hydrabyte/shared": ["libs/shared/src/index.ts"],
+      "@hydrabyte/sys-client": ["libs/sys-client/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
