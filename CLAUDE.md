@@ -257,9 +257,10 @@ core-services/
 | **aiwm** | 3003 | 3330–3339 | AI Workload Manager — MCP, hosted agents, WS gateways (aws/nws/cws) |
 | **cbm** | 3004 | 3340–3349 | Core Business Management — projects, work items, documents |
 | **mona** | 3005 | 3350–3359 | Monitoring & Analytics |
-| **schd** | 3009 | 3390–3399 | Scheduler |
+| **schd** | 3006 | 3360–3369 | Scheduler — cron-based job orchestration |
+| **sys** | 3007 | 3370–3379 | System utilities — runtime settings + centralized audit-log |
 
-Next available ports: 3006, 3007, 3010, 3011, ...
+Next available ports: 3008, 3009, 3010, 3011, ...
 
 See [`services/<name>/CLAUDE.md`] and [`docs/PORT-ALLOCATION.md`](docs/PORT-ALLOCATION.md) for details.
 

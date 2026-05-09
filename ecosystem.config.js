@@ -1086,5 +1086,90 @@ module.exports = {
       wait_ready: false,  // Workers don't listen on ports
       listen_timeout: 10000,
     },
+    // ========== SYS (System Utilities — settings, audit-log) ==========
+    {
+      name: 'core.sys.api00',
+      script: './dist/services/sys/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3370,
+        SERVICE_NAME: 'sys',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/sys-api-00-error.log',
+      out_file: './logs/sys-api-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.sys.api01',
+      script: './dist/services/sys/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3371,
+        SERVICE_NAME: 'sys',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/sys-api-01-error.log',
+      out_file: './logs/sys-api-01-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
+    {
+      name: 'core.sys.worker00',
+      script: './dist/services/sys/main.js',
+      instances: 1,
+      exec_mode: 'fork',  // fork mode for BullMQ audit-ingest worker
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        MODE: 'wrk',
+        SERVICE_NAME: 'sys',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/sys-worker-00-error.log',
+      out_file: './logs/sys-worker-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 10000,
+      wait_ready: false,
+      listen_timeout: 10000,
+    },
   ],
 };
