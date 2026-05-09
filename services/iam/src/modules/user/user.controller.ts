@@ -11,6 +11,7 @@ import {
   Query,
   UnauthorizedException,
   UseGuards,
+  UseInterceptors,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -32,6 +33,7 @@ import {
 } from '@hydrabyte/base';
 import { RequestContext, LicenseType } from '@hydrabyte/shared';
 import { Types, ObjectId } from 'mongoose';
+import { Audit, AuditInterceptor } from '@hydrabyte/sys-client';
 import { UsersService } from './user.service';
 import { User } from './user.schema';
 import { CreateUserData, UpdateUserData, ChangeRoleDto, ChangePasswordDto } from './user.dto';
@@ -39,10 +41,12 @@ import { CreateUserData, UpdateUserData, ChangeRoleDto, ChangePasswordDto } from
 @ApiTags('users')
 @ApiBearerAuth('JWT-auth')
 @Controller('users')
+@UseInterceptors(AuditInterceptor)
 export class UsersController {
   constructor(private readonly userService: UsersService) {}
 
   @Post()
+  @Audit({ resource: 'user', action: 'create' })
   @ApiOperation({ summary: 'Create user', description: 'Create a new user - Requires FULL license' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiCreateErrors()

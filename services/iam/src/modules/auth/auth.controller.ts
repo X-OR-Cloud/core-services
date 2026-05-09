@@ -5,6 +5,7 @@ import {
   Get,
   Patch,
   UseGuards,
+  UseInterceptors,
   Request,
   Res,
   Req,
@@ -29,9 +30,11 @@ import { AuthService } from './auth.service';
 import { LoginData, ChangeUserPasswordData, RefreshTokenData, UpdateProfileDto, ProfileResponseDto, NodeLoginDto, NodeTokenData } from './auth.dto';
 import { TokenData } from './auth.entity';
 import { JwtAuthGuard, SkipLicenseCheck } from '@hydrabyte/base';
+import { Audit, AuditInterceptor } from '@hydrabyte/sys-client';
 
 @ApiTags('auth')
 @Controller('auth')
+@UseInterceptors(AuditInterceptor)
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
@@ -43,6 +46,7 @@ export class AuthController {
 
   @Post('login')
   @SkipLicenseCheck()
+  @Audit({ resource: 'user', action: 'login', captureResourceId: false })
   @ApiOperation({ summary: 'User login', description: 'Authenticate user and return JWT tokens' })
   @ApiResponse({ status: 200, description: 'Login successful', type: TokenData })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
@@ -125,6 +129,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @Audit({ resource: 'user', action: 'logout', captureResourceId: false })
   @ApiOperation({ summary: 'Logout', description: 'Invalidate access token and refresh token' })
   @ApiBearerAuth('JWT-auth')
   @ApiBody({

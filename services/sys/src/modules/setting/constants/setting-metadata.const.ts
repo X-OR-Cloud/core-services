@@ -389,4 +389,30 @@ export const SETTING_METADATA: Record<ConfigKey, SettingKeyMetadata> = {
     example: 'ce1f1a1da67dc5d031d4463d53f437fb...',
     sensitive: true,
   },
+
+  // =========================================================================
+  // IAM Service (2 keys) — P3 pilot migration from env
+  // =========================================================================
+  [ConfigKey.IAM_JWT_ACCESS_TTL_SEC]: {
+    key: ConfigKey.IAM_JWT_ACCESS_TTL_SEC,
+    displayName: 'IAM JWT Access Token TTL (seconds)',
+    description: 'Lifetime of the access token issued at login. Default 3600s (1h).',
+    dataType: 'number',
+    isRequired: false,
+    defaultValue: '3600',
+    validation: { min: 60, max: 86400 }, // 1 minute to 24 hours
+    example: '3600',
+    cacheTtlSec: 300,
+  },
+  [ConfigKey.IAM_REFRESH_TOKEN_TTL_SEC]: {
+    key: ConfigKey.IAM_REFRESH_TOKEN_TTL_SEC,
+    displayName: 'IAM Refresh Token TTL (seconds)',
+    description: 'Lifetime of the refresh token. Default 604800s (7 days).',
+    dataType: 'number',
+    isRequired: false,
+    defaultValue: '604800',
+    validation: { min: 3600, max: 7776000 }, // 1 hour to 90 days
+    example: '604800',
+    cacheTtlSec: 300,
+  },
 };

@@ -67,4 +67,10 @@ export enum ConfigKey {
   // ==========================================
   PINCHTAB_API_URL = 'pinchtab.api_url',
   PINCHTAB_API_KEY = 'pinchtab.api_key',
+
+  // ==========================================
+  // IAM Service (2 keys) — pilot for sys migration P3
+  // ==========================================
+  IAM_JWT_ACCESS_TTL_SEC = 'iam.jwt.access_ttl_sec',
+  IAM_REFRESH_TOKEN_TTL_SEC = 'iam.refresh_token.ttl_sec',
 }

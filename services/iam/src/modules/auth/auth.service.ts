@@ -20,6 +20,10 @@ import * as crypto from 'crypto';
 import { GoogleUserProfile } from './dto/google-auth.dto';
 import { AppService } from '../app/app.service';
 import { AppWebhookService } from '../app/app-webhook.service';
+import { SysSettingClient } from '@hydrabyte/sys-client';
+import { ConfigKey } from '@hydrabyte/shared';
+
+const DEFAULT_REFRESH_TTL_SEC = 7 * 24 * 60 * 60; // 7 days
 
 @Injectable()
 export class AuthService {
@@ -32,7 +36,35 @@ export class AuthService {
     private readonly httpService: HttpService,
     private readonly appService: AppService,
     private readonly appWebhookService: AppWebhookService,
+    private readonly sysSettings: SysSettingClient,
   ) {}
+
+  /**
+   * Resolve token TTLs from sys-client (org-aware), falling back to env / hardcoded.
+   *
+   * Source priority:
+   *   1. sys.setting `iam.jwt.access_ttl_sec` (number, seconds)
+   *   2. env `JWT_EXPIRES_IN` (string like '1h', '4h')
+   *   3. hardcoded 1h
+   *
+   * Refresh TTL similarly:
+   *   1. sys.setting `iam.refresh_token.ttl_sec`
+   *   2. hardcoded 7 days
+   */
+  private async getTokenTtls(orgId: string): Promise<{ jwtSec: number; refreshSec: number }> {
+    const envJwtSec = this.parseExpirationTime(process.env.JWT_EXPIRES_IN || '1h');
+    const jwtSec = await this.sysSettings.getOrDefault<number>(
+      ConfigKey.IAM_JWT_ACCESS_TTL_SEC,
+      orgId || undefined,
+      envJwtSec,
+    );
+    const refreshSec = await this.sysSettings.getOrDefault<number>(
+      ConfigKey.IAM_REFRESH_TOKEN_TTL_SEC,
+      orgId || undefined,
+      DEFAULT_REFRESH_TTL_SEC,
+    );
+    return { jwtSec, refreshSec };
+  }
 
   async login(data: LoginData): Promise<TokenData> {
     // Find user by username
@@ -68,10 +100,12 @@ export class AuthService {
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '4h';
-
     // Fetch licenses for organization
     const orgId = user.owner?.orgId || '';
+
+    // Token TTLs from sys (org-aware) with env/default fallback
+    const { jwtSec, refreshSec } = await this.getTokenTtls(orgId);
+
     let licenses: Record<string, string> = {};
     if (orgId) {
       try {
@@ -96,17 +130,15 @@ export class AuthService {
     };
 
     // Sign access token
-    // @ts-expect-error - TypeScript has issues with jsonwebtoken types
     const accessToken = sign(jwtPayload, jwtSecret, {
-      expiresIn: jwtExpiresIn,
+      expiresIn: jwtSec,
     });
 
-    // Calculate expiration time in seconds
-    const expiresIn = this.parseExpirationTime(jwtExpiresIn);
+    const expiresIn = jwtSec;
 
-    // Generate refresh token (valid for 7 days)
+    // Generate refresh token (TTL from sys / fallback)
     const refreshToken = crypto.randomBytes(32).toString('hex');
-    const refreshExpiresIn = 7 * 24 * 60 * 60; // 7 days in seconds
+    const refreshExpiresIn = refreshSec;
     const refreshExpiresAt = Date.now() + refreshExpiresIn * 1000;
 
     // Store refresh token
@@ -247,10 +279,10 @@ export class AuthService {
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1h';
-
     // Fetch CURRENT licenses from database (passive update)
     const orgId = user.owner?.orgId || '';
+    const { jwtSec, refreshSec } = await this.getTokenTtls(orgId);
+
     let licenses: Record<string, string> = {};
     if (orgId) {
       try {
@@ -275,18 +307,15 @@ export class AuthService {
     };
 
     // Sign new access token
-    // @ts-expect-error - TypeScript has issues with jsonwebtoken types
     const accessToken = sign(jwtPayload, jwtSecret, {
-      expiresIn: jwtExpiresIn,
+      expiresIn: jwtSec,
     });
-
-    const expiresIn = this.parseExpirationTime(jwtExpiresIn);
 
     return {
       accessToken,
-      expiresIn,
+      expiresIn: jwtSec,
       refreshToken, // Return same refresh token
-      refreshExpiresIn: 7 * 24 * 60 * 60,
+      refreshExpiresIn: refreshSec,
       tokenType: AccessTokenTypes.Bearer,
     };
   }
@@ -494,8 +523,6 @@ export class AuthService {
       throw new Error('JWT_SECRET is not configured');
     }
 
-    const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '1h';
-
     // --- App-based SSO validation ---
     let defaultOrgId = '';
     let defaultRole = 'organization.editor';
@@ -576,6 +603,8 @@ export class AuthService {
 
     // Build JWT payload including provider field
     const orgId = user.owner?.orgId || '';
+    const { jwtSec, refreshSec } = await this.getTokenTtls(orgId);
+
     let licenses: Record<string, string> = {};
     if (orgId) {
       try {
@@ -599,16 +628,15 @@ export class AuthService {
     };
 
     // Sign access token
-    // @ts-expect-error - TypeScript has issues with jsonwebtoken types
     const accessToken = sign(jwtPayload, jwtSecret, {
-      expiresIn: jwtExpiresIn,
+      expiresIn: jwtSec,
     });
 
-    const expiresIn = this.parseExpirationTime(jwtExpiresIn);
+    const expiresIn = jwtSec;
 
-    // Generate refresh token (valid for 7 days)
+    // Generate refresh token (TTL from sys / fallback)
     const refreshToken = crypto.randomBytes(32).toString('hex');
-    const refreshExpiresIn = 7 * 24 * 60 * 60; // 7 days in seconds
+    const refreshExpiresIn = refreshSec;
     const refreshExpiresAt = Date.now() + refreshExpiresIn * 1000;
 
     this.tokenStorage.storeRefreshToken(

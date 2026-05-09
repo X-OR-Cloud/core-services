@@ -5,6 +5,7 @@ import { SERVICE_CONFIG, COMMON_CONFIG, buildMongoUri } from '@hydrabyte/shared'
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { HealthModule, LicenseGuard, JwtStrategy, CorrelationIdMiddleware } from '@hydrabyte/base';
+import { SysClientModule } from '@hydrabyte/sys-client';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { OrganizationsModule } from './modules/organization/organization.module';
@@ -19,6 +20,18 @@ import { ServiceAccountModule } from './modules/service-account/service-account.
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(buildMongoUri(`${COMMON_CONFIG.DatabaseNamePrefix}${SERVICE_CONFIG.iam.name}`)),
+    SysClientModule.forRoot({
+      sysApiUrl: process.env['SYS_API_URL'] || 'http://localhost:3007',
+      internalApiKey: process.env['INTERNAL_API_KEY'] || '',
+      serviceName: 'iam',
+      mongoUri: process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
+      redisUrl: process.env['REDIS_URL'],
+      redisHost: process.env['REDIS_HOST'],
+      redisPort: process.env['REDIS_PORT'] ? parseInt(process.env['REDIS_PORT'], 10) : undefined,
+      redisUsername: process.env['REDIS_USERNAME'],
+      redisPassword: process.env['REDIS_PASSWORD'],
+      metricsEnabled: process.env['SYS_CLIENT_METRICS_ENABLED'] === 'true',
+    }),
     PassportModule,
     HealthModule,
     AuthModule,
