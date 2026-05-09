@@ -159,7 +159,7 @@
 | 📋 | Mode `api` (REST) + `wrk` (BullMQ worker) | §3.1 |
 | 📋 | Health check endpoint | Standard |
 | 📋 | Swagger / OpenAPI docs | Standard |
-| 📋 | Port 3007 dev / 3370–3379 prod, DB `core_sys` | §3.1 |
+| 📋 | Port 3007 dev / 3370–3379 prod, DB `core-sys` | §3.1 |
 | 📋 | `CidrAllowlistGuard` cho `/settings/internal/*` + `/audit-logs/internal/*` | §7.2 |
 | 📋 | `InternalApiKeyGuard` (constant-time compare) | §7.3 |
 | 📋 | `RateLimitGuard` cho secret endpoint (10/min/IP+key) | §7.4 |

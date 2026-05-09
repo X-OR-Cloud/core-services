@@ -23,6 +23,8 @@ export interface SysClientMetrics {
   pubsubDisconnect: Counter<string>;
   settingGetDuration: Histogram<string>;
   secretFetch: Counter<string>;
+  auditEnqueue: Counter<string>;
+  auditEnqueueFailed: Counter<string>;
 }
 
 /**
@@ -40,6 +42,8 @@ export function buildMetrics(): SysClientMetrics {
       pubsubDisconnect: register.getSingleMetric(`${PREFIX}pubsub_disconnect_total`) as Counter<string>,
       settingGetDuration: register.getSingleMetric(`${PREFIX}setting_get_duration_seconds`) as Histogram<string>,
       secretFetch: register.getSingleMetric(`${PREFIX}secret_fetch_total`) as Counter<string>,
+      auditEnqueue: register.getSingleMetric(`${PREFIX}audit_enqueue_total`) as Counter<string>,
+      auditEnqueueFailed: register.getSingleMetric(`${PREFIX}audit_enqueue_failed_total`) as Counter<string>,
     };
   }
 
@@ -81,6 +85,16 @@ export function buildMetrics(): SysClientMetrics {
       name: `${PREFIX}secret_fetch_total`,
       help: 'Sensitive setting fetches from sys (over HTTP).',
       labelNames: ['key', 'result'],
+    }),
+    auditEnqueue: new Counter({
+      name: `${PREFIX}audit_enqueue_total`,
+      help: 'Audit events enqueued to BullMQ for sys ingest.',
+      labelNames: ['service', 'action', 'result'],
+    }),
+    auditEnqueueFailed: new Counter({
+      name: `${PREFIX}audit_enqueue_failed_total`,
+      help: 'Audit events that failed to enqueue (queue down, etc.) — fall back to stdout.',
+      labelNames: ['reason'],
     }),
   };
 

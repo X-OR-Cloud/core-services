@@ -36,10 +36,10 @@ export interface SysClientOptions {
   /** Service name of the consumer (used for metrics labels and audit `service` field). */
   serviceName: string;
 
-  /** Mongo URI to the core_sys database (lib reads non-sensitive settings directly). */
+  /** Mongo URI to the core-sys database (lib reads non-sensitive settings directly). */
   mongoUri: string;
 
-  /** Mongo db name (default: core_sys). */
+  /** Mongo db name (default: core-sys). */
   mongoDbName?: string;
 
   /** Redis connection — at least one of these must be set for pub/sub to work. */
@@ -59,6 +59,38 @@ export interface SysClientOptions {
 
   /** Disable lib altogether (for tests). Default false. */
   disabled?: boolean;
+
+  /** Disable audit-log enqueue (lib will no-op SysAuditClient.log). Default false. */
+  auditDisabled?: boolean;
+}
+
+/**
+ * Audit event input — what callers pass to SysAuditClient.log().
+ * Lib sanitizes + enriches before enqueueing.
+ */
+export interface AuditEventInput {
+  resource: string;
+  resourceId?: string;
+  action: string;
+  keyType?: 'setting' | 'sensitive_setting';
+  actor?: {
+    userId?: string;
+    orgId?: string; // 'system' for cron/internal events; lib defaults to 'system' if missing
+    agentId?: string;
+    appId?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  };
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  requestPayload?: Record<string, unknown>;
+  responseSummary?: { id?: string; status?: number; size?: number };
+  result: 'success' | 'failure';
+  errorMessage?: string;
+  errorCode?: string;
+  correlationId?: string;
+  occurredAt?: Date;
+  durationMs?: number;
 }
 
 /**

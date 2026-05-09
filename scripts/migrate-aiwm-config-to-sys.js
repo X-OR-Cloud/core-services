@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Migrate `core_aiwm.configurations` → `core_sys.settings`
+ * Migrate `core_aiwm.configurations` → `core-sys.settings`
  *
  * Usage:
  *   node scripts/migrate-aiwm-config-to-sys.js --dry-run
@@ -8,9 +8,9 @@
  *
  * Behavior:
  *   - Reads all non-deleted documents from `core_aiwm.configurations`.
- *   - Maps each to the new `core_sys.settings` schema (preserves key, value, scope, owner, timestamps).
+ *   - Maps each to the new `core-sys.settings` schema (preserves key, value, scope, owner, timestamps).
  *   - Sets `sensitive` flag from SETTING_METADATA registry (so the migration is metadata-driven).
- *   - Skips key+scope+orgId combos that already exist in `core_sys.settings` (safe re-run).
+ *   - Skips key+scope+orgId combos that already exist in `core-sys.settings` (safe re-run).
  *   - Reports total / created / skipped / errors at the end.
  *
  * Ref: docs/sys/PLAN_v1.md Phase P5 (this script is the skeleton; full validation + run lives in P5).
@@ -64,7 +64,7 @@ async function main() {
   await client.connect();
 
   const aiwmDb = client.db('core_aiwm');
-  const sysDb = client.db('core_sys');
+  const sysDb = client.db('core-sys');
   const aiwmColl = aiwmDb.collection('configurations');
   const sysColl = sysDb.collection('settings');
 

@@ -75,9 +75,9 @@
 - **Verify**: `nx show projects | grep sys` thấy `sys` xuất hiện
 
 #### P0.4 — Cấu hình DB & Redis
-- [ ] `services/sys/src/config/database.config.ts`: connect tới `core_sys` DB (dùng `MONGODB_URI` từ root `.env` + database name)
+- [ ] `services/sys/src/config/database.config.ts`: connect tới `core-sys` DB (dùng `MONGODB_URI` từ root `.env` + database name)
 - [ ] `services/sys/src/config/redis.config.ts`: shared Redis (giống các service khác)
-- [ ] Tạo DB `core_sys` (auto-create khi connect lần đầu)
+- [ ] Tạo DB `core-sys` (auto-create khi connect lần đầu)
 - **Verify**: app startup không lỗi connection
 
 #### P0.5 — Remove unneeded từ template
@@ -211,7 +211,7 @@
 - **Verify**: import vào app module 1 service consumer pilot, không lỗi
 
 #### P1.11 — Lib SysSettingClient — non-sensitive path (Mongo direct)
-- [ ] `_getSetting()`: kết nối Mongo `core_sys.settings`, query với `{ key, scope, owner.orgId }` lookup priority
+- [ ] `_getSetting()`: kết nối Mongo `core-sys.settings`, query với `{ key, scope, owner.orgId }` lookup priority
 - [ ] In-memory `settingCache: Map<string, CacheEntry>`
 - [ ] TTL check + stale-while-revalidate logic
 - [ ] OnModuleInit warm cache
@@ -388,7 +388,7 @@
   - `iam.jwt.access_ttl_sec` (số giây)
   - `iam.password.min_length` (number)
 - [ ] Thêm vào `SettingKey` enum + metadata
-- [ ] Seed default value vào `core_sys.settings` scope=global
+- [ ] Seed default value vào `core-sys.settings` scope=global
 
 #### P3.2 — Iam dùng sys-client
 - [ ] Import `SysClientModule.forRoot(...)` vào iam app module
@@ -444,10 +444,10 @@
 
 #### P5.1 — Migration script
 - [ ] Hoàn thiện `scripts/migrate-aiwm-config-to-sys.js`:
-  - Connect cả `core_aiwm` và `core_sys`
+  - Connect cả `core_aiwm` và `core-sys`
   - Read all `core_aiwm.configurations` (non-deleted)
   - Map sang schema mới (set `sensitive=false` mặc định cho keys không phải secret)
-  - Insert vào `core_sys.settings` (skip nếu key+scope+orgId đã tồn tại)
+  - Insert vào `core-sys.settings` (skip nếu key+scope+orgId đã tồn tại)
   - Dry-run mode + apply mode
   - Log report: total, inserted, skipped, errors
 - [ ] Run dry-run trên prod snapshot
@@ -455,13 +455,13 @@
 #### P5.2 — AIWM dual-read mode (1 tuần)
 - [ ] Trong AIWM: replace `ConfigService.get()` calls bằng `sys.get()`
 - [ ] Lib `@hydrabyte/sys-client` thêm fallback option `legacyConfigSource`:
-  - Nếu key không có ở `core_sys` → fallback đọc `core_aiwm.configurations`
+  - Nếu key không có ở `core-sys` → fallback đọc `core_aiwm.configurations`
   - Log warning để track keys chưa migrate
 - [ ] Deploy AIWM với dual-read enabled
 
 #### P5.3 — Run migration trên prod
 - [ ] Run migrate script (apply mode)
-- [ ] Verify count: `core_sys.settings.count() ≈ core_aiwm.configurations.count()`
+- [ ] Verify count: `core-sys.settings.count() ≈ core_aiwm.configurations.count()`
 - [ ] Spot check 10 keys: value, scope, orgId khớp
 
 #### P5.4 — Soak dual-read 3-7 ngày

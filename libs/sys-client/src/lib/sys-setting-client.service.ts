@@ -465,7 +465,7 @@ export class SysSettingClient implements OnModuleInit, OnModuleDestroy {
 
   private async connectMongo(): Promise<void> {
     if (this.mongoConn) return;
-    const dbName = this.options.mongoDbName ?? 'core_sys';
+    const dbName = this.options.mongoDbName ?? 'core-sys';
     const conn = await mongoose.createConnection(this.options.mongoUri, { dbName }).asPromise();
     this.mongoConn = conn;
     // Define a minimal model for the settings collection (read-only).

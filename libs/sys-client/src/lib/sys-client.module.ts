@@ -1,10 +1,13 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { buildMetrics } from './sys-client.metrics';
 import {
   SysSettingClient,
   SYS_CLIENT_METRICS,
   SYS_CLIENT_OPTIONS,
 } from './sys-setting-client.service';
+import { SysAuditClient } from './sys-audit-client.service';
+import { AuditInterceptor } from './audit.interceptor';
 import { SysClientOptions } from './sys-client.types';
 
 /**
@@ -21,7 +24,8 @@ import { SysClientOptions } from './sys-client.types';
  *     metricsEnabled: process.env.SYS_CLIENT_METRICS_ENABLED === 'true',
  *   })
  *
- * Then inject `SysSettingClient` to read settings.
+ * Provides: SysSettingClient (read settings), SysAuditClient (write audit
+ * events), AuditInterceptor (apply via @UseInterceptors() with @Audit()).
  *
  * Ref: docs/sys/PROPOSAL.md §6
  */
@@ -37,9 +41,12 @@ export class SysClientModule {
           provide: SYS_CLIENT_METRICS,
           useFactory: () => (options.metricsEnabled ? buildMetrics() : null),
         },
+        Reflector,
         SysSettingClient,
+        SysAuditClient,
+        AuditInterceptor,
       ],
-      exports: [SysSettingClient],
+      exports: [SysSettingClient, SysAuditClient, AuditInterceptor],
     };
   }
 }

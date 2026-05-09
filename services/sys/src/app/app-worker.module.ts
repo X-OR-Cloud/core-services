@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AuditLogModule } from '../modules/audit-log/audit-log.module';
 
 /**
  * Worker mode module — no HTTP server.
  *
- * Purpose: BullMQ audit-ingest processor (introduced in P2).
- * Currently a placeholder; will register `sys-audit-ingest` queue + processor in P2.
+ * Purpose: BullMQ `sys-audit-ingest` processor.
  *
  * Run with: MODE=wrk nx run sys:wrk
  */
@@ -18,9 +18,9 @@ import { MongooseModule } from '@nestjs/mongoose';
     }),
     MongooseModule.forRoot(
       process.env['MONGODB_URI'] || 'mongodb://localhost:27017',
-      { dbName: 'core_sys' },
+      { dbName: 'core-sys' },
     ),
+    AuditLogModule.forRootWorker(),
   ],
-  providers: [],
 })
 export class AppWorkerModule {}

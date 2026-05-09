@@ -33,12 +33,12 @@ Khi làm việc với module cụ thể, đọc tài liệu tương ứng:
 Service consumer KHÔNG gọi sys API cho mỗi setting read. Thay vào đó:
 
 ```
-Non-sensitive setting:  lib đọc thẳng Mongo `core_sys.settings` + cache + pub/sub invalidate
+Non-sensitive setting:  lib đọc thẳng Mongo `core-sys.settings` + cache + pub/sub invalidate
 Sensitive setting:      lib gọi HTTP `/settings/internal/secret/:key` + INTERNAL_API_KEY + audit per-read
 Audit-log:              lib enqueue BullMQ `sys-audit-ingest` (fire-and-forget) → sys worker batch insert
 ```
 
-**Sys là sole writer** với `core_sys`. Service consumer chỉ đọc setting trực tiếp Mongo cho non-sensitive.
+**Sys là sole writer** với `core-sys`. Service consumer chỉ đọc setting trực tiếp Mongo cho non-sensitive.
 
 ### 5 Safety Guards (NON-NEGOTIABLE) trong lib
 
@@ -90,8 +90,8 @@ NODE_ENV=development|production
 
 | Database | Collection | Schema | Note |
 |----------|-----------|--------|------|
-| `core_sys` | `settings` | `Setting` (BaseSchema) | P1 — full schema, indexes |
-| `core_sys` | `audit_logs` | `AuditLog` (BaseSchema) | P2 — full schema, indexes |
+| `core-sys` | `settings` | `Setting` (BaseSchema) | P1 — full schema, indexes |
+| `core-sys` | `audit_logs` | `AuditLog` (BaseSchema) | P2 — full schema, indexes |
 
 Connection string từ root `.env` (`MONGODB_URI`).
 

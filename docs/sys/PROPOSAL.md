@@ -53,7 +53,7 @@ Module `configuration` hiện đang nằm trong service `aiwm`, nhưng bản ch�
 |---|---|
 | Port (dev) | **3007** |
 | Port (prod) | **3370–3379** |
-| Database | `core_sys` (riêng, không share) |
+| Database | `core-sys` (riêng, không share) |
 | Modes | `api` (REST cho UI quản trị) + `wrk` (BullMQ audit ingest worker) |
 | Stack | NestJS + MongoDB + Redis (BullMQ + pub/sub), giống template |
 
@@ -61,7 +61,7 @@ Module `configuration` hiện đang nằm trong service `aiwm`, nhưng bản ch�
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Sys Service (sole writer của core_sys)                          │
+│  Sys Service (sole writer của core-sys)                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
 │  │ REST API     │  │ Pub/sub      │  │ BullMQ worker          │  │
 │  │ - /settings  │  │ publisher    │  │ - audit ingest queue   │  │
@@ -102,7 +102,7 @@ Module `configuration` hiện đang nằm trong service `aiwm`, nhưng bản ch�
 
 ### 3.3 Nguyên tắc
 
-- **Sys là writer duy nhất** với `core_sys`. Service consumer **chỉ đọc**, không bao giờ ghi trực tiếp.
+- **Sys là writer duy nhất** với `core-sys`. Service consumer **chỉ đọc**, không bao giờ ghi trực tiếp.
 - **Non-sensitive setting**: lib đọc trực tiếp Mongo (read-heavy, low-latency). Update qua sys API → sys publish pub/sub → lib reload.
 - **Sensitive setting**: lib **PHẢI** gọi qua HTTP `/settings/internal/secret/:key` (auth qua `INTERNAL_API_KEY` + CIDR allowlist). Sys decrypt (nếu Level 2) rồi trả → lib cache ngắn (TTL ~5 phút). Mỗi lần read → sys ghi audit.
 - **Audit-log**: lib **luôn** ghi qua sys (không ghi thẳng Mongo). Lib enqueue vào BullMQ → sys worker batch insert. Fire-and-forget, không block business flow.
@@ -111,7 +111,7 @@ Module `configuration` hiện đang nằm trong service `aiwm`, nhưng bản ch�
 
 | Quyết định | Hệ quả tích cực | Hệ quả tiêu cực (đã chấp nhận) |
 |---|---|---|
-| Lib đọc thẳng Mongo cho non-sensitive | Latency thấp, không phụ thuộc sys uptime cho read path | Service consumer phải có credential `core_sys`. Đổi schema setting buộc bump lib + sync deploy |
+| Lib đọc thẳng Mongo cho non-sensitive | Latency thấp, không phụ thuộc sys uptime cho read path | Service consumer phải có credential `core-sys`. Đổi schema setting buộc bump lib + sync deploy |
 | TTL + pub/sub kết hợp | Defense-in-depth nếu pub/sub miss event | Reload trễ tối đa = TTL window |
 | Sensitive đi qua HTTP, không đọc thẳng Mongo | Audit per-read, có thể detect/throttle, master key không spread | +50-100ms latency khi load secret (chấp nhận vì secret hiếm khi đọc — chỉ lúc bootstrap) |
 | Audit ghi qua API + queue | Decouple schema, fire-and-forget, không block caller | Audit có thể trễ vài giây so với business event (chấp nhận) |
@@ -825,12 +825,12 @@ Mỗi service consumer expose `/sys-client/stats` (gated bởi `DEBUG=true` ho�
 
 | Phase | Scope | Verify |
 |---|---|---|
-| **P0** | Build skeleton service `sys` (port 3007) + `core_sys` DB + health check + skeleton 2 module + cập nhật `PORT-ALLOCATION.md`, root `CLAUDE.md` | `nx run sys:api`, `/health` OK, swagger `/api-docs` hiển thị |
+| **P0** | Build skeleton service `sys` (port 3007) + `core-sys` DB + health check + skeleton 2 module + cập nhật `PORT-ALLOCATION.md`, root `CLAUDE.md` | `nx run sys:api`, `/health` OK, swagger `/api-docs` hiển thị |
 | **P1** | Module `setting` đầy đủ: schema (Level 1 + chừa Level 2), RBAC, REST API, pub/sub publisher, `CidrAllowlistGuard` + `InternalApiKeyGuard` + `RateLimitGuard`, lib `@hydrabyte/sys-client` (cache + TTL + pub/sub subscriber + 5 safety guards + metrics) | UI CRUD setting hoạt động; pilot service (template hoặc iam-test) đọc 1 sensitive + 1 non-sensitive setting qua lib; `/sys-client/stats` cho thấy đúng routing; CI test verify 5 safety guards |
 | **P2** | Module `audit-log`: schema, REST API, BullMQ ingest worker (mode=wrk), retention cron, sanitize + truncate; lib `SysAuditClient` (fire-and-forget) + `@Audit()` decorator + `AuditInterceptor` | 1 service ghi audit qua decorator + explicit, query được từ UI sys; verify sanitize bỏ password/token; verify truncate giữ originalLength |
 | **P3** | **Pilot `iam`**: chuyển 1-2 setting đang đọc từ env (vd JWT TTL, password policy) sang sys; thêm audit cho `user.create/login/logout` qua decorator | iam restart vẫn hoạt động bình thường, không breaking; audit log hiển thị đúng cross-service từ UI sys |
 | **P4** | Soak 1-2 tuần ở prod, theo dõi metrics: cache hit rate, pubsub miss rate, audit volume | Không có data drift, latency ổn, alert chưa fire bất ngờ |
-| **P5** | Migrate `aiwm.configuration` → `sys.setting`. Dual-read window 1 tuần (lib fallback đọc `core_aiwm.configurations` nếu key chưa có ở `core_sys`), sau đó cutover; xóa module `configuration` khỏi aiwm | aiwm không downtime, config không mất; aiwm code gọn hơn |
+| **P5** | Migrate `aiwm.configuration` → `sys.setting`. Dual-read window 1 tuần (lib fallback đọc `core_aiwm.configurations` nếu key chưa có ở `core-sys`), sau đó cutover; xóa module `configuration` khỏi aiwm | aiwm không downtime, config không mất; aiwm code gọn hơn |
 | **P6** | (sau khi P5 ổn) Thêm audit cho aiwm/cbm/mona/noti những action quan trọng | Cross-service audit query hoạt động |
 | **P7+ (future)** | Level 2 encryption, master key bootstrap, rotation flow — khi có nhu cầu cụ thể (vd lưu OpenAI API key, SMTP password vào sys) | Schema không cần migrate; thêm encrypt/decrypt service + 1 endpoint rotation |
 
@@ -840,7 +840,7 @@ Mỗi service consumer expose `/sys-client/stats` (gated bởi `DEBUG=true` ho�
 
 | # | Quyết định |
 |---|---|
-| 1 | Tên service: **`sys`**. Port **3007** dev, **3370–3379** prod. DB: **`core_sys`** |
+| 1 | Tên service: **`sys`**. Port **3007** dev, **3370–3379** prod. DB: **`core-sys`** |
 | 2 | Module trong scope giai đoạn này: **`setting`** + **`audit-log`** |
 | 3 | Tên module thay cho `configuration`: **`setting`** |
 | 4 | Pattern truy cập: **Phương án C** — lib đọc Mongo cho non-sensitive, qua HTTP cho sensitive; pub/sub + TTL hybrid invalidation |
