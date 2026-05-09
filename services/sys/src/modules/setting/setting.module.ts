@@ -5,6 +5,7 @@ import { RedisModule } from '@nestjs-modules/ioredis';
 import { Setting, SettingSchema } from './setting.schema';
 import { SettingService } from './setting.service';
 import { SettingController } from './setting.controller';
+import { SettingInternalController } from './setting-internal.controller';
 import { SettingPublisherService } from './setting-publisher.service';
 
 /**
@@ -45,7 +46,7 @@ import { SettingPublisherService } from './setting-publisher.service';
       inject: [ConfigService],
     }),
   ],
-  controllers: [SettingController],
+  controllers: [SettingController, SettingInternalController],
   providers: [SettingService, SettingPublisherService],
   exports: [SettingService, SettingPublisherService],
 })

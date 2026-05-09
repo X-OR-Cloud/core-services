@@ -10,6 +10,12 @@ export async function bootstrapApi() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('query parser', customQueryParser);
 
+  // Trust proxy — req.ip must reflect real client IP from X-Forwarded-For when
+  // running behind Nginx/LB; restricted to loopback + private ranges only so
+  // attackers can't spoof X-Forwarded-For from the public internet.
+  // Ref: docs/sys/PROPOSAL.md §7.2
+  expressApp.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
