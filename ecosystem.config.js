@@ -1159,8 +1159,8 @@ module.exports = {
 
       env_file: '.env',
 
-      error_file: './logs/sys-worker-00-error.log',
-      out_file: './logs/sys-worker-00-out.log',
+      error_file: './logs/sys-wrk-00-error.log',
+      out_file: './logs/sys-wrk-00-out.log',
       merge_logs: true,
 
       autorestart: true,
