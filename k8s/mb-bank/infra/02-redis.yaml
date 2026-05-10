@@ -6,7 +6,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: redis-config
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 data:
   redis.conf: |
     bind 0.0.0.0
@@ -29,7 +29,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   serviceName: redis-service
   replicas: 1
@@ -92,7 +92,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: redis

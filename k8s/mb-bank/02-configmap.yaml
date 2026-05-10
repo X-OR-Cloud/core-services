@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: xai-config
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 data:
   NODE_ENV: "production"
 

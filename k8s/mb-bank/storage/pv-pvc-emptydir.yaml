@@ -1,0 +1,58 @@
+# =============================================================================
+# FALLBACK STORAGE — dùng emptyDir (không persistent, chỉ để test ban đầu)
+#
+# Dùng file này khi:
+#   - Chưa confirm được quyền tạo PersistentVolume (cluster-scoped)
+#   - Chỉ cần test services chạy được, chưa cần data persistent
+#
+# ⚠️  Data sẽ mất khi pod restart. Switch sang pv-pvc.yaml sau khi xác nhận PV.
+# =============================================================================
+
+# Mona không cần PVC (chỉ cần MongoDB + Redis)
+# MongoDB — emptyDir
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-mongodb
+  namespace: phuongn21-restricted
+  annotations:
+    note: "emptyDir fallback — replace with NFS PV for production"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard   # dùng default StorageClass của cluster
+---
+# Redis — emptyDir
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-redis
+  namespace: phuongn21-restricted
+  annotations:
+    note: "emptyDir fallback — replace with NFS PV for production"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+---
+# Qdrant — emptyDir
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-qdrant
+  namespace: phuongn21-restricted
+  annotations:
+    note: "emptyDir fallback — replace with NFS PV for production"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard

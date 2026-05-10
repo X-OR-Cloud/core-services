@@ -28,7 +28,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-mongodb
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteOnce
@@ -59,7 +59,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-redis
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteOnce
@@ -90,7 +90,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-qdrant
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteOnce
@@ -121,7 +121,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-seaweedfs-master
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteOnce
@@ -151,7 +151,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-seaweedfs-volume
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteOnce
@@ -182,7 +182,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pvc-cbm-knowledge
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   accessModes:
     - ReadWriteMany

@@ -13,7 +13,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cbm-api
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: cbm
     mode: api
@@ -92,7 +92,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cbm-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: cbm
@@ -107,7 +107,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cbm-emb
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: cbm
     mode: emb
@@ -165,7 +165,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cbm-rtc
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: cbm
     mode: rtc
@@ -221,7 +221,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cbm-rtc-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: cbm

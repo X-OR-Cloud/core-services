@@ -7,7 +7,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: iam
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: iam
     version: "1.8.2"
@@ -78,7 +78,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: iam-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: iam

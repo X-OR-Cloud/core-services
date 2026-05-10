@@ -6,7 +6,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qdrant
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   serviceName: qdrant-service
   replicas: 1
@@ -70,7 +70,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: qdrant-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: qdrant

@@ -18,7 +18,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-api
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: api
@@ -92,7 +92,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: aiwm
@@ -107,7 +107,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-mcp
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: mcp
@@ -163,7 +163,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-mcp-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: aiwm
@@ -178,7 +178,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-aws
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: aws
@@ -234,7 +234,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-aws-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: aiwm
@@ -249,7 +249,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-nws
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: nws
@@ -305,7 +305,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-nws-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: aiwm
@@ -320,7 +320,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-cws
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: cws
@@ -376,7 +376,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: aiwm-cws-service
-  namespace: xai-prod
+  namespace: phuongn21-restricted
 spec:
   selector:
     app: aiwm
@@ -391,7 +391,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-worker
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: worker
@@ -444,7 +444,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-agt
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: agt
@@ -497,7 +497,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aiwm-con
-  namespace: xai-prod
+  namespace: phuongn21-restricted
   labels:
     app: aiwm
     mode: con
