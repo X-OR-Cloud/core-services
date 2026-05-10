@@ -311,7 +311,7 @@ npx nx run sys:api
 npx nx run sys:wrk
 
 # Production (PM2)
-pm2 start ecosystem.config.js --only core.sys.api00,core.sys.api01,core.sys.worker00
+pm2 start ecosystem.config.js --only core.sys.api00,core.sys.api01,core.sys.wrk00
 ```
 
 **Default Port in Code**: `process.env.PORT || 3007`

@@ -101,7 +101,7 @@ Connection string từ root `.env` (`MONGODB_URI`).
 |----------|------|------|
 | `core.sys.api00` | 3370 | API |
 | `core.sys.api01` | 3371 | API |
-| `core.sys.worker00` | — | Worker (fork mode) |
+| `core.sys.wrk00` | — | Worker (fork mode) |
 
 ## Trust Proxy
 

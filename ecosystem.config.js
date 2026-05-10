@@ -1144,7 +1144,7 @@ module.exports = {
       listen_timeout: 10000,
     },
     {
-      name: 'core.sys.worker00',
+      name: 'core.sys.wrk00',
       script: './dist/services/sys/main.js',
       instances: 1,
       exec_mode: 'fork',  // fork mode for BullMQ audit-ingest worker

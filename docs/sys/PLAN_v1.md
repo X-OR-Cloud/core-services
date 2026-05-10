@@ -71,7 +71,7 @@
 #### P0.3 — Workspace-level config
 - [ ] `tsconfig.base.json`: thêm path mapping nếu pattern hiện có
 - [ ] Verify `nx.json` không cần đổi (project auto-discovered)
-- [ ] `ecosystem.config.js`: thêm `core.sys.api00` (port 3370), `core.sys.api01` (3371), `core.sys.worker00` (fork mode)
+- [ ] `ecosystem.config.js`: thêm `core.sys.api00` (port 3370), `core.sys.api01` (3371), `core.sys.wrk00` (fork mode)
 - **Verify**: `nx show projects | grep sys` thấy `sys` xuất hiện
 
 #### P0.4 — Cấu hình DB & Redis
