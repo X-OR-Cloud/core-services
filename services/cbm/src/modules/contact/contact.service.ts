@@ -7,9 +7,18 @@ import {
   FindManyResult,
   buildSearchFilter,
 } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, PredefinedRole, getHighestRole } from '@hydrabyte/shared';
 import { isSuperAdmin } from '../project/project-access.helper';
 import { Contact, PlatformLink } from './contact.schema';
+
+/**
+ * Read access for contacts: org owners (full) + org editors/viewers (read-only).
+ */
+function canReadContacts(context: RequestContext): boolean {
+  if (isSuperAdmin(context)) return true;
+  const role = getHighestRole(context.roles);
+  return role === PredefinedRole.OrganizationEditor || role === PredefinedRole.OrganizationViewer;
+}
 
 /**
  * ContactService
@@ -31,7 +40,7 @@ export class ContactService extends BaseService<Contact> {
     options: FindManyOptions & { search?: string },
     context: RequestContext
   ): Promise<FindManyResult<Contact>> {
-    if (!isSuperAdmin(context)) {
+    if (!canReadContacts(context)) {
       throw new ForbiddenException('Only organization owners can access contacts');
     }
 
@@ -76,7 +85,7 @@ export class ContactService extends BaseService<Contact> {
   }
 
   async findById(id: ObjectId, context: RequestContext): Promise<Partial<Contact>> {
-    if (!isSuperAdmin(context)) {
+    if (!canReadContacts(context)) {
       throw new ForbiddenException('Only organization owners can access contacts');
     }
     const contact = await super.findById(id, context);
