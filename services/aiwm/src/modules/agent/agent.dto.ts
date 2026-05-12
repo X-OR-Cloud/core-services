@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf, IsNumber, Min, Max, IsDateString } from 'class-validator';
+import { IsString, IsEnum, IsArray, IsOptional, IsObject, IsNotEmpty, IsBoolean, ValidateNested, ValidateIf, IsNumber, Min, Max, IsDateString, IsMongoId } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
@@ -1055,4 +1055,90 @@ export class AgentLogEntryDto {
 export class AgentLogsResponseDto {
   @ApiProperty({ type: [AgentLogEntryDto] })
   logs!: AgentLogEntryDto[];
+}
+
+export class SendAgentMessageAttachmentDto {
+  @ApiProperty({ enum: ['file', 'image', 'video', 'audio', 'document'] })
+  @IsEnum(['file', 'image', 'video', 'audio', 'document'])
+  type!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  filename?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  size?: number;
+}
+
+export class SendAgentMessageReferenceDto {
+  @ApiProperty({ enum: ['agent', 'document', 'project', 'work', 'instruction', 'user', 'text'] })
+  @IsEnum(['agent', 'document', 'project', 'work', 'instruction', 'user', 'text'])
+  resourceType!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  resourceId?: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  label!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  content?: string;
+}
+
+export class SendAgentMessageDto {
+  @ApiProperty({ description: 'Message content', example: 'Hello, can you help me?' })
+  @IsString()
+  @IsNotEmpty()
+  content!: string;
+
+  @ApiPropertyOptional({
+    description: 'Conversation ID to continue. If omitted, a conversation is resolved/created based on agent conversationMode.',
+    example: '64f1a2b3c4d5e6f7a8b9c0d1',
+  })
+  @IsOptional()
+  @IsMongoId()
+  conversationId?: string;
+
+  @ApiPropertyOptional({ enum: ['message', 'system'], default: 'message' })
+  @IsOptional()
+  @IsEnum(['message', 'system'])
+  type?: string;
+
+  @ApiPropertyOptional({ type: [SendAgentMessageAttachmentDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SendAgentMessageAttachmentDto)
+  attachments?: SendAgentMessageAttachmentDto[];
+
+  @ApiPropertyOptional({ type: [SendAgentMessageReferenceDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SendAgentMessageReferenceDto)
+  references?: SendAgentMessageReferenceDto[];
+
+  @ApiPropertyOptional({ description: 'Work item ID to associate with this message' })
+  @IsOptional()
+  @IsString()
+  workId?: string;
 }

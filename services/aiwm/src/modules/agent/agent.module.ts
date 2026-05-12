@@ -19,6 +19,7 @@ import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { ConversationModule } from '../conversation/conversation.module';
 import { ActionModule } from '../action/action.module';
 import { HeartbeatModule } from '../heartbeat/heartbeat.module';
+import { ChatDispatchModule } from '../chat-gateway/chat-dispatch.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { HeartbeatModule } from '../heartbeat/heartbeat.module';
     ConversationModule,
     ActionModule,
     HeartbeatModule,
+    ChatDispatchModule,
   ],
   controllers: [AgentController],
   providers: [AgentService, ApiKeyOrJwtGuard],

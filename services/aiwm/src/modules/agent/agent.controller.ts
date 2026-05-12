@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Put, Patch, Param, Delete, UseGuards, Query, Req, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Put, Patch, Param, Delete, UseGuards, Query, Req, NotFoundException, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, QueryStringParams, parseQueryString, SkipLicenseCheck } from '@hydrabyte/base';
 import { ApiKeyOrJwtGuard } from '../../guards/api-key-or-jwt.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { AgentService } from './agent.service';
+import { ChatDispatchService } from '../chat-gateway/chat-dispatch.service';
 import { MetricsGranularity } from '../../core/sla.helper';
 import {
   CreateAgentDto,
@@ -26,13 +27,17 @@ import {
   AddAgentLogDto,
   AgentLogsResponseDto,
   AgentSleepActionDto,
+  SendAgentMessageDto,
 } from './agent.dto';
 
 @ApiTags('agents')
 @ApiBearerAuth('JWT-auth')
 @Controller('agents')
 export class AgentController {
-  constructor(private readonly agentService: AgentService) {}
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly chatDispatchService: ChatDispatchService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create agent', description: 'Create a new AI agent' })
@@ -518,6 +523,55 @@ export class AgentController {
   ) {
     const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
     return this.agentService.restartAgent(resolvedId, context);
+  }
+
+  // ─── Messaging ───────────────────────────────────────────────────────────────
+
+  @Post(':id/message')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Send a message to an agent',
+    description: [
+      'Enqueues a user message for the agent and returns immediately (fire-and-forget).',
+      'The agent reply arrives asynchronously — poll `GET /conversations/:id/actions` or subscribe via chat socket.',
+      'Returns 400 if agent is suspended or inactive.',
+    ].join(' '),
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'Message accepted. Returns conversationId, actionId, and timestamp.',
+    schema: {
+      example: {
+        conversationId: '64f1a2b3c4d5e6f7a8b9c0d1',
+        actionId: '64f1a2b3c4d5e6f7a8b9c0d2',
+        agentId: '64f1a2b3c4d5e6f7a8b9c0d3',
+        agentCode: 'my-agent',
+        recordedAt: '2024-01-01T00:00:00.000Z',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Agent is suspended or inactive' })
+  @ApiResponse({ status: 404, description: 'Agent or conversation not found' })
+  @UseGuards(JwtAuthGuard)
+  async sendMessage(
+    @Param('id') id: string,
+    @Body() dto: SendAgentMessageDto,
+    @CurrentUser() context: RequestContext,
+  ) {
+    const resolvedId = await this.agentService.resolveAgentId(id, context.orgId);
+    return this.chatDispatchService.dispatchMessage({
+      orgId: context.orgId,
+      agentId: resolvedId,
+      userId: context.userId,
+      username: (context as any).username,
+      fullname: (context as any).fullname,
+      conversationId: dto.conversationId,
+      content: dto.content,
+      type: dto.type,
+      attachments: dto.attachments,
+      references: dto.references,
+      workId: dto.workId,
+    });
   }
 
   @Post(':id/update')
