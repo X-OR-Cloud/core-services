@@ -394,6 +394,24 @@ export const CONFIG_METADATA: Record<ConfigKey, ConfigKeyMetadata> = {
     example: 'http://localhost:3000',
   },
 
+  [ConfigKey.IAM_JWT_ACCESS_TTL_SEC]: {
+    key: ConfigKey.IAM_JWT_ACCESS_TTL_SEC,
+    displayName: 'IAM JWT Access Token TTL (seconds)',
+    description: 'Lifetime of IAM JWT access tokens in seconds',
+    dataType: 'number',
+    isRequired: false,
+    example: '3600',
+  },
+
+  [ConfigKey.IAM_REFRESH_TOKEN_TTL_SEC]: {
+    key: ConfigKey.IAM_REFRESH_TOKEN_TTL_SEC,
+    displayName: 'IAM Refresh Token TTL (seconds)',
+    description: 'Lifetime of IAM refresh tokens in seconds',
+    dataType: 'number',
+    isRequired: false,
+    example: '2592000',
+  },
+
     [ConfigKey.MONA_BASE_API_URL]: {
     key: ConfigKey.MONA_BASE_API_URL,
     displayName: 'MONA Base API URL',
