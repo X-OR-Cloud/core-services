@@ -3,7 +3,9 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { COMMON_CONFIG, SERVICE_CONFIG, buildMongoUri } from '@hydrabyte/shared';
+import { FileModule } from '../file/file.module';
 import { ChatWsGateway } from './chat.gateway';
 import { ChatService } from '../chat/chat.service';
 import { PresenceModule } from '../presence/presence.module';
@@ -45,6 +47,8 @@ import { Configuration, ConfigurationSchema } from '../configuration/configurati
       { name: Configuration.name, schema: ConfigurationSchema },
     ]),
     HttpModule.register({ timeout: 30000, maxRedirects: 5 }),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 20 }]),
+    FileModule,
     PresenceModule,
     HeartbeatModule,
   ],

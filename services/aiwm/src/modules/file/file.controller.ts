@@ -9,7 +9,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard, CurrentUser } from '@hydrabyte/base';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { FileService } from './file.service';
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 @ApiTags('Files')
 @Controller('files')
@@ -21,8 +24,9 @@ export class FileController {
    * Used by engineer agents (and portal) that have local file access.
    */
   @Post('upload')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   @ApiOperation({ summary: 'Upload file to S3, returns public URL' })
   @ApiConsumes('multipart/form-data')
   async upload(
