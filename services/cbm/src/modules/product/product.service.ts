@@ -7,10 +7,21 @@ import {
   FindManyResult,
   buildSearchFilter,
 } from '@hydrabyte/base';
-import { RequestContext } from '@hydrabyte/shared';
+import { RequestContext, getHighestRole, PredefinedRole } from '@hydrabyte/shared';
 import { Product } from './product.schema';
 import { CreateProductDto } from './product.dto';
 import { isSuperAdmin } from '../project/project-access.helper';
+
+const PRODUCT_WRITE_ROLES = [
+  PredefinedRole.UniverseOwner,
+  PredefinedRole.OrganizationOwner,
+  PredefinedRole.OrganizationEditor,
+];
+
+function canWriteProduct(context: RequestContext): boolean {
+  const role = getHighestRole(context.roles as PredefinedRole[]);
+  return !!role && PRODUCT_WRITE_ROLES.includes(role);
+}
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -41,15 +52,15 @@ export class ProductService extends BaseService<Product> {
   }
 
   async create(data: any, context: RequestContext): Promise<Partial<Product>> {
-    if (!isSuperAdmin(context)) {
-      throw new ForbiddenException('Only organization owners can manage products');
+    if (!canWriteProduct(context)) {
+      throw new ForbiddenException('Only organization owners or editors can manage products');
     }
     return super.create(data, context);
   }
 
   async update(id: ObjectId, data: any, context: RequestContext): Promise<Partial<Product>> {
-    if (!isSuperAdmin(context)) {
-      throw new ForbiddenException('Only organization owners can manage products');
+    if (!canWriteProduct(context)) {
+      throw new ForbiddenException('Only organization owners or editors can manage products');
     }
     const product = await super.findById(id, context);
     if (!product) throw new NotFoundException('Product not found');
@@ -69,8 +80,8 @@ export class ProductService extends BaseService<Product> {
     items: CreateProductDto[],
     context: RequestContext
   ): Promise<{ created: number; updated: number; errors: string[] }> {
-    if (!isSuperAdmin(context)) {
-      throw new ForbiddenException('Only organization owners can manage products');
+    if (!canWriteProduct(context)) {
+      throw new ForbiddenException('Only organization owners or editors can manage products');
     }
     let created = 0;
     let updated = 0;
