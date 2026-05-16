@@ -86,20 +86,37 @@ export class OrderService extends BaseService<Order> {
       rest.filter = { ...rest.filter, createdAt: createdAtFilter };
     }
 
-    // Apply search filter
+    // Apply search filter (code, customer name/phone, product name in items)
+    // NOTE: $or must be inside filter{} — BaseService uses options.filter when defined,
+    // so top-level $or would be ignored if filter already exists (e.g. from dateFrom/dateTo)
     let baseOptions = rest;
     if (search) {
       const regex = new RegExp(search, 'i');
       baseOptions = {
         ...rest,
-        $or: [{ code: regex }, { 'customer.name': regex }, { 'customer.phone': regex }],
+        filter: {
+          ...(rest.filter || {}),
+          $or: [
+            { code: regex },
+            { 'customer.name': regex },
+            { 'customer.phone': regex },
+            { 'items.name': regex },
+          ],
+        },
       } as any;
     }
 
     const findResult = await super.findAll(baseOptions, context);
 
+    // byStatus: aggregate with same date filter (no status filter) for accurate breakdown
     const baseMatch: any = { isDeleted: false };
     if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
+    if (dateFrom || dateTo) {
+      const createdAtFilter: any = {};
+      if (dateFrom) createdAtFilter.$gte = new Date(dateFrom);
+      if (dateTo) createdAtFilter.$lte = new Date(dateTo);
+      baseMatch.createdAt = createdAtFilter;
+    }
 
     const statusStats = await super.aggregate(
       [{ $match: baseMatch }, { $group: { _id: '$status', count: { $sum: 1 } } }],
