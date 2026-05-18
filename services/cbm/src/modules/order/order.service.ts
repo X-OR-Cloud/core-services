@@ -233,7 +233,7 @@ export class OrderService extends BaseService<Order> {
           ],
           items: [
             { $unwind: '$items' },
-            { $group: { _id: '$items.name', totalAmount: { $sum: '$items.amount.value' }, orderCount: { $sum: 1 } } },
+            { $group: { _id: '$items.name', totalAmount: { $sum: '$items.amount.value' }, totalQuantity: { $sum: '$items.quantity' } } },
             { $sort: { totalAmount: -1 } },
           ],
         },
@@ -244,7 +244,7 @@ export class OrderService extends BaseService<Order> {
     const items = (result[0]?.items ?? []).map((i: any) => ({
       name: i._id,
       totalAmount: i.totalAmount,
-      orderCount: i.orderCount,
+      totalQuantity: i.totalQuantity,
     }));
 
     return { totalRevenue: totals.totalRevenue, totalOrders: totals.totalOrders, items };
