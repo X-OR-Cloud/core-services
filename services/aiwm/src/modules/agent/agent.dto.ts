@@ -228,9 +228,10 @@ export class CreateAgentDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ description: 'Agent description', example: 'AI agent for customer support' })
+  @ApiPropertyOptional({ description: 'Agent description', example: 'AI agent for customer support', required: false })
+  @IsOptional()
   @IsString()
-  description: string;
+  description?: string;
 
   @ApiPropertyOptional({
     description: 'Agent status (defaults to inactive, set by system)',
