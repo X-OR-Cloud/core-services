@@ -172,8 +172,8 @@ export class NodeService extends BaseService<Node> {
       throw new ForbiddenException('Node does not belong to your organization');
     }
 
-    if (node.status !== 'pending') {
-      throw new BadRequestException(`Node must be in pending status to get setup guide (current: ${node.status})`);
+    if (node.status !== 'pending' && node.status !== 'maintenance') {
+      throw new BadRequestException(`Node must be in pending or maintenance status to get setup guide (current: ${node.status})`);
     }
 
     // Generate setup token JWT (24h)

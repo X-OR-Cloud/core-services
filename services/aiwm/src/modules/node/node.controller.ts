@@ -253,10 +253,10 @@ export class NodeController implements OnModuleDestroy {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Get node setup guide',
-    description: 'Generate a setup token (24h) and return install instructions. Node must be in pending status. Accessible by org.owner or node creator.',
+    description: 'Generate a setup token (24h) and return install instructions. Node must be in pending or maintenance status. Accessible by org.owner or node creator.',
   })
   @ApiResponse({ status: 200, description: 'Setup guide generated', type: SetupGuideResponseDto })
-  @ApiResponse({ status: 400, description: 'Node not in pending status' })
+  @ApiResponse({ status: 400, description: 'Node not in pending or maintenance status' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Node not found' })
   @UseGuards(JwtAuthGuard)
