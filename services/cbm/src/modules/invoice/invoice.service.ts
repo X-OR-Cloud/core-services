@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, GoneException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
+import { randomUUID } from 'crypto';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Invoice, EInvoiceLink } from './invoice.schema';
@@ -185,6 +186,68 @@ export class InvoiceService extends BaseService<Invoice> {
     const invoice = await super.findById(id, context);
     if (!invoice) throw new NotFoundException('Invoice not found');
     return super.update(id, { eInvoice: { ...eInvoice, linkedAt: new Date() } }, context);
+  }
+
+  // =============== Booking: Share link & Public view ===============
+
+  /**
+   * Generate a public share link token (TTL 72h).
+   * Can be regenerated anytime to extend the link.
+   */
+  async generateShareLink(
+    id: ObjectId,
+    context: RequestContext,
+  ): Promise<{ shareUrl: string; expiresAt: Date }> {
+    const invoice = await super.findById(id, context);
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72h
+
+    await this.invoiceModel.updateOne(
+      { _id: id },
+      { shareToken: token, shareTokenExpiresAt: expiresAt },
+    );
+
+    const baseUrl = process.env['API_BASE_URL'] || 'https://api.hydrabyte.co/cbm';
+    return {
+      shareUrl: `${baseUrl}/invoices/public/${token}`,
+      expiresAt,
+    };
+  }
+
+  /**
+   * Get public invoice by share token — no auth required.
+   * Hides customer.phone per BR US-08.
+   * Throws GoneException if token is expired.
+   */
+  async getPublicInvoice(token: string): Promise<any> {
+    const invoice = await this.invoiceModel
+      .findOne({
+        shareToken: token,
+        isDeleted: { $ne: true },
+      })
+      .lean();
+
+    if (!invoice) throw new NotFoundException('Invoice not found or link is invalid');
+
+    if (invoice.shareTokenExpiresAt && new Date() > invoice.shareTokenExpiresAt) {
+      throw new GoneException('Share link has expired');
+    }
+
+    // Hide customer phone (US-08)
+    const result: any = { ...invoice };
+    if (result.customer?.phone !== undefined) {
+      result.customer = { ...result.customer, phone: null };
+    }
+
+    // Strip internal fields
+    delete result.shareToken;
+    delete result.shareTokenExpiresAt;
+    delete result.isDeleted;
+    delete result.deletedAt;
+
+    return result;
   }
 
   /**

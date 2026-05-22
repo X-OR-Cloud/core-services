@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -7,7 +7,8 @@ import { isSuperAdmin } from '../project/project-access.helper';
 import { Order } from './order.schema';
 import { Contact } from '../contact/contact.schema';
 
-const EDITABLE_STATUSES = ['new', 'processing'];
+const EDITABLE_STATUSES = ['new', 'processing', 'deposited', 'checked_in'];
+const BOOKING_BLOCK_TYPES = ['room', 'maintenance']; // bookingTypes that block availability
 
 @Injectable()
 export class OrderService extends BaseService<Order> {
@@ -21,6 +22,36 @@ export class OrderService extends BaseService<Order> {
   async create(data: any, context: RequestContext): Promise<Partial<Order>> {
     data.code = await this.generateCode(context);
     data.status = 'new';
+
+    // Booking validation: if bookingType = 'room', checkIn and checkOut are required
+    const bookingType = data.metadata?.bookingType;
+    if (bookingType === 'room') {
+      if (!data.checkIn || !data.checkOut) {
+        throw new BadRequestException('checkIn and checkOut are required for room bookings');
+      }
+      const checkIn = new Date(data.checkIn);
+      const checkOut = new Date(data.checkOut);
+      if (checkOut <= checkIn) {
+        throw new BadRequestException('checkOut must be after checkIn');
+      }
+      // Auto-check availability, throw 409 if conflict
+      const conflicts = await this.findConflicts(
+        data.items?.map((i: any) => i.productId).filter(Boolean) || [],
+        checkIn,
+        checkOut,
+        context,
+        null,
+      );
+      if (conflicts.length > 0) {
+        throw new ConflictException({
+          message: 'One or more rooms are not available for the requested dates',
+          conflicts,
+        });
+      }
+      // Normalize to Date objects
+      data.checkIn = checkIn;
+      data.checkOut = checkOut;
+    }
 
     // F-020: Auto-link or create Contact when phone is provided and no existing contactId
     if (!data.customer?.id && data.customer?.phone) {
@@ -174,6 +205,157 @@ export class OrderService extends BaseService<Order> {
       throw new BadRequestException(`Order must be in new status to process (current: ${order.status})`);
     }
     return super.update(id, { status: 'processing' }, context);
+  }
+
+  // ── Booking state transitions ───────────────────────────────────────────────
+
+  async confirm(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'new') {
+      throw new BadRequestException(`Order must be in new status to confirm (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'processing' }, context);
+  }
+
+  async deposit(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'processing') {
+      throw new BadRequestException(`Order must be in processing status to deposit (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'deposited' }, context);
+  }
+
+  async checkin(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'deposited') {
+      throw new BadRequestException(`Order must be in deposited status to check in (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'checked_in' }, context);
+  }
+
+  async checkout(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const order = await super.findById(id, context);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'checked_in') {
+      throw new BadRequestException(`Order must be in checked_in status to check out (current: ${order.status})`);
+    }
+    return super.update(id, { status: 'done' }, context);
+  }
+
+  // ── Availability check ─────────────────────────────────────────────────────
+
+  /**
+   * Check availability for given productIds in a date range.
+   * Blocks both 'room' and 'maintenance' bookingTypes (hard block).
+   * Returns { available: string[], booked: { productId, conflictOrderId, conflictCode }[] }
+   */
+  async checkAvailability(
+    productIds: string[],
+    checkIn: Date,
+    checkOut: Date,
+    context: RequestContext,
+  ): Promise<{ available: string[]; booked: { productId: string; conflictOrderId: string; conflictCode: string }[] }> {
+    if (checkOut <= checkIn) {
+      throw new BadRequestException('checkOut must be after checkIn');
+    }
+
+    const conflicts = await this.findConflicts(productIds, checkIn, checkOut, context, null);
+
+    const bookedProductIds = new Set(conflicts.map((c: any) => c.productId));
+    const available = productIds.filter((id) => !bookedProductIds.has(id));
+
+    return { available, booked: conflicts };
+  }
+
+  /**
+   * Internal: find conflicting bookings for given productIds + date range.
+   * excludeOrderId: optional order to exclude (for update scenarios).
+   */
+  private async findConflicts(
+    productIds: string[],
+    checkIn: Date,
+    checkOut: Date,
+    context: RequestContext,
+    excludeOrderId: string | null,
+  ): Promise<{ productId: string; conflictOrderId: string; conflictCode: string }[]> {
+    if (productIds.length === 0) return [];
+
+    const match: any = {
+      'owner.orgId': context.orgId,
+      isDeleted: { $ne: true },
+      'metadata.bookingType': { $in: BOOKING_BLOCK_TYPES },
+      status: { $nin: ['cancelled', 'done'] }, // done (checked_out) = room is free again
+      checkIn: { $lt: checkOut },
+      checkOut: { $gt: checkIn },
+      'items.productId': { $in: productIds },
+    };
+
+    if (excludeOrderId) {
+      match._id = { $ne: excludeOrderId };
+    }
+
+    const conflictingOrders = await this.orderModel
+      .find(match)
+      .select('_id code items')
+      .lean();
+
+    const conflicts: { productId: string; conflictOrderId: string; conflictCode: string }[] = [];
+    const requestedSet = new Set(productIds);
+
+    for (const order of conflictingOrders) {
+      for (const item of (order as any).items || []) {
+        if (item.productId && requestedSet.has(item.productId)) {
+          conflicts.push({
+            productId: item.productId,
+            conflictOrderId: String((order as any)._id),
+            conflictCode: (order as any).code,
+          });
+        }
+      }
+    }
+
+    return conflicts;
+  }
+
+  // ── Calendar ──────────────────────────────────────────────────────────────
+
+  /**
+   * Get all bookings for a given month (YYYY-MM).
+   * Returns bookings that overlap with the month, regardless of khu (FE groups).
+   */
+  async getCalendar(
+    month: string,
+    bookingType: string | undefined,
+    context: RequestContext,
+  ): Promise<any[]> {
+    const [year, mo] = month.split('-').map(Number);
+    if (!year || !mo || mo < 1 || mo > 12) {
+      throw new BadRequestException('month must be in YYYY-MM format');
+    }
+    const monthStart = new Date(year, mo - 1, 1);
+    const monthEnd = new Date(year, mo, 1);
+
+    const match: any = {
+      'owner.orgId': context.orgId,
+      isDeleted: { $ne: true },
+      status: { $nin: ['cancelled'] },
+      checkIn: { $lt: monthEnd },
+      checkOut: { $gt: monthStart },
+    };
+
+    if (bookingType) {
+      match['metadata.bookingType'] = bookingType;
+    }
+
+    const bookings = await this.orderModel
+      .find(match)
+      .select('_id code status checkIn checkOut items metadata customer')
+      .lean();
+
+    return bookings;
   }
 
   async complete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {

@@ -30,6 +30,10 @@ export class Product extends BaseSchema {
 
   @Prop({ type: String })
   searchText?: string; // normalized name + code for diacritic-insensitive search
+
+  @Prop({ type: [String], default: undefined })
+  imageIds?: string[]; // ref: File._id[] (room images, etc.)
+  // metadata is provided by BaseSchema (generic Record<string, any>)
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

@@ -12,7 +12,7 @@ import {
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
 import { OrderService } from './order.service';
-import { CreateOrderDto, UpdateOrderDto, OrderStatsQueryDto } from './order.dto';
+import { CreateOrderDto, UpdateOrderDto, OrderStatsQueryDto, AvailabilityQueryDto, CalendarQueryDto } from './order.dto';
 
 @ApiTags('Orders')
 @ApiBearerAuth()
@@ -46,6 +46,34 @@ export class OrderController {
   @UseGuards(JwtAuthGuard)
   async getStats(@Query() query: OrderStatsQueryDto, @CurrentUser() context: RequestContext) {
     return this.service.getStats(query, context);
+  }
+
+  @Get('availability')
+  @ApiOperation({
+    summary: 'Check room/product availability for a date range',
+    description: 'Returns available and booked productIds. Blocks both room and maintenance bookingTypes.',
+  })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async checkAvailability(@Query() query: AvailabilityQueryDto, @CurrentUser() context: RequestContext) {
+    const productIds = Array.isArray(query.productIds) ? query.productIds : [query.productIds];
+    return this.service.checkAvailability(
+      productIds,
+      new Date(query.checkIn),
+      new Date(query.checkOut),
+      context,
+    );
+  }
+
+  @Get('calendar')
+  @ApiOperation({
+    summary: 'Get booking calendar for a month',
+    description: 'Returns all bookings overlapping with the given month. FE groups by khu.',
+  })
+  @ApiReadErrors({ notFound: false })
+  @UseGuards(JwtAuthGuard)
+  async getCalendar(@Query() query: CalendarQueryDto, @CurrentUser() context: RequestContext) {
+    return this.service.getCalendar(query.month, query.bookingType, context);
   }
 
   @Get(':id')
@@ -84,6 +112,40 @@ export class OrderController {
   @UseGuards(JwtAuthGuard)
   async process(@Param('id') id: string, @CurrentUser() context: RequestContext) {
     return this.service.process(new Types.ObjectId(id) as any, context);
+  }
+
+  // ── Booking state machine ──────────────────────────────────────────────────
+
+  @Post(':id/confirm')
+  @ApiOperation({ summary: 'Confirm booking', description: 'Booking transition: new → processing' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async confirm(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.service.confirm(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/deposit')
+  @ApiOperation({ summary: 'Mark booking as deposited', description: 'Booking transition: processing → deposited' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async deposit(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.service.deposit(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/checkin')
+  @ApiOperation({ summary: 'Check in guest', description: 'Booking transition: deposited → checked_in' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async checkin(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.service.checkin(new Types.ObjectId(id) as any, context);
+  }
+
+  @Post(':id/checkout')
+  @ApiOperation({ summary: 'Check out guest', description: 'Booking transition: checked_in → done' })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async checkout(@Param('id') id: string, @CurrentUser() context: RequestContext) {
+    return this.service.checkout(new Types.ObjectId(id) as any, context);
   }
 
   @Post(':id/complete')

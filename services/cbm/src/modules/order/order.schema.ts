@@ -76,13 +76,23 @@ export class Order extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['new', 'processing', 'done', 'cancelled'],
+    enum: ['new', 'processing', 'deposited', 'checked_in', 'done', 'cancelled'],
     default: 'new',
   })
   status!: string;
 
   @Prop({ maxlength: 2000 })
   note?: string;
+
+  // Booking fields (optional — only for room/service booking orgs)
+  @Prop({ type: Date })
+  checkIn?: Date;
+
+  @Prop({ type: Date })
+  checkOut?: Date;
+
+  @Prop({ type: String })
+  invoiceId?: string; // ref: Invoice (linked quote/invoice)
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
@@ -95,3 +105,6 @@ OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ 'owner.orgId': 1, createdAt: -1 });
 OrderSchema.index({ 'owner.orgId': 1, status: 1, createdAt: -1 });
 OrderSchema.index({ code: 'text', 'customer.name': 'text', 'customer.phone': 'text' });
+// Booking-specific indexes
+OrderSchema.index({ 'owner.orgId': 1, checkIn: 1, checkOut: 1 });
+OrderSchema.index({ 'owner.orgId': 1, 'metadata.bookingType': 1, status: 1 });

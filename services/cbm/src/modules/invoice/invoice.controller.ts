@@ -9,7 +9,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import { SetMetadata } from '@nestjs/common';
 import {
   JwtAuthGuard,
   CurrentUser,
@@ -132,5 +133,33 @@ export class InvoiceController {
     @CurrentUser() context: RequestContext
   ) {
     return this.invoiceService.linkEInvoice(new Types.ObjectId(id) as any, dto as any, context);
+  }
+
+  // =============== Booking: Share link & Public view ===============
+
+  @Post(':id/share-link')
+  @ApiOperation({
+    summary: 'Generate public share link (72h TTL)',
+    description: 'Generate a public URL to share the invoice without authentication. Can be called anytime to regenerate/extend the link.',
+  })
+  @ApiUpdateErrors()
+  @UseGuards(JwtAuthGuard)
+  async generateShareLink(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.invoiceService.generateShareLink(new Types.ObjectId(id) as any, context);
+  }
+
+  @Get('public/:token')
+  @SetMetadata('public', true)
+  @ApiOperation({
+    summary: 'View invoice by public share token (no auth required)',
+    description: 'Returns invoice data with customer.phone hidden. Valid until TTL expires (72h from generation). Invoice status does not affect link validity.',
+  })
+  @ApiReadErrors()
+  @ApiParam({ name: 'token', description: 'Share token from POST /invoices/:id/share-link' })
+  async getPublicInvoice(@Param('token') token: string) {
+    return this.invoiceService.getPublicInvoice(token);
   }
 }

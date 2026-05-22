@@ -16,7 +16,9 @@ import {
 import { Type } from 'class-transformer';
 import { PaginationQueryDto } from '@hydrabyte/base';
 
-const ORDER_STATUSES = ['new', 'processing', 'done', 'cancelled'] as const;
+const ORDER_STATUSES = ['new', 'processing', 'deposited', 'checked_in', 'done', 'cancelled'] as const;
+
+const BOOKING_TYPES = ['room', 'service', 'maintenance'] as const;
 
 export class MoneyAmountDto {
   @ApiProperty({ example: 'VND', minLength: 3, maxLength: 3 })
@@ -186,6 +188,30 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(2000)
   note?: string;
+
+  // Booking fields
+  @ApiPropertyOptional({ description: 'Check-in date (ISO 8601). Required when metadata.bookingType = room', example: '2026-06-01T14:00:00Z' })
+  @IsOptional()
+  @IsISO8601()
+  checkIn?: string;
+
+  @ApiPropertyOptional({ description: 'Check-out date (ISO 8601)', example: '2026-06-03T12:00:00Z' })
+  @IsOptional()
+  @IsISO8601()
+  checkOut?: string;
+
+  @ApiPropertyOptional({ description: 'Linked invoice ID' })
+  @IsOptional()
+  @IsString()
+  invoiceId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Booking context. bookingType: room|service|maintenance. guestType: direct|agency',
+    example: { bookingType: 'room', guestType: 'direct' },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
 
 export class UpdateOrderDto {
@@ -243,6 +269,27 @@ export class UpdateOrderDto {
   @IsString()
   @MaxLength(2000)
   note?: string;
+
+  // Booking fields
+  @ApiPropertyOptional({ description: 'Check-in date (ISO 8601)', example: '2026-06-01T14:00:00Z' })
+  @IsOptional()
+  @IsISO8601()
+  checkIn?: string;
+
+  @ApiPropertyOptional({ description: 'Check-out date (ISO 8601)', example: '2026-06-03T12:00:00Z' })
+  @IsOptional()
+  @IsISO8601()
+  checkOut?: string;
+
+  @ApiPropertyOptional({ description: 'Linked invoice ID' })
+  @IsOptional()
+  @IsString()
+  invoiceId?: string;
+
+  @ApiPropertyOptional({ description: 'Booking context metadata', example: { bookingType: 'room', guestType: 'direct' } })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
 
 export class OrderQueryDto extends PaginationQueryDto {
@@ -286,4 +333,30 @@ export class OrderStatsQueryDto {
   @ApiProperty({ description: 'End of period (ISO 8601 UTC)', example: '2026-05-09T16:59:59.999Z' })
   @IsISO8601()
   dateTo!: string;
+}
+
+export class AvailabilityQueryDto {
+  @ApiProperty({ description: 'Product IDs to check (comma-separated or repeated)', example: ['productId1', 'productId2'] })
+  @IsArray()
+  @IsString({ each: true })
+  productIds!: string[];
+
+  @ApiProperty({ description: 'Check-in date (ISO 8601)', example: '2026-06-01T14:00:00Z' })
+  @IsISO8601()
+  checkIn!: string;
+
+  @ApiProperty({ description: 'Check-out date (ISO 8601)', example: '2026-06-03T12:00:00Z' })
+  @IsISO8601()
+  checkOut!: string;
+}
+
+export class CalendarQueryDto {
+  @ApiProperty({ description: 'Month in YYYY-MM format', example: '2026-06' })
+  @IsString()
+  month!: string;
+
+  @ApiPropertyOptional({ description: 'Filter by booking type', enum: BOOKING_TYPES })
+  @IsOptional()
+  @IsEnum(BOOKING_TYPES)
+  bookingType?: string;
 }

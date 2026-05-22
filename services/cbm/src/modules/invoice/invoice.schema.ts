@@ -86,6 +86,16 @@ export class Invoice extends BaseSchema {
   @Prop({ type: String })
   contractAnnexId?: string; // ref: ContractAnnex (optional)
 
+  // Booking integration fields
+  @Prop({ type: String })
+  orderId?: string; // ref: Order (linked booking)
+
+  @Prop({ type: String })
+  shareToken?: string; // UUID token for public share link (72h TTL)
+
+  @Prop({ type: Date })
+  shareTokenExpiresAt?: Date; // expiry for share link
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
 }
 
@@ -103,3 +113,5 @@ InvoiceSchema.index({ createdAt: -1 });
 InvoiceSchema.index({ contractId: 1 });
 InvoiceSchema.index({ contractAnnexId: 1 });
 InvoiceSchema.index({ code: 'text', notes: 'text' }); // Full-text search
+InvoiceSchema.index({ shareToken: 1 }, { sparse: true });
+InvoiceSchema.index({ orderId: 1 });

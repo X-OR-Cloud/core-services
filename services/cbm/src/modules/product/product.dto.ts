@@ -66,6 +66,20 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(2000)
   note?: string;
+
+  @ApiPropertyOptional({
+    description: 'Generic metadata (e.g. room info: capacity, bedConfig, priceWeekday, priceWeekend)',
+    example: { maxGuests: 8, bedConfig: '3 giường 1.6×2m', priceWeekday: 1650000, priceWeekend: 1800000 },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'File IDs for room/product images', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageIds?: string[];
 }
 
 export class UpdateProductDto {
@@ -103,6 +117,20 @@ export class UpdateProductDto {
   @IsString()
   @MaxLength(2000)
   note?: string;
+
+  @ApiPropertyOptional({
+    description: 'Generic metadata (e.g. room info: capacity, bedConfig, priceWeekday, priceWeekend)',
+    example: { maxGuests: 8, bedConfig: '3 giường 1.6×2m', priceWeekday: 1650000 },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'File IDs for room/product images', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageIds?: string[];
 }
 
 export class ProductQueryDto extends PaginationQueryDto {

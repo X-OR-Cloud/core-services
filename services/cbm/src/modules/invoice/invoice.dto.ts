@@ -111,6 +111,11 @@ export class CreateInvoiceDto {
   @IsString()
   contractAnnexId?: string;
 
+  @ApiPropertyOptional({ description: 'Order ID — link invoice to a booking order' })
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
   @ApiPropertyOptional({
     description: 'Line items',
     type: [InvoiceItemDto],
@@ -204,6 +209,11 @@ export class UpdateInvoiceDto {
   @IsOptional()
   @IsString()
   contractAnnexId?: string;
+
+  @ApiPropertyOptional({ description: 'Order ID — link invoice to a booking order' })
+  @IsOptional()
+  @IsString()
+  orderId?: string;
 
   @ApiPropertyOptional({ type: [InvoiceItemDto] })
   @IsOptional()
