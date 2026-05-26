@@ -16,7 +16,7 @@ import {
   All,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard, CurrentUser, PaginationQueryDto, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, SkipLicenseCheck } from '@hydrabyte/base';
+import { JwtAuthGuard, CurrentUser, parseQueryString, ApiCreateErrors, ApiReadErrors, ApiUpdateErrors, ApiDeleteErrors, SkipLicenseCheck } from '@hydrabyte/base';
 import { CombinedAuthGuard } from '../../guards/combined-auth.guard';
 import { RequestContext } from '@hydrabyte/shared';
 import { Request, Response } from 'express';
@@ -51,10 +51,10 @@ export class DeploymentController {
   @ApiOperation({ summary: 'List all deployments with pagination' })
   @ApiReadErrors({ notFound: false })
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext,
   ) {
-    return this.deploymentService.findAll(query, context);
+    return this.deploymentService.findAll(parseQueryString(query), context);
   }
 
   @Get(':id')
