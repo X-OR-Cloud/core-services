@@ -10,6 +10,7 @@ import {
   MaxLength,
   Min,
   Max,
+  IsNotEmpty,
   ValidateNested,
   ValidateIf,
   ArrayMinSize,
@@ -44,6 +45,97 @@ export class ToolSchemaDto {
   })
   @IsObject()
   outputSchema!: object;
+}
+
+/**
+ * Per-function definition for api-type tools
+ */
+export class ApiToolFunctionDto {
+  @ApiProperty({ description: 'Function name exposed to LLM', example: 'CreateInstruction' })
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty({ description: 'Function description for LLM', example: 'Tạo mới một instruction cho agent' })
+  @IsString()
+  @IsNotEmpty()
+  description!: string;
+
+  @ApiProperty({
+    description: 'JSON Schema for input parameters. Use "x-in": "path"|"query" extension to route specific params.',
+    example: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', 'x-in': 'path' },
+        name: { type: 'string' },
+      },
+      required: ['id'],
+    },
+  })
+  @IsObject()
+  inputSchema!: Record<string, unknown>;
+
+  @ApiProperty({ description: 'HTTP method', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], example: 'POST' })
+  @IsEnum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+  method!: string;
+
+  @ApiProperty({ description: 'API path, supports {pathParam} interpolation', example: '/instructions/{id}' })
+  @IsString()
+  @IsNotEmpty()
+  path!: string;
+
+  @ApiPropertyOptional({
+    description: 'Headers to merge/override tool-level execution.headers. Supports {{SYSTEM_VAR}} templates.',
+    example: { 'X-Custom-Header': 'value' },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description: 'Response extraction config',
+    required: false,
+    example: { dataPath: 'data' },
+  })
+  @IsOptional()
+  @IsObject()
+  responseMapping?: { dataPath?: string };
+
+  @ApiPropertyOptional({ description: 'Timeout in ms (overrides tool-level timeout)', required: false, example: 10000 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1000)
+  timeout?: number;
+}
+
+/**
+ * Shared execution config for api-type tools (applied to all functions)
+ */
+export class ApiToolExecutionDto {
+  @ApiPropertyOptional({ description: 'Base URL shared by all functions', example: 'https://api.x-or.cloud/dev/aiwm', required: false })
+  @IsOptional()
+  @IsString()
+  baseUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Default headers for all functions. Supports {{AGENT_ACCESS_TOKEN}}, {{ORG_ID}}, {{AGENT_ID}} templates.',
+    example: { Authorization: 'Bearer {{AGENT_ACCESS_TOKEN}}', 'Content-Type': 'application/json' },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @ApiPropertyOptional({ description: 'Inject Bearer token if no Authorization header present (backward compat)', required: false })
+  @IsOptional()
+  authRequired?: boolean;
+
+  @ApiPropertyOptional({ description: 'Default request timeout in ms', example: 10000, required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1000)
+  timeout?: number;
 }
 
 /**
@@ -141,15 +233,42 @@ export class CreateToolDto {
   @IsString()
   healthEndpoint?: string;
 
-  // Common fields
-  @ApiProperty({
-    description: 'Tool schema (input/output definitions)',
-    type: ToolSchemaDto,
+  // API tool: shared execution config
+  @ApiPropertyOptional({
+    description: 'Shared execution config for api-type tools (baseUrl, default headers, timeout)',
+    type: ApiToolExecutionDto,
+    required: false,
   })
+  @ValidateIf((o) => o.type === 'api')
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApiToolExecutionDto)
+  execution?: ApiToolExecutionDto;
+
+  // API tool: per-function definitions
+  @ApiPropertyOptional({
+    description: 'Function definitions for api-type tools (1 tool = N functions)',
+    type: [ApiToolFunctionDto],
+    required: false,
+  })
+  @ValidateIf((o) => o.type === 'api')
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApiToolFunctionDto)
+  functions?: ApiToolFunctionDto[];
+
+  // Common fields
+  @ApiPropertyOptional({
+    description: 'Tool schema (input/output definitions). Not used for api-type tools — inputSchema lives per function.',
+    type: ToolSchemaDto,
+    required: false,
+  })
+  @ValidateIf((o) => o.type !== 'api')
   @IsObject()
   @ValidateNested()
   @Type(() => ToolSchemaDto)
-  schema!: ToolSchemaDto;
+  schema?: ToolSchemaDto;
 
   @ApiPropertyOptional({
     description: 'Tool status',
@@ -243,6 +362,19 @@ export class UpdateToolDto {
   @IsOptional()
   @IsString()
   healthEndpoint?: string;
+
+  @ApiPropertyOptional({ description: 'Shared execution config (api-type)', type: ApiToolExecutionDto, required: false })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApiToolExecutionDto)
+  execution?: ApiToolExecutionDto;
+
+  @ApiPropertyOptional({ description: 'Function definitions (api-type)', type: [ApiToolFunctionDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApiToolFunctionDto)
+  functions?: ApiToolFunctionDto[];
 
   @ApiPropertyOptional({
     description: 'Tool schema (input/output definitions)',

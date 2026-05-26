@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { Tool } from '../tool/tool.schema';
 import { Instruction } from '../instruction/instruction.schema';
-import { AgentConversationMode } from './agent.schema';
+import { AgentConversationMode, AgentVisibilityMode } from './agent.schema';
 
 /** @deprecated Use ConnectionRouteDto in Connection module instead. Kept for backward compatibility. */
 export class ChannelConfigDto {
@@ -220,6 +220,28 @@ export class AgentRagConfigDto {
 
 // ─── End Adaptive RAG DTOs ───────────────────────────────────────────────────
 
+export class AgentVisibilityDto {
+  @ApiProperty({
+    description: 'Visibility mode: private = only creator (default), org = all org members, restricted = specific users/agents',
+    enum: ['private', 'org', 'restricted'],
+    example: 'private',
+  })
+  @IsEnum(['private', 'org', 'restricted'])
+  mode: AgentVisibilityMode;
+
+  @ApiPropertyOptional({ description: 'User IDs allowed to access this agent (mode=restricted only)', type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedUserIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Agent IDs allowed to access this agent (mode=restricted only)', type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedAgentIds?: string[];
+}
+
 /**
  * DTO for creating a new agent - MVP Minimal Version
  */
@@ -381,6 +403,12 @@ export class CreateAgentDto {
   @IsNumber()
   @Min(60000)
   sessionTimeoutMs?: number;
+
+  @ApiPropertyOptional({ description: 'Agent visibility configuration', required: false, type: AgentVisibilityDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentVisibilityDto)
+  visibility?: AgentVisibilityDto;
 
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
@@ -545,6 +573,12 @@ export class UpdateAgentDto {
   @Min(60000)
   sessionTimeoutMs?: number;
 
+  @ApiPropertyOptional({ description: 'Agent visibility configuration', required: false, type: AgentVisibilityDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentVisibilityDto)
+  visibility?: AgentVisibilityDto;
+
   /** @deprecated Use Connection module. Kept for backward compatibility. */
   @ApiPropertyOptional({ required: false, type: [ChannelConfigDto] })
   @IsOptional()
@@ -552,6 +586,23 @@ export class UpdateAgentDto {
   @ValidateNested({ each: true })
   @Type(() => ChannelConfigDto)
   channels?: ChannelConfigDto[];
+}
+
+export interface ToolDefinitionHttp {
+  method: string;
+  baseUrl: string;
+  path: string;
+  headers: Record<string, string>;  // fully resolved — no {{...}} templates
+  body?: 'params';                  // present for POST/PUT/PATCH
+  query?: 'params';                 // present for GET/DELETE
+  responseMapping?: { dataPath?: string };
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;  // JSON Schema (preserves x-in extensions)
+  http: ToolDefinitionHttp;
 }
 
 /**
@@ -705,6 +756,13 @@ export class AgentConnectResponseDto {
 
   @ApiPropertyOptional({ description: 'Browser automation API key (PinchTab)', required: false })
   browserApiKey?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'API tool definitions for agent auto-initialization. Flattened from all type=api tools in allowedToolIds.',
+    type: [Object],
+    required: false,
+  })
+  toolDefinitions?: ToolDefinition[];
 }
 
 export class AgentSleepInfoDto {

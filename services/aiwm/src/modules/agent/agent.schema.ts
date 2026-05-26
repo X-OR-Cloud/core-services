@@ -5,6 +5,13 @@ import { BaseSchema } from '@hydrabyte/base';
 export type ChannelPlatform = 'discord' | 'telegram';
 export type VerboseLoggingTarget = 'channel' | 'thread' | string;
 export type AgentConversationMode = 'per-user' | 'per-session' | 'shared';
+export type AgentVisibilityMode = 'private' | 'org' | 'restricted';
+
+export interface AgentVisibility {
+  mode: AgentVisibilityMode;
+  allowedUserIds: string[];
+  allowedAgentIds: string[];
+}
 
 export interface ChannelConfig {
   platform: ChannelPlatform;
@@ -401,6 +408,16 @@ export class Agent extends BaseSchema {
 
   @Prop({ type: String })
   version?: string; // Last reported version by agent on connect
+
+  @Prop({
+    type: {
+      mode: { type: String, enum: ['private', 'org', 'restricted'], default: 'private' },
+      allowedUserIds: { type: [String], default: [] },
+      allowedAgentIds: { type: [String], default: [] },
+    },
+    default: () => ({ mode: 'private', allowedUserIds: [], allowedAgentIds: [] }),
+  })
+  visibility: AgentVisibility;
 
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB

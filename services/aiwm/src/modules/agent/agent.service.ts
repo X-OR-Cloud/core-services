@@ -50,6 +50,7 @@ import {
   AddExternalSigningKeyDto,
   ExternalSigningKeyEntryDto,
   ExternalSigningKeyListResponseDto,
+  ToolDefinition,
 } from './agent.dto';
 import { AgentProducer } from '../../queues/producers/agent.producer';
 import { ConfigurationService } from '../configuration/configuration.service';
@@ -131,6 +132,20 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     return !!context.roles?.some(r => r === 'organization.owner' || r === 'universe.owner');
   }
 
+  private canRead(agent: { visibility?: any; owner?: any }, context: RequestContext): boolean {
+    if (this.isOrgOwner(context)) return true;
+    if (agent.owner?.userId && agent.owner.userId === context.userId) return true;
+    const mode: string = agent.visibility?.mode ?? 'private';
+    if (mode === 'org') return true;
+    if (mode === 'restricted') {
+      return (
+        (context.userId && agent.visibility?.allowedUserIds?.includes(context.userId)) ||
+        (context.agentId && agent.visibility?.allowedAgentIds?.includes(context.agentId))
+      );
+    }
+    return false;
+  }
+
   private publishWorkerRestart(agentId: string, requestedBy: string, reason?: string) {
     const payload: AgentWorkerCmdEvent = {
       type: 'restart',
@@ -164,15 +179,15 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         .populate('instructionId')
         .exec();
       if (!agent) return null;
-      if (!this.isOrgOwner(context) && agent.owner?.userId !== context.userId) {
-        throw new ForbiddenException('You can only access agents you created');
+      if (!this.canRead(agent, context)) {
+        throw new ForbiddenException('You do not have access to this agent');
       }
       return agent as Agent;
     }
 
     const agent = await super.findById(id, context);
-    if (!this.isOrgOwner(context) && (agent as any)?.owner?.userId !== context.userId) {
-      throw new ForbiddenException('You can only access agents you created');
+    if (!this.canRead(agent as any, context)) {
+      throw new ForbiddenException('You do not have access to this agent');
     }
     return agent;
   }
@@ -202,7 +217,17 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     options.selectFields = ['-secret', '-settings'];
     options.statisticFields = ['type','status','framework'];
     if (!this.isOrgOwner(context)) {
-      options.filter = { ...options.filter, 'owner.userId': context.userId };
+      const visibilityOr: any[] = [
+        { 'owner.userId': context.userId },
+        { 'visibility.mode': 'org' },
+      ];
+      if (context.userId) {
+        visibilityOr.push({ 'visibility.mode': 'restricted', 'visibility.allowedUserIds': context.userId });
+      }
+      if (context.agentId) {
+        visibilityOr.push({ 'visibility.mode': 'restricted', 'visibility.allowedAgentIds': context.agentId });
+      }
+      options.filter = { ...options.filter, $or: visibilityOr };
     }
     const findResult = await super.findAll(options, context);
     return findResult;
@@ -723,6 +748,8 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       agent.owner.orgId
     );
 
+    const toolDefinitions = this.buildToolDefinitions(tools, token, agent.owner.orgId, agentId);
+
     const response: AgentConnectResponseDto = {
       id: agentId,
       name: agent.name,
@@ -742,6 +769,7 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       ragCollections,
       ragConfig: agent.ragConfig ?? null,
       agentCode: agent.code || undefined,
+      toolDefinitions: toolDefinitions.length > 0 ? toolDefinitions : undefined,
       browserApiUrl: (await this.configurationService.findByKey(
         ConfigKey.PINCHTAB_API_URL as any,
         { orgId: agent.owner.orgId } as RequestContext
@@ -832,6 +860,80 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
       }
     }
     return settings;
+  }
+
+  /**
+   * Resolve {{VARIABLE}} templates in header values.
+   * Single-brace {param} placeholders are left untouched (agent client resolves those).
+   */
+  private resolveHeaderTemplates(
+    headers: Record<string, string>,
+    ctx: { agentAccessToken: string; orgId: string; agentId: string }
+  ): Record<string, string> {
+    const vars: Record<string, string> = {
+      AGENT_ACCESS_TOKEN: ctx.agentAccessToken,
+      ORG_ID: ctx.orgId,
+      AGENT_ID: ctx.agentId,
+    };
+    return Object.fromEntries(
+      Object.entries(headers).map(([k, v]) => [
+        k,
+        v.replace(/\{\{(\w+)\}\}/g, (_, name) => vars[name] ?? `{{${name}}}`),
+      ])
+    );
+  }
+
+  /**
+   * Build toolDefinitions from type=api tools.
+   * Flattens tool.functions[] → ToolDefinition[], resolves header templates.
+   */
+  private buildToolDefinitions(
+    tools: Tool[],
+    agentAccessToken: string,
+    orgId: string,
+    agentId: string
+  ): ToolDefinition[] {
+    const ctx = { agentAccessToken, orgId, agentId };
+    const result: ToolDefinition[] = [];
+
+    for (const tool of tools) {
+      if (tool.type !== 'api' || !tool.functions?.length) continue;
+
+      const toolHeaders = (tool.execution as any)?.headers ?? {};
+      const toolBaseUrl = (tool.execution as any)?.baseUrl ?? '';
+      const toolAuthRequired = (tool.execution as any)?.authRequired ?? false;
+
+      for (const fn of tool.functions) {
+        // Merge: tool-level headers + function-level headers (function wins)
+        const mergedHeaders: Record<string, string> = { ...toolHeaders, ...(fn.headers ?? {}) };
+
+        // Backward compat: inject Bearer if authRequired=true and no Authorization present
+        if (toolAuthRequired && !mergedHeaders['Authorization']) {
+          mergedHeaders['Authorization'] = `Bearer {{AGENT_ACCESS_TOKEN}}`;
+        }
+
+        const resolvedHeaders = this.resolveHeaderTemplates(mergedHeaders, ctx);
+
+        const method = fn.method.toUpperCase();
+        const isBodyMethod = ['POST', 'PUT', 'PATCH'].includes(method);
+
+        result.push({
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.inputSchema,
+          http: {
+            method,
+            baseUrl: toolBaseUrl,
+            path: fn.path,
+            headers: resolvedHeaders,
+            ...(isBodyMethod ? { body: 'params' } : { query: 'params' }),
+            ...(fn.responseMapping ? { responseMapping: fn.responseMapping } : {}),
+          },
+        });
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -2103,6 +2205,20 @@ echo "Installation script placeholder - implement actual logic"
       if (!existing || (existing as any).owner?.userId !== context.userId) {
         throw new ForbiddenException('You can only update agents you created');
       }
+    }
+
+    // Guard visibility changes: only the agent creator or org.owner can modify visibility
+    if (updateAgentDto.visibility !== undefined && !this.isOrgOwner(context)) {
+      const existing = await this.agentModel.findOne({ _id: id, isDeleted: false }).lean().exec();
+      if (!existing || (existing as any).owner?.userId !== context.userId) {
+        throw new ForbiddenException('Only the agent creator or org owner can change visibility settings');
+      }
+    }
+
+    // Auto-clear allowedUserIds/allowedAgentIds when mode changes away from restricted
+    if (updateAgentDto.visibility?.mode && updateAgentDto.visibility.mode !== 'restricted') {
+      updateAgentDto.visibility.allowedUserIds = [];
+      updateAgentDto.visibility.allowedAgentIds = [];
     }
 
     // Only organization.owner or universe.owner can set role to organization.owner

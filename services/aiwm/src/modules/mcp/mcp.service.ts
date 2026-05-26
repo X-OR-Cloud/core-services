@@ -183,11 +183,18 @@ export class McpService {
     body?: any;
     queryParams?: Record<string, any>;
   } {
-    if (!tool.execution) {
-      throw new BadRequestException(`Tool '${tool.name}' has no execution configuration`);
-    }
+    // New model: functions[] — use first function (MCP server-side execution path)
+    // New api tools should use client-side toolDefinitions instead; this is legacy fallback.
+    const fn = tool.functions?.[0];
+    const execAny = tool.execution as any;
 
-    const { method, baseUrl, path, headers } = tool.execution;
+    const method: string | undefined = fn?.method ?? execAny?.method;
+    const baseUrl: string | undefined = (tool.execution as any)?.baseUrl ?? execAny?.baseUrl;
+    const path: string | undefined = fn?.path ?? execAny?.path;
+    const headers: Record<string, string> | undefined = {
+      ...(execAny?.headers ?? {}),
+      ...(fn?.headers ?? {}),
+    };
 
     if (!method || !baseUrl || !path) {
       throw new BadRequestException(

@@ -52,16 +52,45 @@ export class Tool extends BaseSchema {
   // API tools call internal HTTP APIs (e.g., CBM services) via AIWM proxy
   // Custom tools are user-defined functions executed by agent client
 
-  // Execution configuration (for api type)
+  // Execution configuration (for api type) — shared defaults across all functions
   @Prop({ type: Object })
   execution?: {
-    method?: string;          // HTTP method: GET, POST, PUT, DELETE
-    baseUrl?: string;         // Base URL of the service (e.g., http://cbm:3001)
-    path?: string;            // API path template (e.g., /projects/{id})
-    headers?: Record<string, string>; // Additional headers
-    authRequired?: boolean;   // Whether to pass user JWT token
-    timeout?: number;         // Request timeout in ms
+    baseUrl?: string;                   // Base URL shared by all functions
+    headers?: Record<string, string>;   // Default headers (supports {{SYSTEM_VAR}} templates)
+    authRequired?: boolean;             // Backward compat: inject Bearer token if no Authorization header
+    timeout?: number;                   // Default timeout in ms
   };
+
+  // Per-function definitions (for api type) — 1 tool = N HTTP endpoints = N LLM functions
+  @Prop({
+    type: [
+      {
+        name: { type: String, required: true },
+        description: { type: String, required: true },
+        inputSchema: { type: Object, required: true },
+        method: { type: String, required: true },
+        path: { type: String, required: true },
+        headers: { type: Object },
+        responseMapping: {
+          dataPath: { type: String },
+        },
+        timeout: { type: Number },
+      },
+    ],
+    default: undefined,
+  })
+  functions?: {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;  // JSON Schema (supports x-in extension per property)
+    method: string;                        // GET | POST | PUT | PATCH | DELETE
+    path: string;                          // e.g., /instructions/{id}
+    headers?: Record<string, string>;      // Override/merge with execution.headers
+    responseMapping?: {
+      dataPath?: string;                   // Dot notation: 'data', 'result.items'
+    };
+    timeout?: number;                      // Override execution.timeout
+  }[];
 
   // Common fields
   @Prop({ required: true, enum: ['active', 'inactive', 'error'], default: 'active' })
