@@ -13,9 +13,9 @@
 | `_id` | `string` (ObjectId) | auto | — | MongoDB ObjectId | ID duy nhất của agent |
 | `name` | `string` | yes | — | — | Tên hiển thị của agent |
 | `description` | `string` | yes | — | — | Mô tả mục đích agent |
-| `status` | `string` | no | `inactive` | `inactive` `idle` `busy` `suspended` | Trạng thái hoạt động hiện tại |
+| `status` | `string` | no | `inactive` | `inactive` `idle` `busy` `suspended` `sleep` | Trạng thái hoạt động hiện tại |
 | `type` | `string` | no | `engineer` | `assistant` `engineer` | Loại agent (xem 1.2) |
-| `framework` | `string` | no | `claude-agent-sdk` | `claude-agent-sdk` | Runtime engine cho agent. Không dùng với `assistant` |
+| `framework` | `string` | no | `claude-agent-sdk` | `claude-agent-sdk` `vercel-ai-sdk` `pi-agent-sdk` | Runtime engine cho agent. Không dùng với `assistant` |
 | `instructionId` | `string` (ref) | no | — | ObjectId → Instruction | System prompt / guideline |
 | `guardrailId` | `string` (ref) | no | — | ObjectId → Guardrail | Ràng buộc an toàn |
 | `deploymentId` | `string` (ref) | no | — | ObjectId → Deployment | LLM deployment (dành cho `engineer` tự triển khai, không có `nodeId`) |
@@ -27,12 +27,16 @@
 | `allowedFunctions` | `string[]` | no | `[]` | Tên function runtime | Whitelist function agent được gọi. Rỗng = cho phép tất cả |
 | `settings` | `object` | no | `{}` | Flat key-value với prefix | Cấu hình runtime (xem 1.3) |
 | `channels` | `ChannelConfig[]` | no | `[]` | Mảng ChannelConfig | Kênh Discord / Telegram (xem 1.4) |
+| `visibility` | `AgentVisibility` | no | `{ mode: "private", ... }` | Object (xem 1.5) | Kiểm soát ai có thể thấy agent này trong danh sách |
+| `conversationMode` | `string` | no | `per-user` | `per-user` `per-session` `shared` | Scoping conversation cho anonymous/connection clients |
+| `sessionTimeoutMs` | `number` | no | `1800000` | ≥ 60000 | Timeout inactivity cho `per-session` mode (ms) |
+| `ragConfig` | `object` | no | `null` | AgentRagConfig object | Adaptive RAG pipeline v2 — xem [RAG-CONFIG-API.md](../agent/RAG-CONFIG-API.md) |
 | `lastConnectedAt` | `Date` | no | — | ISO 8601 | Thời điểm kết nối gần nhất |
 | `lastHeartbeatAt` | `Date` | no | — | ISO 8601 | Thời điểm heartbeat gần nhất |
 | `connectionCount` | `number` | no | `0` | ≥ 0 | Tổng số lần đã kết nối |
-| `owner` | `string` | auto | — | ObjectId (từ BaseSchema) | Org sở hữu agent |
-| `createdBy` | `string` | auto | — | ObjectId (từ BaseSchema) | User tạo |
-| `updatedBy` | `string` | auto | — | ObjectId (từ BaseSchema) | User cập nhật cuối |
+| `owner` | `object` | auto | — | `{ userId, orgId }` từ BaseSchema | Ownership info |
+| `createdBy` | `string` | auto | — | userId | User tạo |
+| `updatedBy` | `string` | auto | — | userId | User cập nhật cuối |
 | `deletedAt` | `Date` | auto | — | Soft delete | Null nếu chưa xóa |
 | `createdAt` | `Date` | auto | — | ISO 8601 | Thời điểm tạo |
 | `updatedAt` | `Date` | auto | — | ISO 8601 | Thời điểm cập nhật |
@@ -143,7 +147,48 @@ Object phẳng (flat) với các key theo prefix:
 
 ---
 
-### 1.5 Status States
+### 1.5 AgentVisibility — Kiểm soát hiển thị
+
+Quy định ai có thể thấy agent này khi gọi `GET /agents` hoặc `GET /agents/:id`.
+
+| Field | Type | Default | Ý nghĩa |
+|-------|------|---------|---------|
+| `mode` | `string` | `private` | Chế độ hiển thị: `private` `org` `restricted` |
+| `allowedUserIds` | `string[]` | `[]` | Danh sách userId được phép đọc (chỉ dùng khi `mode=restricted`) |
+| `allowedAgentIds` | `string[]` | `[]` | Danh sách agentId được phép đọc (chỉ dùng khi `mode=restricted`) |
+
+| Mode | Ai thấy được agent |
+|------|--------------------|
+| `private` *(default)* | Chỉ creator (owner.userId) và org.owner |
+| `org` | Tất cả thành viên trong cùng org |
+| `restricted` | Creator + org.owner + danh sách `allowedUserIds` / `allowedAgentIds` |
+
+**Quy tắc:**
+- `org.owner` và `universe.owner` luôn thấy mọi agent, bất kể visibility.
+- Chỉ **creator** hoặc **org.owner** mới được thay đổi `visibility` qua `PUT /agents/:id`.
+- Khi `mode` đổi từ `restricted` sang `private` hoặc `org`, cả `allowedUserIds` và `allowedAgentIds` tự xoá.
+- Agent authenticating với agent JWT dùng `agentId` để match `allowedAgentIds`.
+
+**Ví dụ:**
+
+```json
+// private — chỉ creator thấy (default)
+{ "mode": "private", "allowedUserIds": [], "allowedAgentIds": [] }
+
+// org — tất cả org member thấy (dùng cho portal chat)
+{ "mode": "org", "allowedUserIds": [], "allowedAgentIds": [] }
+
+// restricted — chỉ 2 user cụ thể + 1 agent thấy
+{
+  "mode": "restricted",
+  "allowedUserIds": ["683a1f2e4c5d6b7e8f9a0b1c", "683a1f2e4c5d6b7e8f9a0b1d"],
+  "allowedAgentIds": ["683a1f2e4c5d6b7e8f9a0b1e"]
+}
+```
+
+---
+
+### 1.6 Status States
 
 | Status | Ý nghĩa |
 |--------|---------|
@@ -185,6 +230,9 @@ Object phẳng (flat) với các key theo prefix:
 | `allowedToolIds` | `string[]` | no | `["64a1b2c3d4e5f6789012348"]` | Whitelist tool IDs |
 | `allowedFunctions` | `string[]` | no | `["Bash", "Read"]` | Whitelist function names |
 | `settings` | `object` | no | `{"claude_model": "claude-3-5-sonnet-latest"}` | Cấu hình runtime |
+| `visibility` | `object` | no | `{"mode": "private"}` | Visibility config (xem 1.5) |
+| `conversationMode` | `string` | no | `"per-user"` | `per-user` / `per-session` / `shared` |
+| `sessionTimeoutMs` | `number` | no | `1800000` | Timeout inactivity cho per-session mode (ms, min: 60000) |
 | `channels` | `ChannelConfig[]` | no | Xem 1.4 | Kênh Discord/Telegram (Không sử dụng với assistant) |
 
 **Response 201:**
@@ -207,11 +255,18 @@ Object phẳng (flat) với các key theo prefix:
   "allowedFunctions": [],
   "settings": {},
   "channels": [],
+  "visibility": {
+    "mode": "private",
+    "allowedUserIds": [],
+    "allowedAgentIds": []
+  },
+  "conversationMode": "per-user",
+  "sessionTimeoutMs": 1800000,
   "connectionCount": 0,
-  "owner": "64a000000000000000000001",
+  "owner": { "userId": "64a000000000000000000002", "orgId": "64a000000000000000000001" },
   "createdBy": "64a000000000000000000002",
-  "createdAt": "2026-03-11T08:00:00.000Z",
-  "updatedAt": "2026-03-11T08:00:00.000Z"
+  "createdAt": "2026-05-22T08:00:00.000Z",
+  "updatedAt": "2026-05-22T08:00:00.000Z"
 }
 ```
 
@@ -229,12 +284,17 @@ Object phẳng (flat) với các key theo prefix:
 
 **Auth**: User JWT
 
+> **Visibility filtering**: Kết quả tự động lọc theo `visibility` của từng agent:
+> - `org.owner` / `universe.owner`: thấy tất cả agent trong org.
+> - Các role khác (`editor`, `viewer`): chỉ thấy agent mà họ là creator, hoặc agent có `visibility.mode=org`, hoặc agent có `visibility.mode=restricted` và userId/agentId của họ nằm trong `allowedUserIds`/`allowedAgentIds`.
+
 **Query String:**
 
 | Param | Type | Ví dụ | Ý nghĩa |
 |-------|------|-------|---------|
 | `page` | `number` | `1` | Trang hiện tại (mặc định: 1) |
 | `limit` | `number` | `20` | Số bản ghi mỗi trang (mặc định: 20) |
+| `search` | `string` | `"support"` | Tìm theo name / description (regex, case-insensitive) |
 | `populate` | `string` | `instruction` | Populate relation: `instruction` |
 | `type` | `string` | `assistant` | Lọc theo type |
 | `status` | `string` | `idle` | Lọc theo status |
@@ -256,16 +316,18 @@ Object phẳng (flat) với các key theo prefix:
       "tags": ["support"],
       "allowedToolIds": [],
       "allowedFunctions": [],
-      "settings": {
-        "assistant_maxConcurrency": 5,
-        "assistant_maxSteps": 10
+      "visibility": {
+        "mode": "org",
+        "allowedUserIds": [],
+        "allowedAgentIds": []
       },
-      "channels": [],
+      "conversationMode": "per-user",
+      "sessionTimeoutMs": 1800000,
       "connectionCount": 12,
-      "lastConnectedAt": "2026-03-11T07:45:00.000Z",
-      "lastHeartbeatAt": "2026-03-11T07:59:30.000Z",
-      "createdAt": "2026-03-01T08:00:00.000Z",
-      "updatedAt": "2026-03-11T07:59:30.000Z"
+      "lastConnectedAt": "2026-05-22T07:45:00.000Z",
+      "lastHeartbeatAt": "2026-05-22T07:59:30.000Z",
+      "createdAt": "2026-05-01T08:00:00.000Z",
+      "updatedAt": "2026-05-22T07:59:30.000Z"
     }
   ],
   "total": 1,
@@ -336,7 +398,36 @@ Object phẳng (flat) với các key theo prefix:
 
 **Params:** `id` — Agent ID
 
-**Body:** Tương tự `CreateAgentDto`, tất cả field đều optional. Không thể thay đổi `type`.
+**Body:** Tất cả field đều optional. Không thể thay đổi `type`.
+
+> **Quyền cập nhật `visibility`**: Chỉ creator của agent hoặc `org.owner` mới được thay đổi field `visibility`. Caller khác truyền `visibility` sẽ nhận `403`.
+
+**Ví dụ — mở agent cho toàn org:**
+
+```json
+{
+  "visibility": { "mode": "org" }
+}
+```
+
+**Ví dụ — giới hạn chỉ 2 user cụ thể:**
+
+```json
+{
+  "visibility": {
+    "mode": "restricted",
+    "allowedUserIds": ["683a1f2e4c5d6b7e8f9a0b1c", "683a1f2e4c5d6b7e8f9a0b1d"]
+  }
+}
+```
+
+**Ví dụ — đặt lại private (tự xoá allowedUserIds/allowedAgentIds):**
+
+```json
+{
+  "visibility": { "mode": "private" }
+}
+```
 
 **Response 200:** Agent sau khi cập nhật (cấu trúc như 2.3).
 
@@ -345,6 +436,7 @@ Object phẳng (flat) với các key theo prefix:
 | Code | Tình huống |
 |------|------------|
 | `400` | Cố thay đổi `type` / validation lỗi |
+| `403` | Cố thay đổi `visibility` nhưng không phải creator hoặc org.owner |
 | `404` | Agent không tồn tại |
 
 ---
@@ -602,9 +694,9 @@ Object phẳng (flat) với các key theo prefix:
 | Use case | Method + URL | Auth |
 |----------|-------------|------|
 | Tạo agent | `POST /agents` | User JWT |
-| Danh sách agents | `GET /agents` | User JWT |
-| Chi tiết agent | `GET /agents/:id` | User JWT |
-| Cập nhật agent | `PUT /agents/:id` | User JWT |
+| Danh sách agents (visibility-aware) | `GET /agents` | User JWT |
+| Chi tiết agent (visibility-aware) | `GET /agents/:id` | User JWT |
+| Cập nhật agent / visibility | `PUT /agents/:id` | User JWT (creator hoặc org.owner cho visibility) |
 | Xóa agent | `DELETE /agents/:id` | User JWT |
 | Preview instruction | `GET /agents/:id/instruction` | User JWT |
 | Lấy config (engineer tự triển khai) | `GET /agents/:id/config` | User JWT |

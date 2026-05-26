@@ -1,6 +1,6 @@
 # Agent API — Frontend Integration
 
-> Last updated: 2026-02-24
+> Last updated: 2026-05-22
 > Base URL: `https://api.x-or.cloud/dev/aiwm`
 
 ---
@@ -17,16 +17,19 @@ Agent là một thực thể AI được quản lý bởi AIWM. Mỗi agent có 
 | `name` | string | ✅ | Tên agent |
 | `description` | string | ✅ | Mô tả agent |
 | `status` | enum | auto | Trạng thái hiện tại (xem mục 1.2) |
-| `type` | enum | ❌ | `'managed'` \| `'autonomous'` (default: `'autonomous'`) |
-| `framework` | enum | ❌ | `'claude-agent-sdk'` (default: `'claude-agent-sdk'`) |
+| `type` | enum | ❌ | `'engineer'` \| `'assistant'` (default: `'engineer'`) |
+| `framework` | enum | ❌ | `'claude-agent-sdk'` `'vercel-ai-sdk'` `'pi-agent-sdk'` (default: `'claude-agent-sdk'`) |
 | `instructionId` | string | ❌ | Ref tới Instruction — chỉ dẫn cho agent |
 | `guardrailId` | string | ❌ | Ref tới Guardrail — rào cản an toàn |
-| `deploymentId` | string | ❌ | Ref tới Deployment — cấu hình LLM (autonomous agents) |
-| `nodeId` | string | ❌* | Ref tới Node — node chạy agent (*bắt buộc cho managed) |
+| `deploymentId` | string | ❌ | Ref tới Deployment — cấu hình LLM (`engineer` tự triển khai hoặc `pi-agent-sdk`) |
+| `nodeId` | string | ❌* | Ref tới Node — node chạy agent (*bắt buộc cho `engineer` do hệ thống quản lý) |
 | `role` | enum | ❌ | RBAC role: `'organization.owner'` \| `'organization.editor'` \| `'organization.viewer'` (default: `'organization.viewer'`) |
 | `tags` | string[] | ❌ | Tags phân loại (default: `[]`) |
 | `allowedToolIds` | string[] | ❌ | Danh sách Tool IDs agent được phép sử dụng (default: `[]`) |
 | `settings` | object | ❌ | Cấu hình runtime — flat prefix structure (xem mục 1.3) |
+| `visibility` | object | ❌ | Kiểm soát ai thấy agent: `{ mode: 'private'\|'org'\|'restricted', allowedUserIds: [], allowedAgentIds: [] }` |
+| `conversationMode` | enum | ❌ | `'per-user'` \| `'per-session'` \| `'shared'` (default: `'per-user'`) |
+| `sessionTimeoutMs` | number | ❌ | Timeout inactivity ms cho `per-session` mode (default: `1800000`) |
 | `lastConnectedAt` | Date | auto | Thời điểm kết nối gần nhất |
 | `lastHeartbeatAt` | Date | auto | Thời điểm heartbeat gần nhất |
 | `connectionCount` | number | auto | Số lần kết nối (default: `0`) |
@@ -61,12 +64,12 @@ Agent là một thực thể AI được quản lý bởi AIWM. Mỗi agent có 
 
 | Type | Ý nghĩa | Khi nào dùng |
 |------|---------|-------------|
-| `managed` | Hệ thống deploy tới Node, quản lý lifecycle qua WebSocket | Discord/Telegram bot, background worker chạy trên infrastructure |
-| `autonomous` | User tự deploy theo hướng dẫn cài đặt + credentials | Agent tự triển khai trên máy chủ riêng |
+| `engineer` | Agent có quyền truy cập môi trường (bash, file system, v.v.). Nếu có `nodeId`: hệ thống deploy và quản lý lifecycle qua WebSocket. Nếu không: user tự triển khai. | Background worker, Discord/Telegram bot, agent tự triển khai trên máy chủ riêng |
+| `assistant` | Agent chạy in-process trong AIWM (`MODE=agt`). Không có quyền truy cập môi trường. | Chatbot hỗ trợ khách hàng, FAQ bot |
 
 - Type **không thể thay đổi** sau khi tạo.
 - Cả hai type đều có secret và đều dùng API connect.
-- Managed agents **bắt buộc** có `nodeId`.
+- `engineer` có `nodeId`: hệ thống quản lý lifecycle, bắt buộc node phải online khi tạo.
 
 ### 1.4 Settings — Cấu hình runtime
 
@@ -100,14 +103,15 @@ Endpoints có auth `User JWT` cần header `Authorization: Bearer <token>`.
 |--------|------|----------|-------|
 | `name` | string | ✅ | Tên agent |
 | `description` | string | ✅ | Mô tả |
-| `type` | enum | ❌ | `'managed'` \| `'autonomous'` (default: `'autonomous'`) |
+| `type` | enum | ❌ | `'engineer'` \| `'assistant'` (default: `'engineer'`) |
 | `framework` | enum | ❌ | `'claude-agent-sdk'` (default) |
 | `instructionId` | string | ❌ | ID instruction |
 | `guardrailId` | string | ❌ | ID guardrail |
-| `nodeId` | string | ❌* | ID node (*bắt buộc nếu type=managed) |
+| `nodeId` | string | ❌* | ID node (*bắt buộc nếu `engineer` do hệ thống quản lý) |
 | `tags` | string[] | ❌ | Tags |
 | `allowedToolIds` | string[] | ❌ | Tool IDs |
 | `settings` | object | ❌ | Cấu hình runtime |
+| `visibility` | object | ❌ | `{ mode: 'private'\|'org'\|'restricted', allowedUserIds?, allowedAgentIds? }` |
 
 > Không cần truyền `status` — hệ thống tự đặt `inactive`.
 > Không cần truyền `secret` — hệ thống tự sinh.
@@ -115,8 +119,8 @@ Endpoints có auth `User JWT` cần header `Authorization: Bearer <token>`.
 **Output:** Agent object (full entity).
 
 **Lưu ý:**
-- Nếu `type=managed`, hệ thống validate node phải online và có heartbeat trong 10 phút gần nhất.
-- Nếu `type=managed`, hệ thống gửi lệnh `agent.start` tới node qua WebSocket.
+- Nếu `type=engineer` có `nodeId`, hệ thống validate node phải online và gửi lệnh `agent.start` tới node qua WebSocket.
+- Nếu `type=assistant`, không cần `nodeId` / `framework`.
 
 ---
 
@@ -150,7 +154,7 @@ Endpoints có auth `User JWT` cần header `Authorization: Bearer <token>`.
   statistics: {
     total: number,
     byStatus: { inactive: N, idle: N, busy: N, suspended: N },
-    byType: { managed: N, autonomous: N },
+    byType: { engineer: N, assistant: N },
     byFramework: { 'claude-agent-sdk': N }
   }
 }
@@ -194,18 +198,20 @@ Endpoints có auth `User JWT` cần header `Authorization: Bearer <token>`.
 | `framework` | enum | Framework mới |
 | `instructionId` | string | Instruction mới |
 | `guardrailId` | string | Guardrail mới |
-| `deploymentId` | string | Deployment mới (autonomous) |
-| `nodeId` | string | Node mới (managed) |
+| `deploymentId` | string | Deployment mới (`engineer` tự triển khai) |
+| `nodeId` | string | Node mới (`engineer` do hệ thống quản lý) |
 | `role` | enum | RBAC role mới |
 | `tags` | string[] | Tags mới |
 | `allowedToolIds` | string[] | Tool IDs mới |
 | `settings` | object | Settings mới |
+| `visibility` | object | Visibility config — chỉ creator hoặc org.owner mới được thay đổi |
 
 **Output:** Agent object (đã cập nhật).
 
 **Lưu ý:**
 - **Không thể thay đổi `type`** — trả về 400 nếu cố thay đổi.
-- Nếu managed agent, hệ thống gửi `agent.update` tới node qua WebSocket.
+- Nếu `engineer` có `nodeId`, hệ thống gửi `agent.update` tới node qua WebSocket.
+- Thay đổi `visibility` yêu cầu caller là creator hoặc org.owner — trả về 403 nếu không.
 
 ---
 
@@ -368,6 +374,7 @@ Tất cả error trả về dạng:
 |--------|-----------|
 | 400 | Validation lỗi, cố thay đổi type, node không online, agent bị suspended (heartbeat) |
 | 401 | JWT không hợp lệ, secret sai, agent bị suspended (connect) |
+| 403 | Cố thay đổi `visibility` nhưng không phải creator hoặc org.owner |
 | 404 | Agent/Node không tồn tại |
 
 ---
@@ -376,7 +383,7 @@ Tất cả error trả về dạng:
 
 1. **Status hiển thị**: Chỉ hiển thị 4 trạng thái `inactive/idle/busy/suspended`. Không cần xử lý trạng thái `active` (đã loại bỏ).
 
-2. **Form tạo agent**: Không cần field `status` — hệ thống tự đặt `inactive`. Field `type` nên là radio button (managed/autonomous), mặc định autonomous.
+2. **Form tạo agent**: Không cần field `status` — hệ thống tự đặt `inactive`. Field `type` nên là radio button (`engineer`/`assistant`), mặc định `engineer`.
 
 3. **Type immutable**: Sau khi tạo, field `type` phải disable trên form edit. Hiển thị rõ ràng cho user biết không thể thay đổi.
 
@@ -387,3 +394,5 @@ Tất cả error trả về dạng:
 6. **Statistics**: Response từ GET `/agents` có sẵn `statistics` — dùng để hiển thị dashboard/filter counts mà không cần gọi API riêng.
 
 7. **Populate instruction**: Dùng `?populate=instruction` khi cần hiển thị chi tiết instruction trên trang detail agent, tránh dùng ở list page.
+
+8. **Visibility**: Portal chat dành cho `editor`/`viewer` chỉ cần list agent có `visibility.mode=org` hoặc `restricted` với userId/agentId của họ. Creator và org.owner thấy tất cả. Nút "Cấu hình visibility" chỉ hiển thị với creator/org.owner.
