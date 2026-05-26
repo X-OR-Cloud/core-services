@@ -948,6 +948,22 @@ export class DeploymentService extends BaseService<Deployment> {
     );
     const baseApiUrl = baseApiUrlConfig?.value || 'http://localhost:3003';
 
+    // Voice WS deployments: return VWS gateway URL instead of inference path
+    if ((model as any).type === 'voice' && (model as any).protocol === 'ws') {
+      const vwsBaseUrl = baseApiUrl.replace(/^http/, 'ws');
+      const url = `${vwsBaseUrl.replace(/\/+$/, '')}/voice`;
+      return {
+        url,
+        headers: { Authorization: 'Bearer <USER_JWT_TOKEN>' },
+        body: {
+          deploymentId,
+          toolSchemas: [],
+          systemInstruction: '<system_instruction>',
+        },
+        description: `Connect via WebSocket to the VWS gateway.\nSend a \`start\` event with deploymentId, toolSchemas, and systemInstruction.\nAudio chunks are relayed to Google Gemini Live API server-side.`,
+      };
+    }
+
     // Determine the inference path and sample body based on provider
     let aiProviderPath: string;
     let sampleBody: Record<string, any> = {};

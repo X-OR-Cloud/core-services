@@ -40,9 +40,13 @@ async function bootstrap() {
     const { bootstrapNodeWsServer } = await import('./bootstrap-node-ws');
     await bootstrapNodeWsServer();
   } else if (MODE === 'cws') {
-    // Chat WS mode - Standalone WebSocket server for chat clients (/, port 3402)
+    // Chat WS mode - Standalone WebSocket server for chat clients (/, port 3407)
     const { bootstrapChatWsServer } = await import('./bootstrap-chat-ws');
     await bootstrapChatWsServer();
+  } else if (MODE === 'vws') {
+    // Voice WS mode - Standalone WebSocket server for voice sessions (/, port 3410)
+    const { bootstrapVoiceWsServer } = await import('./bootstrap-voice-ws');
+    await bootstrapVoiceWsServer();
   } else {
     // API Server mode (default)
     const { bootstrapApiServer } = await import('./bootstrap-api');

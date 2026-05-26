@@ -188,6 +188,15 @@ export class CreateModelDto {
   // Common optional fields
 
   @ApiPropertyOptional({
+    description: 'Communication protocol for voice models',
+    enum: ['rest', 'ws'],
+    example: 'ws',
+  })
+  @IsOptional()
+  @IsEnum(['rest', 'ws'])
+  protocol?: string;
+
+  @ApiPropertyOptional({
     description: 'Access scope',
     enum: ['public', 'org', 'private'],
     example: 'public',
@@ -334,6 +343,15 @@ export class UpdateModelDto {
     'download-failed', 'deploy-failed', 'validating', 'invalid-credentials', 'error'
   ])
   status?: string;
+
+  @ApiPropertyOptional({
+    description: 'Communication protocol for voice models',
+    enum: ['rest', 'ws'],
+    example: 'ws',
+  })
+  @IsOptional()
+  @IsEnum(['rest', 'ws'])
+  protocol?: string;
 
   @ApiPropertyOptional({
     description: 'Access scope',

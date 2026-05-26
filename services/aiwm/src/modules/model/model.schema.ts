@@ -86,6 +86,10 @@ export class Model extends BaseSchema {
   // Example: { "apiKey": "sk-...", "organization": "org-...", "customHeader": "value" }
 
   // Access control
+  // Communication protocol for voice models
+  @Prop({ enum: ['rest', 'ws'] })
+  protocol?: string; // 'rest' = HTTP request/response (TTS/STT), 'ws' = realtime bidirectional (Gemini Live, OpenAI Realtime)
+
   @Prop({ required: true, enum: ['public', 'org', 'private'], default: 'public' })
   scope!: string;
 

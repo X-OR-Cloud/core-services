@@ -684,6 +684,38 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 10000,
     },
+    // ========== AIWM Voice WS Instances ==========
+    // vws = Voice WebSocket (/, port 3410)
+    // Single instance — voice sessions are point-to-point, no broadcast needed.
+    {
+      name: 'core.aiwm.vws00',
+      script: './dist/services/aiwm/main.js',
+      instances: 1,
+      exec_mode: 'cluster',
+      watch: false,
+      max_memory_restart: '500M',
+
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3410,
+        MODE: 'vws',
+        SERVICE_NAME: 'aiwm',
+      },
+
+      env_file: '.env',
+
+      error_file: './logs/aiwm-vws-00-error.log',
+      out_file: './logs/aiwm-vws-00-out.log',
+      merge_logs: true,
+
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+
+      kill_timeout: 5000,
+      wait_ready: true,
+      listen_timeout: 10000,
+    },
     // ========== AIWM Connection Worker Instances ==========
     // All instances compete for per-connection locks (con:lock:{connectionId}) — owner-per-connection pattern.
     // Failover: if con00 crashes, con01 health check claims unlocked connections within 45-75s.
