@@ -324,23 +324,30 @@ export class ToolService extends BaseService<Tool> {
       result.push({ tool: 'Framework', functions: frameworkFunctions });
     }
 
-    // 2. Lookup builtin tool functions from toolIds
+    // 2. Lookup functions from toolIds (builtin → hardcoded map, api → tool.functions[].name)
     if (dto.toolIds.length > 0) {
       const objectIds = dto.toolIds.map((id) => new Types.ObjectId(id));
       const tools = await this.toolModel
         .find({
           _id: { $in: objectIds },
-          type: 'builtin',
+          type: { $in: ['builtin', 'api'] },
           isDeleted: false,
         })
-        .select('name')
+        .select('name type functions')
         .lean()
         .exec();
 
       for (const tool of tools) {
-        const functions = BUILTIN_TOOL_FUNCTIONS[tool.name];
-        if (functions) {
-          result.push({ tool: tool.name, functions });
+        if ((tool as any).type === 'api') {
+          const fns: string[] = ((tool as any).functions ?? []).map((f: any) => f.name).filter(Boolean);
+          if (fns.length > 0) {
+            result.push({ tool: (tool as any).name, functions: fns });
+          }
+        } else {
+          const functions = BUILTIN_TOOL_FUNCTIONS[(tool as any).name];
+          if (functions) {
+            result.push({ tool: (tool as any).name, functions });
+          }
         }
       }
     }
