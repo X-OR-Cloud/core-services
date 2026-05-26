@@ -27,12 +27,12 @@ export class VoiceSession {
       callbacks: {
         onmessage: (msg: LiveServerMessage) => this.onGeminiMessage(msg),
         onerror: (err: ErrorEvent) => {
-          this.logger.error(`Gemini Live error: ${err.message}`);
+          this.logger.error(`[${this.socket.id}] Gemini error: ${err.message} | type=${err.type} | full=${JSON.stringify(err)}`);
           this.socket.emit('error', { message: 'Gemini Live connection error' });
         },
-        onclose: () => {
+        onclose: (evt: CloseEvent) => {
           if (!this.closed) {
-            this.logger.warn(`Gemini Live closed unexpectedly for socket ${this.socket.id}`);
+            this.logger.warn(`[${this.socket.id}] Gemini closed unexpectedly: code=${evt.code} reason=${evt.reason || '(none)'}`);
             this.socket.emit('error', { message: 'Gemini Live session closed' });
           }
         },
@@ -58,6 +58,7 @@ export class VoiceSession {
 
   sendToolResult(callId: string, name: string, result: unknown): void {
     if (!this.session) return;
+    this.logger.log(`[${this.socket.id}] sendToolResult: callId=${callId} name=${name} result=${JSON.stringify(result)}`);
     this.session.sendToolResponse({
       functionResponses: [{ id: callId, name, response: { output: result } }],
     });
@@ -80,7 +81,10 @@ export class VoiceSession {
   }
 
   private onGeminiMessage(msg: LiveServerMessage): void {
+    this.logger.debug(`[${this.socket.id}] gemini msg keys: ${Object.keys(msg).join(',')}`);
+
     if (msg.setupComplete) {
+      this.logger.log(`[${this.socket.id}] setup complete`);
       this.socket.emit('ready');
       return;
     }
@@ -97,17 +101,23 @@ export class VoiceSession {
     }
 
     if (msg.serverContent?.turnComplete) {
+      this.logger.log(`[${this.socket.id}] turn complete`);
       this.socket.emit('turn_complete');
     }
 
     if (msg.toolCall?.functionCalls) {
       for (const call of msg.toolCall.functionCalls) {
+        this.logger.log(`[${this.socket.id}] tool_call: id=${call.id} name=${call.name} args=${JSON.stringify(call.args)}`);
         this.socket.emit('tool_call', {
           callId: call.id,
           name: call.name,
           args: call.args ?? {},
         });
       }
+    }
+
+    if (msg.toolCallCancellation) {
+      this.logger.warn(`[${this.socket.id}] tool_call_cancellation: ${JSON.stringify(msg.toolCallCancellation)}`);
     }
   }
 }
