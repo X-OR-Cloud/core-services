@@ -56,10 +56,10 @@ export class VoiceSession {
     });
   }
 
-  sendToolResult(callId: string, result: unknown): void {
+  sendToolResult(callId: string, name: string, result: unknown): void {
     if (!this.session) return;
     this.session.sendToolResponse({
-      functionResponses: [{ id: callId, response: { output: result } }],
+      functionResponses: [{ id: callId, name, response: { output: result } }],
     });
   }
 

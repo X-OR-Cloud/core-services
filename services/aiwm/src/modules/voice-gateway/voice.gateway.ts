@@ -130,10 +130,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('tool_result')
   handleToolResult(
-    @MessageBody() dto: { callId: string; result: unknown },
+    @MessageBody() dto: { callId: string; name: string; result: unknown },
     @ConnectedSocket() client: Socket,
   ) {
-    this.sessions.get(client.id)?.sendToolResult(dto.callId, dto.result);
+    this.sessions.get(client.id)?.sendToolResult(dto.callId, dto.name, dto.result);
   }
 
   @SubscribeMessage('interrupt')
