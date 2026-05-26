@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { GoogleGenAI, Modality, FunctionCallingConfigMode, type LiveServerMessage } from '@google/genai';
+import { GoogleGenAI, Modality, type LiveServerMessage } from '@google/genai';
 import type { Socket } from 'socket.io';
 
 export interface VoiceSessionConfig {
@@ -40,9 +40,10 @@ export class VoiceSession {
       config: {
         systemInstruction: this.config.systemInstruction,
         tools: this.config.tools.length > 0 ? this.config.tools : undefined,
-        toolConfig: this.config.tools.length > 0 ? {
-          functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO },
-        } : undefined,
+        // toolConfig not yet typed in SDK v1.41.0 but supported by Gemini Live API
+        ...(this.config.tools.length > 0 && {
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        } as any),
         responseModalities: [Modality.AUDIO],
       },
     });
