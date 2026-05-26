@@ -44,7 +44,7 @@ export class VoiceSession {
         ...(this.config.tools.length > 0 && {
           toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
         } as any),
-        responseModalities: [Modality.AUDIO],
+        responseModalities: [Modality.AUDIO, Modality.TEXT],
       },
     });
   }
