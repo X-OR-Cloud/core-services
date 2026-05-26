@@ -40,7 +40,9 @@ export class VoiceSession {
       },
       config: {
         systemInstruction: this.config.systemInstruction,
-        tools: this.config.tools.length > 0 ? this.config.tools : undefined,
+        tools: this.config.tools.length > 0
+          ? [{ functionDeclarations: this.config.tools }]
+          : undefined,
         responseModalities: [Modality.AUDIO],
       },
     });
