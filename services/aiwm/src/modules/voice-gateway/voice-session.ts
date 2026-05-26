@@ -43,6 +43,10 @@ export class VoiceSession {
         tools: this.config.tools.length > 0
           ? [{ functionDeclarations: this.config.tools }]
           : undefined,
+        // toolConfig not in SDK types v1.41.0 but required by native audio model to actually emit tool calls
+        ...(this.config.tools.length > 0 && ({
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        } as any)),
         responseModalities: [Modality.AUDIO],
       },
     });
