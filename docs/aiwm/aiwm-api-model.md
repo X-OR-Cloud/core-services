@@ -4,7 +4,7 @@
 
 Model Management API cho phép quản lý các AI/ML models, bao gồm cả self-hosted models (chạy trên GPU nodes) và API-based models (forward requests tới external AI providers).
 
-**Base URL (Production):** `https://api.x-or.cloud/dev/aiwm`
+**Base URL (Production):** `https://xsai-api.x-or.cloud/aiwm`
 
 **Authentication:** Bearer Token (JWT)
 
@@ -129,9 +129,19 @@ active ↔ inactive (user toggle via activate/deactivate APIs)
 }
 ```
 
+**Optional fields (both deployment types):**
+
+```json
+{
+  "protocol": "rest | ws (optional, for voice models only)",
+  "scope": "public | org | private (optional, default: public)"
+}
+```
+
 **Notes:**
 - `name`: Include version in name (e.g., "GPT-4.1-2024-11-20", "Llama-3.1-8B")
 - `status`: Auto-initialized, không cần truyền khi tạo mới
+- `protocol`: Chỉ áp dụng cho voice models — `rest` = HTTP request/response (TTS/STT thông thường), `ws` = realtime bidirectional (Gemini Live, OpenAI Realtime)
 - `apiConfig`: Store API authentication and configuration as key-value pairs
 
 ### UpdateModelDto
@@ -228,7 +238,7 @@ Authorization: Bearer {JWT_TOKEN}
 
 **Request:**
 ```bash
-GET https://api.x-or.cloud/dev/aiwm/models?page=1&limit=10
+GET https://xsai-api.x-or.cloud/aiwm/models?page=1&limit=10
 ```
 
 **Response (200 OK):**
@@ -278,7 +288,7 @@ Authorization: Bearer {JWT_TOKEN}
 
 **Request:**
 ```bash
-GET https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234
+GET https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234
 ```
 
 **Response (200 OK):**
@@ -374,7 +384,7 @@ Authorization: Bearer {JWT_TOKEN}
 
 **Request:**
 ```bash
-DELETE https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234
+DELETE https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234
 ```
 
 **Response (200 OK):**
@@ -410,7 +420,7 @@ Authorization: Bearer {JWT_TOKEN}
 
 **Request:**
 ```bash
-POST https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234/activate
+POST https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234/activate
 ```
 
 **Response (200 OK):**
@@ -450,7 +460,7 @@ Authorization: Bearer {JWT_TOKEN}
 
 **Request:**
 ```bash
-POST https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234/deactivate
+POST https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234/deactivate
 ```
 
 **Response (200 OK):**
@@ -531,7 +541,7 @@ POST https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234/deactivate
 ### Example 1: Create Self-hosted Whisper Model for Voice Recognition
 
 ```bash
-curl -X POST https://api.x-or.cloud/dev/aiwm/models \
+curl -X POST https://xsai-api.x-or.cloud/aiwm/models \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -543,6 +553,7 @@ curl -X POST https://api.x-or.cloud/dev/aiwm/models \
     "framework": "triton",
     "fileName": "model.bin",
     "fileSize": 3000000000,
+    "protocol": "rest",
     "scope": "org"
   }'
 ```
@@ -550,7 +561,7 @@ curl -X POST https://api.x-or.cloud/dev/aiwm/models \
 ### Example 2: Create API-based Claude Model
 
 ```bash
-curl -X POST https://api.x-or.cloud/dev/aiwm/models \
+curl -X POST https://xsai-api.x-or.cloud/aiwm/models \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -573,7 +584,7 @@ curl -X POST https://api.x-or.cloud/dev/aiwm/models \
 
 ```bash
 # Get all active LLM models
-curl -X GET "https://api.x-or.cloud/dev/aiwm/models?page=1&limit=20" \
+curl -X GET "https://xsai-api.x-or.cloud/aiwm/models?page=1&limit=20" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -581,7 +592,7 @@ curl -X GET "https://api.x-or.cloud/dev/aiwm/models?page=1&limit=20" \
 
 ```bash
 # Activate a model after deployment
-curl -X POST https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234/activate \
+curl -X POST https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234/activate \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -589,7 +600,7 @@ curl -X POST https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234/act
 
 ```bash
 # Update API keys for API-based model
-curl -X PUT https://api.x-or.cloud/dev/aiwm/models/67891234abcd5678ef901234 \
+curl -X PUT https://xsai-api.x-or.cloud/aiwm/models/67891234abcd5678ef901234 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
