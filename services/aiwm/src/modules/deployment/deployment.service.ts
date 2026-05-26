@@ -140,10 +140,17 @@ export class DeploymentService extends BaseService<Deployment> {
       createData.status = 'running';
     }
 
-    // 3. Create deployment
+    // 3. Inject model metadata for quick access without joining model collection
+    createData.metadata = {
+      ...createData.metadata,
+      modelType: model.type,
+      modelProtocol: (model as any).protocol ?? null,
+    };
+
+    // 4. Create deployment
     const deployment = await super.create(createData, context);
 
-    // 4. Emit event to queue for monitoring/logging
+    // 5. Emit event to queue for monitoring/logging
     // TODO: Uncomment when queue processors are ready
     // await this.deploymentProducer.emitDeploymentCreated(deployment);
 
