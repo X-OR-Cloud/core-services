@@ -18,8 +18,6 @@ import {
   ApiReadErrors,
   ApiUpdateErrors,
   ApiDeleteErrors,
-  RequireUniverseRole,
-  UniverseRoleGuard,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
 import { Types } from 'mongoose';
@@ -35,8 +33,7 @@ export class ToolController {
   @Post()
   @ApiOperation({ summary: 'Create a new tool' })
   @ApiCreateErrors()
-  @RequireUniverseRole()
-  @UseGuards(JwtAuthGuard, UniverseRoleGuard)
+  @UseGuards(JwtAuthGuard)
   async create(
     @Body() createToolDto: CreateToolDto,
     @CurrentUser() context: RequestContext
@@ -85,8 +82,7 @@ export class ToolController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update tool by ID' })
   @ApiUpdateErrors()
-  @RequireUniverseRole()
-  @UseGuards(JwtAuthGuard, UniverseRoleGuard)
+  @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
     @Body() updateToolDto: UpdateToolDto,
@@ -98,8 +94,7 @@ export class ToolController {
   @Delete(':id')
   @ApiOperation({ summary: 'Soft delete tool by ID' })
   @ApiDeleteErrors()
-  @RequireUniverseRole()
-    @UseGuards(JwtAuthGuard, UniverseRoleGuard)
+  @UseGuards(JwtAuthGuard)
   async remove(
     @Param('id') id: string,
     @CurrentUser() context: RequestContext

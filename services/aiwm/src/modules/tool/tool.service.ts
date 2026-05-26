@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -173,6 +173,26 @@ export class ToolService extends BaseService<Tool> {
     super(toolModel);
   }
 
+  private assertCanManageTool(toolType: string, context: RequestContext): void {
+    const isUniverse = context.roles?.some((r) => String(r).startsWith('universe.'));
+    if (isUniverse) return;
+
+    const canManage = context.roles?.some(
+      (r) => r === 'organization.owner' || r === 'organization.editor'
+    );
+    if (!canManage) {
+      throw new ForbiddenException('Insufficient permissions to manage tools');
+    }
+    if (toolType === 'builtin') {
+      throw new ForbiddenException('Built-in tools cannot be created, updated, or deleted');
+    }
+  }
+
+  async create(createData: any, context: RequestContext): Promise<Partial<Tool>> {
+    this.assertCanManageTool(createData.type, context);
+    return super.create(createData, context);
+  }
+
   /**
    * Helper method to check if tool is being used by active agents
    * @param toolId - Tool ID to check
@@ -197,16 +217,20 @@ export class ToolService extends BaseService<Tool> {
     }));
   }
 
-  /**
-   * Override update method to validate status changes
-   * Prevents deactivating tools that are in use by active agents
-   */
   async update(
     id: ObjectId,
     updateData: Partial<Tool>,
     context: RequestContext
   ): Promise<Partial<Tool>> {
-    // Check if status is being changed to 'inactive'
+    const existing = await this.toolModel
+      .findOne({ _id: id, isDeleted: false })
+      .select('type')
+      .lean()
+      .exec();
+    if (!existing) throw new NotFoundException(`Tool not found`);
+
+    this.assertCanManageTool((existing as any).type, context);
+
     if (updateData.status === 'inactive') {
       const activeAgents = await this.checkActiveAgentDependencies(id);
       if (activeAgents.length > 0) {
@@ -214,24 +238,27 @@ export class ToolService extends BaseService<Tool> {
       }
     }
 
-    // Call parent update method
     return super.update(id, updateData, context);
   }
 
-  /**
-   * Override softDelete method to validate dependencies
-   * Prevents deleting tools that are in use by active agents
-   */
   async softDelete(
     id: ObjectId,
     context: RequestContext
   ): Promise<Partial<Tool>> {
+    const existing = await this.toolModel
+      .findOne({ _id: id, isDeleted: false })
+      .select('type')
+      .lean()
+      .exec();
+    if (!existing) throw new NotFoundException(`Tool not found`);
+
+    this.assertCanManageTool((existing as any).type, context);
+
     const activeAgents = await this.checkActiveAgentDependencies(id);
     if (activeAgents.length > 0) {
       throw new ToolInUseException(activeAgents, 'delete');
     }
 
-    // Call parent softDelete method
     return super.softDelete(id, context);
   }
 
