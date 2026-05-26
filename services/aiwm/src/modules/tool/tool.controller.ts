@@ -13,7 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import {
   JwtAuthGuard,
   CurrentUser,
-  PaginationQueryDto,
+  parseQueryString,
   ApiCreateErrors,
   ApiReadErrors,
   ApiUpdateErrors,
@@ -62,10 +62,10 @@ export class ToolController {
   @ApiReadErrors({ notFound: false })
   @UseGuards(JwtAuthGuard)
   async findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: Record<string, any>,
     @CurrentUser() context: RequestContext
   ) {
-    return this.toolService.findAll(query, context);
+    return this.toolService.findAll(parseQueryString(query), context);
   }
 
   @Get(':id')
