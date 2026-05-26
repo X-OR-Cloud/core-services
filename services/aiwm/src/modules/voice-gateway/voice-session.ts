@@ -20,6 +20,7 @@ export class VoiceSession {
   ) {}
 
   async init(): Promise<void> {
+    this.logger.log(`[${this.socket.id}] init: model=${this.config.modelIdentifier} tools=${this.config.tools.length > 0 ? JSON.stringify(this.config.tools) : 'none'}`);
     const ai = new GoogleGenAI({ apiKey: this.config.apiKey });
 
     this.session = await ai.live.connect({
@@ -40,11 +41,7 @@ export class VoiceSession {
       config: {
         systemInstruction: this.config.systemInstruction,
         tools: this.config.tools.length > 0 ? this.config.tools : undefined,
-        // toolConfig not yet typed in SDK v1.41.0 but supported by Gemini Live API
-        ...(this.config.tools.length > 0 && {
-          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-        } as any),
-        responseModalities: [Modality.AUDIO, Modality.TEXT],
+        responseModalities: [Modality.AUDIO],
       },
     });
   }
