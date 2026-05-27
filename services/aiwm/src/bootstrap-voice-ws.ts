@@ -8,6 +8,8 @@ import { RedisIoAdapter } from './modules/chat/redis-io.adapter';
 export async function bootstrapVoiceWsServer() {
   const app = await NestFactory.create<NestExpressApplication>(VoiceGatewayModule);
 
+  app.enableCors({ origin: '*' });
+
   const redisIoAdapter = new RedisIoAdapter(app);
   await redisIoAdapter.connectToRedis();
   app.useWebSocketAdapter(redisIoAdapter);
