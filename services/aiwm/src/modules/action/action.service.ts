@@ -137,7 +137,7 @@ export class ActionService extends BaseService<Action> {
     const limit = Math.min(options.limit ?? 50, 100);
     const page = options.page ?? 1;
     const typeFilter =
-      options.includeInternal ?? true
+      options.includeInternal ?? false
         ? {}
         : { type: { $in: ['message', 'notice'] } };
 

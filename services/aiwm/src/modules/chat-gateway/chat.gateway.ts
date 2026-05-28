@@ -1082,9 +1082,7 @@ export class ChatWsGateway
         includeInternal,
       });
 
-      const messages = result.data.filter((action: any) => action.type === 'message');
-
-      const data_ = messages.map((action: any) => {
+      const data_ = result.data.map((action: any) => {
         const isAgentActor = action.actor?.role === 'agent';
         return {
           _id: action._id?.toString(),
