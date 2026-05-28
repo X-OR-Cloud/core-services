@@ -182,10 +182,24 @@ export class DocumentRtcService implements OnModuleDestroy {
   }
 
   /**
+   * Mark a document as just-committed for a short TTL window. Called by
+   * commitDraft so that any Hocuspocus onStoreDocument debounce still in
+   * flight after the commit is silently dropped, preventing the stale
+   * in-memory Y.Doc from restoring a draftState that was intentionally cleared.
+   */
+  async markCommitted(docId: string): Promise<void> {
+    await this.connect();
+    await this.redis.set(`doc-committed:${docId}`, '1', 'EX', 10);
+  }
+
+  /**
    * Convenience helper used by Hocuspocus hooks: decode a Y.Doc into a Yjs
-   * update blob, then delegate to saveDraftState.
+   * update blob, then delegate to saveDraftState. Skips if a commit lock is
+   * active to avoid the post-commit race condition.
    */
   async persistYDoc(docId: string, yDoc: Y.Doc): Promise<void> {
+    const locked = await this.redis.exists(`doc-committed:${docId}`).catch(() => 0);
+    if (locked) return;
     const state = Y.encodeStateAsUpdate(yDoc);
     await this.saveDraftState(docId, state);
   }

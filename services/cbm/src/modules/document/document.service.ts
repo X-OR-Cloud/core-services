@@ -573,6 +573,12 @@ export class DocumentService extends BaseService<Document> {
       };
     }
 
+    if (body.content.trim() === '') {
+      throw new BadRequestException(
+        'Cannot commit empty content. The editor may not have finished loading — please retry.',
+      );
+    }
+
     const docIdStr = id.toString();
 
     // Extract references + diff orphans against the existing content
@@ -595,7 +601,7 @@ export class DocumentService extends BaseService<Document> {
           draftState: null,
           draftUpdatedAt: null,
           hasActiveDraft: false,
-          updatedBy: context,
+          updatedBy: context.agentId || context.userId,
         },
         { new: true },
       )
@@ -612,6 +618,14 @@ export class DocumentService extends BaseService<Document> {
           this.logger.warn(`Failed to soft-delete orphaned attachments: ${err.message}`),
         );
     }
+
+    // Block any Hocuspocus onStoreDocument debounce still in flight from
+    // restoring the stale Y.Doc into draftState after this commit.
+    await this.rtcService
+      .markCommitted(docIdStr)
+      .catch((err) =>
+        this.logger.warn(`Failed to set commit lock: ${err.message}`),
+      );
 
     // Notify cbm:rtc so live clients can reload fresh content
     await this.rtcService
