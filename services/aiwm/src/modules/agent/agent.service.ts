@@ -988,6 +988,8 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
     // Use override for preview if provided, otherwise use stored systemPrompt
     const corePrompt = systemPromptOverride ?? instruction.systemPrompt;
 
+    const agentId = (agent as any)._id.toString();
+
     // Resolve @project:<id> and @document:<id> references if token available
     let contextBlocks: string[] = [];
     if (accessToken) {
@@ -996,10 +998,21 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
         accessToken,
         agent.owner.orgId
       );
+
+      // Auto-inject simplified context for projects where agent is lead
+      const manualProjectIds = new Set(
+        [...corePrompt.matchAll(/@project:([a-f0-9]{24})/g)].map((m) => m[1])
+      );
+      const leadBlocks = await this.resolveLeadProjectContexts(
+        agentId,
+        accessToken,
+        agent.owner.orgId,
+        manualProjectIds
+      );
+      contextBlocks = [...contextBlocks, ...leadBlocks];
     }
 
     const tools = await this.getAllowedTools(agent);
-    const agentId = (agent as any)._id.toString();
 
     const hasMemory = tools.some((t) => t.name === 'MemoryManagement');
     const memorySummaries = hasMemory
@@ -1106,28 +1119,43 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
           const endDate = data.endDate
             ? new Date(data.endDate).toISOString().split('T')[0]
             : 'N/A';
-          // Fetch related documents (published) for this project
+          // Fetch related documents (published + total count) for this project
           let documentsBlock = '';
           try {
-            const docsUrl = `${cbmBaseUrl}/documents?projectId=${refId}&status=published&limit=100`;
-            this.logger.debug(
-              `Fetching documents for project ${refId} from ${docsUrl}`
-            );
-            const docsResponse = await firstValueFrom(
-              this.httpService.get(docsUrl, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              })
-            );
-            const docsData = (docsResponse as any).data;
-            const docs = docsData?.data || docsData?.items || [];
-            if (docs.length > 0) {
+            const [publishedRes, totalRes] = await Promise.all([
+              firstValueFrom(
+                this.httpService.get(
+                  `${cbmBaseUrl}/documents?projectId=${refId}&status=published&limit=100`,
+                  { headers: { Authorization: `Bearer ${accessToken}` } }
+                )
+              ),
+              firstValueFrom(
+                this.httpService.get(
+                  `${cbmBaseUrl}/documents?projectId=${refId}&limit=1`,
+                  { headers: { Authorization: `Bearer ${accessToken}` } }
+                )
+              ),
+            ]);
+            const docs =
+              (publishedRes as any).data?.data ||
+              (publishedRes as any).data?.items ||
+              [];
+            const totalData = (totalRes as any).data;
+            const totalCount =
+              totalData?.total ??
+              totalData?.pagination?.total ??
+              totalData?.meta?.total ??
+              docs.length;
+            if (docs.length > 0 || totalCount > 0) {
               const docsList = docs
                 .map(
                   (doc: any) =>
                     `  - \`${doc._id || doc.id}\`: ${doc.summary || 'Untitled'}`
                 )
                 .join('\n');
-              documentsBlock = `\n- Published Documents** (${docs.length}):\n${docsList}`;
+              documentsBlock =
+                `\n- Published Documents (${docs.length} published trong tổng ${totalCount} document):` +
+                (docsList ? `\n${docsList}` : '');
             }
           } catch (docError: any) {
             this.logger.warn(
@@ -1201,6 +1229,104 @@ export class AgentService extends BaseService<Agent> implements OnModuleDestroy 
             })`
         );
       }
+    }
+
+    return contextBlocks;
+  }
+
+  /**
+   * Auto-inject simplified context for projects where the agent is a lead.
+   * Skips projects already covered by manual @project:<id> refs (alreadyInjectedIds).
+   */
+  private async resolveLeadProjectContexts(
+    agentId: string,
+    accessToken: string,
+    orgId: string,
+    alreadyInjectedIds: Set<string>
+  ): Promise<string[]> {
+    let cbmBaseUrl = process.env.CBM_BASE_URL || 'http://localhost:3004';
+    try {
+      const cbmConfig = await this.configurationService.findByKey(
+        ConfigKey.CBM_BASE_API_URL as any,
+        { orgId } as RequestContext
+      );
+      if (cbmConfig?.value) cbmBaseUrl = cbmConfig.value;
+    } catch {
+      // Fallback to default
+    }
+
+    let projects: any[] = [];
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(
+          `${cbmBaseUrl}/projects?member=agent:${agentId}&limit=100`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+      );
+      const resData = (res as any).data;
+      projects = resData?.data || resData?.items || [];
+    } catch (err: any) {
+      this.logger.warn(
+        `resolveLeadProjectContexts: failed to fetch projects for agent ${agentId}: ${err.message}`
+      );
+      return [];
+    }
+
+    // Keep only projects where this agent's role is project.lead
+    const leadProjects = projects.filter((p: any) => {
+      const members: Array<{ type: string; id: string; role: string }> =
+        p.members || [];
+      return members.some(
+        (m) =>
+          m.type === 'agent' &&
+          m.id === agentId &&
+          m.role === 'project.lead'
+      );
+    });
+
+    const contextBlocks: string[] = [];
+
+    for (const project of leadProjects) {
+      const projectId = (project._id || project.id)?.toString();
+      if (!projectId || alreadyInjectedIds.has(projectId)) continue;
+
+      const memberCount = (project.members || []).length;
+
+      // Fetch published count + total count in parallel
+      let publishedCount = 0;
+      let totalCount = 0;
+      try {
+        const [publishedRes, totalRes] = await Promise.all([
+          firstValueFrom(
+            this.httpService.get(
+              `${cbmBaseUrl}/documents?projectId=${projectId}&status=published&limit=1`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            )
+          ),
+          firstValueFrom(
+            this.httpService.get(
+              `${cbmBaseUrl}/documents?projectId=${projectId}&limit=1`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            )
+          ),
+        ]);
+        const pd = (publishedRes as any).data;
+        const td = (totalRes as any).data;
+        publishedCount =
+          pd?.total ?? pd?.pagination?.total ?? pd?.meta?.total ?? 0;
+        totalCount =
+          td?.total ?? td?.pagination?.total ?? td?.meta?.total ?? 0;
+      } catch {
+        // Leave counts at 0 if fetch fails
+      }
+
+      contextBlocks.push(
+        `[Auto] Project: ${project.name}\n` +
+          `- ID: ${projectId}\n` +
+          `- Summary: ${project.summary || project.description || 'N/A'}\n` +
+          `- Members: ${memberCount}\n` +
+          `- Documents: ${publishedCount} published trong tổng ${totalCount} document`
+      );
     }
 
     return contextBlocks;
