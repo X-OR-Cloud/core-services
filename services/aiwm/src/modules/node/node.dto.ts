@@ -90,9 +90,9 @@ export class ApproveNodeDto {
 }
 
 export class SetupGuideDto {
-  @ApiProperty({ description: 'Target OS', enum: ['ubuntu'], example: 'ubuntu' })
+  @ApiProperty({ description: 'Target OS', enum: ['ubuntu', 'docker'], example: 'ubuntu' })
   @IsString()
-  @IsEnum(['ubuntu'])
+  @IsEnum(['ubuntu', 'docker'])
   os: string;
 }
 
@@ -108,6 +108,10 @@ export class SetupGuideResponseDto {
 
   @ApiProperty({ description: 'Setup token expiry (24h from now)' })
   setupTokenExpiresAt: Date;
+
+  @ApiProperty({ description: 'Generated shell script content (docker OS only)', required: false })
+  @IsOptional()
+  scriptContent?: string;
 }
 
 export class NodeBootstrapDto {
