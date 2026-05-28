@@ -109,6 +109,10 @@ export class SetupGuideResponseDto {
   @ApiProperty({ description: 'Setup token expiry (24h from now)' })
   setupTokenExpiresAt: Date;
 
+  @ApiProperty({ description: 'Script filename for download (docker OS only)', required: false })
+  @IsOptional()
+  fileName?: string;
+
   @ApiProperty({ description: 'Generated shell script content (docker OS only)', required: false })
   @IsOptional()
   scriptContent?: string;

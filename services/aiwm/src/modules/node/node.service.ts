@@ -225,7 +225,7 @@ export class NodeService extends BaseService<Node> {
         `5. Setup token is valid for 24 hours and single-use. If the container is deleted, generate a new setup guide.`,
       ];
       this.logger.log('Setup guide generated (docker)', { nodeId: id, requestedBy: context.userId, expiresAt });
-      return { os, installCommand, instructions, setupTokenExpiresAt: expiresAt, scriptContent };
+      return { os, installCommand, instructions, setupTokenExpiresAt: expiresAt, fileName: 'start-xnode.sh', scriptContent };
     }
 
     const installCommand = `curl -fsSL ${SETUP_SCRIPT_URL} | bash -s -- ${setupToken}`;
