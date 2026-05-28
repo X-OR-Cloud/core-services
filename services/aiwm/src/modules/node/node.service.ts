@@ -279,7 +279,7 @@ CONTAINER_NAME="xnode"
 IMAGE="${DOCKER_IMAGE}"
 
 AIWM_API_BASE_URL="${apiBaseUrl}"
-AIWM_WS_BASE_URL="${wsBaseUrl}"
+AIWM_WS_BASE_URL="${wsBaseUrl}/node"
 MONA_API_BASE_URL="${monaBaseUrl}"
 RELEASES_URL="${RELEASES_URL}"
 LOG_LEVEL="info"
@@ -410,7 +410,7 @@ metadata:
 data:
   SETUP_TOKEN:        "${setupToken}"
   AIWM_API_BASE_URL:  "${apiBaseUrl}"
-  AIWM_WS_BASE_URL:   "${wsBaseUrl}"
+  AIWM_WS_BASE_URL:   "${wsBaseUrl}/node"
   MONA_API_BASE_URL:  "${monaBaseUrl}"
   RELEASES_URL:       "${RELEASES_URL}"
   XNODE_RUNTIME:      "process"
