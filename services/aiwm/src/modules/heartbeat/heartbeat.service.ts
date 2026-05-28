@@ -9,6 +9,7 @@ import { AgentHeartbeatDto } from '../agent/agent.dto';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { ConfigKey } from '../configuration/enums/config-key.enum';
 import { RequestContext } from '@hydrabyte/shared';
+import { InstructionBuilderService } from '../instruction-builder/instruction-builder.service';
 
 @Injectable()
 export class HeartbeatService {
@@ -18,6 +19,7 @@ export class HeartbeatService {
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly httpService: HttpService,
     private readonly configurationService: ConfigurationService,
+    private readonly instructionBuilderService: InstructionBuilderService,
   ) {}
 
   async heartbeat(
@@ -40,6 +42,7 @@ export class HeartbeatService {
       title?: string;
       reminders?: { id: string; content: string }[];
     };
+    instruction?: { id: string; systemPrompt: string };
   }> {
     const agent = await this.agentModel
       .findOne({ _id: new Types.ObjectId(agentId), isDeleted: false })
@@ -119,25 +122,29 @@ export class HeartbeatService {
         };
       } | null = null;
 
-      try {
-        const workResult = await this.getNextWorkForAgent(
-          agentId,
-          accessToken,
-          agent.owner?.orgId,
-          {
-            mcpConnected: heartbeatDto.mcpConnected,
-            availableFunctions: heartbeatDto.availableFunctions,
-          },
-        );
-        if (workResult) {
-          resolved = {
-            work: workResult.work,
-            systemMessage: workResult.systemMessage,
-            systemTask: workResult.systemTask,
-          };
-        }
-      } catch (error: any) {
-        this.logger.warn(`Failed to query next work for agent ${agentId}: ${error.message}`);
+      const [workResult, instruction] = await Promise.allSettled([
+        this.getNextWorkForAgent(agentId, accessToken, agent.owner?.orgId, {
+          mcpConnected: heartbeatDto.mcpConnected,
+          availableFunctions: heartbeatDto.availableFunctions,
+        }),
+        this.instructionBuilderService.buildInstructionForAgent(agent, accessToken),
+      ]);
+
+      if (workResult.status === 'rejected') {
+        this.logger.warn(`Failed to query next work for agent ${agentId}: ${workResult.reason?.message}`);
+      } else if (workResult.value) {
+        resolved = {
+          work: workResult.value.work,
+          systemMessage: workResult.value.systemMessage,
+          systemTask: workResult.value.systemTask,
+        };
+      }
+
+      const instructionPayload =
+        instruction.status === 'fulfilled' ? instruction.value : undefined;
+
+      if (instruction.status === 'rejected') {
+        this.logger.warn(`Failed to build instruction for agent ${agentId}: ${instruction.reason?.message}`);
       }
 
       if (resolved) {
@@ -150,6 +157,7 @@ export class HeartbeatService {
           ...(resolved.work ? { work: resolved.work } : {}),
           systemMessage: resolved.systemMessage,
           systemTask: resolved.systemTask,
+          ...(instructionPayload ? { instruction: instructionPayload } : {}),
         };
       }
 
@@ -159,6 +167,11 @@ export class HeartbeatService {
           { $set: { currentTask: null } },
         );
       }
+
+      return {
+        success: true,
+        ...(instructionPayload ? { instruction: instructionPayload } : {}),
+      };
     }
 
     return { success: true };

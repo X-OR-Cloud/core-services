@@ -6,6 +6,7 @@ import { Configuration, ConfigurationSchema } from '../configuration/configurati
 import { ConfigurationService } from '../configuration/configuration.service';
 import { IamOrgService } from '../configuration/iam-org.service';
 import { HeartbeatService } from './heartbeat.service';
+import { InstructionBuilderModule } from '../instruction-builder/instruction-builder.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { HeartbeatService } from './heartbeat.service';
       { name: Configuration.name, schema: ConfigurationSchema },
     ]),
     HttpModule.register({ timeout: 10000, maxRedirects: 3 }),
+    InstructionBuilderModule,
   ],
   providers: [HeartbeatService, ConfigurationService, IamOrgService],
   exports: [HeartbeatService],
