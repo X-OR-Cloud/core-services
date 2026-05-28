@@ -90,9 +90,9 @@ export class ApproveNodeDto {
 }
 
 export class SetupGuideDto {
-  @ApiProperty({ description: 'Target OS', enum: ['ubuntu', 'docker'], example: 'ubuntu' })
+  @ApiProperty({ description: 'Target OS', enum: ['ubuntu', 'docker', 'kubernetes'], example: 'ubuntu' })
   @IsString()
-  @IsEnum(['ubuntu', 'docker'])
+  @IsEnum(['ubuntu', 'docker', 'kubernetes'])
   os: string;
 }
 
@@ -113,9 +113,9 @@ export class SetupGuideResponseDto {
   @IsOptional()
   fileName?: string;
 
-  @ApiProperty({ description: 'Generated shell script content (docker OS only)', required: false })
+  @ApiProperty({ description: 'Generated file content to download (docker: .sh, kubernetes: .yaml)', required: false })
   @IsOptional()
-  scriptContent?: string;
+  fileContent?: string;
 }
 
 export class NodeBootstrapDto {
