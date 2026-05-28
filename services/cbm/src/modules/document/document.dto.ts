@@ -250,16 +250,25 @@ export class UpdateContentDto {
  */
 export class CreateShareLinkDto {
   @ApiPropertyOptional({
-    description: 'Time-to-live in seconds (default: 3600 = 1 hour)',
+    description: 'Time-to-live in seconds (default: 3600 = 1 hour). Min 60s, max 30 days.',
     example: 3600,
     default: 3600,
     minimum: 60,
-    maximum: 86400,
+    maximum: 2592000,
   })
   @IsOptional()
   @IsNumber()
   @Min(60)
-  @Max(86400)
+  @Max(2592000)
   @Type(() => Number)
   ttl?: number;
+}
+
+/**
+ * DTO for revoking a share link
+ */
+export class RevokeShareLinkDto {
+  @ApiProperty({ description: 'The shareId to revoke', example: 'xK9mP2aQ3b' })
+  @IsString()
+  shareId!: string;
 }

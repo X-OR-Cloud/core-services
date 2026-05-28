@@ -13,8 +13,6 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   Res,
-  HttpException,
-  HttpStatus,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -31,7 +29,6 @@ import {
   parseQueryString,
 } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Types } from 'mongoose';
 import { Response } from 'express';
@@ -82,7 +79,6 @@ export class DocumentController {
   constructor(
     private readonly documentService: DocumentService,
     private readonly fileService: FileService,
-    private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -221,20 +217,11 @@ export class DocumentController {
     @Body() dto: CreateShareLinkDto,
     @CurrentUser() context: RequestContext,
   ) {
-    const document = await this.documentService.findById(
-      new Types.ObjectId(id) as any,
-      context,
-    );
-
-    if (!document) {
-      throw new NotFoundException(`Document with ID ${id} not found`);
-    }
-
     const ttl = dto.ttl || 3600;
-
-    const token = this.jwtService.sign(
-      { documentId: id, purpose: 'document-share' },
-      { expiresIn: ttl },
+    const { shareId, expiresAt } = await this.documentService.createShareLink(
+      new Types.ObjectId(id) as any,
+      ttl,
+      context,
     );
 
     const port = this.configService.get<string>('PORT') || '3004';
@@ -242,47 +229,57 @@ export class DocumentController {
       this.configService.get<string>('CBM_BASE_URL') || `http://localhost:${port}`;
 
     return {
-      token,
-      url: `${baseUrl}/documents/shared/${token}`,
-      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+      shareId,
+      url: `${baseUrl}/documents/shared/${shareId}`,
+      expiresAt: expiresAt.toISOString(),
     };
   }
 
-  @Get('shared/:token')
+  @Delete(':id/share/:shareId')
+  @ApiOperation({ summary: 'Revoke a share link' })
+  @ApiDeleteErrors()
+  @UseGuards(JwtAuthGuard)
+  async revokeShareLink(
+    @Param('id') id: string,
+    @Param('shareId') shareId: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    await this.documentService.revokeShareLink(
+      new Types.ObjectId(id) as any,
+      shareId,
+      context,
+    );
+    return { revoked: true, shareId };
+  }
+
+  @Get(':id/shares')
+  @ApiOperation({ summary: 'List all share links for a document' })
+  @ApiReadErrors()
+  @UseGuards(JwtAuthGuard)
+  async listShareLinks(
+    @Param('id') id: string,
+    @CurrentUser() context: RequestContext,
+  ) {
+    return this.documentService.listShareLinks(
+      new Types.ObjectId(id) as any,
+      context,
+    );
+  }
+
+  @Get('shared/:shareId')
   @ApiOperation({
-    summary: 'View shared document via share token (public, no auth required)',
+    summary: 'View shared document via shareId (public, no auth required)',
   })
   @ApiResponse({ status: 200, description: 'Document content returned' })
-  @ApiResponse({ status: 410, description: 'Share link has expired' })
-  @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({ status: 403, description: 'Share link expired or revoked' })
+  @ApiResponse({ status: 404, description: 'Share link or document not found' })
   async viewShared(
-    @Param('token') token: string,
-    @Query('render') render: string, // raw → trả raw content; mặc định render HTML
+    @Param('shareId') shareId: string,
+    @Query('render') render: string,
     @Res() res: Response,
   ) {
-    let payload: { documentId: string; purpose: string };
-    try {
-      payload = this.jwtService.verify(token);
-    } catch (error: any) {
-      if (error.name === 'TokenExpiredError') {
-        throw new HttpException('Share link has expired', HttpStatus.GONE);
-      }
-      throw new HttpException('Invalid share token', HttpStatus.BAD_REQUEST);
-    }
+    const document = await this.documentService.findByShareId(shareId);
 
-    if (payload.purpose !== 'document-share') {
-      throw new HttpException('Invalid share token', HttpStatus.BAD_REQUEST);
-    }
-
-    const document = await this.documentService.findByIdForShare(
-      new Types.ObjectId(payload.documentId) as any,
-    );
-
-    if (!document) {
-      throw new NotFoundException('Document not found');
-    }
-
-    // raw=true → trả raw content, mặc định render HTML
     const isRaw = render === 'raw';
 
     if (isRaw) {
@@ -297,7 +294,6 @@ export class DocumentController {
       res.send(document.content);
     } else {
       let bodyHtml: string;
-
       switch (document.type) {
         case 'markdown':
           bodyHtml = await marked.parse(document.content);
@@ -309,7 +305,6 @@ export class DocumentController {
           bodyHtml = `<pre>${escapeHtml(document.content)}</pre>`;
           break;
       }
-
       const html = wrapInHtmlPage(document.summary, bodyHtml);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);

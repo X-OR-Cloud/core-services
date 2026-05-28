@@ -3,8 +3,10 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { customAlphabet } from 'nanoid';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId, Types } from 'mongoose';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
@@ -639,6 +641,136 @@ export class DocumentService extends BaseService<Document> {
       committed: true,
       message: 'Draft committed successfully.',
     };
+  }
+
+  // ─── Share link management ────────────────────────────────────────────────
+
+  private generateShareId = customAlphabet(
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+    12,
+  );
+
+  /**
+   * Create a new share link entry stored inside the document's shareLinks array.
+   * Prunes expired/revoked entries lazily before inserting so the array stays lean.
+   */
+  async createShareLink(
+    id: ObjectId,
+    ttl: number,
+    context: RequestContext,
+  ): Promise<{ shareId: string; expiresAt: Date }> {
+    const doc = await this.findById(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+    assertCanWriteDocument(doc, project, context);
+
+    const shareId = this.generateShareId();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttl * 1000);
+    const createdBy = context.agentId || context.userId || 'unknown';
+
+    const ownerFilter: any = { _id: id, isDeleted: false };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
+
+    await this.documentModel.updateOne(ownerFilter, {
+      // Prune stale entries + push new one atomically
+      $pull: { shareLinks: { $or: [{ expiresAt: { $lt: now } }, { revokedAt: { $ne: null } }] } },
+    });
+    await this.documentModel.updateOne(ownerFilter, {
+      $push: { shareLinks: { id: shareId, expiresAt, createdAt: now, createdBy, revokedAt: null } },
+    });
+
+    return { shareId, expiresAt };
+  }
+
+  /**
+   * Revoke a share link by setting revokedAt. Only the document's write-access
+   * holders can revoke.
+   */
+  async revokeShareLink(
+    id: ObjectId,
+    shareId: string,
+    context: RequestContext,
+  ): Promise<void> {
+    const doc = await this.findById(id, context);
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const project = (doc as any).projectId
+      ? await this.projectService.getRawProjectById((doc as any).projectId.toString())
+      : null;
+    assertCanWriteDocument(doc, project, context);
+
+    const ownerFilter: any = { _id: id, isDeleted: false, 'shareLinks.id': shareId };
+    if (context.orgId) ownerFilter['owner.orgId'] = context.orgId;
+
+    const result = await this.documentModel.updateOne(ownerFilter, {
+      $set: { 'shareLinks.$.revokedAt': new Date() },
+    });
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException(`Share link ${shareId} not found on document ${id}`);
+    }
+  }
+
+  /**
+   * List all share links for a document (active, expired, revoked).
+   * Used by the portal to manage shares.
+   */
+  async listShareLinks(
+    id: ObjectId,
+    context: RequestContext,
+  ): Promise<Array<{ shareId: string; expiresAt: Date; createdAt: Date; createdBy: string; revokedAt: Date | null; status: string }>> {
+    const doc = await this.documentModel
+      .findOne({ _id: id, isDeleted: false, ...(context.orgId ? { 'owner.orgId': context.orgId } : {}) })
+      .select('shareLinks')
+      .lean()
+      .exec();
+
+    if (!doc) throw new NotFoundException(`Document with ID ${id} not found`);
+
+    const now = new Date();
+    return ((doc as any).shareLinks || []).map((link: any) => ({
+      shareId: link.id,
+      expiresAt: link.expiresAt,
+      createdAt: link.createdAt,
+      createdBy: link.createdBy,
+      revokedAt: link.revokedAt ?? null,
+      status: link.revokedAt
+        ? 'revoked'
+        : link.expiresAt < now
+          ? 'expired'
+          : 'active',
+    }));
+  }
+
+  /**
+   * Find a document by its shareId for public access.
+   * Validates the link is active and not expired/revoked.
+   */
+  async findByShareId(
+    shareId: string,
+  ): Promise<Document> {
+    const doc = await this.documentModel
+      .findOne({ 'shareLinks.id': shareId, isDeleted: false })
+      .lean()
+      .exec();
+
+    if (!doc) throw new NotFoundException('Share link not found or document does not exist');
+
+    const link = (doc as any).shareLinks?.find((l: any) => l.id === shareId);
+    if (!link) throw new NotFoundException('Share link not found');
+
+    if (link.revokedAt) {
+      throw new ForbiddenException('This share link has been revoked');
+    }
+    if (link.expiresAt < new Date()) {
+      throw new ForbiddenException('This share link has expired');
+    }
+
+    return doc as Document;
   }
 
   /**

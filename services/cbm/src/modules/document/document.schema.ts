@@ -94,6 +94,30 @@ export class Document extends BaseSchema {
   @Prop({ type: Boolean, default: false })
   hasActiveDraft!: boolean;
 
+  /**
+   * Share links created for this document. Each entry is an opaque short ID
+   * that can be looked up without auth. Expired or revoked entries are kept
+   * for audit trail and pruned lazily on next createShareLink call.
+   */
+  @Prop({
+    type: [{
+      id: { type: String, required: true },
+      expiresAt: { type: Date, required: true },
+      createdAt: { type: Date, required: true },
+      createdBy: { type: String, required: true },
+      revokedAt: { type: Date, default: null },
+    }],
+    default: [],
+    _id: false,
+  })
+  shareLinks!: Array<{
+    id: string;
+    expiresAt: Date;
+    createdAt: Date;
+    createdBy: string;
+    revokedAt: Date | null;
+  }>;
+
   // BaseSchema provides: owner, createdBy, updatedBy, deletedAt, metadata, timestamps
   // _id is automatically provided by MongoDB
 }
@@ -109,3 +133,4 @@ DocumentSchema.index({ projectId: 1 }); // Filter by project
 DocumentSchema.index({ 'attachments.fileId': 1 });
 DocumentSchema.index({ 'mentions.kind': 1, 'mentions.id': 1 });
 DocumentSchema.index({ hasActiveDraft: 1 });
+DocumentSchema.index({ 'shareLinks.id': 1 }, { sparse: true }); // Lookup by shareId
