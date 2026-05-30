@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import Redis from 'ioredis';
 import { BaseService, FindManyOptions, FindManyResult } from '@hydrabyte/base';
 import { RequestContext } from '@hydrabyte/shared';
+import { buildRedisConfig } from '../../config/redis.config';
 import { Conversation, ConversationDocument } from './conversation.schema';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
@@ -19,6 +21,16 @@ import {
   SlaAction,
 } from '../../core/sla.helper';
 
+export interface ConvSummary {
+  id: string;
+  num: number;
+  title: string;
+  summary: string;
+  lastMessage: { content: string; role: string; createdAt: Date } | null;
+  updatedAt: Date;
+  isCurrent: boolean;
+}
+
 @Injectable()
 export class ConversationService extends BaseService<Conversation> {
   protected readonly logger = new Logger(ConversationService.name);
@@ -31,6 +43,141 @@ export class ConversationService extends BaseService<Conversation> {
     private readonly utilService: UtilService,
   ) {
     super(conversationModel as any);
+  }
+
+  // ── Redis pin helpers ──────────────────────────────────────────────────────
+
+  private _redis: Redis | null = null;
+  private get redis(): Redis {
+    if (!this._redis) this._redis = new Redis(buildRedisConfig());
+    return this._redis;
+  }
+
+  private _pinKey(orgId: string, agentId: string, userId: string): string {
+    return `cnv:pin:${orgId}:${agentId}:${userId}`;
+  }
+
+  async getPinnedConversationId(orgId: string, agentId: string, userId: string): Promise<string | null> {
+    return this.redis.get(this._pinKey(orgId, agentId, userId));
+  }
+
+  async setPinnedConversationId(orgId: string, agentId: string, userId: string, convId: string): Promise<void> {
+    await this.redis.set(this._pinKey(orgId, agentId, userId), convId);
+  }
+
+  // ── Scope builder ──────────────────────────────────────────────────────────
+
+  // shared mode lists all convs for (orgId, agentId); others scope by userId
+  private _buildScope(orgId: string, agentId: string, userId: string, mode: AgentConversationMode): Record<string, unknown> {
+    if (mode === 'shared') return { 'owner.orgId': orgId, agentId };
+    return { 'owner.orgId': orgId, agentId, userId };
+  }
+
+  // ── Conversation management ────────────────────────────────────────────────
+
+  /**
+   * List recent conversations for a user+agent, ordered newest-first.
+   * Assigns positional `num` based on canonical sort (createdAt asc, _id asc).
+   */
+  async listConversations(params: {
+    orgId: string;
+    agentId: string;
+    userId: string;
+    mode: AgentConversationMode;
+    limit?: number;
+    currentConvId?: string;
+  }): Promise<ConvSummary[]> {
+    const { orgId, agentId, userId, mode, limit = 10, currentConvId } = params;
+    const scope = this._buildScope(orgId, agentId, userId, mode);
+    const filter = { ...scope, isDeleted: false };
+
+    const [total, convs] = await Promise.all([
+      this.model.countDocuments(filter),
+      this.model.find(filter).sort({ createdAt: -1, _id: -1 }).limit(Math.min(limit, 20)).lean().exec(),
+    ]);
+
+    return (convs as any[]).map((c, i) => ({
+      id: c._id.toString(),
+      num: total - i,
+      title: c.title || '',
+      summary: c.contextSummary || (c.lastMessage?.content?.substring(0, 100) ?? ''),
+      lastMessage: c.lastMessage ?? null,
+      updatedAt: c.updatedAt,
+      isCurrent: c._id.toString() === currentConvId,
+    }));
+  }
+
+  /**
+   * Create a new conversation and set it as the pinned conversation for the user.
+   */
+  async createAndPin(params: {
+    orgId: string;
+    agentId: string;
+    userId: string;
+    mode: AgentConversationMode;
+    userType: 'authenticated' | 'anonymous';
+  }): Promise<{ conv: Conversation; num: number }> {
+    const { orgId, agentId, userId, userType } = params;
+
+    const newConv = await this.model.create({
+      title: `Conversation with agent ${agentId}`,
+      agentId,
+      userId,
+      userType,
+      conversationType: 'chat',
+      status: 'active',
+      totalTokens: 0,
+      totalMessages: 0,
+      totalCost: 0,
+      participants: [
+        { type: 'user' as const, id: userId, joined: new Date() },
+        { type: 'agent' as const, id: agentId, joined: new Date() },
+      ],
+      owner: { orgId, userId: userType === 'authenticated' ? userId : '', groupId: '', agentId, appId: '' },
+      createdBy: userId || agentId,
+      updatedBy: userId || agentId,
+    });
+
+    const convId = (newConv as any)._id.toString();
+    await this.setPinnedConversationId(orgId, agentId, userId, convId);
+
+    const scope = this._buildScope(orgId, agentId, userId, params.mode);
+    const total = await this.model.countDocuments({ ...scope, isDeleted: false });
+
+    this.logger.log(`createAndPin: new conv ${convId} #${total} for user ${userId} agent ${agentId}`);
+    return { conv: newConv as Conversation, num: total };
+  }
+
+  /**
+   * Find conversation at position `num` (1-based, canonical sort) and pin it for the user.
+   */
+  async pinByPosition(params: {
+    orgId: string;
+    agentId: string;
+    userId: string;
+    mode: AgentConversationMode;
+    num: number;
+  }): Promise<Conversation> {
+    const { orgId, agentId, userId, mode, num } = params;
+    if (num < 1) throw new Error('Conversation number must be a positive integer');
+
+    const scope = this._buildScope(orgId, agentId, userId, mode);
+    const filter = { ...scope, isDeleted: false };
+
+    const conv = await this.model
+      .findOne(filter)
+      .sort({ createdAt: 1, _id: 1 })
+      .skip(num - 1)
+      .lean()
+      .exec();
+
+    if (!conv) throw new Error(`Conversation #${num} not found`);
+
+    const convId = (conv as any)._id.toString();
+    await this.setPinnedConversationId(orgId, agentId, userId, convId);
+
+    this.logger.log(`pinByPosition: pinned conv ${convId} #${num} for user ${userId} agent ${agentId}`);
+    return conv as Conversation;
   }
 
   async findAll(options: FindManyOptions, context: RequestContext): Promise<FindManyResult<Conversation>> {
@@ -428,6 +575,19 @@ export class ConversationService extends BaseService<Conversation> {
     userType: 'authenticated' | 'anonymous';
   }): Promise<Conversation> {
     const { orgId, agentId, userId, mode, sessionTimeoutMs, userType } = params;
+
+    // Check Redis pin first — personal override for all modes
+    const pinnedId = await this.getPinnedConversationId(orgId, agentId, userId);
+    if (pinnedId) {
+      const pinned = await this.model.findOne({ _id: pinnedId, isDeleted: false }).lean().exec();
+      if (pinned) {
+        this.logger.debug(`resolveConversation: using pinned conv ${pinnedId} for user ${userId}`);
+        return pinned as Conversation;
+      }
+      // Stale pin — remove and fall through to mode logic
+      await this.redis.del(this._pinKey(orgId, agentId, userId));
+      this.logger.debug(`resolveConversation: removed stale pin ${pinnedId} for user ${userId}`);
+    }
 
     if (mode === 'shared') {
       return this.findOrCreateAgentShared(orgId, agentId);

@@ -10,6 +10,9 @@ import { AgentService } from '../agent/agent.service';
 export interface ResolvedRoute {
   agentId: string;
   conversationId: string;
+  conversationUserId: string;
+  conversationMode: import('../agent/agent.schema').AgentConversationMode;
+  userType: 'authenticated' | 'anonymous';
   actor: Actor;
   iamUserId?: string;
   iamUsername?: string;
@@ -91,6 +94,9 @@ export class RoutingService {
       resolved: {
         agentId: route.agentId,
         conversationId: String((conversation as any)._id),
+        conversationUserId,
+        conversationMode,
+        userType: iamUserType,
         actor,
         iamUserId,
         iamUsername,
