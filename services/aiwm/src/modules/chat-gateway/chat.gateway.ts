@@ -17,7 +17,7 @@ import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { buildRedisConfig } from '../../config/redis.config';
 import { ChatService } from '../chat/chat.service';
-import { ConversationService } from '../conversation/conversation.service';
+import { ConversationService, ConvSummary } from '../conversation/conversation.service';
 import { HeartbeatService } from '../heartbeat/heartbeat.service';
 import { ActionService } from '../action/action.service';
 import { ActionType, ActorRole } from '../action/action.enum';
@@ -80,6 +80,9 @@ export class ChatWsGateway
     socket.on('conversation:online',  wrap((d, s) => this.handleGetOnlineUsers(d, s)));
     socket.on('agent:heartbeat',      wrap((d, s) => this.handleHeartbeat(d, s)));
     socket.on('channel:send',         wrap((d, s) => this.handleChannelSend(d, s)));
+    socket.on('conv:list',            wrap((d, s) => this.handleConvList(d, s)));
+    socket.on('conv:new',             wrap((d, s) => this.handleConvNew(d, s)));
+    socket.on('conv:switch',          wrap((d, s) => this.handleConvSwitch(d, s)));
   }
   // END TODO
 
@@ -1267,6 +1270,114 @@ export class ChatWsGateway
     }
 
     return payload;
+  }
+
+  // ── Conversation switch helpers ────────────────────────────────────────────
+
+  private async _switchConversationRoom(client: Socket, newConvId: string, agentId: string): Promise<void> {
+    const oldConvId = client.data.conversationId;
+    if (oldConvId && oldConvId !== newConvId) {
+      await client.leave(`conversation:${oldConvId}`);
+      await this.chatService.removeSocketFromConversation(oldConvId, client.id);
+      await this.chatService.leaveConversation(oldConvId, client.data.userId || client.data.agentId);
+    }
+    await this._joinConversationRoom(client, newConvId, agentId);
+  }
+
+  // ── conv:list / conv:new / conv:switch ─────────────────────────────────────
+
+  @SubscribeMessage('conv:list')
+  async handleConvList(
+    @MessageBody() data: { limit?: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const { orgId, userId, agentId, conversationId: currentConvId } = client.data;
+      if (!agentId) return { success: false, error: 'No agent associated with this session' };
+
+      const agent = await this.agentModel.findOne({ _id: agentId, isDeleted: false }).lean();
+      const mode = (agent as any)?.conversationMode ?? 'per-user';
+
+      const conversations: ConvSummary[] = await this.conversationService.listConversations({
+        orgId, agentId, userId, mode, limit: data?.limit, currentConvId,
+      });
+
+      client.emit('conv:list', { conversations });
+      return { success: true };
+    } catch (err: any) {
+      this.logger.error('Error handling conv:list:', err.message);
+      client.emit('conv:error', { code: 'CONV_LIST_FAILED', message: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+
+  @SubscribeMessage('conv:new')
+  async handleConvNew(
+    @MessageBody() _data: unknown,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const { orgId, userId, agentId } = client.data;
+      if (!agentId) return { success: false, error: 'No agent associated with this session' };
+
+      const agent = await this.agentModel.findOne({ _id: agentId, isDeleted: false }).lean();
+      const mode = (agent as any)?.conversationMode ?? 'per-user';
+      const userType: 'authenticated' | 'anonymous' = client.data.type === 'anonymous' ? 'anonymous' : 'authenticated';
+
+      const { conv, num } = await this.conversationService.createAndPin({
+        orgId, agentId, userId, mode, userType,
+      });
+
+      const newConvId = (conv as any)._id.toString();
+      await this._switchConversationRoom(client, newConvId, agentId);
+
+      const result = { conversationId: newConvId, num, title: (conv as any).title || '' };
+      client.emit('conv:new', result);
+      return { success: true, ...result };
+    } catch (err: any) {
+      this.logger.error('Error handling conv:new:', err.message);
+      client.emit('conv:error', { code: 'CONV_NEW_FAILED', message: err.message });
+      return { success: false, error: err.message };
+    }
+  }
+
+  @SubscribeMessage('conv:switch')
+  async handleConvSwitch(
+    @MessageBody() data: { num: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const { orgId, userId, agentId } = client.data;
+      if (!agentId) return { success: false, error: 'No agent associated with this session' };
+
+      const agent = await this.agentModel.findOne({ _id: agentId, isDeleted: false }).lean();
+      const mode = (agent as any)?.conversationMode ?? 'per-user';
+
+      let conv: any;
+      try {
+        conv = await this.conversationService.pinByPosition({
+          orgId, agentId, userId, mode, num: data.num,
+        });
+      } catch (err: any) {
+        client.emit('conv:error', { code: 'CONV_NOT_FOUND', message: err.message });
+        return { success: false, error: err.message };
+      }
+
+      const newConvId = conv._id.toString();
+      await this._switchConversationRoom(client, newConvId, agentId);
+
+      const result = {
+        conversationId: newConvId,
+        num: data.num,
+        title: conv.title || '',
+        summary: conv.contextSummary || (conv.lastMessage?.content?.substring(0, 100) ?? ''),
+      };
+      client.emit('conv:switch', result);
+      return { success: true, ...result };
+    } catch (err: any) {
+      this.logger.error('Error handling conv:switch:', err.message);
+      return { success: false, error: err.message };
+    }
   }
 
   private async _validateAndTouchAnonymousToken(agentId: string, tokenId: string): Promise<boolean> {

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { ConnectionService, CHANNEL_CONNECTION_CHANGED, ConnectionChangedPayload } from '../connection/connection.service';
 import { ActionService } from '../action/action.service';
 import { RoutingService } from './routing.service';
+import { ConversationService } from '../conversation/conversation.service';
 import { ConnectionRunner, OutboundHandler } from './connection-runner';
 import { ConnectionLockService } from './connection-lock.service';
 import { buildRedisConfig } from '../../config/redis.config';
@@ -43,6 +44,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly connectionService: ConnectionService,
     private readonly actionService: ActionService,
     private readonly routingService: RoutingService,
+    private readonly conversationService: ConversationService,
     private readonly lockService: ConnectionLockService,
   ) {}
 
@@ -308,6 +310,7 @@ export class ConnectionWorkerService implements OnModuleInit, OnModuleDestroy {
         connection,
         this.actionService,
         this.routingService,
+        this.conversationService,
         (conversationId, handler, verboseActions, verboseLogsChannelId) => {
           this.outboundHandlers.set(conversationId, handler);
           this.conversationConnectionId.set(conversationId, id);

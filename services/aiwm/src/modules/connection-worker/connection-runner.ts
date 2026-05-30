@@ -4,7 +4,8 @@ import Redis from 'ioredis';
 import { Connection, ConnectionLogLevel } from '../connection/connection.schema';
 import { ActionService } from '../action/action.service';
 import { ActionType } from '../action/action.enum';
-import { RoutingService } from './routing.service';
+import { RoutingService, ResolvedRoute } from './routing.service';
+import { ConversationService } from '../conversation/conversation.service';
 import { BaseAdapter, EmbedPayload, FilePayload, NormalizedAttachment, NormalizedInbound } from './adapters/base.adapter';
 import { DiscordAdapter } from './adapters/discord.adapter';
 import { TelegramAdapter } from './adapters/telegram.adapter';
@@ -29,6 +30,7 @@ export class ConnectionRunner {
     private readonly connection: Connection,
     private readonly actionService: ActionService,
     private readonly routingService: RoutingService,
+    private readonly conversationService: ConversationService,
     private readonly onOutbound: (conversationId: string, handler: OutboundHandler, verboseActions?: string[], verboseLogsChannelId?: string) => void,
     private readonly offOutbound: (conversationId: string) => void,
     private readonly onAgentJoinRoom: (agentId: string, conversationId: string) => void,
@@ -186,6 +188,12 @@ export class ConnectionRunner {
       if (slashMatch) {
         const command = slashMatch[1].toLowerCase();
         const rest = slashMatch[2]?.trim();
+        if (command === 'conv') {
+          const responseText = await this._handleConvCommand(rest, resolved, orgId);
+          await this.sendResponse(chatDest, responseText, threadId, teamsServiceUrl, teamsConversationId);
+          this.writeLog('info', `/conv command handled`, { rest, conversationId: resolved.conversationId });
+          return;
+        }
         if (['stop', 'start', 'restart', 'update', 'reload', 'inspect', 'sleep', 'wake'].includes(command)) {
           // Ensure outbound handler is registered and trigger platform is current so the
           // response routes back to this platform (not a stale Portal session).
@@ -278,6 +286,47 @@ export class ConnectionRunner {
     } catch (err: any) {
       this.logger.error(`Failed to handle inbound message: ${err.message}`, err.stack);
       this.writeLog('error', `Failed to handle inbound message: ${err.message}`);
+    }
+  }
+
+  private async _handleConvCommand(rest: string | undefined, resolved: ResolvedRoute, orgId: string): Promise<string> {
+    const { agentId, conversationUserId, conversationMode, userType, conversationId } = resolved;
+
+    if (!rest) {
+      // /conv — list 10 recent conversations
+      const convs = await this.conversationService.listConversations({
+        orgId, agentId, userId: conversationUserId, mode: conversationMode, limit: 10, currentConvId: conversationId,
+      });
+      if (convs.length === 0) return 'Chưa có conversation nào.';
+      const lines = convs.map(c => {
+        const mark = c.isCurrent ? ' ✅' : '   ';
+        const preview = c.summary ? ` — ${c.summary.substring(0, 50)}` : '';
+        return `#${c.num}${mark}${preview}`;
+      });
+      return `📋 Conversations:\n${lines.join('\n')}\n\nDùng /conv new để tạo mới, /conv <số> để chuyển.`;
+    }
+
+    if (rest === 'new') {
+      // /conv new — create new conversation and pin
+      const { num } = await this.conversationService.createAndPin({
+        orgId, agentId, userId: conversationUserId, mode: conversationMode, userType,
+      });
+      return `✅ Đã tạo conversation mới #${num} và chuyển sang đây.`;
+    }
+
+    // /conv <num> — switch to conversation by position
+    const num = parseInt(rest, 10);
+    if (isNaN(num) || num < 1) {
+      return '❌ /conv chỉ nhận số nguyên dương (vd: /conv 2)';
+    }
+    try {
+      const conv = await this.conversationService.pinByPosition({
+        orgId, agentId, userId: conversationUserId, mode: conversationMode, num,
+      });
+      const title = (conv as any).title || `conversation #${num}`;
+      return `✅ Đã chuyển sang conversation #${num} — "${title}"`;
+    } catch (err: any) {
+      return `❌ ${err.message}`;
     }
   }
 
