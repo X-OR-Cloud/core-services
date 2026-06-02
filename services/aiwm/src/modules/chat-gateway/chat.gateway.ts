@@ -1313,7 +1313,7 @@ export class ChatWsGateway
 
   @SubscribeMessage('conv:new')
   async handleConvNew(
-    @MessageBody() _data: unknown,
+    @MessageBody() data: { title?: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
@@ -1325,7 +1325,7 @@ export class ChatWsGateway
       const userType: 'authenticated' | 'anonymous' = client.data.type === 'anonymous' ? 'anonymous' : 'authenticated';
 
       const { conv, num } = await this.conversationService.createAndPin({
-        orgId, agentId, userId, mode, userType,
+        orgId, agentId, userId, mode, userType, title: data?.title?.trim() || undefined,
       });
 
       const newConvId = (conv as any)._id.toString();
@@ -1343,7 +1343,7 @@ export class ChatWsGateway
 
   @SubscribeMessage('conv:switch')
   async handleConvSwitch(
-    @MessageBody() data: { num: number },
+    @MessageBody() data: { num: number; title?: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
@@ -1356,7 +1356,7 @@ export class ChatWsGateway
       let conv: any;
       try {
         conv = await this.conversationService.pinByPosition({
-          orgId, agentId, userId, mode, num: data.num,
+          orgId, agentId, userId, mode, num: data.num, title: data?.title?.trim() || undefined,
         });
       } catch (err: any) {
         client.emit('conv:error', { code: 'CONV_NOT_FOUND', message: err.message });

@@ -109,6 +109,7 @@ export class ConversationService extends BaseService<Conversation> {
 
   /**
    * Create a new conversation and set it as the pinned conversation for the user.
+   * Optional `title` overrides the default generated title.
    */
   async createAndPin(params: {
     orgId: string;
@@ -116,11 +117,12 @@ export class ConversationService extends BaseService<Conversation> {
     userId: string;
     mode: AgentConversationMode;
     userType: 'authenticated' | 'anonymous';
+    title?: string;
   }): Promise<{ conv: Conversation; num: number }> {
-    const { orgId, agentId, userId, userType } = params;
+    const { orgId, agentId, userId, userType, title } = params;
 
     const newConv = await this.model.create({
-      title: `Conversation with agent ${agentId}`,
+      title: title || `Conversation with agent ${agentId}`,
       agentId,
       userId,
       userType,
@@ -150,6 +152,7 @@ export class ConversationService extends BaseService<Conversation> {
 
   /**
    * Find conversation at position `num` (1-based, canonical sort) and pin it for the user.
+   * Optional `title` renames the conversation in DB.
    */
   async pinByPosition(params: {
     orgId: string;
@@ -157,8 +160,9 @@ export class ConversationService extends BaseService<Conversation> {
     userId: string;
     mode: AgentConversationMode;
     num: number;
+    title?: string;
   }): Promise<Conversation> {
-    const { orgId, agentId, userId, mode, num } = params;
+    const { orgId, agentId, userId, mode, num, title } = params;
     if (num < 1) throw new Error('Conversation number must be a positive integer');
 
     const scope = this._buildScope(orgId, agentId, userId, mode);
@@ -176,7 +180,12 @@ export class ConversationService extends BaseService<Conversation> {
     const convId = (conv as any)._id.toString();
     await this.setPinnedConversationId(orgId, agentId, userId, convId);
 
-    this.logger.log(`pinByPosition: pinned conv ${convId} #${num} for user ${userId} agent ${agentId}`);
+    if (title) {
+      await this.model.findByIdAndUpdate(convId, { $set: { title } }).exec();
+      (conv as any).title = title;
+    }
+
+    this.logger.log(`pinByPosition: pinned conv ${convId} #${num} for user ${userId} agent ${agentId}${title ? ` title="${title}"` : ''}`);
     return conv as Conversation;
   }
 
