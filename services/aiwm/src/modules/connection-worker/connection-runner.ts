@@ -301,30 +301,36 @@ export class ConnectionRunner {
       const lines = convs.map(c => {
         const mark = c.isCurrent ? ' ✅' : '   ';
         const preview = c.summary ? ` — ${c.summary.substring(0, 50)}` : '';
-        return `#${c.num}${mark}${preview}`;
+        return `#${c.num}${mark} ${c.title}${preview}`;
       });
-      return `📋 Conversations:\n${lines.join('\n')}\n\nDùng /conv new để tạo mới, /conv <số> để chuyển.`;
+      return `📋 Conversations:\n${lines.join('\n')}\n\nDùng /conv new hoặc /conv new:<tên> để tạo mới, /conv <số> hoặc /conv <số>:<tên> để chuyển.`;
     }
 
-    if (rest === 'new') {
-      // /conv new — create new conversation and pin
+    // Parse "new" hoặc "new:<title>"
+    if (rest === 'new' || rest.startsWith('new:')) {
+      const title = rest.startsWith('new:') ? rest.slice(4).trim() : undefined;
       const { num } = await this.conversationService.createAndPin({
-        orgId, agentId, userId: conversationUserId, mode: conversationMode, userType,
+        orgId, agentId, userId: conversationUserId, mode: conversationMode, userType, title,
       });
-      return `✅ Đã tạo conversation mới #${num} và chuyển sang đây.`;
+      const label = title ? `"${title}"` : `#${num}`;
+      return `✅ Đã tạo conversation mới ${label} (#${num}) và chuyển sang đây.`;
     }
 
-    // /conv <num> — switch to conversation by position
-    const num = parseInt(rest, 10);
+    // Parse "<num>" hoặc "<num>:<title>"
+    const colonIdx = rest.indexOf(':');
+    const numStr = colonIdx >= 0 ? rest.slice(0, colonIdx).trim() : rest;
+    const title = colonIdx >= 0 ? rest.slice(colonIdx + 1).trim() : undefined;
+
+    const num = parseInt(numStr, 10);
     if (isNaN(num) || num < 1) {
-      return '❌ /conv chỉ nhận số nguyên dương (vd: /conv 2)';
+      return '❌ /conv chỉ nhận: /conv new, /conv new:<tên>, /conv <số>, /conv <số>:<tên>';
     }
     try {
       const conv = await this.conversationService.pinByPosition({
-        orgId, agentId, userId: conversationUserId, mode: conversationMode, num,
+        orgId, agentId, userId: conversationUserId, mode: conversationMode, num, title,
       });
-      const title = (conv as any).title || `conversation #${num}`;
-      return `✅ Đã chuyển sang conversation #${num} — "${title}"`;
+      const convTitle = (conv as any).title || `conversation #${num}`;
+      return `✅ Đã chuyển sang conversation #${num} — "${convTitle}"`;
     } catch (err: any) {
       return `❌ ${err.message}`;
     }

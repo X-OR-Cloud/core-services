@@ -105,16 +105,19 @@ List trả về **newest-first** (mới nhất trước). `num` giảm dần t�
 
 **Emit:**
 ```json
-{}
+{ "title": "Debug Redis timeout" }
 ```
-Không cần payload.
+
+| Field | Type | Required | Mô tả |
+|---|---|---|---|
+| `title` | string | No | Tên conversation. Nếu bỏ trống, server tự đặt tên mặc định |
 
 **Server response — emit `conv:new` về đúng socket:**
 ```json
 {
   "conversationId": "685b3c4d5e6f7a8b9c0d1e2f",
   "num": 6,
-  "title": "Conversation with agent ..."
+  "title": "Debug Redis timeout"
 }
 ```
 
@@ -122,7 +125,7 @@ Không cần payload.
 |---|---|---|
 | `conversationId` | string | ID của conversation mới |
 | `num` | number | Số thứ tự của conversation mới |
-| `title` | string | Tiêu đề |
+| `title` | string | Tiêu đề đã được lưu |
 
 **Side effects:**
 - Socket tự động leave room cũ (`conversation:<oldId>`) và join room mới (`conversation:<newId>`)
@@ -135,24 +138,25 @@ Không cần payload.
 
 **Emit:**
 ```json
-{ "num": 3 }
+{ "num": 3, "title": "Phân tích CBM" }
 ```
 
 | Field | Type | Required | Mô tả |
 |---|---|---|---|
 | `num` | number | Yes | Số thứ tự conversation muốn chuyển sang |
+| `title` | string | No | Đổi tên conversation đồng thời khi switch. Lưu persistent vào DB |
 
 **Server response (thành công) — emit `conv:switch` về đúng socket:**
 ```json
 {
   "conversationId": "685a0d0c1b2a3b4c5d6e7f80",
   "num": 3,
-  "title": "Conversation with agent ...",
+  "title": "Phân tích CBM",
   "summary": "Phân tích requirements module CBM và thiết kế schema..."
 }
 ```
 
-**Side effects:** Tương tự `conv:new` — leave room cũ, join room mới.
+**Side effects:** Tương tự `conv:new` — leave room cũ, join room mới. Nếu có `title`, tên mới được phản ánh ngay trong `conv:list` tiếp theo.
 
 ---
 
@@ -186,7 +190,7 @@ Server emit: conv:list { conversations: [...] }
 → Render danh sách, highlight conversation isCurrent=true
 ```
 
-### 2. User click "New conversation"
+### 2. User click "New conversation" (không đặt tên)
 
 ```
 FE emit: conv:new {}
@@ -196,7 +200,15 @@ Server emit: conv:new { conversationId, num, title }
 → Đóng sidebar
 ```
 
-### 3. User click vào conversation #3
+### 3. User tạo conversation với tên cụ thể
+
+```
+FE emit: conv:new { title: "Debug Redis timeout" }
+Server emit: conv:new { conversationId, num: 6, title: "Debug Redis timeout" }
+→ Hiển thị tên trong header chat và sidebar
+```
+
+### 4. User click vào conversation #3
 
 ```
 FE emit: conv:switch { num: 3 }
@@ -210,6 +222,15 @@ Nếu thành công:
 Nếu lỗi:
   Server emit: conv:error { code: "CONV_NOT_FOUND", message: "..." }
   → Hiển thị toast lỗi
+```
+
+### 5. User switch và đổi tên cùng lúc
+
+```
+FE emit: conv:switch { num: 3, title: "Phân tích CBM" }
+Server emit: conv:switch { conversationId, num: 3, title: "Phân tích CBM", summary: "..." }
+→ Tên mới được lưu DB và hiển thị ngay
+→ conv:list sau đó cũng trả về tên mới
 ```
 
 ---
@@ -275,16 +296,16 @@ function useConversationManager(socket: Socket | null) {
     socket?.emit('conv:list', { limit });
   };
 
-  const createNew = () => {
+  const createNew = (title?: string) => {
     setLoading(true);
     setError(null);
-    socket?.emit('conv:new', {});
+    socket?.emit('conv:new', title ? { title } : {});
   };
 
-  const switchTo = (num: number) => {
+  const switchTo = (num: number, title?: string) => {
     setLoading(true);
     setError(null);
-    socket?.emit('conv:switch', { num });
+    socket?.emit('conv:switch', title ? { num, title } : { num });
   };
 
   return { conversations, loading, error, listConversations, createNew, switchTo };
@@ -330,6 +351,20 @@ FE không cần xử lý khác biệt này — server tự filter đúng theo mo
 
 ---
 
+## Slash commands tương đương (connection channels)
+
+Với Discord/Telegram, các thao tác tương ứng qua slash command:
+
+| WS event | Slash command |
+|---|---|
+| `conv:list {}` | `/conv` |
+| `conv:new {}` | `/conv new` |
+| `conv:new { title: "Tên" }` | `/conv new:Tên` |
+| `conv:switch { num: 3 }` | `/conv 3` |
+| `conv:switch { num: 3, title: "Tên mới" }` | `/conv 3:Tên mới` |
+
+---
+
 ## Checklist tích hợp
 
 - [ ] Register listener `conv:list`, `conv:new`, `conv:switch`, `conv:error` khi socket connect
@@ -338,3 +373,4 @@ FE không cần xử lý khác biệt này — server tự filter đúng theo mo
 - [ ] Xử lý `conv:error` — hiển thị toast hoặc inline error
 - [ ] Disable nút "New" / "Switch" khi `loading = true` để tránh double-emit
 - [ ] Refresh list (`conv:list`) sau khi tạo mới thành công để cập nhật `num` mới nhất
+- [ ] Nếu FE có input đặt tên: trim whitespace trước khi gửi, bỏ qua nếu chuỗi rỗng
