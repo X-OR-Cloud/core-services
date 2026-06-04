@@ -6,15 +6,18 @@ import { RequestContext } from '@hydrabyte/shared';
 import { isSuperAdmin } from '../project/project-access.helper';
 import { Order } from './order.schema';
 import { Contact } from '../contact/contact.schema';
+import { DomainConfigService } from '../domain-config/domain-config.service';
 
-const EDITABLE_STATUSES = ['new', 'processing', 'deposited', 'checked_in'];
-const BOOKING_BLOCK_TYPES = ['room', 'maintenance']; // bookingTypes that block availability
+// Statuses that allow PATCH data edits (separate from action workflow)
+const EDITABLE_STATUSES = ['new', 'processing', 'deposited', 'active'];
+const BOOKING_BLOCK_TYPES = ['room', 'maintenance'];
 
 @Injectable()
 export class OrderService extends BaseService<Order> {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<Order>,
-    @InjectModel(Contact.name) private contactModel: Model<Contact>
+    @InjectModel(Contact.name) private contactModel: Model<Contact>,
+    private readonly domainConfigService: DomainConfigService,
   ) {
     super(orderModel);
   }
@@ -23,7 +26,6 @@ export class OrderService extends BaseService<Order> {
     data.code = await this.generateCode(context);
     data.status = 'new';
 
-    // Booking validation: if bookingType = 'room', checkIn and checkOut are required
     const bookingType = data.metadata?.bookingType;
     if (bookingType === 'room') {
       if (!data.checkIn || !data.checkOut) {
@@ -34,7 +36,6 @@ export class OrderService extends BaseService<Order> {
       if (checkOut <= checkIn) {
         throw new BadRequestException('checkOut must be after checkIn');
       }
-      // Auto-check availability, throw 409 if conflict
       const conflicts = await this.findConflicts(
         data.items?.map((i: any) => i.productId).filter(Boolean) || [],
         checkIn,
@@ -48,12 +49,11 @@ export class OrderService extends BaseService<Order> {
           conflicts,
         });
       }
-      // Normalize to Date objects
       data.checkIn = checkIn;
       data.checkOut = checkOut;
     }
 
-    // F-020: Auto-link or create Contact when phone is provided and no existing contactId
+    // F-020: Auto-link or create Contact when phone is provided
     if (!data.customer?.id && data.customer?.phone) {
       try {
         const contactId = await this.autoLinkContact(data, context);
@@ -66,10 +66,6 @@ export class OrderService extends BaseService<Order> {
     return super.create(data, context);
   }
 
-  /**
-   * F-020: Find existing contact by phone+orgId (regardless of status) or create a new one.
-   * Returns the contact _id as string, or null on failure.
-   */
   private async autoLinkContact(data: any, context: RequestContext): Promise<string | null> {
     const existing = await this.contactModel.findOne({
       'owner.orgId': context.orgId,
@@ -99,7 +95,6 @@ export class OrderService extends BaseService<Order> {
   ): Promise<FindManyResult<Order>> {
     const { search, dateFrom, dateTo, ...rest } = options as any;
 
-    // Validate 90-day range limit
     if (dateFrom && dateTo) {
       const from = new Date(dateFrom).getTime();
       const to = new Date(dateTo).getTime();
@@ -109,7 +104,6 @@ export class OrderService extends BaseService<Order> {
       }
     }
 
-    // Apply date filter
     if (dateFrom || dateTo) {
       const createdAtFilter: any = {};
       if (dateFrom) createdAtFilter.$gte = new Date(dateFrom);
@@ -117,9 +111,6 @@ export class OrderService extends BaseService<Order> {
       rest.filter = { ...rest.filter, createdAt: createdAtFilter };
     }
 
-    // Apply search filter (code, customer name/phone, product name in items)
-    // NOTE: $or must be inside filter{} — BaseService uses options.filter when defined,
-    // so top-level $or would be ignored if filter already exists (e.g. from dateFrom/dateTo)
     let baseOptions = rest;
     if (search) {
       const regex = new RegExp(search, 'i');
@@ -139,7 +130,6 @@ export class OrderService extends BaseService<Order> {
 
     const findResult = await super.findAll(baseOptions, context);
 
-    // byStatus: aggregate with same date filter (no status filter) for accurate breakdown
     const baseMatch: any = { isDeleted: false };
     if (context.orgId) baseMatch['owner.orgId'] = context.orgId;
     if (dateFrom || dateTo) {
@@ -171,7 +161,7 @@ export class OrderService extends BaseService<Order> {
     const order = await super.findById(id, context);
     if (!order) throw new NotFoundException('Order not found');
     if (!EDITABLE_STATUSES.includes(order.status as string)) {
-      throw new BadRequestException(`Order can only be updated in new or processing status (current: ${order.status})`);
+      throw new BadRequestException(`Order can only be updated in editable status (current: ${order.status})`);
     }
     return super.update(id, data, context);
   }
@@ -180,8 +170,6 @@ export class OrderService extends BaseService<Order> {
     const order = await super.findById(id, context);
     if (!order) throw new NotFoundException('Order not found');
 
-    // organization.owner can delete any status
-    // organization.editor can only delete new or processing
     if (!isSuperAdmin(context)) {
       const EDITOR_DELETABLE = ['new', 'processing'];
       if (!EDITOR_DELETABLE.includes(order.status as string)) {
@@ -196,62 +184,28 @@ export class OrderService extends BaseService<Order> {
     return super.softDelete(id, context);
   }
 
-  // ── State machine ──────────────────────────────────────────────────────────
+  // ── Config-driven state machine ────────────────────────────────────────────
 
-  async process(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+  async executeAction(action: string, id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
+    const config = await this.domainConfigService.getOrderConfig(context.orgId);
+    const actionDef = config.actions[action];
+
+    if (!actionDef) {
+      throw new ForbiddenException({ code: 'ACTION_NOT_AVAILABLE', message: `Action '${action}' is not available in this domain` });
+    }
+
     const order = await super.findById(id, context);
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'new') {
-      throw new BadRequestException(`Order must be in new status to process (current: ${order.status})`);
-    }
-    return super.update(id, { status: 'processing' }, context);
-  }
 
-  // ── Booking state transitions ───────────────────────────────────────────────
-
-  async confirm(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'new') {
-      throw new BadRequestException(`Order must be in new status to confirm (current: ${order.status})`);
+    if (!actionDef.from.includes(order.status as string)) {
+      throw new BadRequestException(`Cannot perform '${action}': order is '${order.status}', expected one of [${actionDef.from.join(', ')}]`);
     }
-    return super.update(id, { status: 'processing' }, context);
-  }
 
-  async deposit(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'processing') {
-      throw new BadRequestException(`Order must be in processing status to deposit (current: ${order.status})`);
-    }
-    return super.update(id, { status: 'deposited' }, context);
-  }
-
-  async checkin(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'deposited') {
-      throw new BadRequestException(`Order must be in deposited status to check in (current: ${order.status})`);
-    }
-    return super.update(id, { status: 'checked_in' }, context);
-  }
-
-  async checkout(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'checked_in') {
-      throw new BadRequestException(`Order must be in checked_in status to check out (current: ${order.status})`);
-    }
-    return super.update(id, { status: 'done' }, context);
+    return super.update(id, { status: actionDef.to }, context);
   }
 
   // ── Availability check ─────────────────────────────────────────────────────
 
-  /**
-   * Check availability for given productIds in a date range.
-   * Blocks both 'room' and 'maintenance' bookingTypes (hard block).
-   * Returns { available: string[], booked: { productId, conflictOrderId, conflictCode }[] }
-   */
   async checkAvailability(
     productIds: string[],
     checkIn: Date,
@@ -263,17 +217,12 @@ export class OrderService extends BaseService<Order> {
     }
 
     const conflicts = await this.findConflicts(productIds, checkIn, checkOut, context, null);
-
     const bookedProductIds = new Set(conflicts.map((c: any) => c.productId));
     const available = productIds.filter((id) => !bookedProductIds.has(id));
 
     return { available, booked: conflicts };
   }
 
-  /**
-   * Internal: find conflicting bookings for given productIds + date range.
-   * excludeOrderId: optional order to exclude (for update scenarios).
-   */
   private async findConflicts(
     productIds: string[],
     checkIn: Date,
@@ -287,7 +236,7 @@ export class OrderService extends BaseService<Order> {
       'owner.orgId': context.orgId,
       isDeleted: { $ne: true },
       'metadata.bookingType': { $in: BOOKING_BLOCK_TYPES },
-      status: { $nin: ['cancelled', 'done'] }, // done (checked_out) = room is free again
+      status: { $nin: ['cancelled', 'done'] },
       checkIn: { $lt: checkOut },
       checkOut: { $gt: checkIn },
       'items.productId': { $in: productIds },
@@ -322,10 +271,6 @@ export class OrderService extends BaseService<Order> {
 
   // ── Calendar ──────────────────────────────────────────────────────────────
 
-  /**
-   * Get all bookings for a given month (YYYY-MM).
-   * Returns bookings that overlap with the month, regardless of khu (FE groups).
-   */
   async getCalendar(
     month: string,
     bookingType: string | undefined,
@@ -356,27 +301,6 @@ export class OrderService extends BaseService<Order> {
       .lean();
 
     return bookings;
-  }
-
-  async complete(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (!EDITABLE_STATUSES.includes(order.status as string)) {
-      throw new BadRequestException(`Order must be in new or processing status to complete (current: ${order.status})`);
-    }
-    return super.update(id, { status: 'done' }, context);
-  }
-
-  async cancel(id: ObjectId, context: RequestContext): Promise<Partial<Order>> {
-    const order = await super.findById(id, context);
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status === 'cancelled') {
-      throw new BadRequestException('Order is already cancelled');
-    }
-    if (order.status === 'done') {
-      throw new BadRequestException('Cannot cancel a completed order');
-    }
-    return super.update(id, { status: 'cancelled' }, context);
   }
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -439,7 +363,6 @@ export class OrderService extends BaseService<Order> {
     const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `ORD-${yyyymmdd}-`;
 
-    // Include soft-deleted orders to avoid duplicate code (unique index covers all docs)
     const orgMatch: any = { code: new RegExp(`^${prefix}`) };
     if (context.orgId) orgMatch['owner.orgId'] = context.orgId;
 

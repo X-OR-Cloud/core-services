@@ -35,6 +35,7 @@ import { ProviderModule } from '../modules/provider/provider.module';
 import { ProductCategoryModule } from '../modules/product-category/product-category.module';
 import { ProductModule } from '../modules/product/product.module';
 import { OrderModule } from '../modules/order/order.module';
+import { DomainConfigModule } from '../modules/domain-config/domain-config.module';
 import { SkillModule } from '../skill/skill.module';
 import { OutletModule } from '../modules/outlet/outlet.module';
 import { OutletMemberModule } from '../modules/outlet-member/outlet-member.module';
@@ -91,6 +92,7 @@ import { CustomModule } from '../modules/custom/custom.module';
     ProductCategoryModule,
     ProductModule,
     OrderModule,
+    DomainConfigModule,
     // Skill manifest endpoint
     SkillModule,
     // Outlet modules (BepCoba PWA)

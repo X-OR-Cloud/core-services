@@ -76,7 +76,7 @@ export class Order extends BaseSchema {
 
   @Prop({
     required: true,
-    enum: ['new', 'processing', 'deposited', 'checked_in', 'done', 'cancelled'],
+    enum: ['new', 'processing', 'deposited', 'active', 'done', 'cancelled'],
     default: 'new',
   })
   status!: string;
