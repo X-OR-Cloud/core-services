@@ -40,6 +40,7 @@ import { OutletModule } from '../modules/outlet/outlet.module';
 import { OutletMemberModule } from '../modules/outlet-member/outlet-member.module';
 import { OutletContextMiddleware } from '../middleware/outlet-context.middleware';
 import { StaffModule } from '../modules/staff/staff.module';
+import { CustomModule } from '../modules/custom/custom.module';
 
 @Module({
   imports: [
@@ -97,6 +98,8 @@ import { StaffModule } from '../modules/staff/staff.module';
     OutletMemberModule,
     // Staff management (proxy to IAM)
     StaffModule,
+    // Custom per-customer APIs
+    CustomModule,
   ],
   controllers: [AppController],
   providers: [

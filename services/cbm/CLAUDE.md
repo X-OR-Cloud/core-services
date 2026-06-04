@@ -126,6 +126,42 @@ return this.workService.findAll(options, context);
 - Database: `{PREFIX}cbm`
 - Collections: `projects`, `works`, `documents`, `content`, `notifications`, `knowledge_collections`, `knowledge_files`, `knowledge_chunks`
 
+## Custom Per-Customer APIs
+
+Các API đặc thù cho từng khách hàng được tổ chức trong `src/modules/custom/`.
+
+### Cấu trúc
+
+```
+src/modules/
+└── custom/
+    ├── custom.module.ts              # Aggregate module — import tất cả sub-modules
+    ├── {customer-slug}/
+    │   ├── {customer}.module.ts
+    │   ├── {feature}.service.ts
+    │   ├── {feature}.controller.ts
+    │   └── {feature}.dto.ts
+    └── hoa-lu-resort/                # Ví dụ: Hoa Lu Resort
+        ├── hoa-lu.module.ts
+        ├── booking-excel.service.ts
+        ├── booking-excel.controller.ts
+        └── booking-excel.dto.ts
+```
+
+### Quy tắc
+
+- **Route prefix:** `/custom/{customer-slug}/{feature}` — ví dụ: `/custom/hoa-lu/booking-excel`
+- **Auth:** JWT chuẩn + guard kiểm tra `orgId` khớp — chỉ org của customer đó mới gọi được
+- **Isolation:** Mỗi customer là 1 sub-module độc lập — thêm/xóa không ảnh hưởng customer khác
+- **Không abstract sớm:** Khi có ≥3 customers dùng logic tương tự mới xem xét generalize
+- **Excel parsing:** Dùng `xlsx` (SheetJS) — đọc buffer từ upload/S3, không dùng `exceljs` trừ khi cần ghi file
+
+### Thêm customer mới
+
+1. Tạo thư mục `src/modules/custom/{customer-slug}/`
+2. Tạo `{customer}.module.ts` với controller và service tương ứng
+3. Import module mới vào `custom.module.ts`
+
 ## Commands
 
 ```bash
