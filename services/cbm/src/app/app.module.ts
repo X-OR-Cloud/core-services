@@ -42,6 +42,7 @@ import { OutletMemberModule } from '../modules/outlet-member/outlet-member.modul
 import { OutletContextMiddleware } from '../middleware/outlet-context.middleware';
 import { StaffModule } from '../modules/staff/staff.module';
 import { CustomModule } from '../modules/custom/custom.module';
+import { TicketModule } from '../modules/ticket/ticket.module';
 
 @Module({
   imports: [
@@ -100,6 +101,8 @@ import { CustomModule } from '../modules/custom/custom.module';
     OutletMemberModule,
     // Staff management (proxy to IAM)
     StaffModule,
+    // Ticket — inbound submissions requiring follow-up
+    TicketModule,
     // Custom per-customer APIs
     CustomModule,
   ],
