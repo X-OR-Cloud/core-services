@@ -49,7 +49,7 @@ export class Ticket extends BaseSchema {
     phonenumber?: string;
   };
 
-  @Prop({ required: true, enum: TICKET_STATUSES, default: 'new' })
+  @Prop({ type: String, required: true, enum: TICKET_STATUSES, default: 'new' })
   status!: TicketStatus;
 
   @Prop({ maxlength: 2000 })
