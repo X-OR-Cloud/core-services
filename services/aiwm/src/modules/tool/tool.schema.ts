@@ -96,8 +96,8 @@ export class Tool extends BaseSchema {
   @Prop({ required: true, enum: ['active', 'inactive', 'error'], default: 'active' })
   status!: string; // 'active', 'inactive', or 'error'
 
-  @Prop({ required: true, type: Object })
-  schema!: {
+  @Prop({ type: Object })
+  schema?: {
     inputSchema: object;  // JSON Schema for input
     outputSchema: object; // JSON Schema for output
   };
